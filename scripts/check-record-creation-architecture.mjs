@@ -8,7 +8,7 @@ const records = read('core/records/records.js');
 const owner = read('ui/record/creation-flow.js');
 const day = read('journal/день.js');
 const personEntry = read('core/people/record-creation.js');
-const booking = read('online-booking/booking-x.js');
+const booking = read('online-booking/access.js');
 
 expect(!fs.existsSync('journal/record.js'), 'journal/record.js must not exist.');
 expect(!fs.existsSync('journal/record-view.js'), 'journal/record-view.js must not exist.');

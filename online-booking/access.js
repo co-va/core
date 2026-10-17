@@ -129,12 +129,12 @@ function renderWelcome(root, state) {
     eyebrow: owner ? `Приглашение от ${escapeHtml(owner)}` : '',
     title: state.settings.welcomeTitle || '',
     body: state.settings.welcomeText ? `<p>${escapeHtml(state.settings.welcomeText).replaceAll('\n', '<br>')}</p>` : '',
-    action: button('Продолжить', { data: 'data-booking-x-welcome' }),
+    action: button('Продолжить', { data: 'data-access-welcome' }),
     className: 'v2-sticker-screen--welcome',
-    closeData: 'data-booking-x-welcome-close',
+    closeData: 'data-access-welcome-close',
   })}</section>`;
-  root.querySelector('[data-booking-x-welcome]')?.addEventListener('click', continueFlow);
-  root.querySelector('[data-booking-x-welcome-close]')?.addEventListener('click', continueFlow);
+  root.querySelector('[data-access-welcome]')?.addEventListener('click', continueFlow);
+  root.querySelector('[data-access-welcome-close]')?.addEventListener('click', continueFlow);
   initV2StickerSwipe(root, { onRight: continueFlow, onLeft: continueFlow });
 }
 
@@ -144,22 +144,22 @@ function renderAccountEntry(root, state) {
     ${field({ label: 'Телефон или email', name: 'identifier', value: remembered, required: true, autocomplete: 'username' })}
     ${passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'current-password' })}
     ${formError(state.error)}
-    <button type="button" class="v2-sticker-link" data-booking-x-register>Зарегистрироваться</button>
-  `, { data: 'id="booking-x-entry-form" data-booking-x-entry-form' });
+    <button type="button" class="v2-sticker-link" data-access-register>Зарегистрироваться</button>
+  `, { data: 'id="access-entry-form" data-access-entry-form' });
   root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
     title: 'Вход',
     body: form,
-    action: '<button class="ui-button" type="submit" form="booking-x-entry-form">Войти</button>',
+    action: '<button class="ui-button" type="submit" form="access-entry-form">Войти</button>',
     className: 'v2-sticker-screen--auth',
-    closeData: 'data-booking-x-auth-close',
+    closeData: 'data-access-auth-close',
   })}</section>`;
   initPasswordFields(root);
-  const authForm = root.querySelector('[data-booking-x-entry-form]');
-  root.querySelector('[data-booking-x-auth-close]')?.addEventListener('click', () => {
+  const authForm = root.querySelector('[data-access-entry-form]');
+  root.querySelector('[data-access-auth-close]')?.addEventListener('click', () => {
     if (state.entry === 'account-booking' && exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId })) return;
     renderWelcome(root, state);
   });
-  root.querySelector('[data-booking-x-register]')?.addEventListener('click', async () => {
+  root.querySelector('[data-access-register]')?.addEventListener('click', async () => {
     const data = new FormData(authForm);
     const identifier = String(data.get('identifier') || '').trim();
     state.accountDraft = { identifier, ...(identifier.includes('@') ? { email: identifier.toLowerCase() } : {}) };
@@ -175,7 +175,7 @@ function renderAccountEntry(root, state) {
       renderAccountEntry(root, state);
       return;
     }
-    const submit = root.querySelector('button[form="booking-x-entry-form"]');
+    const submit = root.querySelector('button[form="access-entry-form"]');
     if (submit) {
       submit.disabled = true;
       submit.textContent = 'Входим…';
@@ -216,16 +216,16 @@ function renderAccountDetails(root, state) {
     ${passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'new-password' })}
     ${passwordField({ label: 'Повтор пароля', name: 'repeatPassword', required: true, autocomplete: 'new-password' })}
     ${formError(state.error)}
-  `, { data: 'id="booking-x-register-form" data-booking-x-register-form' });
+  `, { data: 'id="access-register-form" data-access-register-form' });
   root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
     title: 'Регистрация',
     body: form,
-    action: '<button class="ui-button" type="submit" form="booking-x-register-form">Подтвердить</button>',
-    closeData: 'data-booking-x-register-close',
+    action: '<button class="ui-button" type="submit" form="access-register-form">Подтвердить</button>',
+    closeData: 'data-access-register-close',
   })}</section>`;
   initPasswordFields(root);
-  root.querySelector('[data-booking-x-register-close]')?.addEventListener('click', () => renderAccountEntry(root, state));
-  const registerForm = root.querySelector('[data-booking-x-register-form]');
+  root.querySelector('[data-access-register-close]')?.addEventListener('click', () => renderAccountEntry(root, state));
+  const registerForm = root.querySelector('[data-access-register-form]');
   registerForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const validationError = formValidationMessage(registerForm);
@@ -241,7 +241,7 @@ function renderAccountDetails(root, state) {
       renderAccountDetails(root, state);
       return;
     }
-    const submit = root.querySelector('button[form="booking-x-register-form"]');
+    const submit = root.querySelector('button[form="access-register-form"]');
     if (submit) {
       submit.disabled = true;
       submit.textContent = 'Проверяем…';
@@ -283,33 +283,33 @@ function renderLegal(root, state, { registration = false } = {}) {
   const cards = documentTiles(documents.map((document) => documentTile({
     title: document.platform ? 'Условия использования' : document.required ? 'Согласие на обработку персональных данных' : 'Согласие на получение рекламы',
     version: document.version || 1,
-    openData: document.platform ? 'data-booking-x-platform-document' : `data-booking-x-document="${escapeHtml(document.id)}"`,
-    toggleData: document.platform ? 'data-booking-x-platform-toggle' : `data-booking-x-consent="${escapeHtml(document.id)}"`,
+    openData: document.platform ? 'data-access-platform-document' : `data-access-document="${escapeHtml(document.id)}"`,
+    toggleData: document.platform ? 'data-access-platform-toggle' : `data-access-consent="${escapeHtml(document.id)}"`,
     toggleChecked: document.platform ? Boolean(state.accountTermsAccepted) : Boolean(state.consents[String(document.id || '')]),
   })), { layout: 'rail' });
   root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
     title: 'Документы',
-    body: `${cards}${button('Продолжить', { data: 'data-booking-x-legal-continue', disabled: !canContinue })}${formError(state.error)}`,
-    closeData: 'data-booking-x-legal-close',
+    body: `${cards}${button('Продолжить', { data: 'data-access-legal-continue', disabled: !canContinue })}${formError(state.error)}`,
+    closeData: 'data-access-legal-close',
   })}</section>`;
-  root.querySelector('[data-booking-x-legal-close]')?.addEventListener('click', () => (
+  root.querySelector('[data-access-legal-close]')?.addEventListener('click', () => (
     registration ? renderAccountDetails(root, state) : renderAccountEntry(root, state)
   ));
-  root.querySelector('[data-booking-x-platform-document]')?.addEventListener('click', () => openConsentDocument(state.accountTerms));
-  root.querySelector('[data-booking-x-platform-toggle]')?.addEventListener('click', () => {
+  root.querySelector('[data-access-platform-document]')?.addEventListener('click', () => openConsentDocument(state.accountTerms));
+  root.querySelector('[data-access-platform-toggle]')?.addEventListener('click', () => {
     state.accountTermsAccepted = !state.accountTermsAccepted;
     renderLegal(root, state, { registration });
   });
-  root.querySelectorAll('[data-booking-x-document]').forEach((node) => node.addEventListener('click', () => {
-    const document = tenantDocuments.find((item) => String(item.id) === String(node.dataset.bookingXDocument));
+  root.querySelectorAll('[data-access-document]').forEach((node) => node.addEventListener('click', () => {
+    const document = tenantDocuments.find((item) => String(item.id) === String(node.dataset.accessDocument));
     if (document) openConsentDocument(document);
   }));
-  root.querySelectorAll('[data-booking-x-consent]').forEach((node) => node.addEventListener('click', () => {
-    const id = String(node.dataset.bookingXConsent || '');
+  root.querySelectorAll('[data-access-consent]').forEach((node) => node.addEventListener('click', () => {
+    const id = String(node.dataset.accessConsent || '');
     state.consents[id] = !state.consents[id];
     renderLegal(root, state, { registration });
   }));
-  root.querySelector('[data-booking-x-legal-continue]')?.addEventListener('click', async (event) => {
+  root.querySelector('[data-access-legal-continue]')?.addEventListener('click', async (event) => {
     if (!canContinue) return;
     const action = event.currentTarget;
     action.disabled = true;
@@ -477,7 +477,7 @@ function startBookingFlow(root, state) {
   });
 }
 
-export async function renderOnlineBookingX(root, {
+export async function renderAccess(root, {
   tenantId = '',
   workplaceKey = '',
   procedureIds = [],
@@ -505,7 +505,9 @@ export async function renderOnlineBookingX(root, {
     return;
   }
 
-  root.innerHTML = emptyState('Онлайн-запись', 'Загрузка…');
+  if (state.entry !== 'account-booking') {
+    root.innerHTML = emptyState('Онлайн-запись', 'Загрузка…');
+  }
   try {
     const [, account] = await Promise.all([
       refreshContext(state),

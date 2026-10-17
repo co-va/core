@@ -6,7 +6,7 @@ const records = fs.readFileSync('core/records/records.js', 'utf8');
 const owner = fs.readFileSync('ui/record/creation-flow.js', 'utf8');
 const day = fs.readFileSync('journal/день.js', 'utf8');
 const journalView = fs.readFileSync('journal/journal-view.js', 'utf8');
-const booking = fs.readFileSync('online-booking/booking-x.js', 'utf8');
+const booking = fs.readFileSync('online-booking/access.js', 'utf8');
 const personEntry = fs.readFileSync('core/people/record-creation.js', 'utf8');
 
 assert.equal(fs.existsSync('journal/record.js'), false);

@@ -2,7 +2,7 @@ import { getBookingContext, getGlobalAccountRecords, resolveBookingPublicRoute }
 import { procedurePricingForWorkplace } from '../core/service/procedures/selection.js';
 import { openRecordConfirmationNotice } from '../ui/record/confirmation-notice.js';
 import { renderGlobalClient } from './booking.js';
-import { renderOnlineBookingX as renderOnlineBooking } from './booking-x.js';
+import { renderAccess } from './access.js';
 import { startAccountRuntime } from './account-runtime.js';
 
 const app = document.querySelector('#app');
@@ -144,11 +144,17 @@ async function renderGlobalClientRoot(initial = {}) {
   syncViewport();
 }
 
-async function renderPublicBooking(route) {
+async function renderAccessRoute(route) {
   disposeView();
   setThemeColor('#2F3338');
   app.classList.add('app-shell--booking');
-  app.innerHTML = '<main class="booking-content" id="app-content"></main>';
+
+  if (route.entry === 'account-booking') {
+    await renderGlobalClientRoot({ tab: 'contact-detail', tenantId: route.tenantId });
+  } else {
+    app.innerHTML = '<main class="booking-content" id="app-content"></main>';
+  }
+
   const disposeRuntime = await startAccountRuntime(route);
   let recordCreationCommitted = false;
   const onRecordCreationCommitted = () => { recordCreationCommitted = true; };
@@ -157,7 +163,7 @@ async function renderPublicBooking(route) {
     disposeRuntime?.();
     window.removeEventListener('va-tools:record-creation-committed', onRecordCreationCommitted);
   };
-  await renderOnlineBooking(document.querySelector('#app-content'), {
+  await renderAccess(document.querySelector('#app-content'), {
     ...route,
     onExitToAccount: async (target = {}) => {
       const confirmed = recordCreationCommitted;
@@ -176,9 +182,9 @@ window.visualViewport?.addEventListener('scroll', syncViewport, { passive: true 
 
 syncViewport();
 const accountBooking = accountBookingRoute();
-if (accountBooking) await renderPublicBooking(accountBooking);
+if (accountBooking) await renderAccessRoute(accountBooking);
 else {
   const publicBooking = await bookingRoute();
-  if (publicBooking) await renderPublicBooking(publicBooking);
+  if (publicBooking) await renderAccessRoute(publicBooking);
   else await renderGlobalClientRoot();
 }
