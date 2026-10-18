@@ -172,7 +172,7 @@ export function renderJournal(root, options = {}) {
       ? (outstanding.length === 0
         ? [{ label: 'Статус', value: 'Оплачено' }]
         : [
-          { label: 'Оплачено', value: formatRubles(paidTotal) },
+          paidTotal > 0.009 ? { label: 'Оплачено', value: formatRubles(paidTotal) } : null,
           dueTotal > 0.009 ? { label: 'К оплате', value: formatRubles(dueTotal) } : null,
           debtTotal > 0.009 ? { label: 'Задолженность', value: formatRubles(debtTotal) } : null,
         ].filter(Boolean))
