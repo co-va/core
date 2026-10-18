@@ -155,6 +155,9 @@ assert.match(paymentMechanismSource, /export function openRecordPayment\(record\
 assert.match(paymentMechanismSource, /paymentForm\(/);
 assert.match(paymentMechanismSource, /paymentMethods\(/);
 assert.match(paymentMechanismSource, /recordPaymentIncome\(/);
+assert.match(paymentMechanismSource, /actionBlock\(button\('Оплатить', \{ data: 'data-record-payment-allocation-submit', disabled: true \}\)\)/);
+assert.match(paymentMechanismSource, /submit\.disabled = !allocationState\?\.valid/);
+assert.doesNotMatch(paymentMechanismSource, /data-record-payment-allocation-primary/);
 assert.equal(existsSync(new URL('../journal/journal-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-payment.js', import.meta.url)), false);
