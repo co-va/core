@@ -14,14 +14,14 @@ function withFinancialState(usages = []) {
   } : usage);
 }
 
-async function openExistingRecord(record) {
+async function openExistingRecord(record, rerender = () => {}) {
   const { openRecordView } = await import('../core/records/view.js');
-  openRecordView(record);
+  openRecordView(record, { onClose: rerender });
 }
 
 async function openUsage(usage, rerender = () => {}) {
   if (usage?.type === 'record') {
-    await openExistingRecord(usage);
+    await openExistingRecord(usage, rerender);
     return;
   }
   if (usage?.type === 'break') {

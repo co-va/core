@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const timelineSource = readFileSync(new URL('../ui/time/journal-day.js', import.meta.url), 'utf8');
 const timelineCss = readFileSync(new URL('../ui/time/time.css', import.meta.url), 'utf8');
 const journalSource = readFileSync(new URL('../journal/journal.js', import.meta.url), 'utf8');
+const daySource = readFileSync(new URL('../journal/день.js', import.meta.url), 'utf8');
 
 assert.match(timelineSource, /data-journal-work-field=/);
 assert.match(timelineSource, /field\.addEventListener\('click',\s*open\)/);
@@ -16,5 +17,6 @@ assert.match(journalSource, /'book:dds-changed'/, 'Every active Journal view, in
 assert.match(journalSource, /refreshEvents\.forEach\(\(eventName\) => window\.addEventListener\(eventName, scheduleRefresh\)\)/);
 assert.doesNotMatch(journalSource, /activeView === 'day' \|\| activeView === 'list'\) renderView/, 'Month must not be excluded from record-change refresh');
 assert.doesNotMatch(journalSource, /activeView === 'list' \|\| activeView === 'month'\) renderView/, 'Day must not be excluded from finance refresh');
+assert.match(daySource, /openRecordView\(record, \{ onClose: rerender \}\)/, 'Day must rerender after Record View closes so cancelled records disappear from the timeline');
 
 console.log('journal all-records click tests: OK');
