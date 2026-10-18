@@ -1,17 +1,17 @@
-import { viewNavigation, initViewNavigation, ALL_WORKPLACES_ID, modal, mountModal, openSharedProfileSettingsMenu, workspaceHeaderContext } from '../ui/ui.js';
+import { viewNavigation, initViewNavigation, ALL_WORKPLACES_ID, openSharedProfileSettingsMenu, workspaceHeaderContext } from '../ui/ui.js';
 import { setV2ZHeaderRows, clearV2ZHeaderRows } from '../ui/v2/z-layout.js';
 import { getWorkplaceContext, setWorkplaceContext } from '../core/workplace-context.js';
-import { readOnlyReceipt } from '../ui/receipt/index.js';
 import { canUseBookCapability } from '../core/access.js';
 import { getWorkplaces } from '../core/workplace-time.js';
 import { getActiveDayWorkplaces } from '../core/day/index.js';
-import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
+import { recordAmountDue } from '../core/finance/index.js';
 import { makeTimetableDayOff, openTimetableDayTimeEditor } from '../timetable/day-editor.js';
 import { getActiveRecordCountForDay, getRecordsForDay } from '../core/record/index.js';
 import { openJournalWorkplaceControl } from './workplace-control.js';
 import { renderJournalDay } from './день.js';
 import { renderJournalMonth } from './месяц.js';
 import { renderJournalList } from './список.js';
+import { openZReportSummary } from './z-report.js';
 
 const JOURNAL_CONTEXT_SCOPE = 'journal';
 
@@ -127,30 +127,13 @@ export function renderJournal(root, options = {}) {
     const average = records.length ? total / records.length : 0;
     const dateLabel = selectedDate.toLocaleDateString('ru-RU');
     const workplaceLabel = allMode ? 'Все пространства' : journalTitle();
-    const groups = [
-      [
-        { label: workplaceLabel, value: dateLabel },
-        { label: 'Кол-во записей:', value: String(records.length) },
-        { label: 'Кол-во процедур:', value: String(procedureCount) },
-        { label: 'Сумма:', value: formatRubles(total) },
-        { label: 'Средний чек:', value: formatRubles(average) },
-      ],
-      ...records.map((record) => {
-        const person = record?.person || {};
-        const fullName = [person?.name, person?.surname].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
-        const identity = [person?.uei, fullName].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
-        const payment = getRecordPaymentState(record);
-        const status = payment.fullyPaid ? 'оплачено' : payment.partiallyPaid ? 'задолженность' : 'к оплате';
-        return [
-          { label: identity || 'Запись', value: formatRubles(recordAmountDue(record)) },
-          { label: 'Статус', value: status },
-        ];
-      }),
-    ];
-    mountModal(document.body, modal(readOnlyReceipt({
-      title: 'Z - Отчет',
-      groups,
-    }), { variant: 's', surface: 'app', title: 'Z - Отчет' }));
+    openZReportSummary([[
+      { label: workplaceLabel, value: dateLabel },
+      { label: 'Кол-во записей:', value: String(records.length) },
+      { label: 'Кол-во процедур:', value: String(procedureCount) },
+      { label: 'Сумма:', value: formatRubles(total) },
+      { label: 'Средний чек:', value: formatRubles(average) },
+    ]]);
   };
 
   const makeSelectedDayOff = () => {
