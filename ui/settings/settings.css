@@ -16,6 +16,7 @@
 .floating-settings-button:active svg{transform:scale(.92)}
 .floating-settings-button:focus-visible{outline:2px solid currentColor;outline-offset:-4px;border-radius:12px}
 .v2-z.has-floating-settings > [data-v2-z-body]{padding-bottom:56px;scroll-padding-bottom:56px}
+.v2-app.has-v2-modal .floating-settings-button{visibility:hidden;pointer-events:none}
 
 .app-notification-list{display:grid;gap:8px}
 .app-notification-row{display:grid;grid-template-columns:26px minmax(0,1fr);gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--border)}
