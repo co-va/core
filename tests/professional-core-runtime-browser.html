@@ -296,8 +296,7 @@
         component:'manual',
         relatedOperationId:'',
         articleId:'system-other-income',
-        articleName:'Прочие доходы',
-        lineName:'стирка',
+        articleName:'стирка',
         quantity:1,
         unitPrice:123,
         note:'Тестовый комментарий',
@@ -1071,10 +1070,29 @@ const journalReceipt = journalZReport?.querySelector('[data-read-only-sheet]');
 ok(Boolean(journalReceipt), 'Journal Z-report must use shared read-only receipt');
 ok(journalReceipt?.querySelector('.read-only-sheet__header h2')?.textContent.trim() === 'Z - Отчет',
   'Journal Z-report receipt title missing');
-ok(journalReceipt?.textContent.includes('Студия Тест') && journalReceipt?.textContent.includes('Кол-во записей:'),
-  'Journal Z-report summary rows missing');
-ok(journalReceipt?.textContent.includes('UEI-JOURNAL') && journalReceipt?.textContent.includes('к оплате'),
-  'Journal Z-report record/status rows missing');
+const journalGroups = [...(journalReceipt?.querySelectorAll('.read-only-sheet__group') || [])];
+ok(
+  journalReceipt?.textContent.includes('Студия Тест')
+    && journalReceipt?.textContent.includes('Кол-во записей')
+    && journalReceipt?.textContent.includes('Кол-во процедур')
+    && journalReceipt?.textContent.includes('Кол-во часов')
+    && journalReceipt?.textContent.includes('Средний чек записи')
+    && journalReceipt?.textContent.includes('Средний чек процедуры')
+    && journalReceipt?.textContent.includes('Средний чек часа'),
+  'Journal Z-report summary metrics missing');
+ok(
+  journalReceipt?.textContent.includes('Оплачено')
+    && (journalReceipt?.textContent.includes('К оплате') || journalReceipt?.textContent.includes('Задолженность')),
+  'Journal Z-report payment status summary missing');
+ok(!journalReceipt?.textContent.includes('UEI-JOURNAL'),
+  'Journal Z-report must not expose record history');
+const journalTotalRow = journalGroups.at(-1)?.querySelector('.read-only-sheet__row');
+ok(
+  journalGroups.length === 3
+    && journalTotalRow?.classList.contains('is-strong')
+    && journalTotalRow?.querySelector('span')?.textContent.trim() === 'Сумма'
+    && journalTotalRow?.querySelector('strong')?.textContent.includes('1'),
+  'Journal Z-report total must be the final strong block');
 journalZReport?.v2Close?.();
 await wait(25);
 
