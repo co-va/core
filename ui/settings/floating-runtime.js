@@ -7,46 +7,49 @@ function workspaceShell() {
   return document.querySelector('#app > [data-v2-app].v2-app--workspace');
 }
 
-function primarySettingsSource(shell) {
-  if (shell?.querySelector('[data-v2-z-layer]')) return null;
-  const surface = shell?.querySelector('[data-v2-workspace-surface]');
-  if (!surface) return null;
-  const source = surface.querySelector(SETTINGS_SOURCE_SELECTOR);
+function zSurfaces(shell) {
+  const front = shell?.querySelector(':scope > .v2-app__stage > .v2-front');
+  if (!front) return [];
+  const base = front.querySelector(':scope > [data-v2-z]:not([data-v2-z-layer])');
+  const layers = [...front.querySelectorAll(':scope > [data-v2-z-layer]')];
+  return [base, ...layers].filter(Boolean);
+}
+
+function activeZ(shell) {
+  return zSurfaces(shell).at(-1) || null;
+}
+
+function settingsSource(surface) {
+  const source = surface?.querySelector(SETTINGS_SOURCE_SELECTOR) || null;
   if (!source || source.disabled || source.dataset.floatingSettings === 'false') return null;
   return source;
 }
 
-function primaryZ(shell) {
-  return shell?.querySelector(':scope > .v2-app__stage > .v2-front > .v2-z') || null;
+function clearFloatingSettings(shell) {
+  zSurfaces(shell).forEach((surface) => {
+    surface.querySelector(`:scope > ${BUTTON_SELECTOR}`)?.remove();
+    surface.classList.remove('has-floating-settings');
+  });
 }
 
 function syncFloatingSettings() {
   const shell = workspaceShell();
-  const z = primaryZ(shell);
-  if (!z) {
+  if (!shell) {
     document.querySelectorAll(BUTTON_SELECTOR).forEach((button) => button.remove());
     return;
   }
 
-  const source = primarySettingsSource(shell);
-  let button = z.querySelector(`:scope > ${BUTTON_SELECTOR}`);
-  if (!source) {
-    button?.remove();
-    z.classList.remove('has-floating-settings');
-    return;
-  }
+  const surface = activeZ(shell);
+  const source = settingsSource(surface);
+  clearFloatingSettings(shell);
+  if (!surface || !source || document.querySelector('[data-modal]')) return;
 
-  if (!button) {
-    z.insertAdjacentHTML('beforeend', floatingSettingsButton());
-    button = z.querySelector(`:scope > ${BUTTON_SELECTOR}`);
-  }
+  surface.insertAdjacentHTML('beforeend', floatingSettingsButton());
+  const button = surface.querySelector(`:scope > ${BUTTON_SELECTOR}`);
   if (!button) return;
-  z.classList.add('has-floating-settings');
+  surface.classList.add('has-floating-settings');
   button.setAttribute('aria-label', source.getAttribute('aria-label') || 'Настройки');
-  button.onclick = () => {
-    const current = primarySettingsSource(workspaceShell());
-    current?.click();
-  };
+  button.onclick = () => settingsSource(activeZ(workspaceShell()))?.click();
 }
 
 let queued = false;
@@ -61,13 +64,15 @@ function queueSync() {
 
 const app = document.querySelector('#app');
 if (app) {
-  const observer = new MutationObserver(queueSync);
-  observer.observe(app, {
+  const appObserver = new MutationObserver(queueSync);
+  appObserver.observe(app, {
     childList: true,
     subtree: true,
     attributes: true,
     attributeFilter: ['disabled', 'data-workspace-a-kind', 'data-floating-settings'],
   });
+  const modalObserver = new MutationObserver(queueSync);
+  modalObserver.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('book:v2-context-changed', queueSync);
   queueSync();
 }
