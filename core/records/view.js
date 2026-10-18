@@ -271,7 +271,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       <div role="button" tabindex="0" data-record-view-actions>${card}</div>
       <div class="record-view-actions">
         ${payment.fullyPaid ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' })}
-        ${button(payment.fullyPaid ? 'Оплачено' : 'К оплате', { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' })}
+        ${button(payment.fullyPaid ? 'Оплачено' : `К оплате: ${formatMoney(payment.remaining)}`, { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' })}
       </div>
     </div>`;
     const cardButton = root.querySelector('[data-record-view-actions]');
