@@ -27,5 +27,5 @@ export function agreementBlock(items = []) {
 }
 
 export function actionBlock(content = '', { className = '' } = {}) {
-  return `<div class="profile-actions${className ? ` ${escapeHtml(className)}` : ''}">${content}</div>`;
+  return `<div class="profile-actions modal-actions${className ? ` ${escapeHtml(className)}` : ''}">${content}</div>`;
 }
