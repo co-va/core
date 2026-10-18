@@ -1,0 +1,42 @@
+/* V — shared floating utility control. It is visual-only overlay chrome and never participates in Z layout. */
+.v2-app{position:relative}
+
+.v2-header__v{
+  position:absolute;
+  z-index:11;
+  left:36px;
+  bottom:calc(36px + env(safe-area-inset-bottom));
+  box-sizing:border-box;
+  width:48px;
+  height:48px;
+  border:0;
+  padding:5px;
+  display:grid;
+  place-items:center;
+  background:transparent;
+  cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+.v2-header__v-medallion{
+  width:38px;
+  height:38px;
+  display:block;
+  overflow:visible;
+  transform:rotate(-4deg);
+  transform-origin:50% 50%;
+  filter:drop-shadow(0 7px 10px rgba(0,0,0,.28)) drop-shadow(0 2px 7px rgba(255,255,0,.16));
+  transition:transform .14s ease,filter .14s ease;
+}
+.v2-header__v:active .v2-header__v-medallion{
+  transform:rotate(-6deg) translateY(1px) scale(.94);
+  filter:drop-shadow(0 4px 7px rgba(0,0,0,.24)) drop-shadow(0 1px 9px rgba(255,255,0,.28));
+}
+.v2-header__v:focus-visible{outline:2px solid var(--v2-yellow);outline-offset:0;border-radius:14px}
+.v2-app.is-deck-open .v2-header__v,
+.v2-app.has-v2-modal .v2-header__v,
+html.keyboard-open .v2-header__v{visibility:hidden;pointer-events:none}
+
+@media(max-width:360px){
+  .v2-header__v{left:32px;bottom:calc(32px + env(safe-area-inset-bottom))}
+}
