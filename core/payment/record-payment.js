@@ -40,6 +40,7 @@ import { getProfile } from '../profile/data.js';
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
 
 const money = (value) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value || 0)).replaceAll('\u00a0', ' ')} ₽`;
+const paymentInFlightRecords = new Set();
 
 function personForRecord(record) {
   const source = record?.person || {};
@@ -272,6 +273,11 @@ async function personalAccountForRecord(record, settlement, due) {
 async function openPaymentAllocationLayer(parentLayer, record, settlement, onCompleted) {
   const current = getRecord(record?.id) || record;
   const state = paymentStateForRecord(current);
+  const recordId = String(current?.id || '');
+  if (state.hasPayments || paymentInFlightRecords.has(recordId)) {
+    onCompleted?.();
+    return null;
+  }
   const total = Math.max(0, Number(settlement?.planTotal || 0) - Number(state?.paidTotal || 0));
   const [deposits, personalAccount] = await Promise.all([
     depositsForRecord(current),
@@ -304,8 +310,15 @@ async function openPaymentAllocationLayer(parentLayer, record, settlement, onCom
     primaryHost.querySelector('[data-record-payment-allocation-submit]')?.addEventListener('click', async (event) => {
       const submit = event.currentTarget;
       submit.disabled = true;
+      const latest = getRecord(current.id) || current;
+      if (paymentStateForRecord(latest).hasPayments || paymentInFlightRecords.has(recordId)) {
+        layer.v2Close?.();
+        onCompleted?.();
+        return;
+      }
       const dateValue = String(host.querySelector('input[name="recordPaymentDate"]')?.value || '');
       let completed = null;
+      paymentInFlightRecords.add(recordId);
       try {
         completed = await recordPaymentIncome({
           source: { type: 'record', id: current.id },
@@ -323,6 +336,8 @@ async function openPaymentAllocationLayer(parentLayer, record, settlement, onCom
         });
       } catch (error) {
         openNotice({ message: String(error?.message || 'Не удалось провести оплату') });
+      } finally {
+        paymentInFlightRecords.delete(recordId);
       }
       if (!completed) {
         if (submit.isConnected) submit.disabled = false;
