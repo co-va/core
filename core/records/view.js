@@ -13,6 +13,7 @@ import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
 import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, recordAmountDue } from '../finance/index.js';
+import { openRecordPayment } from '../payment/record-payment.js';
 import {
   cancelRecord,
   deleteRecord,
@@ -258,13 +259,19 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     </div>`;
     setV2ZHeaderRows(layer, [confirmedControl, attendanceControl]);
 
-    root.innerHTML = `<div class="record-screen record-screen--state-view"><div role="button" tabindex="0" data-record-view-actions>${card}</div></div>`;
+    root.innerHTML = `<div class="record-screen record-screen--state-view">
+      <div role="button" tabindex="0" data-record-view-actions>${card}</div>
+      ${button(payment.fullyPaid ? 'Оплачено' : 'К оплате', { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' })}
+    </div>`;
     const cardButton = root.querySelector('[data-record-view-actions]');
     cardButton?.addEventListener('click', openActions);
     cardButton?.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       openActions();
+    });
+    root.querySelector('[data-record-view-payment]')?.addEventListener('click', () => {
+      openRecordPayment(syncCurrent());
     });
 
     layer.querySelector('[data-record-view-confirmed]')?.addEventListener('click', () => {
