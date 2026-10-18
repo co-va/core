@@ -13,7 +13,6 @@ import {
   paymentForm,
   paymentMethods,
   select,
-  setRecordPrimaryAction,
   shortDate,
   workspaceHeaderContext,
 } from '../../ui/ui.js';
@@ -291,41 +290,46 @@ async function openPaymentAllocationLayer(parentLayer, record, settlement, onCom
     <div class="form-grid">
       ${datePicker({ label: 'Дата оплаты', name: 'recordPaymentDate', value: '', showYear: false, modalVariant: 'bottom', modalClassName: 'modal--form-sheet', modalSurface: 'app', allowClear: true })}
       ${paymentMethods({ wallets: getWallets(), deposits, personalAccount, total, showAction: false, showTotal: false })}
-    </div>`;
+    </div>
+    <div class="modal-actions" data-record-payment-allocation-primary></div>`;
   initDatePickers(host);
 
   let allocationState = null;
+  const primaryHost = host.querySelector('[data-record-payment-allocation-primary]');
   const syncPrimary = () => {
-    if (!allocationState?.valid) { setRecordPrimaryAction(layer); return; }
-    setRecordPrimaryAction(layer, {
-      label: 'Оплатить',
-      onClick: async () => {
-        const dateValue = String(host.querySelector('input[name="recordPaymentDate"]')?.value || '');
-        let completed = null;
-        try {
-          completed = await recordPaymentIncome({
-            source: { type: 'record', id: current.id },
-            workplace: workplaceName(current.workplaceId),
-            person: recordPerson(current),
-            settlement,
-            allocations: allocationState.allocations,
-            depositAllocations: allocationState.depositAllocations,
-            personalAccountAmount: allocationState.personalAccountAmount,
-            finalizeDebt: allocationState.remaining > 0.009,
-            maxAmount: total,
-            serviceAmount: allocationState.applied,
-            tips: allocationState.tips,
-            occurredAt: recordPaymentOccurredAt(current, dateValue),
-          });
-        } catch (error) {
-          openNotice({ message: String(error?.message || 'Не удалось провести оплату') });
-          return;
-        }
-        if (!completed) return;
-
-        layer.v2Close?.();
-        onCompleted?.(completed);
-      },
+    if (!primaryHost) return;
+    primaryHost.innerHTML = allocationState?.valid
+      ? button('Оплатить', { data: 'data-record-payment-allocation-submit' })
+      : '';
+    primaryHost.querySelector('[data-record-payment-allocation-submit]')?.addEventListener('click', async (event) => {
+      const submit = event.currentTarget;
+      submit.disabled = true;
+      const dateValue = String(host.querySelector('input[name="recordPaymentDate"]')?.value || '');
+      let completed = null;
+      try {
+        completed = await recordPaymentIncome({
+          source: { type: 'record', id: current.id },
+          workplace: workplaceName(current.workplaceId),
+          person: recordPerson(current),
+          settlement,
+          allocations: allocationState.allocations,
+          depositAllocations: allocationState.depositAllocations,
+          personalAccountAmount: allocationState.personalAccountAmount,
+          finalizeDebt: allocationState.remaining > 0.009,
+          maxAmount: total,
+          serviceAmount: allocationState.applied,
+          tips: allocationState.tips,
+          occurredAt: recordPaymentOccurredAt(current, dateValue),
+        });
+      } catch (error) {
+        openNotice({ message: String(error?.message || 'Не удалось провести оплату') });
+      }
+      if (!completed) {
+        if (submit.isConnected) submit.disabled = false;
+        return;
+      }
+      layer.v2Close?.();
+      onCompleted?.(completed);
     });
   };
 
@@ -354,31 +358,35 @@ async function openPaymentCorrection(parentLayer, record, payment, onSaved) {
     <div class="form-grid">
       ${datePicker({ label: 'Дата оплаты', name: 'recordPaymentCorrectionDate', value: paymentDateValue(payment), showYear: false, modalVariant: 'bottom', modalClassName: 'modal--form-sheet', modalSurface: 'app', allowClear: false })}
       ${paymentMethods({ wallets: getWallets(), deposits, total: serviceAmount, showAction: false, showTotal: false, initialAllocations, initialDepositAllocations })}
-    </div>`;
+    </div>
+    <div class="modal-actions" data-record-payment-correction-primary></div>`;
   initDatePickers(host);
 
   let allocationState = null;
+  const primaryHost = host.querySelector('[data-record-payment-correction-primary]');
   const syncPrimary = () => {
-    if (!allocationState?.valid) { setRecordPrimaryAction(layer); return; }
-    setRecordPrimaryAction(layer, {
-      label: 'Сохранить',
-      variant: 'secondary',
-      onClick: async () => {
-        const dateValue = String(host.querySelector('input[name="recordPaymentCorrectionDate"]')?.value || '');
-        try {
-          await correctFinanceOperation(payment.id, {
-            allocations: allocationState.allocations,
-            depositAllocations: allocationState.depositAllocations,
-            serviceAmount: allocationState.applied,
-            tips: allocationState.tips,
-            occurredAt: occurredAtForDate(dateValue, record, payment.occurredAt || payment.paidAt || new Date()),
-          });
-          layer.v2Close?.();
-          onSaved?.();
-        } catch (error) {
-          openNotice({ message: String(error?.message || 'Не удалось скорректировать оплату') });
-        }
-      },
+    if (!primaryHost) return;
+    primaryHost.innerHTML = allocationState?.valid
+      ? button('Сохранить', { variant: 'secondary', data: 'data-record-payment-correction-submit' })
+      : '';
+    primaryHost.querySelector('[data-record-payment-correction-submit]')?.addEventListener('click', async (event) => {
+      const submit = event.currentTarget;
+      submit.disabled = true;
+      const dateValue = String(host.querySelector('input[name="recordPaymentCorrectionDate"]')?.value || '');
+      try {
+        await correctFinanceOperation(payment.id, {
+          allocations: allocationState.allocations,
+          depositAllocations: allocationState.depositAllocations,
+          serviceAmount: allocationState.applied,
+          tips: allocationState.tips,
+          occurredAt: occurredAtForDate(dateValue, record, payment.occurredAt || payment.paidAt || new Date()),
+        });
+        layer.v2Close?.();
+        onSaved?.();
+      } catch (error) {
+        openNotice({ message: String(error?.message || 'Не удалось скорректировать оплату') });
+        if (submit.isConnected) submit.disabled = false;
+      }
     });
   };
 
@@ -529,7 +537,6 @@ function renderPaymentLayer(layer, recordId) {
   const settlement = payment.settlement;
   const host = layer.querySelector('[data-record-payment-q-host]');
   if (!host) { layer.v2Close?.(); return; }
-  setRecordPrimaryAction(layer);
   host.innerHTML = `${paymentForm({
     workplace: payment.workplace,
     date: payment.date,
