@@ -1,4 +1,4 @@
-.record-screen{width:100%;min-height:100%;padding:0 18px 28px}.record-screen--state-view{padding-top:8px;display:grid;gap:8px}.record-screen--record-view{display:flex;flex-direction:column;gap:8px;padding-bottom:calc(140px + env(safe-area-inset-bottom))}.record-view-actions{position:absolute;z-index:5;left:36px;right:36px;bottom:calc(24px + env(safe-area-inset-bottom));display:grid;gap:8px}.record-screen--time{display:flex;flex-direction:column;justify-content:flex-start}.record-screen--procedures,.record-screen--people{display:flex;flex-direction:column}.record-time-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.record-time-toolbar strong{font-size:23px}.record-person-list{display:grid;gap:10px}@media (max-width:360px){.record-screen{padding-left:14px;padding-right:14px}.record-view-actions{left:32px;right:32px}}
+.record-screen{width:100%;min-height:100%;padding:0 18px 28px}.record-screen--state-view{padding-top:8px;display:grid;gap:8px}.record-screen--record-view{display:flex;flex-direction:column;gap:8px}.record-screen--time{display:flex;flex-direction:column;justify-content:flex-start}.record-screen--procedures,.record-screen--people{display:flex;flex-direction:column}.record-time-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.record-time-toolbar strong{font-size:23px}.record-person-list{display:grid;gap:10px}@media (max-width:360px){.record-screen{padding-left:14px;padding-right:14px}}
 
 .record-confirmation-view{display:grid;gap:20px;width:100%;min-width:0}
 .record-confirmation-view__card{display:flex;justify-content:center;width:100%;min-width:0}
@@ -39,7 +39,6 @@
 
 .record-creation-flow{height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:12px}
 .record-creation-flow__title{margin:0}.record-creation-flow__title h2{margin:0;font-size:20px;line-height:1.2;font-weight:650;letter-spacing:0}.record-creation-flow__body{min-height:0;overflow:auto;overscroll-behavior:contain}.record-creation-flow__action:empty{display:none}
-.record-creation-flow__actions{display:grid;gap:8px;padding-bottom:max(0px,env(safe-area-inset-bottom))}
 .record-creation-time-rows{display:grid;gap:14px}.record-creation-time-row{display:grid;gap:8px}
 [data-record-creation-step="date"] .record-creation-flow__body{overflow:hidden}
 [data-record-creation-step="person"] .record-screen--people{height:100%;min-height:0;padding:0}[data-record-creation-step="person"] .record-person-list{min-height:0;overflow:auto}
