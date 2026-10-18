@@ -374,56 +374,54 @@ async function openPaymentAllocationLayer(record, settlement, onCompleted) {
       ${datePicker({ label: 'Дата оплаты', name: 'recordPaymentDate', value: '', showYear: false, modalVariant: 'bottom', modalClassName: 'modal--form-sheet', modalSurface: 'app', allowClear: true })}
       ${paymentMethods({ wallets: getWallets(), deposits, personalAccount, total, showAction: false, showTotal: false })}
     </div>
-    <div class="modal-actions" data-record-payment-allocation-primary></div>`;
+    ${actionBlock(button('Оплатить', { data: 'data-record-payment-allocation-submit', disabled: true }))}`;
   initDatePickers(host);
 
   let allocationState = null;
-  const primaryHost = host.querySelector('[data-record-payment-allocation-primary]');
+  const submit = host.querySelector('[data-record-payment-allocation-submit]');
   const syncPrimary = () => {
-    if (!primaryHost) return;
-    primaryHost.innerHTML = allocationState?.valid
-      ? button('Оплатить', { data: 'data-record-payment-allocation-submit' })
-      : '';
-    primaryHost.querySelector('[data-record-payment-allocation-submit]')?.addEventListener('click', async (event) => {
-      const submit = event.currentTarget;
-      submit.disabled = true;
-      const latest = getRecord(current.id) || current;
-      if (paymentStateForRecord(latest).hasPayments || paymentInFlightRecords.has(recordId)) {
-        layer.v2Close?.();
-        onCompleted?.();
-        return;
-      }
-      const dateValue = String(host.querySelector('input[name="recordPaymentDate"]')?.value || '');
-      let completed = null;
-      paymentInFlightRecords.add(recordId);
-      try {
-        completed = await recordPaymentIncome({
-          source: { type: 'record', id: current.id },
-          workplace: workplaceName(current.workplaceId),
-          person: recordPerson(current),
-          settlement,
-          allocations: allocationState.allocations,
-          depositAllocations: allocationState.depositAllocations,
-          personalAccountAmount: allocationState.personalAccountAmount,
-          finalizeDebt: allocationState.remaining > 0.009,
-          maxAmount: total,
-          serviceAmount: allocationState.applied,
-          tips: allocationState.tips,
-          occurredAt: recordPaymentOccurredAt(current, dateValue),
-        });
-      } catch (error) {
-        openNotice({ message: String(error?.message || 'Не удалось провести оплату') });
-      } finally {
-        paymentInFlightRecords.delete(recordId);
-      }
-      if (!completed) {
-        if (submit.isConnected) submit.disabled = false;
-        return;
-      }
-      layer.v2Close?.();
-      onCompleted?.(completed);
-    });
+    if (submit) submit.disabled = !allocationState?.valid;
   };
+
+  submit?.addEventListener('click', async () => {
+    if (!allocationState?.valid) return;
+    submit.disabled = true;
+    const latest = getRecord(current.id) || current;
+    if (paymentStateForRecord(latest).hasPayments || paymentInFlightRecords.has(recordId)) {
+      layer.v2Close?.();
+      onCompleted?.();
+      return;
+    }
+    const dateValue = String(host.querySelector('input[name="recordPaymentDate"]')?.value || '');
+    let completed = null;
+    paymentInFlightRecords.add(recordId);
+    try {
+      completed = await recordPaymentIncome({
+        source: { type: 'record', id: current.id },
+        workplace: workplaceName(current.workplaceId),
+        person: recordPerson(current),
+        settlement,
+        allocations: allocationState.allocations,
+        depositAllocations: allocationState.depositAllocations,
+        personalAccountAmount: allocationState.personalAccountAmount,
+        finalizeDebt: allocationState.remaining > 0.009,
+        maxAmount: total,
+        serviceAmount: allocationState.applied,
+        tips: allocationState.tips,
+        occurredAt: recordPaymentOccurredAt(current, dateValue),
+      });
+    } catch (error) {
+      openNotice({ message: String(error?.message || 'Не удалось провести оплату') });
+    } finally {
+      paymentInFlightRecords.delete(recordId);
+    }
+    if (!completed) {
+      if (submit.isConnected) submit.disabled = !allocationState?.valid;
+      return;
+    }
+    layer.v2Close?.();
+    onCompleted?.(completed);
+  });
 
   initPaymentMethods(host.querySelector('[data-payment-methods]'), {
     onChange: (next) => { allocationState = next; syncPrimary(); },
