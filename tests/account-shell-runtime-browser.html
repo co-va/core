@@ -10,6 +10,7 @@
   </style>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/ui/v2/v2.css">
+  <link rel="stylesheet" href="/ui/v2/v.css">
   <link rel="stylesheet" href="/ui/v2/surface-header.css">
   <link rel="stylesheet" href="/ui/v2/horizontal-affordance.css">
 </head>
@@ -158,7 +159,9 @@ mark('contact-shared-ui-regressions');
 const contactZHeader = contactZ?.querySelector(':scope > [data-v2-z-header]');
 ok(Boolean(contactZHeader), 'Contact Z must render the Shared Z Header on first open');
 ok(getComputedStyle(contactZHeader).minHeight === '40px', 'Empty root Z Header must stay thin and visible on first open');
-ok(Boolean(root.querySelector('[data-v2-header] .v2-header__settings-tag')), 'Contact A must keep the settings badge when settings/documents are available');
+ok(Boolean(root.querySelector('[data-v2-header] .v2-header__v')), 'Contact V must expose additional actions when settings/documents are available');
+ok(Boolean(root.querySelector('[data-v2-header] .v2-header__slot--a .v2-header__control:disabled')), 'Contact A must remain visual-only and non-interactive');
+ok(!root.querySelector('[data-v2-header] .v2-header__settings-tag'), 'Contact A must not retain the old settings badge');
 const financeSectionTitle = [...(contactZ?.querySelectorAll('.v2-section__title') || [])]
   .find((node) => node.textContent.trim().toLocaleLowerCase('ru-RU') === 'инвестиции / займы');
 const continuationCue = financeSectionTitle ? getComputedStyle(financeSectionTitle, '::after').content : '';
