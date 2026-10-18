@@ -1,5 +1,6 @@
 import { button } from '../buttons/index.js';
 import { modal, mountModal } from '../modals/index.js';
+import { actionBlock } from '../page/page.js';
 import { timeSlots } from '../time/index.js';
 
 const STEP_TITLES = {
@@ -111,7 +112,7 @@ export function openRecordCreationOwner({ onCancel = () => {} } = {}) {
         })
       : '';
     actionHost.innerHTML = secondary || primary
-      ? `<div class="record-creation-flow__actions">${secondary}${primary}</div>`
+      ? actionBlock(`${secondary}${primary}`)
       : '';
     return {
       layer,
