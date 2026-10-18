@@ -17,7 +17,6 @@ import {
 } from '../../ui/ui.js';
 import {
   calculateSettlement,
-  cancelPaymentOperation,
   correctFinanceOperation,
   getRecordPaymentState,
   getRefundsForPayment,
@@ -62,7 +61,7 @@ async function saveSettlementCorrection(record, settlement) {
   const current = getRecord(record?.id) || record;
   const state = paymentStateForRecord(current);
   if (Number(settlement?.planTotal || 0) + 0.009 < Number(state?.paidTotal || 0)) {
-    openNotice({ message: 'Расчёт нельзя уменьшить ниже уже оплаченной суммы. Сначала выполните возврат или отмените ошибочную оплату.' });
+    openNotice({ message: 'Расчёт нельзя уменьшить ниже уже оплаченной суммы. Сначала выполните возврат.' });
     return null;
   }
   try {
@@ -467,30 +466,6 @@ function openPaymentRefund(record, payment, onSaved) {
   return layer;
 }
 
-function openPaymentCancellation(record, payment, onSaved) {
-  if (!payment?.id) return null;
-  const layer = mountModal(document.body, modal(
-    `<div class="compact-form">
-      ${datePicker({ label: 'Дата отмены', name: 'recordPaymentCancelDate', value: paymentDateValue(record, new Date()), showYear: false, modalVariant: 'bottom', modalClassName: 'modal--form-sheet', modalSurface: 'app', allowClear: false })}
-      ${button('Отменить оплату', { variant: 'danger', data: 'data-record-payment-cancel-confirm' })}
-    </div>`,
-    { variant: 'x', surface: 'app', title: 'Отмена оплаты', className: 'modal--form-sheet' },
-  ));
-  if (!layer) return null;
-  initDatePickers(layer);
-  layer.querySelector('[data-record-payment-cancel-confirm]')?.addEventListener('click', async () => {
-    const dateValue = String(layer.querySelector('input[name="recordPaymentCancelDate"]')?.value || '');
-    try {
-      await cancelPaymentOperation(payment.id, { reason: 'incorrect-entry', occurredAt: occurredAtForDate(dateValue, record) });
-      layer.v2Close?.();
-      onSaved?.();
-    } catch (error) {
-      openNotice({ message: String(error?.message || 'Не удалось отменить оплату') });
-    }
-  });
-  return layer;
-}
-
 function openPaymentDeletion(payment, onSaved) {
   if (!payment?.id) return null;
   const layer = mountModal(document.body, modal(
@@ -515,7 +490,6 @@ function paymentActionsBody(state) {
   return actionBlock([
     button('Корректировка оплаты', { variant: 'secondary', data: 'data-record-payment-correct' }),
     button('Возврат', { variant: 'danger', data: 'data-record-payment-refund' }),
-    button('Отмена оплаты', { variant: 'danger', data: 'data-record-payment-cancel' }),
     button('Удаление оплаты', { variant: 'critical', data: 'data-record-payment-delete' }),
   ].join(''), { className: 'record-payment-actions' });
 }
@@ -525,7 +499,6 @@ function bindPaymentBodyActions(host, record, state, rerender) {
   if (!payment) return;
   host.querySelector('[data-record-payment-correct]')?.addEventListener('click', () => openPaymentCorrection(record, payment, rerender));
   host.querySelector('[data-record-payment-refund]')?.addEventListener('click', () => openPaymentRefund(record, payment, rerender));
-  host.querySelector('[data-record-payment-cancel]')?.addEventListener('click', () => openPaymentCancellation(record, payment, rerender));
   host.querySelector('[data-record-payment-delete]')?.addEventListener('click', () => openPaymentDeletion(payment, rerender));
 }
 
