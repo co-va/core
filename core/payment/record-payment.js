@@ -557,6 +557,7 @@ function renderPaymentLayer(layer, recordId) {
   const settlement = payment.settlement;
   const host = layer.querySelector('[data-record-payment-q-host]');
   if (!host) { layer.v2Close?.(); return; }
+  setRecordPrimaryAction(layer);
   host.innerHTML = `${paymentForm({
     workplace: payment.workplace,
     date: payment.date,
@@ -565,15 +566,29 @@ function renderPaymentLayer(layer, recordId) {
     procedures: paymentItems(settlement),
     total: state.remaining,
     showActions: false,
-  })}${paymentActionsBody(state)}`;
+  })}<div class="modal-actions" data-record-payment-primary></div>${paymentActionsBody(state)}`;
   const rerender = () => {
     if (layer.isConnected) renderPaymentLayer(layer, current.id);
   };
   bindPaymentBodyActions(host, layer, current, state, rerender);
   let formState = { settlement, total: state.remaining, dirty: false };
+  const primaryHost = host.querySelector('[data-record-payment-primary]');
+  const renderPrimary = ({ label = '', variant = '', onClick = null } = {}) => {
+    if (!primaryHost) return;
+    primaryHost.innerHTML = label ? button(label, { variant, data: 'data-record-payment-primary-action' }) : '';
+    const primary = primaryHost.querySelector('[data-record-payment-primary-action]');
+    primary?.addEventListener('click', async () => {
+      primary.disabled = true;
+      try {
+        await onClick?.();
+      } finally {
+        if (primary.isConnected) primary.disabled = false;
+      }
+    });
+  };
   const syncPrimary = () => {
     if (formState.dirty) {
-      setRecordPrimaryAction(layer, {
+      renderPrimary({
         label: 'Сохранить',
         variant: 'secondary',
         onClick: async () => {
@@ -583,9 +598,11 @@ function renderPaymentLayer(layer, recordId) {
       });
       return;
     }
-    const canPay = state.remaining > 0.009 || state.fullyPaid;
-    if (!canPay) { setRecordPrimaryAction(layer); return; }
-    setRecordPrimaryAction(layer, {
+    if (state.remaining <= 0.009 || state.fullyPaid) {
+      renderPrimary();
+      return;
+    }
+    renderPrimary({
       label: 'Оплатить',
       onClick: () => openPaymentAllocationLayer(layer, current, formState.settlement, () => {
         layer.v2Close?.();
