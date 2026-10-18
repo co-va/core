@@ -1,7 +1,7 @@
 import { floatingSettingsButton } from './index.js';
 
 const BUTTON_SELECTOR = '[data-floating-settings-button]';
-const SETTINGS_SOURCE_SELECTOR = '[data-workspace-context-action][data-workspace-a-kind="settings"]';
+const CONTEXT_SOURCE_SELECTOR = '[data-workspace-context-action], .page-header__meta button';
 
 function workspaceShell() {
   return document.querySelector('#app > [data-v2-app].v2-app--workspace');
@@ -20,8 +20,9 @@ function activeZ(shell) {
 }
 
 function settingsSource(surface) {
-  const source = surface?.querySelector(SETTINGS_SOURCE_SELECTOR) || null;
-  if (!source || source.disabled || source.dataset.floatingSettings === 'false') return null;
+  const source = surface?.querySelector(CONTEXT_SOURCE_SELECTOR) || null;
+  const kind = String(source?.dataset.workspaceAKind || '');
+  if (!source || (kind && kind !== 'settings') || source.disabled || source.dataset.floatingSettings === 'false') return null;
   return source;
 }
 
