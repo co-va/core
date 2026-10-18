@@ -8,6 +8,7 @@ function workspaceShell() {
 }
 
 function primarySettingsSource(shell) {
+  if (shell?.querySelector('[data-v2-z-layer]')) return null;
   const surface = shell?.querySelector('[data-v2-workspace-surface]');
   if (!surface) return null;
   const source = surface.querySelector(SETTINGS_SOURCE_SELECTOR);
