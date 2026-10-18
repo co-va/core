@@ -84,6 +84,7 @@ const paymentSource = readFileSync(new URL('../ui/payment/index.js', import.meta
 const methodsSource = readFileSync(new URL('../ui/payment/methods.js', import.meta.url), 'utf8');
 const paymentCss = readFileSync(new URL('../ui/payment/payment.css', import.meta.url), 'utf8');
 const modalCss = readFileSync(new URL('../ui/modals/modal.css', import.meta.url), 'utf8');
+const buttonsCss = readFileSync(new URL('../ui/buttons/buttons.css', import.meta.url), 'utf8');
 const recordCss = readFileSync(new URL('../ui/record/record.css', import.meta.url), 'utf8');
 const pageSource = readFileSync(new URL('../ui/page/page.js', import.meta.url), 'utf8');
 const financeServiceSource = readFileSync(new URL('../core/finance/service.js', import.meta.url), 'utf8');
@@ -110,7 +111,9 @@ assert.match(modalCss, /\[data-v2-q-body\]/);
 assert.match(modalCss, /\.record-view-actions/);
 assert.match(modalCss, /\.record-creation-flow__actions/);
 assert.match(modalCss, /left:36px;right:36px/);
-assert.match(modalCss, /height:48px;min-height:48px/);
+assert.match(buttonsCss, /height:48px;min-height:48px/);
+assert.match(buttonsCss, /\.record-view-actions/);
+assert.match(buttonsCss, /\.record-creation-flow__actions/);
 assert.match(modalCss, /bottom:calc\(24px \+ env\(safe-area-inset-bottom\)\)/);
 
 for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'hardDeleteFinanceOperation', 'recordRefundExpense', 'recordPaymentIncome']) {
