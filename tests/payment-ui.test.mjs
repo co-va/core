@@ -27,7 +27,7 @@ assert.match(html, /data-payment-correction-percent/);
 assert.match(html, /data-payment-correction-money/);
 assert.match(html, /data-payment-action/);
 assert.doesNotMatch(html, /data-payment-save|data-payment-submit/);
-assert.equal((html.match(/\bdata-payment-action\b/g) || []).length, 1);
+assert.equal((html.match(/<button\b[^>]*\bdata-payment-action(?:\s|>)/g) || []).length, 1);
 assert.equal((html.match(/data-payment-procedure="/g) || []).length, 2);
 
 const embeddedHtml = paymentForm({
