@@ -209,7 +209,7 @@ function applySettlement(root, settlement = null, { preserve = null, paidTotal =
   });
   const summary = root.querySelector('[data-payment-summary]');
   if (summary) {
-    summary.innerHTML = paymentSummary({
+    const nextMarkup = paymentSummary({
       workplace: root.dataset.paymentWorkplace || '',
       date: root.dataset.paymentDate || '',
       time: root.dataset.paymentTime || '',
@@ -219,6 +219,15 @@ function applySettlement(root, settlement = null, { preserve = null, paidTotal =
       },
       total: Math.max(0, numberValue(settlement?.planTotal) - Math.max(0, numberValue(paidTotal))),
     });
+    const currentWrap = summary.querySelector('.payment-summary-mini-card-wrap');
+    if (currentWrap) {
+      const template = document.createElement('template');
+      template.innerHTML = nextMarkup;
+      const nextWrap = template.content.querySelector('.payment-summary-mini-card-wrap');
+      if (nextWrap) currentWrap.replaceChildren(...nextWrap.childNodes);
+    } else {
+      summary.innerHTML = nextMarkup;
+    }
   }
 }
 
