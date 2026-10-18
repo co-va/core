@@ -5,7 +5,7 @@ import { readOnlyReceipt } from '../ui/receipt/index.js';
 import { canUseBookCapability } from '../core/access.js';
 import { getWorkplaces } from '../core/workplace-time.js';
 import { getActiveDayWorkplaces } from '../core/day/index.js';
-import { recordAmountDue } from '../core/finance/index.js';
+import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { makeTimetableDayOff, openTimetableDayTimeEditor } from '../timetable/day-editor.js';
 import { getActiveRecordCountForDay, getRecordsForDay } from '../core/record/index.js';
 import { openJournalWorkplaceControl } from './workplace-control.js';
@@ -34,6 +34,35 @@ function dateKey(date) {
 function formatRubles(value = 0) {
   const amount = Math.max(0, Math.round(Number(value) || 0));
   return `${amount.toLocaleString('ru-RU').replaceAll('\u00a0', ' ')} р.`;
+}
+
+function formatNumber(value = 0) {
+  const number = Math.max(0, Number(value) || 0);
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(number).replaceAll('\u00a0', ' ');
+}
+
+function timeMinutes(value = '') {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function recordDurationHours(record = null) {
+  const from = timeMinutes(record?.from);
+  const to = timeMinutes(record?.to);
+  if (from == null || to == null || to <= from) return 0;
+  return (to - from) / 60;
+}
+
+function recordHasEnded(record = null, now = new Date()) {
+  const date = String(record?.date || '').slice(0, 10);
+  const to = String(record?.to || record?.from || '').slice(0, 5);
+  if (!date || !/^\d{2}:\d{2}$/.test(to)) return false;
+  const end = new Date(`${date}T${to}:00`);
+  return Number.isFinite(end.getTime()) && now.getTime() >= end.getTime();
 }
 
 export function renderJournal(root, options = {}) {
@@ -123,17 +152,44 @@ export function renderJournal(root, options = {}) {
     const records = getRecordsForDay(day, allMode ? '' : selectedWorkplaceId)
       .filter((record) => record?.status !== 'cancelled');
     const procedureCount = records.reduce((sum, record) => sum + (Array.isArray(record?.procedures) ? record.procedures.length : 0), 0);
+    const hours = records.reduce((sum, record) => sum + recordDurationHours(record), 0);
     const total = records.reduce((sum, record) => sum + recordAmountDue(record), 0);
-    const average = records.length ? total / records.length : 0;
+    const averageRecord = records.length ? total / records.length : 0;
+    const averageProcedure = procedureCount ? total / procedureCount : 0;
+    const averageHour = hours ? total / hours : 0;
+    const paymentStates = records.map((record) => ({ record, state: getRecordPaymentState(record) }));
+    const paidTotal = paymentStates.reduce((sum, item) => sum + Math.max(0, Number(item.state?.paidTotal) || 0), 0);
+    const outstanding = paymentStates.filter((item) => Math.max(0, Number(item.state?.remaining) || 0) > 0.009);
+    const dueTotal = outstanding
+      .filter((item) => !recordHasEnded(item.record))
+      .reduce((sum, item) => sum + Math.max(0, Number(item.state?.remaining) || 0), 0);
+    const debtTotal = outstanding
+      .filter((item) => recordHasEnded(item.record))
+      .reduce((sum, item) => sum + Math.max(0, Number(item.state?.remaining) || 0), 0);
     const dateLabel = selectedDate.toLocaleDateString('ru-RU');
     const workplaceLabel = allMode ? 'Все пространства' : journalTitle();
-    const groups = [[
-      { label: workplaceLabel, value: dateLabel },
-      { label: 'Кол-во записей:', value: String(records.length) },
-      { label: 'Кол-во процедур:', value: String(procedureCount) },
-      { label: 'Сумма:', value: formatRubles(total) },
-      { label: 'Средний чек:', value: formatRubles(average) },
-    ]];
+    const statusRows = records.length
+      ? (outstanding.length === 0
+        ? [{ label: 'Статус', value: 'Оплачено' }]
+        : [
+          { label: 'Оплачено', value: formatRubles(paidTotal) },
+          dueTotal > 0.009 ? { label: 'К оплате', value: formatRubles(dueTotal) } : null,
+          debtTotal > 0.009 ? { label: 'Задолженность', value: formatRubles(debtTotal) } : null,
+        ].filter(Boolean))
+      : [];
+    const groups = [
+      [
+        { label: workplaceLabel, value: dateLabel },
+        { label: 'Кол-во записей', value: String(records.length) },
+        { label: 'Кол-во процедур', value: String(procedureCount) },
+        { label: 'Кол-во часов', value: formatNumber(hours) },
+        { label: 'Средний чек записи', value: formatRubles(averageRecord) },
+        { label: 'Средний чек процедуры', value: formatRubles(averageProcedure) },
+        { label: 'Средний чек часа', value: formatRubles(averageHour) },
+      ],
+      statusRows,
+      [{ label: 'Сумма', value: formatRubles(total), strong: true }],
+    ];
     mountModal(document.body, modal(readOnlyReceipt({
       title: 'Z - Отчет',
       groups,
