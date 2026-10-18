@@ -25,8 +25,9 @@ assert.match(html, /data-payment-price/);
 assert.match(html, /data-payment-price-condition/);
 assert.match(html, /data-payment-correction-percent/);
 assert.match(html, /data-payment-correction-money/);
-assert.match(html, /data-payment-save/);
-assert.match(html, /data-payment-submit/);
+assert.match(html, /data-payment-action/);
+assert.doesNotMatch(html, /data-payment-save|data-payment-submit/);
+assert.equal((html.match(/<button\b[^>]*\bdata-payment-action(?:\s|>)/g) || []).length, 1);
 assert.equal((html.match(/data-payment-procedure="/g) || []).length, 2);
 
 const embeddedHtml = paymentForm({
@@ -36,7 +37,7 @@ const embeddedHtml = paymentForm({
   total: 1000,
   showActions: false,
 });
-assert.doesNotMatch(embeddedHtml, /data-payment-save|data-payment-submit/);
+assert.doesNotMatch(embeddedHtml, /data-payment-action/);
 
 const automaticPercent = calculateSettlement([{ sourceId: 'p1', name: 'Стрижка', price: 5000 }], { pricePercent: 20 });
 assert.equal(automaticPercent.planTotal, 4000);
@@ -92,9 +93,11 @@ assert.match(paymentSource, /data-payment-correction-mode/);
 assert.match(paymentSource, /data-payment-price-percent/);
 assert.match(paymentSource, /miniCard/);
 assert.match(paymentSource, /v2ZBodySections/);
+assert.match(paymentSource, /dirty \? 'Сохранить' : 'Оплатить'/);
 assert.match(methodsSource, /const tips = Math\.max\(0, cashReceived - serviceFromCash\)/);
 assert.match(methodsSource, /readOnlyReceipt/);
 assert.match(paymentCss, /\.payment-edit-grid\{display:grid/);
+assert.match(paymentCss, /data-payment-ui\]>\.modal-actions\{position:absolute/);
 
 for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'hardDeleteFinanceOperation', 'recordRefundExpense', 'recordPaymentIncome']) {
   assert.match(financeServiceSource, new RegExp(`export async function ${command}`));
@@ -103,6 +106,7 @@ for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'har
 assert.doesNotMatch(journalDaySource, /openRecordPaymentEntry|openRecordPayment/);
 assert.match(recordViewSource, /import \{ openRecordPayment \} from '\.\.\/payment\/record-payment\.js'/);
 assert.match(recordViewSource, /data-record-view-payment/);
+assert.match(recordViewSource, /К оплате: \$\{formatMoney\(payment\.remaining\)\}/);
 assert.match(recordViewSource, /openRecordPayment\(syncCurrent\(\)\)/);
 assert.doesNotMatch(recordViewSource, /paymentForm|paymentMethods|recordPaymentIncome/);
 assert.match(paymentMechanismSource, /export function openRecordPayment\(record\)/);

@@ -15,4 +15,6 @@
 .payment-item-head__remove:active{background:var(--active)}
 .payment-edit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end}
 .record-payment-actions{align-self:start}
-@media(max-width:360px){.payment-edit-grid{gap:4px}}
+.record-payment-q [data-v2-q-body]{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+.record-payment-q [data-payment-ui]>.modal-actions{position:absolute;z-index:5;left:36px;right:36px;bottom:calc(24px + env(safe-area-inset-bottom))}
+@media(max-width:360px){.payment-edit-grid{gap:4px}.record-payment-q [data-payment-ui]>.modal-actions{left:32px;right:32px}}
