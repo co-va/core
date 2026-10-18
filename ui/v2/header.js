@@ -7,9 +7,10 @@ function defaultChatBadge() {
 }
 
 function vControl(slot = {}, role = '') {
-  const settingsIntent = role === 'a' && slot.settingsTag;
-  const actionIntent = Boolean(slot?.data);
-  if (role !== 'a' || !slot || slot.hidden || slot.disabled || (!settingsIntent && !actionIntent)) return '';
+  if (role !== 'a' || !slot || slot.hidden || slot.disabled) return '';
+  const settingsIntent = Boolean(slot.settingsTag);
+  const actionIntent = Boolean(slot.data);
+  if (!settingsIntent && !actionIntent) return '';
   const aria = text(slot.aria || 'Дополнительные действия');
   return `<button type="button" class="v2-header__v"${dataAttributes(slot.data)} aria-label="${aria}">
     <svg class="v2-header__v-medallion" viewBox="0 0 40 40" aria-hidden="true">
