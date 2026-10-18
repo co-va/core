@@ -205,7 +205,7 @@ export function renderJournal(root, options = {}) {
       { label: 'Средний чек записи', value: formatRubles(averageRecord) },
       { label: 'Средний чек процедуры', value: formatRubles(averageProcedure) },
       { label: 'Средний чек часа', value: formatRubles(averageHour) },
-      isMonth ? { label: 'Средний чек рабочего дня', value: formatRubles(averageWorkingDay) } : null,
+      isMonth ? { label: 'Средний чек за рабочий день', value: formatRubles(averageWorkingDay) } : null,
     ].filter(Boolean);
     const groups = [
       summaryRows,
