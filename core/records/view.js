@@ -14,6 +14,7 @@ import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, recordAmountDue } from '../finance/index.js';
 import { openRecordPayment } from '../payment/record-payment.js';
+import { openRecordSale } from '../sale/sale.js';
 import {
   cancelRecord,
   deleteRecord,
@@ -227,6 +228,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     scheduleStartRender(source);
     const person = personDisplay(source.person || {});
     const procedures = Array.isArray(source.procedures) ? source.procedures : [];
+    const products = Array.isArray(source.products) ? source.products : [];
     const totalDuration = procedures.reduce((sum, item) => sum + (Number(item?.duration) || 0), 0);
     const payment = getRecordPaymentState(source);
     const discountPercent = Number(source?.finance?.discountPercent || 0);
@@ -241,11 +243,17 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       duration: durationText(totalDuration || 30),
       discount: discountPercent > 0 ? `${discountPercent}%` : '0%',
       total: formatMoney(recordAmountDue(source)),
-      procedures: procedures.map((item) => ({
-        name: item?.name || '',
-        durationText: durationText(Number(item?.duration) || 0),
-        right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
-      })),
+      procedures: [
+        ...procedures.map((item) => ({
+          name: item?.name || '',
+          durationText: durationText(Number(item?.duration) || 0),
+          right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
+        })),
+        ...products.map((item) => ({
+          name: item?.name || '',
+          right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
+        })),
+      ],
     });
 
     const started = hasAppointmentStarted(source);
@@ -259,9 +267,12 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     </div>`;
     setV2ZHeaderRows(layer, [confirmedControl, attendanceControl]);
 
-    root.innerHTML = `<div class="record-screen record-screen--state-view">
+    root.innerHTML = `<div class="record-screen record-screen--state-view record-screen--record-view">
       <div role="button" tabindex="0" data-record-view-actions>${card}</div>
-      ${button(payment.fullyPaid ? 'Оплачено' : 'К оплате', { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' })}
+      <div class="record-view-actions">
+        ${payment.fullyPaid ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' })}
+        ${button(payment.fullyPaid ? 'Оплачено' : 'К оплате', { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' })}
+      </div>
     </div>`;
     const cardButton = root.querySelector('[data-record-view-actions]');
     cardButton?.addEventListener('click', openActions);
@@ -269,6 +280,14 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       openActions();
+    });
+    root.querySelector('[data-record-view-sale]')?.addEventListener('click', () => {
+      openRecordSale(syncCurrent(), {
+        onSaved: (saved) => {
+          currentRecord = saved;
+          render();
+        },
+      });
     });
     root.querySelector('[data-record-view-payment]')?.addEventListener('click', () => {
       openRecordPayment(syncCurrent());
