@@ -4,13 +4,13 @@
 .modal-title--action{display:flex;align-items:center;justify-content:space-between;gap:12px}.modal-title--action .ui-info{flex:0 0 auto}
 .modal-actions{display:grid;gap:8px}.compact-form{display:grid;gap:12px}.compact-form .modal-title{margin-bottom:2px}
 
-/* Shared Z/Q bottom action layout contract. */
-:is([data-v2-z-body],[data-v2-q-body]):has(:is(.modal-actions,.record-view-actions,.record-creation-flow__actions)>.ui-button){padding-bottom:calc(80px + env(safe-area-inset-bottom))}
-:is([data-v2-z-body],[data-v2-q-body]):has(:is(.modal-actions,.record-view-actions,.record-creation-flow__actions)>.ui-button:nth-child(2)){padding-bottom:calc(136px + env(safe-area-inset-bottom))}
-:is([data-v2-z-body],[data-v2-q-body]):has(:is(.modal-actions,.record-view-actions,.record-creation-flow__actions)>.ui-button:nth-child(3)){padding-bottom:calc(192px + env(safe-area-inset-bottom))}
-:is([data-v2-z-body],[data-v2-q-body]):has(:is(.modal-actions,.record-view-actions,.record-creation-flow__actions)>.ui-button:nth-child(4)){padding-bottom:calc(248px + env(safe-area-inset-bottom))}
-:is([data-v2-z-body],[data-v2-q-body]) :is(.modal-actions,.record-view-actions,.record-creation-flow__actions){position:absolute;z-index:5;left:36px;right:36px;bottom:calc(24px + env(safe-area-inset-bottom));box-sizing:border-box;display:grid;gap:8px;margin:0;padding:0}
-@media(max-width:360px){:is([data-v2-z-body],[data-v2-q-body]) :is(.modal-actions,.record-view-actions,.record-creation-flow__actions){left:32px;right:32px}}
+/* Shared Z/Q action placement. Button geometry remains owned only by ui/buttons. */
+:is([data-v2-z-body],[data-v2-q-body]):has(.modal-actions>:first-child){padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+:is([data-v2-z-body],[data-v2-q-body]):has(.modal-actions>:nth-child(2)){padding-bottom:calc(136px + env(safe-area-inset-bottom))}
+:is([data-v2-z-body],[data-v2-q-body]):has(.modal-actions>:nth-child(3)){padding-bottom:calc(192px + env(safe-area-inset-bottom))}
+:is([data-v2-z-body],[data-v2-q-body]):has(.modal-actions>:nth-child(4)){padding-bottom:calc(248px + env(safe-area-inset-bottom))}
+:is([data-v2-z-body],[data-v2-q-body]) .modal-actions{position:absolute;z-index:5;left:36px;right:36px;bottom:calc(24px + env(safe-area-inset-bottom));box-sizing:border-box;margin:0;padding:0}
+@media(max-width:360px){:is([data-v2-z-body],[data-v2-q-body]) .modal-actions{left:32px;right:32px}}
 
 .modal-sheet input,.modal-sheet select,.modal-sheet textarea{font-size:16px;max-width:100%;min-width:0}.modal-sheet input:focus,.modal-sheet select:focus,.modal-sheet textarea:focus{font-size:16px}
 .modal-sheet.modal--surface-app{background:var(--app-bg)}
