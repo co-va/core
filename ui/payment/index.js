@@ -78,8 +78,8 @@ function paymentProcedureBlock(procedure, index) {
     <div class="payment-edit-grid">
       ${field({ label: 'Цена', value: moneyText(price), type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-price' })}
       ${pricePercent > 0 ? field({ label: 'Условие', value: `${percentText(pricePercent)}%`, disabled: true, data: 'data-payment-price-condition' }) : ''}
-      ${select({ label: 'Ручная коррекция цены, %', value: correction.mode === 'percent' ? percentText(correction.percent) : '', options: percentOptions, className: 'ui-select--center', data: 'data-payment-correction-percent', aria: 'Ручная коррекция цены в процентах' })}
-      ${field({ label: 'Ручная коррекция цены, ₽', value: correction.mode === 'money' ? moneyText(correction.money) : '', type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-correction-money' })}
+      ${select({ label: 'Скидка %', value: correction.mode === 'percent' ? percentText(correction.percent) : '', options: percentOptions, className: 'ui-select--center', data: 'data-payment-correction-percent', aria: 'Скидка в процентах' })}
+      ${field({ label: 'Скидка ₽', value: correction.mode === 'money' ? moneyText(correction.money) : '', type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-correction-money' })}
     </div>
   </div>`;
 }

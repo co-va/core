@@ -544,65 +544,40 @@ function renderPaymentLayer(layer, recordId) {
     person: payment.person || {},
     procedures: paymentItems(settlement),
     total: state.remaining,
-    showActions: false,
-  })}<div class="modal-actions" data-record-payment-primary></div>${paymentActionsBody(state)}`;
+    showActions: !state.hasPayments,
+  })}${paymentActionsBody(state)}`;
   const rerender = () => {
     if (layer.isConnected) renderPaymentLayer(layer, current.id);
   };
   bindPaymentBodyActions(host, current, state, rerender);
   let formState = { settlement, total: state.remaining, dirty: false };
   const paymentUi = host.querySelector('[data-payment-ui]');
-  const primaryHost = host.querySelector('[data-record-payment-primary]');
-  const renderPrimary = ({ label = '', variant = '', onClick = null } = {}) => {
-    if (!primaryHost) return;
-    primaryHost.innerHTML = label ? button(label, { variant, data: 'data-record-payment-primary-action' }) : '';
-    const primary = primaryHost.querySelector('[data-record-payment-primary-action]');
-    primary?.addEventListener('click', async () => {
-      primary.disabled = true;
-      try {
-        await onClick?.();
-      } finally {
-        if (primary.isConnected) primary.disabled = false;
-      }
-    });
-  };
+  const saveButton = paymentUi?.querySelector('[data-payment-save]');
+  const payButton = paymentUi?.querySelector('[data-payment-submit]');
   const syncPrimary = () => {
-    if (state.hasPayments) {
-      renderPrimary();
-      return;
-    }
-    if (formState.dirty) {
-      renderPrimary({
-        label: 'Сохранить',
-        variant: 'secondary',
-        onClick: async () => {
-          const updated = await saveSettlementCorrection(current, formState.settlement);
-          if (updated && layer.isConnected) renderPaymentLayer(layer, current.id);
-        },
-      });
-      return;
-    }
-    if (state.remaining <= 0.009 || state.fullyPaid) {
-      renderPrimary();
-      return;
-    }
-    renderPrimary({
-      label: 'Оплатить',
-      onClick: () => openPaymentAllocationLayer(current, formState.settlement, () => {
-        if (layer.isConnected) renderPaymentLayer(layer, current.id);
-      }),
-    });
+    const canPay = !formState.dirty && state.remaining > 0.009 && !state.fullyPaid;
+    if (saveButton) saveButton.hidden = !formState.dirty;
+    if (payButton) payButton.hidden = !canPay;
   };
   if (state.hasPayments) {
     paymentUi?.querySelectorAll('input, button, select, textarea').forEach((control) => {
       control.disabled = true;
     });
-    renderPrimary();
   } else {
     initPaymentForm(paymentUi, {
       calculate: (items) => calculateSettlement(items),
       paidTotal: state.paidTotal,
-      onChange: (next) => { formState = next; syncPrimary(); },
+      onSave: async (next) => {
+        const updated = await saveSettlementCorrection(current, next.settlement);
+        if (updated && layer.isConnected) renderPaymentLayer(layer, current.id);
+      },
+      onPay: (next) => openPaymentAllocationLayer(current, next.settlement, () => {
+        if (layer.isConnected) renderPaymentLayer(layer, current.id);
+      }),
+      onChange: (next) => {
+        formState = next;
+        syncPrimary();
+      },
     });
     syncPrimary();
   }
