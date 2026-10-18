@@ -57,9 +57,20 @@ assert.equal(getSettlementItemTotals('procedure', 'procedure-products').factTota
 assert.equal(getSettlementItemTotals('product', 'product-1').factTotal, 1800);
 assert.equal(getRecords().find((item) => item.id === record.id)?.finance?.planTotal, 6800);
 
-// Record View is display-only while Records has one canonical owner.
+// Record View exposes only the Sale entry point; Sale owns product selection and persistence.
 const recordViewSource = readFileSync(new URL('../core/records/view.js', import.meta.url), 'utf8');
-assert.doesNotMatch(recordViewSource, /data-record-settings-sale|data-record-sale-product|button\('Продажа'|initMultiSelect|paymentForm|mountPaymentQ/);
+const saleSource = readFileSync(new URL('../core/sale/sale.js', import.meta.url), 'utf8');
+assert.match(recordViewSource, /import \{ openRecordSale \} from '\.\.\/sale\/sale\.js'/);
+assert.match(recordViewSource, /button\('Продажа'/);
+assert.match(recordViewSource, /data-record-view-sale/);
+assert.match(recordViewSource, /openRecordSale\(syncCurrent\(\)/);
+assert.doesNotMatch(recordViewSource, /getProducts|initMultiSelect|data-sale-product|updateRecord/);
+assert.match(saleSource, /export function openSale\(/);
+assert.match(saleSource, /export function openRecordSale\(/);
+assert.match(saleSource, /getProducts\(\)/);
+assert.match(saleSource, /initMultiSelect/);
+assert.match(saleSource, /updateRecord\(current\.id, \{ products \}\)/);
+assert.equal(existsSync(new URL('../core/sale/sale.js', import.meta.url)), true);
 assert.equal(existsSync(new URL('../journal/journal-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-payment.js', import.meta.url)), false);
