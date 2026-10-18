@@ -1,5 +1,30 @@
 import { text, dataAttributes } from './html.js';
 
+const Z_ACTION_OWNER = 'v2-z-action-owner';
+
+if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get(Z_ACTION_OWNER)) {
+  customElements.define(Z_ACTION_OWNER, class extends HTMLElement {
+    connectedCallback() {
+      queueMicrotask(() => {
+        document.querySelectorAll('[data-v2-header-z-action]').forEach((node) => node.remove());
+        const action = this.querySelector(':scope > [data-v2-z-action]');
+        if (action) {
+          const qBodies = [...document.querySelectorAll('[data-v2-q="true"] [data-v2-z-body]')];
+          let target = qBodies.at(-1) || null;
+          if (!target) {
+            const app = this.closest?.('[data-v2-app]') || document.querySelector('[data-v2-app]');
+            const layers = [...(app?.querySelectorAll?.('[data-v2-z-layer]') || [])];
+            const surface = layers.at(-1) || app?.querySelector?.('[data-v2-front] > [data-v2-z]') || null;
+            target = surface?.querySelector?.(':scope > [data-v2-z-body]') || surface;
+          }
+          if (target) target.appendChild(action);
+        }
+        this.remove();
+      });
+    }
+  });
+}
+
 function defaultChatBadge() {
   if (typeof globalThis === 'undefined') return 0;
   const value = Number(globalThis.__VA_TOOLS_ACCOUNT_UNREAD__?.total || 0);
@@ -46,7 +71,17 @@ function headerControl(slot = {}, role = '') {
   return `<div class="v2-header__slot v2-header__slot--${role}"><button type="button" class="v2-header__control v2-header__control--${kind}${variantClass}"${dataAttributes(slot.data)}${roleStyle} aria-label="${aria}"${slot.disabled ? ' disabled' : ''}>${body}${settingsTag}${badge}</button></div>`;
 }
 
-export function v2Header({ a = null, b = '', d = null } = {}) {
+function zActionControl(slot = null) {
+  if (!slot || slot.hidden) return `<${Z_ACTION_OWNER}></${Z_ACTION_OWNER}>`;
+  const label = text(slot.label || '');
+  const aria = text(slot.aria || slot.label || 'Действие');
+  const variantClass = slot.variant === 'danger'
+    ? ' ui-button--danger'
+    : (slot.variant === 'white' || slot.variant === 'secondary' ? ' ui-button--secondary' : '');
+  return `<${Z_ACTION_OWNER}><button type="button" class="ui-button${variantClass}" data-v2-z-action data-v2-header-z-action${dataAttributes(slot.data)} aria-label="${aria}"${slot.disabled ? ' disabled' : ''}>${label}</button></${Z_ACTION_OWNER}>`;
+}
+
+export function v2Header({ a = null, b = '', c = null, d = null } = {}) {
   const dVisible = Boolean(d && !d.hidden);
   const title = b && typeof b === 'object'
     ? `<button type="button" class="v2-header__title v2-header__title-control"${dataAttributes(b.data)} aria-label="${text(b.aria || b.label || '')}">${text(b.label || '')}</button>`
@@ -57,5 +92,5 @@ export function v2Header({ a = null, b = '', d = null } = {}) {
     ${headerControl(a, 'a')}
     ${title}
     ${headerControl(d, 'd')}
-  </header>`;
+  </header>${zActionControl(c)}`;
 }
