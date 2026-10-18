@@ -9,7 +9,6 @@ import {
   modal,
   mountModal,
   openNotice,
-  openSharedProfileSettingsMenu,
   paymentForm,
   paymentMethods,
   select,
@@ -157,7 +156,7 @@ function paymentDepositAllocations(payment) {
   return Array.isArray(payment?.depositAllocations) ? payment.depositAllocations.map((item) => ({ ...item })) : [];
 }
 
-function paymentOwnerA({ settings = false } = {}) {
+function paymentOwnerA() {
   const profile = getProfile();
   const initials = [profile?.name, profile?.surname]
     .filter(Boolean)
@@ -171,7 +170,8 @@ function paymentOwnerA({ settings = false } = {}) {
     image: String(profile?.photo || ''),
     imagePosition: `${Number(profile?.photoCropX ?? 50)}% ${Number(profile?.photoCropY ?? 50)}%`,
     initials,
-    ...(settings ? { settingsTag: true, data: 'data-record-payment-settings', aria: 'Настройки оплаты' } : { disabled: true, aria: 'Оплата' }),
+    disabled: true,
+    aria: 'Оплата',
   };
 }
 
@@ -189,8 +189,8 @@ function paymentChatContext(record) {
   };
 }
 
-function paymentLayerContext(record, state) {
-  return workspaceHeaderContext({ title: 'Оплата', a: paymentOwnerA({ settings: Boolean(state?.hasPayments) }), ...paymentChatContext(record) });
+function paymentLayerContext(record) {
+  return workspaceHeaderContext({ title: 'Оплата', a: paymentOwnerA(), ...paymentChatContext(record) });
 }
 
 function blankPaymentContext(record, title = 'Оплата') {
@@ -496,20 +496,6 @@ function openPaymentDeletion(payment, onSaved) {
   return layer;
 }
 
-function openPaymentSettings(layer, record, state, rerender) {
-  const payment = state?.latestPayment || null;
-  if (!payment) return null;
-  return openSharedProfileSettingsMenu({
-    title: 'Настройки оплаты',
-    actions: [
-      { id: 'correct-payment', label: 'Корректировка оплаты', onSelect: () => openPaymentCorrection(layer, record, payment, rerender) },
-      { id: 'refund-payment', label: 'Возврат', variant: 'danger', onSelect: () => openPaymentRefund(record, payment, rerender) },
-      { id: 'cancel-payment', label: 'Отмена оплаты', variant: 'danger', onSelect: () => openPaymentCancellation(record, payment, rerender) },
-      { id: 'delete-payment', label: 'Удаление оплаты', variant: 'critical', onSelect: () => openPaymentDeletion(payment, rerender) },
-    ],
-  });
-}
-
 function paymentActionsBody(state) {
   if (!state?.latestPayment) return '';
   return actionBlock([
@@ -593,19 +579,15 @@ function renderPaymentLayer(layer, recordId) {
     paidTotal: state.paidTotal,
     onChange: (next) => { formState = next; syncPrimary(); },
   });
-  layer.querySelector('[data-record-payment-settings]')?.addEventListener('click', () => {
-    openPaymentSettings(layer, current, paymentStateForRecord(getRecord(current.id) || current), rerender);
-  }, { once: true });
   syncPrimary();
 }
 
 export function openRecordPayment(record) {
   if (!record?.id) return null;
   const current = getRecord(record.id) || record;
-  const state = paymentStateForRecord(current);
   const layer = mountPaymentQ(current, {
     title: 'Оплата',
-    context: paymentLayerContext(current, state),
+    context: paymentLayerContext(current),
     className: 'record-payment-q',
     hostData: 'data-record-payment-q-host',
   });
