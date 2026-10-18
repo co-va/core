@@ -27,8 +27,8 @@ import {
   hardDeleteFinanceOperation,
   recordPaymentIncome,
   recordRefundExpense,
-  recordSettlementItems,
   refreshFinanceState,
+  resolveRecordSettlement,
   saveSettlementSnapshot,
 } from '../finance/index.js';
 import { listPersonDeposits } from '../loyalty/deposit/data.js';
@@ -37,7 +37,7 @@ import { getWorkplaces } from '../workplace-time.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts, zonedDateTimeToDate } from '../time/index.js';
 import { getAllPeople } from '../people/data.js';
 import { personDisplay } from '../people/presentation.js';
-import { getRecord, refreshRecordsFromServer, setRecordConfirmed, updateRecord } from '../record/index.js';
+import { getRecord, refreshRecordsFromServer, setRecordConfirmed } from '../record/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
 import { getProfile } from '../profile/data.js';
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
@@ -53,20 +53,11 @@ function personForRecord(record) {
 }
 
 function settlementForRecord(record) {
-  return record?.finance || calculateSettlement(recordSettlementItems(record));
+  return resolveRecordSettlement(record);
 }
 
 function paymentStateForRecord(record) {
   return getRecordPaymentState(record);
-}
-
-function sourcesFromSettlement(sources, settlement, type) {
-  const items = Array.isArray(settlement?.items) ? settlement.items : [];
-  return (Array.isArray(sources) ? sources : []).flatMap((source) => {
-    const settlementItem = items.find((item) => String(item?.sourceType || 'procedure') === type
-      && String(item?.sourceId || '') === String(source?.id || ''));
-    return settlementItem ? [{ ...source, cost: settlementItem.price }] : [];
-  });
 }
 
 async function saveSettlementCorrection(record, settlement) {
@@ -77,17 +68,9 @@ async function saveSettlementCorrection(record, settlement) {
     return null;
   }
   try {
-    await saveSettlementSnapshot({ source: { type: 'record', id: current.id }, settlement });
-    const updated = updateRecord(current.id, {
-      procedures: sourcesFromSettlement(current?.procedures, settlement, 'procedure'),
-      products: sourcesFromSettlement(current?.products, settlement, 'product'),
-    });
-    if (!updated) throw new Error('Не удалось обновить запись');
-    await flushBusinessPersistence();
-    await Promise.all([refreshRecordsFromServer(), refreshFinanceState()]);
-    return getRecord(current.id) || updated;
+    const saved = await saveSettlementSnapshot({ source: { type: 'record', id: current.id }, settlement });
+    return saved ? current : null;
   } catch (error) {
-    await refreshRecordsFromServer().catch(() => null);
     await refreshFinanceState().catch(() => null);
     openNotice({ message: String(error?.message || 'Не удалось сохранить расчёт') });
     return null;
