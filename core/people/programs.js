@@ -11,8 +11,8 @@ import {
 } from '../../ui/ui.js';
 import { getUEI } from '../uei.js';
 import { personalAccountVisualCard } from '../loyalty/personal-account/index.js';
-import { loadPersonalAccount } from '../loyalty/personal-account/data.js';
-import { listPersonDeposits } from '../loyalty/deposit/data.js';
+import { getCachedPersonalAccount, loadPersonalAccount } from '../loyalty/personal-account/data.js';
+import { getDepositInstances, listPersonDeposits } from '../loyalty/deposit/data.js';
 import {
   depositCardAppearance,
   depositCardFields,
@@ -309,17 +309,26 @@ function personFinanceEntities(person = {}) {
   return { investments, loans };
 }
 
-export async function buildPersonRelationshipSections(person = {}) {
-  const key = text(person.key || person.id);
-  let account = null;
-  let accountError = '';
-  try {
-    account = await loadPersonalAccount(key);
-  } catch (error) {
-    accountError = error instanceof Error ? error.message : 'Не удалось загрузить Личный счёт';
-  }
+function cachedPersonDeposits(personKey = '') {
+  const key = text(personKey);
+  if (!key) return [];
+  return getDepositInstances().filter((item) => {
+    const person = item?.person && typeof item.person === 'object' ? item.person : {};
+    return text(person.key || person.personKey || person.id) === key;
+  });
+}
 
-  const deposits = await listPersonDeposits(key).catch(() => []);
+export async function buildPersonRelationshipSections(person = {}, { refresh = true } = {}) {
+  const key = text(person.key || person.id);
+  const account = getCachedPersonalAccount(key);
+  const accountError = '';
+  const deposits = cachedPersonDeposits(key);
+  const refreshPromise = refresh
+    ? Promise.allSettled([
+        loadPersonalAccount(key),
+        listPersonDeposits(key),
+      ])
+    : null;
   const certificates = getCertificateAssignmentsForPerson(key);
   const subscriptions = getSubscriptionAssignmentsForPerson(key);
   const referrals = getReferralAssignmentsForPerson(key);
@@ -357,23 +366,38 @@ export async function buildPersonRelationshipSections(person = {}) {
     ...finance.loans.map((item) => [`loan:${item.id}`, { title: item.name || 'Займ', body: financeDetail(item, 'loan') }]),
   ]);
 
-  const markup = `${programCards.length ? v2Section('Программы', entityCardRail(programCards)) : ''}${financeCards.length ? v2Section('Инвестиции / Займы', entityCardRail(financeCards)) : ''}`;
+  const sectionMarkup = `${programCards.length ? v2Section('Программы', entityCardRail(programCards)) : ''}${financeCards.length ? v2Section('Инвестиции / Займы', entityCardRail(financeCards)) : ''}`;
+  const markup = `<div data-person-relationships>${sectionMarkup}</div>`;
 
   return {
     markup,
     bind(scope, onOpen = () => {}) {
-      scope?.querySelectorAll?.('[data-person-program]').forEach((node) => {
+      const relationshipRoot = scope?.querySelector?.('[data-person-relationships]') || scope;
+      relationshipRoot?.querySelectorAll?.('[data-person-program]').forEach((node) => {
         node.addEventListener('click', () => {
           const detail = detailByKey.get(String(node.dataset.personProgram || ''));
           if (detail) onOpen(detail);
         });
       });
-      scope?.querySelectorAll?.('[data-person-finance]').forEach((node) => {
+      relationshipRoot?.querySelectorAll?.('[data-person-finance]').forEach((node) => {
         node.addEventListener('click', () => {
           const detail = detailByKey.get(String(node.dataset.personFinance || ''));
           if (detail) onOpen(detail);
         });
       });
+      if (refreshPromise) {
+        void refreshPromise.then(async () => {
+          if (!scope?.isConnected) return;
+          const fresh = await buildPersonRelationshipSections(person, { refresh: false });
+          const current = scope.querySelector?.('[data-person-relationships]');
+          if (!current) return;
+          const template = document.createElement('template');
+          template.innerHTML = fresh.markup;
+          const next = template.content.querySelector('[data-person-relationships]');
+          current.innerHTML = next?.innerHTML || '';
+          fresh.bind(current, onOpen);
+        });
+      }
     },
   };
 }
