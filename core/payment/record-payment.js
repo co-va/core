@@ -180,9 +180,18 @@ function recordHasEnded(record = null, now = new Date()) {
   return `${current.date}T${current.time}` >= `${date}T${to}`;
 }
 
-function recordPaymentReportStatus(record, state) {
-  if (Math.max(0, Number(state?.remaining) || 0) <= 0.009) return 'Оплачено';
-  return recordHasEnded(record) ? 'Задолженность' : 'К оплате';
+function recordPaymentReportStatusRows(record, state) {
+  const paidTotal = Math.max(0, Number(state?.paidTotal) || 0);
+  const remaining = Math.max(0, Number(state?.remaining) || 0);
+  if (remaining <= 0.009) return [{ label: 'Статус', value: 'Оплачено' }];
+  const outstandingLabel = recordHasEnded(record) ? 'Задолженность' : 'К оплате';
+  if (paidTotal > 0.009) {
+    return [
+      { label: 'Оплачено', value: formatReportRubles(paidTotal) },
+      { label: outstandingLabel, value: formatReportRubles(remaining) },
+    ];
+  }
+  return [{ label: 'Статус', value: outstandingLabel }];
 }
 
 function openRecordPaymentZReport(record) {
@@ -206,7 +215,7 @@ function openRecordPaymentZReport(record) {
       { label: 'Средний чек процедуры', value: formatReportRubles(averageProcedure) },
       { label: 'Средний чек часа', value: formatReportRubles(averageHour) },
     ],
-    [{ label: 'Статус', value: recordPaymentReportStatus(current, state) }],
+    recordPaymentReportStatusRows(current, state),
     [{ label: 'Сумма', value: formatReportRubles(total), strong: true }],
   ];
   return mountModal(document.body, modal(readOnlyReceipt({
