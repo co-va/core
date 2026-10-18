@@ -25,11 +25,9 @@ function settingsSource(surface) {
   return source;
 }
 
-function clearFloatingSettings(shell) {
-  zSurfaces(shell).forEach((surface) => {
-    surface.querySelector(`:scope > ${BUTTON_SELECTOR}`)?.remove();
-    surface.classList.remove('has-floating-settings');
-  });
+function removeFloatingSettings(surface) {
+  surface?.querySelector(`:scope > ${BUTTON_SELECTOR}`)?.remove();
+  surface?.classList.remove('has-floating-settings');
 }
 
 function syncFloatingSettings() {
@@ -39,13 +37,23 @@ function syncFloatingSettings() {
     return;
   }
 
-  const surface = activeZ(shell);
-  const source = settingsSource(surface);
-  clearFloatingSettings(shell);
-  if (!surface || !source || document.querySelector('[data-modal]')) return;
+  const surfaces = zSurfaces(shell);
+  const surface = surfaces.at(-1) || null;
+  surfaces.forEach((item) => {
+    if (item !== surface) removeFloatingSettings(item);
+  });
 
-  surface.insertAdjacentHTML('beforeend', floatingSettingsButton());
-  const button = surface.querySelector(`:scope > ${BUTTON_SELECTOR}`);
+  const source = settingsSource(surface);
+  if (!surface || !source || document.querySelector('[data-modal]')) {
+    removeFloatingSettings(surface);
+    return;
+  }
+
+  let button = surface.querySelector(`:scope > ${BUTTON_SELECTOR}`);
+  if (!button) {
+    surface.insertAdjacentHTML('beforeend', floatingSettingsButton());
+    button = surface.querySelector(`:scope > ${BUTTON_SELECTOR}`);
+  }
   if (!button) return;
   surface.classList.add('has-floating-settings');
   button.setAttribute('aria-label', source.getAttribute('aria-label') || 'Настройки');
