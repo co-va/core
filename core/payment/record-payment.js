@@ -138,7 +138,6 @@ function paymentMoment(record) {
 function paymentFromRecord(record) {
   const moment = paymentMoment(record);
   return {
-    source: { type: 'record', id: record?.id || '' },
     workplace: workplaceName(record?.workplaceId),
     person: recordPerson(record),
     date: moment.date,
@@ -270,7 +269,7 @@ async function personalAccountForRecord(record, settlement, due) {
   return { ...account, personKey: key, balance, spendLimitPercent, availableAmount };
 }
 
-async function openPaymentAllocationLayer(parentLayer, record, settlement, onCompleted) {
+async function openPaymentAllocationLayer(record, settlement, onCompleted) {
   const current = getRecord(record?.id) || record;
   const state = paymentStateForRecord(current);
   const recordId = String(current?.id || '');
@@ -355,7 +354,7 @@ async function openPaymentAllocationLayer(parentLayer, record, settlement, onCom
   return layer;
 }
 
-async function openPaymentCorrection(parentLayer, record, payment, onSaved) {
+async function openPaymentCorrection(record, payment, onSaved) {
   if (!payment?.id) return null;
   const serviceAmount = Math.max(0, Number(payment?.serviceAmount || 0));
   const initialAllocations = paymentAllocations(payment);
@@ -521,10 +520,10 @@ function paymentActionsBody(state) {
   ].join(''), { className: 'record-payment-actions' });
 }
 
-function bindPaymentBodyActions(host, layer, record, state, rerender) {
+function bindPaymentBodyActions(host, record, state, rerender) {
   const payment = state?.latestPayment || null;
   if (!payment) return;
-  host.querySelector('[data-record-payment-correct]')?.addEventListener('click', () => openPaymentCorrection(layer, record, payment, rerender));
+  host.querySelector('[data-record-payment-correct]')?.addEventListener('click', () => openPaymentCorrection(record, payment, rerender));
   host.querySelector('[data-record-payment-refund]')?.addEventListener('click', () => openPaymentRefund(record, payment, rerender));
   host.querySelector('[data-record-payment-cancel]')?.addEventListener('click', () => openPaymentCancellation(record, payment, rerender));
   host.querySelector('[data-record-payment-delete]')?.addEventListener('click', () => openPaymentDeletion(payment, rerender));
@@ -550,7 +549,7 @@ function renderPaymentLayer(layer, recordId) {
   const rerender = () => {
     if (layer.isConnected) renderPaymentLayer(layer, current.id);
   };
-  bindPaymentBodyActions(host, layer, current, state, rerender);
+  bindPaymentBodyActions(host, current, state, rerender);
   let formState = { settlement, total: state.remaining, dirty: false };
   const paymentUi = host.querySelector('[data-payment-ui]');
   const primaryHost = host.querySelector('[data-record-payment-primary]');
@@ -589,7 +588,7 @@ function renderPaymentLayer(layer, recordId) {
     }
     renderPrimary({
       label: 'Оплатить',
-      onClick: () => openPaymentAllocationLayer(layer, current, formState.settlement, () => {
+      onClick: () => openPaymentAllocationLayer(current, formState.settlement, () => {
         if (layer.isConnected) renderPaymentLayer(layer, current.id);
       }),
     });
