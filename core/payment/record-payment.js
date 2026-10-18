@@ -37,8 +37,7 @@ import { getWorkplaces } from '../workplace-time.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts, zonedDateTimeToDate } from '../time/index.js';
 import { getAllPeople } from '../people/data.js';
 import { personDisplay } from '../people/presentation.js';
-import { getRecord, refreshRecordsFromServer, setRecordConfirmed } from '../record/index.js';
-import { flushBusinessPersistence } from '../business-persistence.js';
+import { getRecord } from '../record/index.js';
 import { getProfile } from '../profile/data.js';
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
 
@@ -325,17 +324,7 @@ async function openPaymentAllocationLayer(parentLayer, record, settlement, onCom
         if (!completed) return;
 
         layer.v2Close?.();
-        onCompleted?.();
-        setRecordConfirmed(current.id, true);
-        try {
-          await flushBusinessPersistence();
-          await Promise.all([refreshRecordsFromServer(), refreshFinanceState()]);
-        } catch {
-          await Promise.all([
-            refreshRecordsFromServer().catch(() => null),
-            refreshFinanceState().catch(() => null),
-          ]);
-        }
+        onCompleted?.(completed);
       },
     });
   };
@@ -581,14 +570,14 @@ function renderPaymentLayer(layer, recordId) {
       });
       return;
     }
-    if (state.remaining <= 0.009 || state.fullyPaid) {
+    if (state.hasPayments || state.remaining <= 0.009 || state.fullyPaid) {
       renderPrimary();
       return;
     }
     renderPrimary({
       label: 'Оплатить',
       onClick: () => openPaymentAllocationLayer(layer, current, formState.settlement, () => {
-        layer.v2Close?.();
+        if (layer.isConnected) renderPaymentLayer(layer, current.id);
       }),
     });
   };
