@@ -3,11 +3,11 @@ import { setV2ZHeaderRows, clearV2ZHeaderRows } from '../ui/v2/z-layout.js';
 import { getWorkplaceContext, setWorkplaceContext } from '../core/workplace-context.js';
 import { readOnlyReceipt } from '../ui/receipt/index.js';
 import { canUseBookCapability } from '../core/access.js';
-import { getWorkplaces } from '../core/workplace-time.js';
+import { getAllWorkplacesMonthStats, getWorkplaceMonthStats, getWorkingDays, getWorkplaces } from '../core/workplace-time.js';
 import { getActiveDayWorkplaces } from '../core/day/index.js';
 import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { makeTimetableDayOff, openTimetableDayTimeEditor } from '../timetable/day-editor.js';
-import { getActiveRecordCountForDay, getRecordsForDay } from '../core/record/index.js';
+import { getActiveRecordCountForDay, getRecords, getRecordsForDay } from '../core/record/index.js';
 import { openJournalWorkplaceControl } from './workplace-control.js';
 import { renderJournalDay } from './день.js';
 import { renderJournalMonth } from './месяц.js';
@@ -29,6 +29,11 @@ const listModes = [
 function dateKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function monthPrefix(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-`;
 }
 
 function formatRubles(value = 0) {
@@ -146,10 +151,15 @@ export function renderJournal(root, options = {}) {
     return workplaces.find((item) => String(item?.key || '') === String(selectedWorkplaceId || ''))?.name || 'Журнал';
   };
 
-  const openDayZReport = () => {
-    const day = dateKey(selectedDate);
+  const openJournalZReport = () => {
     const allMode = selectedWorkplaceId === ALL_WORKPLACES_ID;
-    const records = getRecordsForDay(day, allMode ? '' : selectedWorkplaceId)
+    const isMonth = activeView === 'month';
+    const records = (isMonth
+      ? getRecords().filter((record) => {
+        if (!String(record?.date || '').startsWith(monthPrefix(selectedDate))) return false;
+        return allMode || String(record?.workplaceId || '') === String(selectedWorkplaceId || '');
+      })
+      : getRecordsForDay(dateKey(selectedDate), allMode ? '' : selectedWorkplaceId))
       .filter((record) => record?.status !== 'cancelled');
     const procedureCount = records.reduce((sum, record) => sum + (Array.isArray(record?.procedures) ? record.procedures.length : 0), 0);
     const hours = records.reduce((sum, record) => sum + recordDurationHours(record), 0);
@@ -157,6 +167,13 @@ export function renderJournal(root, options = {}) {
     const averageRecord = records.length ? total / records.length : 0;
     const averageProcedure = procedureCount ? total / procedureCount : 0;
     const averageHour = hours ? total / hours : 0;
+    const workingDayStats = isMonth
+      ? (allMode
+        ? getAllWorkplacesMonthStats(getWorkingDays(), workplaces, selectedDate)
+        : getWorkplaceMonthStats(getWorkingDays(), workplaces, selectedWorkplaceId, selectedDate))
+      : null;
+    const workingDayCount = Math.max(0, Number(workingDayStats?.days || 0));
+    const averageWorkingDay = workingDayCount ? total / workingDayCount : 0;
     const paymentStates = records.map((record) => ({ record, state: getRecordPaymentState(record) }));
     const paidTotal = paymentStates.reduce((sum, item) => sum + Math.max(0, Number(item.state?.paidTotal) || 0), 0);
     const outstanding = paymentStates.filter((item) => Math.max(0, Number(item.state?.remaining) || 0) > 0.009);
@@ -166,7 +183,9 @@ export function renderJournal(root, options = {}) {
     const debtTotal = outstanding
       .filter((item) => recordHasEnded(item.record))
       .reduce((sum, item) => sum + Math.max(0, Number(item.state?.remaining) || 0), 0);
-    const dateLabel = selectedDate.toLocaleDateString('ru-RU');
+    const periodLabel = isMonth
+      ? selectedDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+      : selectedDate.toLocaleDateString('ru-RU');
     const workplaceLabel = allMode ? 'Все пространства' : journalTitle();
     const statusRows = records.length
       ? (outstanding.length === 0
@@ -177,16 +196,19 @@ export function renderJournal(root, options = {}) {
           debtTotal > 0.009 ? { label: 'Задолженность', value: formatRubles(debtTotal) } : null,
         ].filter(Boolean))
       : [];
+    const summaryRows = [
+      { label: workplaceLabel, value: periodLabel },
+      { label: 'Кол-во записей', value: String(records.length) },
+      { label: 'Кол-во процедур', value: String(procedureCount) },
+      { label: 'Кол-во часов', value: formatNumber(hours) },
+      isMonth ? { label: 'Кол-во рабочих дней', value: String(workingDayCount) } : null,
+      { label: 'Средний чек записи', value: formatRubles(averageRecord) },
+      { label: 'Средний чек процедуры', value: formatRubles(averageProcedure) },
+      { label: 'Средний чек часа', value: formatRubles(averageHour) },
+      isMonth ? { label: 'Средний чек за рабочий день', value: formatRubles(averageWorkingDay) } : null,
+    ].filter(Boolean);
     const groups = [
-      [
-        { label: workplaceLabel, value: dateLabel },
-        { label: 'Кол-во записей', value: String(records.length) },
-        { label: 'Кол-во процедур', value: String(procedureCount) },
-        { label: 'Кол-во часов', value: formatNumber(hours) },
-        { label: 'Средний чек записи', value: formatRubles(averageRecord) },
-        { label: 'Средний чек процедуры', value: formatRubles(averageProcedure) },
-        { label: 'Средний чек часа', value: formatRubles(averageHour) },
-      ],
+      summaryRows,
       statusRows,
       [{ label: 'Сумма', value: formatRubles(total), strong: true }],
     ];
@@ -226,10 +248,10 @@ export function renderJournal(root, options = {}) {
           label: 'Рабочее время',
           onSelect: () => openDayTime(selectedWorkplaceId),
         } : null,
-        activeView === 'day' ? {
+        activeView === 'day' || activeView === 'month' ? {
           id: 'z-report',
           label: 'Z-Отчет',
-          onSelect: openDayZReport,
+          onSelect: openJournalZReport,
         } : null,
         canMakeDayOff ? {
           id: 'day-off',
