@@ -105,7 +105,7 @@ export function getRecordPaymentState(record = null, { pricePercent = null } = {
   const end = date && /^\d{2}:\d{2}$/.test(to) ? new Date(`${date}T${to}:00`) : null;
   const ended = Boolean(end && Number.isFinite(end.getTime()) && Date.now() >= end.getTime());
   const zeroPrice = Number(settlement?.serviceTotal || 0) > 0.009 && Number(settlement?.planTotal || 0) <= 0.009;
-  const settledByPriceRules = zeroPrice && ended && record?.attendance !== 'no-show';
+  const settledByPriceRules = zeroPrice && (record?.completed === true || ended) && record?.attendance !== 'no-show';
   return settledByPriceRules ? {
     ...state,
     fullyPaid: true,
