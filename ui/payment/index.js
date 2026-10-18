@@ -110,7 +110,7 @@ export function paymentForm({
     data-payment-uei="${escapeHtml(person?.uei || '')}"
     data-payment-person-name="${escapeHtml(person?.name || '')}">
     <div data-payment-sections>${v2ZBodySections(sections)}</div>
-    ${showActions ? `<div class="modal-actions">${button('Сохранить', { data: 'data-payment-save', variant: 'secondary' })}${button('Оплатить', { data: 'data-payment-submit' })}</div>` : ''}
+    ${showActions ? `<div class="modal-actions" data-payment-actions>${button('Оплатить', { data: 'data-payment-action' })}</div>` : ''}
   </div>`;
 }
 
@@ -240,6 +240,17 @@ export function initPaymentForm(root, {
   if (!root) return null;
   const initialSettlement = recalculate(root, calculate, { paidTotal });
   let baseline = JSON.stringify(settlementInputs(root));
+  let actionBusy = false;
+  const actionButton = root.querySelector('[data-payment-action]');
+
+  const syncAction = (state) => {
+    if (!actionButton) return;
+    const dirty = Boolean(state?.dirty);
+    actionButton.textContent = dirty ? 'Сохранить' : 'Оплатить';
+    actionButton.setAttribute('aria-label', dirty ? 'Сохранить' : 'Оплатить');
+    actionButton.classList.toggle('ui-button--secondary', dirty);
+    actionButton.hidden = !dirty && Math.max(0, numberValue(state?.total)) <= 0.009;
+  };
 
   const currentState = (preserve = null) => {
     const settlement = recalculate(root, calculate, { preserve, paidTotal });
@@ -250,6 +261,7 @@ export function initPaymentForm(root, {
       total: Math.max(0, numberValue(settlement?.planTotal) - Math.max(0, numberValue(paidTotal))),
       dirty,
     };
+    syncAction(result);
     onChange?.(result);
     return result;
   };
@@ -284,28 +296,49 @@ export function initPaymentForm(root, {
     onRemove?.({ ...removed, ...result });
   }));
 
-  root.querySelector('[data-payment-save]')?.addEventListener('click', () => {
+  actionButton?.addEventListener('click', async () => {
+    if (actionBusy) return;
     const result = currentState();
     if (!result.settlement) return;
-    baseline = JSON.stringify(settlementInputs(root));
-    onSave?.(result);
-  });
-  root.querySelector('[data-payment-submit]')?.addEventListener('click', () => {
-    const result = currentState();
-    if (!result.settlement) return;
-    onPay?.(result);
+    if (!result.dirty) {
+      onPay?.(result);
+      return;
+    }
+
+    actionBusy = true;
+    actionButton.disabled = true;
+    try {
+      const saved = await onSave?.(result);
+      if (!root.isConnected) return;
+      if (saved == null || saved === false) {
+        syncAction(currentState());
+        return;
+      }
+      baseline = JSON.stringify(settlementInputs(root));
+      currentState();
+    } catch (error) {
+      if (root.isConnected) syncAction(currentState());
+    } finally {
+      actionBusy = false;
+      if (actionButton.isConnected) actionButton.disabled = false;
+    }
   });
 
-  onChange?.({
+  const initialState = {
     settlement: initialSettlement,
     items: initialSettlement?.items || [],
     total: Math.max(0, numberValue(initialSettlement?.planTotal) - Math.max(0, numberValue(paidTotal))),
     dirty: false,
-  });
+  };
+  syncAction(initialState);
+  onChange?.(initialState);
 
   return {
     read: () => currentState(),
-    markSaved: () => { baseline = JSON.stringify(settlementInputs(root)); },
+    markSaved: () => {
+      baseline = JSON.stringify(settlementInputs(root));
+      return currentState();
+    },
   };
 }
 
