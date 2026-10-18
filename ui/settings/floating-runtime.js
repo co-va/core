@@ -55,7 +55,8 @@ function syncFloatingSettings() {
   }
   if (!button) return;
   surface.classList.add('has-floating-settings');
-  button.setAttribute('aria-label', settingsA.getAttribute('aria-label') || 'Настройки');
+  const ariaLabel = settingsA.getAttribute('aria-label') || 'Настройки';
+  if (button.getAttribute('aria-label') !== ariaLabel) button.setAttribute('aria-label', ariaLabel);
   button.onclick = () => resolvedSettingsA(workspaceShell())?.click();
 }
 
