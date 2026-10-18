@@ -40,8 +40,8 @@ const paymentUi = readFileSync('ui/payment/index.js', 'utf8');
 if (!paymentUi.includes("field({ label: 'Цена'") || !paymentUi.includes("data: 'data-payment-price'")) {
   errors.push('payment UI must expose the factual price field for an existing Record item');
 }
-if (!paymentUi.includes('Ручная коррекция цены, %') || !paymentUi.includes('Ручная коррекция цены, ₽')) {
-  errors.push('payment UI must expose manual price correction explicitly');
+if (!paymentUi.includes("label: 'Скидка %'") || !paymentUi.includes("label: 'Скидка ₽'")) {
+  errors.push('payment UI must expose manual discount correction explicitly');
 }
 if (!paymentUi.includes("label: 'Условие'") || !paymentUi.includes('disabled: true')) {
   errors.push('automatic price condition must remain read-only in payment UI');
