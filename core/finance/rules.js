@@ -1,5 +1,5 @@
 // Pure Settlement/Finance rules. No persistence, UI or browser state.
-// One canonical calculation: price -> manual correction -> automatic price percent -> amount due.
+// One canonical calculation: price -> one active discount source -> amount due.
 
 export function financialNumber(value) {
   const number = Number(String(value ?? '').replace(',', '.'));
@@ -74,9 +74,11 @@ export function calculateSettlement(items = [], { pricePercent = 0 } = {}) {
   const prepared = (Array.isArray(items) ? items : []).map((item) => {
     const price = financialMoney(item?.price ?? item?.cost);
     const automaticPercent = itemPricePercent(item, defaultPercent);
-    const correction = correctionForItem(item, price);
+    const correction = automaticPercent > 0
+      ? { mode: 'none', percent: 0, money: 0 }
+      : correctionForItem(item, price);
     const correctedPrice = financialMoney(price - correction.money);
-    const pricePercentMoney = financialMoney(Math.min(correctedPrice, correctedPrice * automaticPercent / 100));
+    const pricePercentMoney = financialMoney(Math.min(price, price * automaticPercent / 100));
     return {
       sourceType: sourceType(item),
       sourceId: sourceId(item),
@@ -123,7 +125,7 @@ export function repriceSettlement(sources = [], currentSettlement = null, { pric
       price: financialMoney(source?.cost ?? source?.price),
       pricePercent: defaultPricePercent,
     };
-    if (!prior) return { ...base, correctionMode: 'none' };
+    if (!prior || defaultPricePercent > 0) return { ...base, correctionMode: 'none' };
     const priorPrice = financialMoney(prior?.price ?? source?.cost ?? source?.price);
     const correction = correctionForItem(prior, priorPrice);
     if (correction.mode === 'percent') return { ...base, correctionMode: 'percent', correctionPercent: correction.percent };

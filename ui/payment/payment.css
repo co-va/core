@@ -13,6 +13,4 @@
 .payment-item-head__name{min-width:0;font-size:14px;line-height:1.2;font-weight:700;white-space:normal;overflow-wrap:normal;word-break:normal}
 .payment-item-head__remove{box-sizing:border-box;width:34px;height:34px;border:0;padding:0;display:grid;place-items:center;background:transparent;color:var(--text);font:inherit;font-size:22px;line-height:1;cursor:pointer}
 .payment-item-head__remove:active{background:var(--active)}
-.payment-edit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end}
 .record-payment-actions{align-self:start}
-@media(max-width:360px){.payment-edit-grid{gap:4px}}

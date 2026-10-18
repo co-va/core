@@ -13,7 +13,7 @@ const html = paymentForm({
   person: { uei: '0278', name: 'Наталья Гусева' },
   procedures: [
     { id: 'p1', name: 'Стрижка - Женская', cost: 7000, pricePercent: 0 },
-    { id: 'p2', name: 'Очень длинное название процедуры без сокращения', cost: 2500, pricePercent: 10 },
+    { id: 'p2', name: 'Очень длинное название процедуры без сокращения', cost: 2500, pricePercent: 10, pricePercentMoney: 250 },
   ],
   total: 9250,
 });
@@ -22,13 +22,27 @@ assert.match(html, /data-payment-sections/);
 assert.match(html, /data-v2-z-body-sections/);
 assert.match(html, /payment-summary-mini-card/);
 assert.match(html, /data-payment-price/);
-assert.match(html, /data-payment-price-condition/);
+assert.doesNotMatch(html, /data-payment-price-condition/);
 assert.match(html, /data-payment-correction-percent/);
 assert.match(html, /data-payment-correction-money/);
+assert.equal((html.match(/column-layout column-layout--3/g) || []).length, 2);
+assert.match(html, /data-payment-program-discount="true"/);
+assert.match(html, /value="10"[^>]*data-payment-correction-percent/);
+assert.match(html, /value="250"[^>]*data-payment-correction-money/);
 assert.match(html, /data-payment-action/);
 assert.doesNotMatch(html, /data-payment-save|data-payment-submit/);
 assert.equal((html.match(/<button\b[^>]*\bdata-payment-action(?:\s|>)/g) || []).length, 1);
 assert.equal((html.match(/data-payment-procedure="/g) || []).length, 2);
+
+const editableDiscountHtml = paymentForm({
+  workplace: 'Тест', date: '11.09.26', time: '12:00 - 13:00',
+  person: { uei: 'U1', name: 'Тест' },
+  procedures: [{ id: 'p1', name: 'Процедура', cost: 10000, pricePercent: 0, correctionMode: 'percent', correctionPercent: 20, correctionMoney: 2000 }],
+  total: 8000,
+});
+assert.match(editableDiscountHtml, /data-payment-program-discount="false"/);
+assert.match(editableDiscountHtml, /value="20"[^>]*data-payment-correction-percent/);
+assert.match(editableDiscountHtml, /value="2000"[^>]*data-payment-correction-money/);
 
 const embeddedHtml = paymentForm({
   workplace: 'Тест', date: '11.09.26', time: '12:00 - 13:00',
@@ -46,9 +60,9 @@ assert.equal(automaticPercent.items[0].pricePercent, 20);
 const correctedThenAutomatic = calculateSettlement([
   { sourceId: 'p1', name: 'Стрижка', price: 5000, correctionMode: 'percent', correctionPercent: 10 },
 ], { pricePercent: 20 });
-assert.equal(correctedThenAutomatic.correctionTotal, 500);
-assert.equal(correctedThenAutomatic.pricePercentTotal, 900);
-assert.equal(correctedThenAutomatic.planTotal, 3600);
+assert.equal(correctedThenAutomatic.correctionTotal, 0);
+assert.equal(correctedThenAutomatic.pricePercentTotal, 1000);
+assert.equal(correctedThenAutomatic.planTotal, 4000);
 
 const methodsHtml = paymentMethods({
   wallets: [{ id: 'cash', name: 'Наличные' }, { id: 'card', name: 'СберБанк' }],
@@ -84,9 +98,10 @@ const paymentSource = readFileSync(new URL('../ui/payment/index.js', import.meta
 const methodsSource = readFileSync(new URL('../ui/payment/methods.js', import.meta.url), 'utf8');
 const paymentCss = readFileSync(new URL('../ui/payment/payment.css', import.meta.url), 'utf8');
 const modalCss = readFileSync(new URL('../ui/modals/modal.css', import.meta.url), 'utf8');
+const buttonCss = readFileSync(new URL('../ui/buttons/buttons.css', import.meta.url), 'utf8');
 const recordCss = readFileSync(new URL('../ui/record/record.css', import.meta.url), 'utf8');
 const pageSource = readFileSync(new URL('../ui/page/page.js', import.meta.url), 'utf8');
-const creationFlowSource = readFileSync(new URL('../ui/record/creation-flow.js', import.meta.url), 'utf8');
+const recordCreationSource = readFileSync(new URL('../ui/record/creation-flow.js', import.meta.url), 'utf8');
 const financeServiceSource = readFileSync(new URL('../core/finance/service.js', import.meta.url), 'utf8');
 const paymentMechanismSource = readFileSync(new URL('../core/payment/record-payment.js', import.meta.url), 'utf8');
 const journalDaySource = readFileSync(new URL('../journal/день.js', import.meta.url), 'utf8');
@@ -95,12 +110,19 @@ const recordViewSource = readFileSync(new URL('../core/records/view.js', import.
 assert.match(paymentSource, /const percentOptions = \[/);
 assert.match(paymentSource, /data-payment-correction-mode/);
 assert.match(paymentSource, /data-payment-price-percent/);
+assert.match(paymentSource, /data-payment-program-discount/);
+assert.match(paymentSource, /function syncProgramDiscountLock/);
+assert.match(paymentSource, /trigger\.disabled = locked/);
+assert.match(paymentSource, /moneyInput\.disabled = locked/);
 assert.match(paymentSource, /miniCard/);
 assert.match(paymentSource, /v2ZBodySections/);
+assert.match(paymentSource, /columnLayout\(\[/);
+assert.doesNotMatch(paymentSource, /payment-edit-grid/);
+assert.doesNotMatch(paymentSource, /data-payment-price-condition/);
 assert.match(paymentSource, /dirty \? 'Сохранить' : 'Оплатить'/);
 assert.match(methodsSource, /const tips = Math\.max\(0, cashReceived - serviceFromCash\)/);
 assert.match(methodsSource, /readOnlyReceipt/);
-assert.match(paymentCss, /\.payment-edit-grid\{display:grid/);
+assert.doesNotMatch(paymentCss, /\.payment-edit-grid/);
 assert.doesNotMatch(paymentCss, /record-payment-q \[data-v2-q-body\]/);
 assert.doesNotMatch(paymentCss, /data-payment-ui\]>\.modal-actions\{position:absolute/);
 assert.doesNotMatch(recordCss, /\.record-view-actions\{position:absolute/);
@@ -108,15 +130,16 @@ assert.doesNotMatch(recordCss, /\.record-creation-flow__actions\{display:grid/);
 assert.match(pageSource, /class="profile-actions modal-actions/);
 assert.match(modalCss, /\[data-v2-z-body\]/);
 assert.match(modalCss, /\[data-v2-q-body\]/);
-assert.match(modalCss, /\.modal-actions/);
+assert.match(modalCss, /\.modal-actions\{position:absolute/);
 assert.doesNotMatch(modalCss, /\.record-view-actions/);
 assert.doesNotMatch(modalCss, /\.record-creation-flow__actions/);
-assert.doesNotMatch(modalCss, /\.ui-button/);
 assert.match(modalCss, /left:36px;right:36px/);
 assert.match(modalCss, /bottom:calc\(24px \+ env\(safe-area-inset-bottom\)\)/);
+assert.doesNotMatch(modalCss, /\.modal-actions[^}]*height\s*:/);
+assert.match(buttonCss, /\.ui-button\{[^}]*width:100%[^}]*min-height:48px/);
 assert.doesNotMatch(recordViewSource, /class="record-view-actions"/);
-assert.match(creationFlowSource, /actionBlock\(`/);
-assert.doesNotMatch(creationFlowSource, /record-creation-flow__actions/);
+assert.doesNotMatch(recordCreationSource, /record-creation-flow__actions/);
+assert.match(recordCreationSource, /actionBlock\(`/);
 
 for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'hardDeleteFinanceOperation', 'recordRefundExpense', 'recordPaymentIncome']) {
   assert.match(financeServiceSource, new RegExp(`export async function ${command}`));
