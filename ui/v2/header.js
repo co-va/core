@@ -8,7 +8,7 @@ function defaultChatBadge() {
 
 function vControl(slot = {}, role = '') {
   if (role !== 'a' || !slot || slot.hidden || slot.disabled) return '';
-  const settingsIntent = Boolean(slot.settingsTag);
+  const settingsIntent = role === 'a' && slot.settingsTag;
   const actionIntent = Boolean(slot.data);
   if (!settingsIntent && !actionIntent) return '';
   const aria = text(slot.aria || 'Дополнительные действия');
