@@ -593,9 +593,11 @@ function renderPaymentLayer(layer, recordId) {
     if (layer.isConnected) renderPaymentLayer(layer, current.id);
   };
   bindPaymentBodyActions(host, current, state, rerender);
-  host.querySelector('.payment-summary-mini-card-wrap')?.addEventListener('click', () => openRecordPaymentZReport(current));
   let formState = { settlement, total: state.remaining, dirty: false };
   const paymentUi = host.querySelector('[data-payment-ui]');
+  paymentUi?.addEventListener('click', (event) => {
+    if (event.target?.closest?.('.payment-summary-mini-card-wrap')) openRecordPaymentZReport(current);
+  });
   const saveButton = paymentUi?.querySelector('[data-payment-save]');
   const payButton = paymentUi?.querySelector('[data-payment-submit]');
   const syncPrimary = () => {
