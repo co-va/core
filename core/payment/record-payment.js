@@ -145,6 +145,76 @@ function paymentFromRecord(record) {
   };
 }
 
+function formatReportRubles(value = 0) {
+  const amount = Math.max(0, Math.round(Number(value) || 0));
+  return `${amount.toLocaleString('ru-RU').replaceAll('\u00a0', ' ')} р.`;
+}
+
+function formatReportNumber(value = 0) {
+  const number = Math.max(0, Number(value) || 0);
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(number).replaceAll('\u00a0', ' ');
+}
+
+function timeMinutes(value = '') {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function recordDurationHours(record = null) {
+  const from = timeMinutes(record?.from);
+  const to = timeMinutes(record?.to);
+  if (from == null || to == null || to <= from) return 0;
+  return (to - from) / 60;
+}
+
+function recordHasEnded(record = null, now = new Date()) {
+  const date = String(record?.date || '').slice(0, 10);
+  const to = String(record?.to || record?.from || '').slice(0, 5);
+  if (!date || !/^\d{2}:\d{2}$/.test(to)) return false;
+  const current = zonedDateTimeParts(now, paymentWorkplaceTimeZone(record));
+  if (!current?.date || !/^\d{2}:\d{2}$/.test(current?.time || '')) return false;
+  return `${current.date}T${current.time}` >= `${date}T${to}`;
+}
+
+function recordPaymentReportStatus(record, state) {
+  if (Math.max(0, Number(state?.remaining) || 0) <= 0.009) return 'Оплачено';
+  return recordHasEnded(record) ? 'Задолженность' : 'К оплате';
+}
+
+function openRecordPaymentZReport(record) {
+  const current = getRecord(record?.id) || record;
+  if (!current?.id) return null;
+  const settlement = settlementForRecord(current);
+  const state = paymentStateForRecord(current);
+  const procedures = Array.isArray(current?.procedures) ? current.procedures : [];
+  const procedureCount = procedures.length;
+  const hours = recordDurationHours(current);
+  const total = Math.max(0, Number(settlement?.planTotal) || 0);
+  const averageProcedure = procedureCount ? total / procedureCount : 0;
+  const averageHour = hours ? total / hours : 0;
+  const date = String(current?.date || '').slice(0, 10);
+  const dateLabel = date ? new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU') : '';
+  const groups = [
+    [
+      { label: workplaceName(current?.workplaceId), value: dateLabel },
+      { label: 'Кол-во процедур', value: String(procedureCount) },
+      { label: 'Кол-во часов', value: formatReportNumber(hours) },
+      { label: 'Средний чек процедуры', value: formatReportRubles(averageProcedure) },
+      { label: 'Средний чек часа', value: formatReportRubles(averageHour) },
+    ],
+    [{ label: 'Статус', value: recordPaymentReportStatus(current, state) }],
+    [{ label: 'Сумма', value: formatReportRubles(total), strong: true }],
+  ];
+  return mountModal(document.body, modal(readOnlyReceipt({
+    title: 'Z - Отчет',
+    groups,
+  }), { variant: 's', surface: 'app', title: 'Z - Отчет' }));
+}
+
 function paymentAllocations(payment) {
   if (Array.isArray(payment?.allocations) && payment.allocations.length) return payment.allocations.map((item) => ({ ...item }));
   if (payment?.walletId) return [{ walletId: payment.walletId, walletName: payment.walletName || '', amount: Number(payment.total || 0) }];
@@ -523,6 +593,7 @@ function renderPaymentLayer(layer, recordId) {
     if (layer.isConnected) renderPaymentLayer(layer, current.id);
   };
   bindPaymentBodyActions(host, current, state, rerender);
+  host.querySelector('.payment-summary-mini-card-wrap')?.addEventListener('click', () => openRecordPaymentZReport(current));
   let formState = { settlement, total: state.remaining, dirty: false };
   const paymentUi = host.querySelector('[data-payment-ui]');
   const saveButton = paymentUi?.querySelector('[data-payment-save]');
