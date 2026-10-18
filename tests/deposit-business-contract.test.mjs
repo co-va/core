@@ -14,9 +14,9 @@ const corrected = calculateSettlement([
   },
 ], { pricePercent: 20 });
 assert.equal(corrected.serviceTotal, 5000);
-assert.equal(corrected.correctionTotal, 500);
-assert.equal(corrected.pricePercentTotal, 900);
-assert.equal(corrected.planTotal, 3600);
+assert.equal(corrected.correctionTotal, 0);
+assert.equal(corrected.pricePercentTotal, 1000);
+assert.equal(corrected.planTotal, 4000);
 
 const personalOnly = resolvePersonPriceCondition({ discountPercent: 20 }, []);
 assert.equal(personalOnly.conflict, false);
@@ -73,8 +73,9 @@ assert.match(depositStateSource, /benefitAmount:\s*depositMoney\(benefitAmount\)
 // Service discount remains a price right and is not forced closed when money reaches zero.
 assert.match(depositStateSource, /nextBalance <= 0\.009 && mode !== 'discount' \? 'closed' : 'active'/);
 
-// The server, not the browser, owns the final automatic percentage and settlement calculation.
+// The server owns the final program percentage; personal discount is only a payment suggestion.
 assert.match(priceResolverSource, /resolvePersonPriceCondition/);
+assert.match(priceResolverSource, /resolvePersonPriceCondition\(null, \[\.\.\.programSources, \.\.\.extraSources\]\)/);
 assert.match(financeServiceSource, /resolvePersonPricePercent\(tx, tenantId, input\.person, occurredAt\)/);
 assert.match(financeServiceSource, /canonicalSettlementInput\(requestedSettlement, condition\.percent\)/);
 assert.match(financeServiceSource, /calculateCanonicalSettlement\(items, \{ pricePercent \}\)/);

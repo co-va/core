@@ -2,6 +2,7 @@ import { button } from '../buttons/index.js';
 import { miniCard } from '../cards/mini-card.js';
 import { select } from '../selectors/index.js';
 import { field } from '../inputs/index.js';
+import { columnLayout } from '../layout/index.js';
 import { escapeHtml } from '../utils/escape-html.js';
 import { v2ZBodySections } from '../v2/z-layout.js';
 import { paymentMethodsMarkup, initPaymentMethodsAllocation } from './methods.js';
@@ -58,29 +59,42 @@ function paymentItemHeader(name = '') {
 function correctionPresentation(procedure = {}, price = 0) {
   const explicitMode = procedure?.correctionMode;
   if (explicitMode === 'percent') {
-    const value = Math.max(0, Math.min(100, numberValue(procedure?.correctionPercent)));
-    return { mode: value > 0 ? 'percent' : 'none', percent: value, money: 0 };
+    const percent = Math.max(0, Math.min(100, numberValue(procedure?.correctionPercent)));
+    const storedMoney = Math.max(0, Math.min(price, numberValue(procedure?.correctionMoney)));
+    const money = storedMoney > 0 ? storedMoney : Math.max(0, Math.min(price, price * percent / 100));
+    return { mode: percent > 0 ? 'percent' : 'none', percent, money };
   }
   if (explicitMode === 'money') {
-    const value = Math.max(0, Math.min(price, numberValue(procedure?.correctionMoney)));
-    return { mode: value > 0 ? 'money' : 'none', percent: 0, money: value };
+    const money = Math.max(0, Math.min(price, numberValue(procedure?.correctionMoney)));
+    const storedPercent = Math.max(0, Math.min(100, numberValue(procedure?.correctionPercent)));
+    const percent = storedPercent > 0 ? storedPercent : (price > 0 ? Math.max(0, Math.min(100, money / price * 100)) : 0);
+    return { mode: money > 0 ? 'money' : 'none', percent, money };
   }
   return { mode: 'none', percent: 0, money: 0 };
+}
+
+function programDiscountMoney(procedure = {}, price = 0, pricePercent = 0) {
+  const stored = Math.max(0, Math.min(price, numberValue(procedure?.pricePercentMoney)));
+  if (stored > 0) return stored;
+  return Math.max(0, Math.min(price, price * pricePercent / 100));
 }
 
 function paymentProcedureBlock(procedure, index) {
   const price = Math.max(0, numberValue(procedure?.cost));
   const pricePercent = Math.max(0, Math.min(100, numberValue(procedure?.pricePercent)));
+  const programDiscount = pricePercent > 0;
   const correction = correctionPresentation(procedure, price);
+  const discountPercent = programDiscount ? pricePercent : correction.percent;
+  const discountMoney = programDiscount ? programDiscountMoney(procedure, price, pricePercent) : correction.money;
   const itemName = procedure?.name || '';
-  return `<div class="payment-item-section" data-payment-procedure="${index}" data-payment-source-type="${escapeHtml(procedure?.sourceType || 'procedure')}" data-payment-source-id="${escapeHtml(procedure?.id || '')}" data-payment-name="${escapeHtml(itemName)}" data-payment-correction-mode="${correction.mode}" data-payment-price-percent="${escapeHtml(percentText(pricePercent))}">
+  const controls = columnLayout([
+    field({ label: 'Цена', value: moneyText(price), type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-price' }),
+    select({ label: 'Скидка %', value: percentText(discountPercent), options: percentOptions, className: 'ui-select--center', data: 'data-payment-correction-percent', aria: 'Скидка в процентах' }),
+    field({ label: 'Скидка ₽', value: discountMoney > 0 ? moneyText(discountMoney) : '', type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-correction-money' }),
+  ], { columns: 3, ariaLabel: 'Цена и скидка' });
+  return `<div class="payment-item-section" data-payment-procedure="${index}" data-payment-source-type="${escapeHtml(procedure?.sourceType || 'procedure')}" data-payment-source-id="${escapeHtml(procedure?.id || '')}" data-payment-name="${escapeHtml(itemName)}" data-payment-correction-mode="${programDiscount ? 'none' : correction.mode}" data-payment-price-percent="${escapeHtml(percentText(pricePercent))}" data-payment-program-discount="${programDiscount ? 'true' : 'false'}">
     ${paymentItemHeader(itemName)}
-    <div class="payment-edit-grid">
-      ${field({ label: 'Цена', value: moneyText(price), type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-price' })}
-      ${pricePercent > 0 ? field({ label: 'Условие', value: `${percentText(pricePercent)}%`, disabled: true, data: 'data-payment-price-condition' }) : ''}
-      ${select({ label: 'Скидка %', value: correction.mode === 'percent' ? percentText(correction.percent) : '', options: percentOptions, className: 'ui-select--center', data: 'data-payment-correction-percent', aria: 'Скидка в процентах' })}
-      ${field({ label: 'Скидка ₽', value: correction.mode === 'money' ? moneyText(correction.money) : '', type: 'number', inputmode: 'decimal', min: 0, step: '0.01', data: 'data-payment-correction-money' })}
-    </div>
+    ${controls}
   </div>`;
 }
 
@@ -173,10 +187,22 @@ function setPercentDisplay(input, value) {
   if (trigger) trigger.textContent = percent ? `${percent}%` : '—';
 }
 
+function syncProgramDiscountLock(row) {
+  if (!row) return;
+  const locked = Math.max(0, numberValue(row.dataset.paymentPricePercent)) > 0;
+  const { percentInput, moneyInput } = rowValues(row);
+  if (percentInput) percentInput.disabled = locked;
+  const trigger = percentInput?.closest('.ui-select')?.querySelector('[data-ui-select-trigger]');
+  if (trigger) trigger.disabled = locked;
+  if (moneyInput) moneyInput.disabled = locked;
+  row.dataset.paymentProgramDiscount = locked ? 'true' : 'false';
+}
+
 function settlementInputs(root) {
   return [...root.querySelectorAll('[data-payment-procedure]')].map((row) => {
     const values = rowValues(row);
-    const mode = row.dataset.paymentCorrectionMode || 'none';
+    const locked = values.pricePercent > 0;
+    const mode = locked ? 'none' : (row.dataset.paymentCorrectionMode || 'none');
     return {
       sourceType: row.dataset.paymentSourceType || 'procedure',
       sourceId: row.dataset.paymentSourceId || '',
@@ -195,17 +221,19 @@ function applySettlement(root, settlement = null, { preserve = null, paidTotal =
   [...root.querySelectorAll('[data-payment-procedure]')].forEach((row, index) => {
     const item = items[index];
     if (!item) return;
+    const price = Math.max(0, numberValue(item.price));
     const pricePercent = Math.max(0, Math.min(100, numberValue(item.pricePercent)));
-    const correction = correctionPresentation(item, Math.max(0, numberValue(item.price)));
+    const programDiscount = pricePercent > 0;
+    const correction = correctionPresentation(item, price);
+    const discountPercent = programDiscount ? pricePercent : correction.percent;
+    const discountMoney = programDiscount ? programDiscountMoney(item, price, pricePercent) : correction.money;
     row.dataset.paymentPricePercent = percentText(pricePercent);
-    row.dataset.paymentCorrectionMode = correction.mode;
-    const { priceInput } = rowValues(row);
-    const { percentInput, moneyInput } = rowValues(row);
+    row.dataset.paymentCorrectionMode = programDiscount ? 'none' : correction.mode;
+    const { priceInput, percentInput, moneyInput } = rowValues(row);
     if (priceInput && priceInput !== preserve) priceInput.value = moneyText(item.price);
-    if (percentInput !== preserve) setPercentDisplay(percentInput, correction.mode === 'percent' ? correction.percent : 0);
-    if (moneyInput && moneyInput !== preserve) moneyInput.value = correction.mode === 'money' ? moneyText(correction.money) : '';
-    const conditionInput = row.querySelector('[data-payment-price-condition]');
-    if (conditionInput) conditionInput.value = pricePercent > 0 ? `${percentText(pricePercent)}%` : '';
+    if (percentInput !== preserve) setPercentDisplay(percentInput, discountPercent);
+    if (moneyInput && moneyInput !== preserve) moneyInput.value = discountMoney > 0 ? moneyText(discountMoney) : '';
+    syncProgramDiscountLock(row);
   });
   const summary = root.querySelector('[data-payment-summary]');
   if (summary) {
@@ -268,17 +296,18 @@ export function initPaymentForm(root, {
 
   root.querySelectorAll('[data-payment-procedure]').forEach((row) => {
     const { priceInput, percentInput, moneyInput } = rowValues(row);
+    syncProgramDiscountLock(row);
     priceInput?.addEventListener('input', () => {
       currentState(priceInput);
     });
     percentInput?.addEventListener('change', () => {
+      if (row.dataset.paymentProgramDiscount === 'true') return;
       row.dataset.paymentCorrectionMode = percentInput.value ? 'percent' : 'none';
-      if (percentInput.value && moneyInput) moneyInput.value = '';
       currentState(percentInput);
     });
     moneyInput?.addEventListener('input', () => {
+      if (row.dataset.paymentProgramDiscount === 'true') return;
       row.dataset.paymentCorrectionMode = moneyInput.value ? 'money' : 'none';
-      if (moneyInput.value && percentInput) setPercentDisplay(percentInput, 0);
       currentState(moneyInput);
     });
   });

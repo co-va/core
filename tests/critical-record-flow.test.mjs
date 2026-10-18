@@ -34,7 +34,7 @@ assert.match(serverRecordSource, /const \{ finance: _financeProjection, \.\.\.cu
 assert.match(serverRecordSource, /const requestedCost = Number\(draft\?\.cost \?\? draft\?\.price\);/);
 assert.match(serverRecordSource, /cost: Number\.isFinite\(requestedCost\) && requestedCost >= 0 \? requestedCost : item\.cost/);
 
-// Record owns source facts; Finance projection calculates the initial Settlement.
+// Record owns source facts; a personal discount is only an editable payment suggestion.
 hydrateDaysFromServer([
   { date: '2026-09-20', workplaceId: 'workplace-1', from: '09:00', to: '20:00' },
   { date: '2026-09-21', workplaceId: 'workplace-1', from: '09:00', to: '20:00' },
@@ -56,15 +56,17 @@ const record = createRecord({
 });
 assert.ok(record);
 assert.equal(record.finance.serviceTotal, 5000);
-assert.equal(record.finance.pricePercent, 20);
+assert.equal(record.finance.pricePercent, 0);
+assert.equal(record.finance.correctionTotal, 1000);
 assert.equal(record.finance.planTotal, 4000);
 
-// Source price correction belongs to Record; amount due is recalculated as a Finance projection.
+// Source price correction belongs to Record; the suggested discount follows the factual price.
 const corrected = updateRecord(record.id, {
   procedures: [{ id: 'procedure-1', name: 'Стрижка', cost: 8000 }],
 });
 assert.equal(corrected.procedures[0].cost, 8000);
 assert.equal(corrected.finance.serviceTotal, 8000);
+assert.equal(corrected.finance.correctionTotal, 1600);
 assert.equal(corrected.finance.planTotal, 6400);
 
 // Closing and reopening the Record reads the corrected source price and the same recalculated total.
@@ -81,10 +83,17 @@ const moved = moveRecord(record.id, {
 });
 assert.equal(moved.finance.planTotal, 6400);
 
-// A server payment snapshot makes paid fact visible without storing money in Record.
+// A server payment snapshot stores the actually applied personal discount as the payment fact.
 const correctedSettlement = calculateSettlement([
-  { sourceType: 'procedure', sourceId: 'procedure-1', name: 'Стрижка', price: 8000 },
-], { pricePercent: 20 });
+  {
+    sourceType: 'procedure',
+    sourceId: 'procedure-1',
+    name: 'Стрижка',
+    price: 8000,
+    correctionMode: 'percent',
+    correctionPercent: 20,
+  },
+]);
 const payment = paymentFixture({
   id: 'payment-1',
   recordId: record.id,
@@ -104,7 +113,7 @@ assert.equal(getRecords()[0].finance.factTotal, 6400);
 assert.equal(getWalletBalance('cash'), 6400);
 assert.equal(getSettlementItemTotals('procedure', 'procedure-1').factTotal, 6400);
 
-// Record must reject a direct Settlement write. A person without a price-percent source
+// Record must reject a direct Settlement write. A person without a suggested discount
 // can reach the same one-off amount only through the canonical manual price correction.
 const noDiscount = createRecord({
   date: '2026-09-22',

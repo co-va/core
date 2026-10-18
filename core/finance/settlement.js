@@ -4,7 +4,7 @@
 import { getStoredSettlement } from './data.js';
 import { getActiveDDSMovements, getActiveDDSMovementsForSource } from './read.js';
 import { getPersonDepositPriceConditions } from '../loyalty/deposit/data.js';
-import { resolvePersonPriceCondition } from '../loyalty/price-condition.js';
+import { personalPricePercentSource, resolvePersonPriceCondition } from '../loyalty/price-condition.js';
 import { getAllPeople } from '../people/data.js';
 import {
   calculateSettlementTotals,
@@ -17,30 +17,77 @@ import {
   recordSettlementItems,
 } from './rules.js';
 
-function settlementWithCurrentPricePercent(settlement = null, pricePercent = 0) {
+function currentPerson(person = null) {
+  const key = String(person?.key || person?.id || '').trim();
+  if (!key) return person || {};
+  return getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === key) || person || {};
+}
+
+function recordPersonalPricePercent(person = null) {
+  return clampFinancialPercent(personalPricePercentSource(currentPerson(person))?.percent || 0);
+}
+
+function settlementItemsWithConditions(items = [], { programPercent = 0, personalPercent = 0, seedPersonal = false } = {}) {
+  const lockedPercent = clampFinancialPercent(programPercent);
+  const suggestedPercent = clampFinancialPercent(personalPercent);
+  return (Array.isArray(items) ? items : []).map((item) => {
+    if (lockedPercent > 0) {
+      return {
+        ...item,
+        pricePercent: lockedPercent,
+        correctionMode: 'none',
+        correctionPercent: '',
+        correctionMoney: '',
+      };
+    }
+    if (seedPersonal && suggestedPercent > 0) {
+      return {
+        ...item,
+        pricePercent: 0,
+        correctionMode: 'percent',
+        correctionPercent: suggestedPercent,
+        correctionMoney: '',
+      };
+    }
+    return { ...item, pricePercent: 0 };
+  });
+}
+
+function settlementWithCurrentConditions(settlement = null, { programPercent = 0, personalPercent = 0 } = {}) {
   if (!settlement) return null;
-  const percent = clampFinancialPercent(pricePercent);
-  const items = (Array.isArray(settlement.items) ? settlement.items : []).map((item) => ({
-    ...item,
-    pricePercent: percent,
-  }));
-  return calculateSettlement(items, { pricePercent: percent });
+  const currentProgramPercent = clampFinancialPercent(programPercent);
+  const previousProgramPercent = clampFinancialPercent(settlement?.pricePercent ?? 0);
+  const items = settlementItemsWithConditions(settlement.items, {
+    programPercent: currentProgramPercent,
+    personalPercent,
+    seedPersonal: currentProgramPercent <= 0 && previousProgramPercent > 0,
+  });
+  return calculateSettlement(items, { pricePercent: currentProgramPercent });
 }
 
 export function resolveRecordSettlement(record = null, { pricePercent = null } = {}) {
-  const currentPercent = pricePercent == null
-    ? recordSettlementPricePercent(record?.person)
+  const condition = recordSettlementPriceCondition(record?.person);
+  const programPercent = pricePercent == null
+    ? condition.percent
     : clampFinancialPercent(pricePercent);
+  const personalPercent = recordPersonalPricePercent(record?.person);
   if (record?.id) {
     const owned = normalizeStoredSettlement(getStoredSettlement('record', record.id));
     if (owned) {
-      // A paid Settlement is historical. Before payment, current person/program conditions
-      // may change while an explicit manual correction remains saved.
+      // A paid Settlement is historical. Before payment, program conditions own the locked
+      // discount. Without a program, an explicitly saved correction remains the payment fact.
       const movements = getActiveDDSMovementsForSource('record', record.id);
-      return movements.length ? owned : settlementWithCurrentPricePercent(owned, currentPercent);
+      return movements.length
+        ? owned
+        : settlementWithCurrentConditions(owned, { programPercent, personalPercent });
     }
   }
-  return calculateSettlement(recordSettlementItems(record), { pricePercent: currentPercent });
+  const items = settlementItemsWithConditions(recordSettlementItems(record), {
+    programPercent,
+    personalPercent,
+    seedPersonal: programPercent <= 0 && personalPercent > 0,
+  });
+  return calculateSettlement(items, { pricePercent: programPercent });
 }
 
 export function getRecordSettlement(record = null, { pricePercent = null } = {}) {
@@ -91,16 +138,11 @@ export function recordAmountDue(record = null) {
   return resolveRecordSettlement(record).planTotal;
 }
 
-function currentPerson(person = null) {
-  const key = String(person?.key || person?.id || '').trim();
-  if (!key) return person || {};
-  return getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === key) || person || {};
-}
-
 export function recordSettlementPriceCondition(person = null) {
   const owner = currentPerson(person);
   const key = String(owner?.key || owner?.id || person?.key || person?.id || '').trim();
-  return resolvePersonPriceCondition(owner, getPersonDepositPriceConditions(key));
+  // Personal discount is only a payment suggestion. Automatic condition comes from programs.
+  return resolvePersonPriceCondition(null, getPersonDepositPriceConditions(key));
 }
 
 export function recordSettlementPricePercent(person = null) {
