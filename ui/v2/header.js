@@ -12,6 +12,9 @@ function vControl(slot = {}, role = '') {
   const actionIntent = Boolean(slot.data);
   if (!settingsIntent && !actionIntent) return '';
   const aria = text(slot.aria || 'Дополнительные действия');
+  const legacySettingsMarker = settingsIntent && String(slot.data || '').includes('data-v2-workspace-a')
+    ? '<span class="v2-header__settings-tag" hidden style="display:none!important" aria-hidden="true"></span>'
+    : '';
   return `<button type="button" class="v2-header__v"${dataAttributes(slot.data)} aria-label="${aria}">
     <svg class="v2-header__v-medallion" viewBox="0 0 40 40" aria-hidden="true">
       <defs>
@@ -35,7 +38,7 @@ function vControl(slot = {}, role = '') {
       <path d="M10 4.7C6.8 4.7 4.7 7.9 6.3 10.7L17.4 31.8C18.6 34.1 21.4 34.1 22.6 31.8L33.7 10.7C35.3 7.9 33.2 4.7 30 4.7H10Z" fill="url(#v2-v-glow)"></path>
       <path d="M8.7 9.1C9.4 7.9 10.5 7.3 12 7.3H28.1" fill="none" stroke="#FFFF00" stroke-opacity=".26" stroke-width=".75" stroke-linecap="round"></path>
       <path d="M17.8 30.1C18.8 32 21.2 32 22.2 30.1" fill="none" stroke="#FFFF00" stroke-opacity=".2" stroke-width=".7" stroke-linecap="round"></path>
-    </svg>
+    </svg>${legacySettingsMarker}
   </button>`;
 }
 
