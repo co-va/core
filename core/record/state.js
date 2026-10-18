@@ -11,8 +11,10 @@ export function projectRecordLifecycle(record = {}, events = []) {
   let status = 'active';
   let confirmed = false;
   let attendance = '';
+  let completed = false;
   let confirmedAt = '';
   let attendanceAt = '';
+  let completedAt = '';
   let cancelledAt = '';
   let lifecycleUpdatedAt = record?.createdAt || record?.updatedAt || '';
 
@@ -33,6 +35,13 @@ export function projectRecordLifecycle(record = {}, events = []) {
     } else if (event.type === RECORD_EVENT_TYPES.ATTENDANCE_CLEARED) {
       attendance = '';
       attendanceAt = at;
+    } else if (event.type === RECORD_EVENT_TYPES.COMPLETED) {
+      completed = true;
+      completedAt = at;
+      if (!attendance) {
+        attendance = 'arrived';
+        attendanceAt = at;
+      }
     } else if (event.type === RECORD_EVENT_TYPES.CANCELLED) {
       status = 'cancelled';
       cancelledAt = at;
@@ -40,7 +49,18 @@ export function projectRecordLifecycle(record = {}, events = []) {
     if (at) lifecycleUpdatedAt = at;
   }
 
-  return { ...record, status, confirmed, attendance, confirmedAt, attendanceAt, cancelledAt, lifecycleUpdatedAt };
+  return {
+    ...record,
+    status,
+    confirmed,
+    attendance,
+    completed,
+    confirmedAt,
+    attendanceAt,
+    completedAt,
+    cancelledAt,
+    lifecycleUpdatedAt,
+  };
 }
 
 export function recordActionState(record = {}, events = []) {
@@ -95,6 +115,7 @@ export function recordVisualState(record, { paid = false } = {}) {
 export function isRecordCompletedSide(record, { paid = false, now = Date.now() } = {}) {
   return record?.status === 'cancelled'
     || record?.attendance === 'no-show'
+    || record?.completed === true
     || paid
     || recordAppointmentTime(record, 'to') <= now;
 }
@@ -111,6 +132,10 @@ export function recordActivityTime(record, payment = null, { completed = false }
   if (record?.attendance === 'no-show') {
     const attendanceAt = Date.parse(String(record?.attendanceAt || record?.lifecycleUpdatedAt || record?.updatedAt || record?.createdAt || ''));
     if (Number.isFinite(attendanceAt)) return attendanceAt;
+  }
+  if (record?.completed) {
+    const completedAt = Date.parse(String(record?.completedAt || record?.lifecycleUpdatedAt || ''));
+    if (Number.isFinite(completedAt)) return completedAt;
   }
   if (completed) return recordAppointmentTime(record, 'to') || recordAppointmentTime(record, 'from');
   const updatedAt = Date.parse(String(record?.lifecycleUpdatedAt || record?.updatedAt || record?.createdAt || ''));

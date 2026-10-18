@@ -274,10 +274,12 @@ export function initPaymentForm(root, {
   const syncAction = (state) => {
     if (!actionButton) return;
     const dirty = Boolean(state?.dirty);
+    const zeroDueService = Math.max(0, numberValue(state?.settlement?.serviceTotal)) > 0.009
+      && Math.max(0, numberValue(state?.total)) <= 0.009;
     actionButton.textContent = dirty ? 'Сохранить' : 'Оплатить';
     actionButton.setAttribute('aria-label', dirty ? 'Сохранить' : 'Оплатить');
     actionButton.classList.toggle('ui-button--secondary', dirty);
-    actionButton.hidden = !dirty && Math.max(0, numberValue(state?.total)) <= 0.009;
+    actionButton.hidden = !dirty && Math.max(0, numberValue(state?.total)) <= 0.009 && !zeroDueService;
   };
 
   const currentState = (preserve = null) => {

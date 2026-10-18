@@ -80,8 +80,10 @@ function dataPatchFrom(patch = {}) {
     'status',
     'confirmed',
     'attendance',
+    'completed',
     'confirmedAt',
     'attendanceAt',
+    'completedAt',
     'cancelledAt',
     'lifecycleUpdatedAt',
   ]);
@@ -267,6 +269,19 @@ export function setRecordConfirmed(id, confirmed, options = {}) {
 export function setRecordAttendance(id, attendance, options = {}) {
   const value = attendance === 'arrived' || attendance === 'no-show' ? attendance : '';
   return updateRecord(id, { attendance: value }, options);
+}
+
+export function completeRecord(id, { actionContext = null } = {}) {
+  const current = getRecord(id);
+  if (!current || current.status === 'cancelled' || current.attendance === 'no-show') return null;
+  if (current.completed) return current;
+  appendRecordEvent(id, RECORD_EVENT_TYPES.COMPLETED, {
+    ...eventContext(current, actionContext),
+    payload: { appointment: scheduleSnapshot(current) },
+  });
+  const completed = getRecord(id);
+  notify('book:records-changed', { action: 'complete', recordId: id });
+  return completed;
 }
 
 export function cancelRecord(id, { actionContext = null } = {}) {

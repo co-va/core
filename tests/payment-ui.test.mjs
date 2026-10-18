@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { paymentForm, paymentMethods } from '../ui/payment/index.js';
 import { paymentAllocationState } from '../ui/payment/methods.js';
 import { calculateSettlement } from '../core/finance/index.js';
+import { projectRecordLifecycle, RECORD_EVENT_TYPES } from '../core/record/index.js';
 import { shortDate } from '../ui/utils/date-time.js';
 import { zonedDateTimeParts, zonedDateTimeToDate } from '../core/time/index.js';
 
@@ -86,6 +87,29 @@ assert.equal(mixed.remaining, 0);
 assert.equal(mixed.tips, 500);
 assert.equal(mixed.valid, true);
 
+// A zero-due service still accepts real money as pure Tips.
+const gratuityOnly = paymentAllocationState([
+  { walletId: 'cash', walletName: 'Наличные', amount: 5000 },
+], 0, [], null);
+assert.equal(gratuityOnly.applied, 0);
+assert.equal(gratuityOnly.remaining, 0);
+assert.equal(gratuityOnly.tips, 5000);
+assert.equal(gratuityOnly.received, 5000);
+assert.equal(gratuityOnly.valid, true);
+
+// With no money there is no Finance payment; the Record completion action owns the fact.
+const zeroNoMoney = paymentAllocationState([], 0, [], null);
+assert.equal(zeroNoMoney.received, 0);
+assert.equal(zeroNoMoney.tips, 0);
+assert.equal(zeroNoMoney.valid, false);
+const completedLifecycle = projectRecordLifecycle(
+  { createdAt: '2026-09-11T10:00:00.000Z' },
+  [{ type: RECORD_EVENT_TYPES.COMPLETED, at: '2026-09-11T13:00:00.000Z' }],
+);
+assert.equal(completedLifecycle.completed, true);
+assert.equal(completedLifecycle.completedAt, '2026-09-11T13:00:00.000Z');
+assert.equal(completedLifecycle.attendance, 'arrived');
+
 assert.equal(shortDate('2026-09-11'), '11.09.26');
 const moscowMoment = zonedDateTimeToDate('2026-09-21T14:30', 'Europe/Moscow');
 assert.equal(moscowMoment.toISOString(), '2026-09-21T11:30:00.000Z');
@@ -104,6 +128,8 @@ const pageSource = readFileSync(new URL('../ui/page/page.js', import.meta.url), 
 const recordCreationSource = readFileSync(new URL('../ui/record/creation-flow.js', import.meta.url), 'utf8');
 const financeServiceSource = readFileSync(new URL('../core/finance/service.js', import.meta.url), 'utf8');
 const paymentMechanismSource = readFileSync(new URL('../core/payment/record-payment.js', import.meta.url), 'utf8');
+const recordEventsSource = readFileSync(new URL('../core/record/events.js', import.meta.url), 'utf8');
+const recordServiceSource = readFileSync(new URL('../core/record/service.js', import.meta.url), 'utf8');
 const journalDaySource = readFileSync(new URL('../journal/день.js', import.meta.url), 'utf8');
 const recordViewSource = readFileSync(new URL('../core/records/view.js', import.meta.url), 'utf8');
 
@@ -120,6 +146,7 @@ assert.match(paymentSource, /columnLayout\(\[/);
 assert.doesNotMatch(paymentSource, /payment-edit-grid/);
 assert.doesNotMatch(paymentSource, /data-payment-price-condition/);
 assert.match(paymentSource, /dirty \? 'Сохранить' : 'Оплатить'/);
+assert.match(paymentSource, /const zeroDueService =/);
 assert.match(methodsSource, /const tips = Math\.max\(0, cashReceived - serviceFromCash\)/);
 assert.match(methodsSource, /readOnlyReceipt/);
 assert.doesNotMatch(paymentCss, /\.payment-edit-grid/);
@@ -155,9 +182,16 @@ assert.match(paymentMechanismSource, /export function openRecordPayment\(record\
 assert.match(paymentMechanismSource, /paymentForm\(/);
 assert.match(paymentMechanismSource, /paymentMethods\(/);
 assert.match(paymentMechanismSource, /recordPaymentIncome\(/);
-assert.match(paymentMechanismSource, /actionBlock\(button\('Оплатить', \{ data: 'data-record-payment-allocation-submit', disabled: true \}\)\)/);
-assert.match(paymentMechanismSource, /submit\.disabled = !allocationState\?\.valid/);
+assert.match(paymentMechanismSource, /const gratuityOnly = total <= 0\.009/);
+assert.match(paymentMechanismSource, /gratuityOnly\s*\?\s*\[\[\], null\]/);
+assert.match(paymentMechanismSource, /button\(gratuityOnly \? 'Завершить' : 'Оплатить'/);
+assert.match(paymentMechanismSource, /const label = gratuityOnly && !hasMoney \? 'Завершить' : 'Оплатить'/);
+assert.match(paymentMechanismSource, /await persistRecordCompletion\(current\)/);
+assert.match(paymentMechanismSource, /serviceAmount: allocationState\.applied/);
+assert.match(paymentMechanismSource, /tips: allocationState\.tips/);
 assert.doesNotMatch(paymentMechanismSource, /data-record-payment-allocation-primary/);
+assert.match(recordEventsSource, /COMPLETED: 'completed'/);
+assert.match(recordServiceSource, /export function completeRecord/);
 assert.equal(existsSync(new URL('../journal/journal-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-payment.js', import.meta.url)), false);

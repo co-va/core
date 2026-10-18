@@ -42,6 +42,7 @@ export const RECORD_EVENT_TYPES = Object.freeze({
   ARRIVED: 'arrived',
   NO_SHOW: 'no-show',
   ATTENDANCE_CLEARED: 'attendance-cleared',
+  COMPLETED: 'completed',
   CANCELLED: 'cancelled',
 });
 
@@ -52,7 +53,7 @@ export const RECORD_EVENT_CATEGORIES = Object.freeze({
 });
 
 export function recordEventCategory(type) {
-  if ([RECORD_EVENT_TYPES.CREATED, RECORD_EVENT_TYPES.RESCHEDULED, RECORD_EVENT_TYPES.CANCELLED].includes(type)) {
+  if ([RECORD_EVENT_TYPES.CREATED, RECORD_EVENT_TYPES.RESCHEDULED, RECORD_EVENT_TYPES.COMPLETED, RECORD_EVENT_TYPES.CANCELLED].includes(type)) {
     return RECORD_EVENT_CATEGORIES.ACTION;
   }
   if ([RECORD_EVENT_TYPES.CONFIRMED, RECORD_EVENT_TYPES.UNCONFIRMED].includes(type)) {
