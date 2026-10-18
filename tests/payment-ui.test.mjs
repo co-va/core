@@ -3,8 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { paymentForm, paymentMethods } from '../ui/payment/index.js';
 import { paymentAllocationState } from '../ui/payment/methods.js';
 import { calculateSettlement } from '../core/finance/index.js';
-import { RECORD_EVENT_TYPES } from '../core/record/events.js';
-import { projectRecordLifecycle } from '../core/record/state.js';
+import { projectRecordLifecycle, RECORD_EVENT_TYPES } from '../core/record/index.js';
 import { shortDate } from '../ui/utils/date-time.js';
 import { zonedDateTimeParts, zonedDateTimeToDate } from '../core/time/index.js';
 
@@ -184,7 +183,7 @@ assert.match(paymentMechanismSource, /paymentForm\(/);
 assert.match(paymentMechanismSource, /paymentMethods\(/);
 assert.match(paymentMechanismSource, /recordPaymentIncome\(/);
 assert.match(paymentMechanismSource, /const gratuityOnly = total <= 0\.009/);
-assert.match(paymentMechanismSource, /gratuityOnly \? \[\[\], null\]/);
+assert.match(paymentMechanismSource, /gratuityOnly\s*\?\s*\[\[\], null\]/);
 assert.match(paymentMechanismSource, /button\(gratuityOnly \? 'Завершить' : 'Оплатить'/);
 assert.match(paymentMechanismSource, /const label = gratuityOnly && !hasMoney \? 'Завершить' : 'Оплатить'/);
 assert.match(paymentMechanismSource, /await persistRecordCompletion\(current\)/);
