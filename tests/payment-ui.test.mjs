@@ -83,6 +83,7 @@ const paymentSource = readFileSync(new URL('../ui/payment/index.js', import.meta
 const methodsSource = readFileSync(new URL('../ui/payment/methods.js', import.meta.url), 'utf8');
 const paymentCss = readFileSync(new URL('../ui/payment/payment.css', import.meta.url), 'utf8');
 const financeServiceSource = readFileSync(new URL('../core/finance/service.js', import.meta.url), 'utf8');
+const paymentMechanismSource = readFileSync(new URL('../core/payment/record-payment.js', import.meta.url), 'utf8');
 const journalDaySource = readFileSync(new URL('../journal/день.js', import.meta.url), 'utf8');
 const recordViewSource = readFileSync(new URL('../core/records/view.js', import.meta.url), 'utf8');
 
@@ -100,9 +101,17 @@ for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'har
 }
 
 assert.doesNotMatch(journalDaySource, /openRecordPaymentEntry|openRecordPayment/);
-assert.doesNotMatch(recordViewSource, /openRecordPayment|paymentForm|paymentMethods|recordPaymentIncome/);
+assert.match(recordViewSource, /import \{ openRecordPayment \} from '\.\.\/payment\/record-payment\.js'/);
+assert.match(recordViewSource, /data-record-view-payment/);
+assert.match(recordViewSource, /openRecordPayment\(syncCurrent\(\)\)/);
+assert.doesNotMatch(recordViewSource, /paymentForm|paymentMethods|recordPaymentIncome/);
+assert.match(paymentMechanismSource, /export function openRecordPayment\(record\)/);
+assert.match(paymentMechanismSource, /paymentForm\(/);
+assert.match(paymentMechanismSource, /paymentMethods\(/);
+assert.match(paymentMechanismSource, /recordPaymentIncome\(/);
 assert.equal(existsSync(new URL('../journal/journal-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-view.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../journal/record-payment.js', import.meta.url)), false);
+assert.equal(existsSync(new URL('../core/payment/record-payment.js', import.meta.url)), true);
 
 console.log('payment UI tests: OK');
