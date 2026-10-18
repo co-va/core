@@ -537,6 +537,7 @@ function renderPaymentLayer(layer, recordId) {
   };
   bindPaymentBodyActions(host, layer, current, state, rerender);
   let formState = { settlement, total: state.remaining, dirty: false };
+  const paymentUi = host.querySelector('[data-payment-ui]');
   const primaryHost = host.querySelector('[data-record-payment-primary]');
   const renderPrimary = ({ label = '', variant = '', onClick = null } = {}) => {
     if (!primaryHost) return;
@@ -552,6 +553,10 @@ function renderPaymentLayer(layer, recordId) {
     });
   };
   const syncPrimary = () => {
+    if (state.hasPayments) {
+      renderPrimary();
+      return;
+    }
     if (formState.dirty) {
       renderPrimary({
         label: 'Сохранить',
@@ -563,7 +568,7 @@ function renderPaymentLayer(layer, recordId) {
       });
       return;
     }
-    if (state.hasPayments || state.remaining <= 0.009 || state.fullyPaid) {
+    if (state.remaining <= 0.009 || state.fullyPaid) {
       renderPrimary();
       return;
     }
@@ -574,12 +579,19 @@ function renderPaymentLayer(layer, recordId) {
       }),
     });
   };
-  initPaymentForm(host.querySelector('[data-payment-ui]'), {
-    calculate: (items) => calculateSettlement(items),
-    paidTotal: state.paidTotal,
-    onChange: (next) => { formState = next; syncPrimary(); },
-  });
-  syncPrimary();
+  if (state.hasPayments) {
+    paymentUi?.querySelectorAll('input, button, select, textarea').forEach((control) => {
+      control.disabled = true;
+    });
+    renderPrimary();
+  } else {
+    initPaymentForm(paymentUi, {
+      calculate: (items) => calculateSettlement(items),
+      paidTotal: state.paidTotal,
+      onChange: (next) => { formState = next; syncPrimary(); },
+    });
+    syncPrimary();
+  }
 }
 
 export function openRecordPayment(record) {
