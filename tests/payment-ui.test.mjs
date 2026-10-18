@@ -84,9 +84,9 @@ const paymentSource = readFileSync(new URL('../ui/payment/index.js', import.meta
 const methodsSource = readFileSync(new URL('../ui/payment/methods.js', import.meta.url), 'utf8');
 const paymentCss = readFileSync(new URL('../ui/payment/payment.css', import.meta.url), 'utf8');
 const modalCss = readFileSync(new URL('../ui/modals/modal.css', import.meta.url), 'utf8');
-const buttonsCss = readFileSync(new URL('../ui/buttons/buttons.css', import.meta.url), 'utf8');
 const recordCss = readFileSync(new URL('../ui/record/record.css', import.meta.url), 'utf8');
 const pageSource = readFileSync(new URL('../ui/page/page.js', import.meta.url), 'utf8');
+const creationFlowSource = readFileSync(new URL('../ui/record/creation-flow.js', import.meta.url), 'utf8');
 const financeServiceSource = readFileSync(new URL('../core/finance/service.js', import.meta.url), 'utf8');
 const paymentMechanismSource = readFileSync(new URL('../core/payment/record-payment.js', import.meta.url), 'utf8');
 const journalDaySource = readFileSync(new URL('../journal/день.js', import.meta.url), 'utf8');
@@ -108,13 +108,15 @@ assert.doesNotMatch(recordCss, /\.record-creation-flow__actions\{display:grid/);
 assert.match(pageSource, /class="profile-actions modal-actions/);
 assert.match(modalCss, /\[data-v2-z-body\]/);
 assert.match(modalCss, /\[data-v2-q-body\]/);
-assert.match(modalCss, /\.record-view-actions/);
-assert.match(modalCss, /\.record-creation-flow__actions/);
+assert.match(modalCss, /\.modal-actions/);
+assert.doesNotMatch(modalCss, /\.record-view-actions/);
+assert.doesNotMatch(modalCss, /\.record-creation-flow__actions/);
+assert.doesNotMatch(modalCss, /\.ui-button/);
 assert.match(modalCss, /left:36px;right:36px/);
-assert.match(buttonsCss, /height:48px;min-height:48px/);
-assert.match(buttonsCss, /\.record-view-actions/);
-assert.match(buttonsCss, /\.record-creation-flow__actions/);
 assert.match(modalCss, /bottom:calc\(24px \+ env\(safe-area-inset-bottom\)\)/);
+assert.doesNotMatch(recordViewSource, /class="record-view-actions"/);
+assert.match(creationFlowSource, /actionBlock\(`/);
+assert.doesNotMatch(creationFlowSource, /record-creation-flow__actions/);
 
 for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'hardDeleteFinanceOperation', 'recordRefundExpense', 'recordPaymentIncome']) {
   assert.match(financeServiceSource, new RegExp(`export async function ${command}`));
