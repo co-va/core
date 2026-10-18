@@ -1,7 +1,6 @@
 import { floatingSettingsButton } from './index.js';
 
 const BUTTON_SELECTOR = '[data-floating-settings-button]';
-const CONTEXT_SOURCE_SELECTOR = '[data-workspace-context-action], .page-header__meta button';
 
 function workspaceShell() {
   return document.querySelector('#app > [data-v2-app].v2-app--workspace');
@@ -19,11 +18,10 @@ function activeZ(shell) {
   return zSurfaces(shell).at(-1) || null;
 }
 
-function settingsSource(surface) {
-  const source = surface?.querySelector(CONTEXT_SOURCE_SELECTOR) || null;
-  const kind = String(source?.dataset.workspaceAKind || '');
-  if (!source || (kind && kind !== 'settings') || source.disabled || source.dataset.floatingSettings === 'false') return null;
-  return source;
+function resolvedSettingsA(shell) {
+  const control = shell?.querySelector('[data-v2-header] [data-v2-workspace-a]') || null;
+  if (!control || control.disabled || !control.querySelector('.v2-header__settings-tag')) return null;
+  return control;
 }
 
 function removeFloatingSettings(surface) {
@@ -44,8 +42,8 @@ function syncFloatingSettings() {
     if (item !== surface) removeFloatingSettings(item);
   });
 
-  const source = settingsSource(surface);
-  if (!surface || !source || document.querySelector('[data-modal]')) {
+  const settingsA = resolvedSettingsA(shell);
+  if (!surface || !settingsA || shell.classList.contains('has-v2-modal')) {
     removeFloatingSettings(surface);
     return;
   }
@@ -57,8 +55,8 @@ function syncFloatingSettings() {
   }
   if (!button) return;
   surface.classList.add('has-floating-settings');
-  button.setAttribute('aria-label', source.getAttribute('aria-label') || 'Настройки');
-  button.onclick = () => settingsSource(activeZ(workspaceShell()))?.click();
+  button.setAttribute('aria-label', settingsA.getAttribute('aria-label') || 'Настройки');
+  button.onclick = () => resolvedSettingsA(workspaceShell())?.click();
 }
 
 let queued = false;
@@ -73,15 +71,13 @@ function queueSync() {
 
 const app = document.querySelector('#app');
 if (app) {
-  const appObserver = new MutationObserver(queueSync);
-  appObserver.observe(app, {
+  const observer = new MutationObserver(queueSync);
+  observer.observe(app, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['disabled', 'data-workspace-a-kind', 'data-floating-settings'],
+    attributeFilter: ['disabled'],
   });
-  const modalObserver = new MutationObserver(queueSync);
-  modalObserver.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('book:v2-context-changed', queueSync);
   queueSync();
 }
