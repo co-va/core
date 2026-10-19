@@ -177,6 +177,7 @@ assert.doesNotMatch(journalDaySource, /openRecordPaymentEntry|openRecordPayment/
 assert.match(recordViewSource, /import \{ openRecordPayment \} from '\.\.\/payment\/record-payment\.js'/);
 assert.match(recordViewSource, /data-record-view-payment/);
 assert.match(recordViewSource, /К оплате: \$\{formatMoney\(payment\.remaining\)\}/);
+assert.match(recordViewSource, /payment\.hasPayments \? '' : button\('Продажа'/);
 assert.match(recordViewSource, /button\('Оплачено', \{ disabled: true \}\)/);
 assert.match(recordViewSource, /openRecordPayment\(syncCurrent\(\),\s*\{/);
 assert.match(recordViewSource, /onCompleted:\s*\(\)\s*=>\s*\{[\s\S]*?syncCurrent\(\);[\s\S]*?render\(\);/);
