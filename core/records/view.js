@@ -289,9 +289,8 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
           syncCurrent();
           render();
         },
+        extraActions: button('История', { variant: 'secondary', data: 'data-record-view-history' }),
       });
-      const host = actions?.querySelector('.record-payment-actions');
-      host?.insertAdjacentHTML('beforeend', button('История', { variant: 'secondary', data: 'data-record-view-history' }));
       actions?.querySelector('[data-record-view-history]')?.addEventListener('click', () => {
         actions.v2Close?.();
         void openHistory(source);
