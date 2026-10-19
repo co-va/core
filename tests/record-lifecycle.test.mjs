@@ -111,6 +111,7 @@ assert.match(personHistorySource, /return \[\.\.\.records, \.\.\.standaloneFinan
 assert.match(recordViewSource, /import \{ openPersonHistoryQ \} from '\.\.\/people\/people\.js';/);
 assert.match(recordViewSource, /return openPersonHistoryQ\(document\.body, person\);/);
 assert.match(recordViewSource, /button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)/);
-assert.match(recordViewSource, /querySelector\('\.record-payment-actions'\);\s*host\?\.insertAdjacentHTML\('beforeend', button\('История'/s);
+assert.match(recordViewSource, /extraActions: button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)/);
+assert.doesNotMatch(recordViewSource, /insertAdjacentHTML\('beforeend', button\('История'/);
 
 console.log('record lifecycle tests: OK');
