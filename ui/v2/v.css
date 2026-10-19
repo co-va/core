@@ -18,7 +18,6 @@
   touch-action:manipulation;
   -webkit-tap-highlight-color:transparent;
 }
-.v2-app.has-v2-q-modal .v2-header__v{z-index:1301}
 .v2-header__v-medallion{
   width:38px;
   height:38px;
@@ -35,8 +34,7 @@
 }
 .v2-header__v:focus-visible{outline:2px solid var(--v2-yellow);outline-offset:0;border-radius:14px}
 .v2-app.is-deck-open .v2-header__v,
-.v2-app.has-v2-modal:not(.has-v2-q-modal) .v2-header__v,
-.v2-header.is-modal-locked .v2-header__v,
+.v2-app.has-v2-modal .v2-header__v,
 html.keyboard-open .v2-header__v{visibility:hidden;pointer-events:none}
 
 @media(max-width:360px){

@@ -14,7 +14,6 @@ import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, recordAmountDue } from '../finance/index.js';
 import { openRecordPayment } from '../payment/record-payment.js';
-import { packRecordPaymentActionsIntoV } from '../payment/v-actions.js';
 import { openRecordSale } from '../sale/sale.js';
 import {
   cancelRecord,
@@ -291,8 +290,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       });
     });
     root.querySelector('[data-record-view-payment]')?.addEventListener('click', () => {
-      const paymentLayer = openRecordPayment(syncCurrent());
-      packRecordPaymentActionsIntoV(paymentLayer);
+      openRecordPayment(syncCurrent());
     });
 
     layer.querySelector('[data-record-view-confirmed]')?.addEventListener('click', () => {
