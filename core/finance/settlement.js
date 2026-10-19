@@ -3,8 +3,8 @@
 // Canonical Settlement snapshots live in Finance. Record receives finance only as a read projection.
 import { getStoredSettlement } from './data.js';
 import { getActiveDDSMovements, getActiveDDSMovementsForSource } from './read.js';
-import { getPersonDepositPriceConditions } from '../loyalty/deposit/data.js';
-import { personalPricePercentSource, resolvePersonPriceCondition } from '../loyalty/price-condition.js';
+import { getSelectedRecordProgram } from '../loyalty/record-program.js';
+import { personalPricePercentSource, resolvePriceConditionSources } from '../loyalty/price-condition.js';
 import { getAllPeople } from '../people/data.js';
 import {
   calculateSettlementTotals,
@@ -66,7 +66,7 @@ function settlementWithCurrentConditions(settlement = null, { programPercent = 0
 }
 
 export function resolveRecordSettlement(record = null, { pricePercent = null } = {}) {
-  const condition = recordSettlementPriceCondition(record?.person);
+  const condition = recordSettlementPriceCondition(record);
   const programPercent = pricePercent == null
     ? condition.percent
     : clampFinancialPercent(pricePercent);
@@ -74,8 +74,9 @@ export function resolveRecordSettlement(record = null, { pricePercent = null } =
   if (record?.id) {
     const owned = normalizeStoredSettlement(getStoredSettlement('record', record.id));
     if (owned) {
-      // A paid Settlement is historical. Before payment, program conditions own the locked
-      // discount. Without a program, an explicitly saved correction remains the payment fact.
+      // A paid Settlement is historical. Before payment, only the explicitly selected
+      // program owns the locked program discount. Without one, an explicitly saved
+      // correction remains the payment fact and personal discount is only the initial suggestion.
       const movements = getActiveDDSMovementsForSource('record', record.id);
       return movements.length
         ? owned
@@ -140,15 +141,22 @@ export function recordAmountDue(record = null) {
   return resolveRecordSettlement(record).planTotal;
 }
 
-export function recordSettlementPriceCondition(person = null) {
-  const owner = currentPerson(person);
-  const key = String(owner?.key || owner?.id || person?.key || person?.id || '').trim();
-  // Personal discount is only a payment suggestion. Automatic condition comes from programs.
-  return resolvePersonPriceCondition(null, getPersonDepositPriceConditions(key));
+export function recordSettlementPriceCondition(record = null) {
+  const selected = getSelectedRecordProgram(record);
+  const selectedPercent = clampFinancialPercent(selected?.pricePercent || 0);
+  if (!selected || selectedPercent <= 0) return resolvePriceConditionSources([]);
+  return resolvePriceConditionSources([{
+    type: 'program',
+    programType: selected.type,
+    programId: selected.programId,
+    assignmentId: selected.assignmentId,
+    name: selected.name,
+    percent: selectedPercent,
+  }]);
 }
 
-export function recordSettlementPricePercent(person = null) {
-  return recordSettlementPriceCondition(person).percent;
+export function recordSettlementPricePercent(record = null) {
+  return recordSettlementPriceCondition(record).percent;
 }
 
 export function normalizeRecordSettlement(value = null) {
@@ -168,7 +176,7 @@ export function normalizeRecordSettlement(value = null) {
 
 export function hydrateRecordSettlement(record = null) {
   if (!record?.id) return record;
-  const condition = recordSettlementPriceCondition(record?.person);
+  const condition = recordSettlementPriceCondition(record);
   const normalizedRecord = {
     ...record,
     procedures: Array.isArray(record.procedures) ? record.procedures : [],
