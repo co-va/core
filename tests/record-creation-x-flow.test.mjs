@@ -4,6 +4,8 @@ import { getBookingTimeRows } from '../online-booking/model.js';
 
 const records = fs.readFileSync('core/records/records.js', 'utf8');
 const owner = fs.readFileSync('ui/record/creation-flow.js', 'utf8');
+const runtime = fs.readFileSync('ui/record/runtime.js', 'utf8');
+const recordCss = fs.readFileSync('ui/record/record.css', 'utf8');
 const day = fs.readFileSync('journal/день.js', 'utf8');
 const recordView = fs.readFileSync('core/records/view.js', 'utf8');
 const booking = fs.readFileSync('online-booking/access.js', 'utf8');
@@ -22,6 +24,35 @@ assert.match(day, /import\('\.\.\/core\/records\/view\.js'\)/);
 assert.match(recordView, /export function openRecordView/);
 assert.match(personEntry, /from '\.\.\/records\/records\.js'/);
 assert.match(booking, /from '\.\.\/core\/records\/records\.js'/);
+
+// One shared record mini-card contract is used both during creation and in Record View.
+assert.match(runtime, /export function recordConfirmationMiniCard\(\{/);
+assert.match(runtime, /contactDiscount = ''/);
+assert.match(runtime, /identity = ''/);
+assert.match(runtime, /discountMoney = ''/);
+assert.doesNotMatch(runtime, /discount \|\| '0%'/);
+assert.doesNotMatch(runtime, /groupText = ''/);
+assert.match(recordCss, /grid-template-columns:auto minmax\(0,1fr\) auto/);
+assert.match(recordCss, /nth-child\(5\)\{grid-column:1\/4;grid-row:3/);
+assert.match(recordCss, /nth-child\(9\)\{grid-column:3;grid-row:5/);
+
+// Creation reads the contact discount and uses Finance Settlement for gross/net values.
+assert.match(records, /resolveRecordSettlement\(\{/);
+assert.match(records, /contact\?\.discountPercent/);
+assert.match(records, /settlement\?\.serviceTotal/);
+assert.match(records, /settlement\?\.planTotal/);
+assert.match(records, /contactDiscount: contactDiscountPercent > 0/);
+assert.match(records, /discountMoney: discountMoney > 0\.009/);
+assert.match(records, /total: formatMoney\(grossTotal\)/);
+assert.doesNotMatch(records, /contactDiscount:.*0%/);
+
+// Existing Record View reads the current contact only for contact discount and keeps gross total in the card.
+assert.match(recordView, /getAllPeople\(\)/);
+assert.match(recordView, /contact\?\.discountPercent/);
+assert.match(recordView, /contactDiscount: contactDiscountPercent > 0/);
+assert.match(recordView, /discountMoney: discountMoney > 0\.009/);
+assert.match(recordView, /total: formatMoney\(grossTotal\)/);
+assert.doesNotMatch(recordView, /recordAmountDue\(source\)/);
 
 const context = {
   workplaces: [{ key: 'w1', name: 'A', timeZone: 'Europe/Moscow', from: '10:00', to: '14:00' }],
