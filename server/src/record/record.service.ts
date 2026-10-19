@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
-import { resolvePersonPricePercent } from '../loyalty/price-condition';
+import { resolveSelectedRecordProgramPricePercent } from '../loyalty/price-condition';
 import { ProcedureService } from '../procedure/procedure.service';
 import { TimeService } from '../time/time.service';
 
@@ -41,6 +41,11 @@ function stable(value: any): any {
 
 function sameJson(left: unknown, right: unknown) {
   return JSON.stringify(stable(left)) === JSON.stringify(stable(right));
+}
+
+function nullableObject(value: unknown): JsonObject | null {
+  const source = objectValue(value);
+  return Object.keys(source).length ? clone(source) : null;
 }
 
 function groupCapacityFromProcedures(items: JsonObject[]) {
@@ -112,8 +117,8 @@ export class RecordService {
     ];
   }
 
-  private async pricePercent(tenantId: string, person: JsonObject) {
-    return (await resolvePersonPricePercent(this.prisma, tenantId, person)).percent;
+  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown = null) {
+    return (await resolveSelectedRecordProgramPricePercent(this.prisma, tenantId, person, loyaltyProgram)).percent;
   }
 
   private async validateAvailability(
@@ -224,7 +229,8 @@ export class RecordService {
     let person = clone(objectValue(input.person));
     const group = normalizeGroup(input.group, person, groupCapacityFromProcedures(procedureSnapshots));
     if (group?.participants?.length) person = clone(group.participants[0]);
-    const pricePercent = await this.pricePercent(tenantId, person);
+    const loyaltyProgram = nullableObject(input.loyaltyProgram);
+    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
     const settlement = this.finance.calculateSettlement(this.settlementSources(procedureSnapshots, products), pricePercent);
 
     const now = new Date().toISOString();
@@ -240,6 +246,7 @@ export class RecordService {
       group,
       procedures: procedureSnapshots,
       products,
+      loyaltyProgram,
       source: text(input.source) || 'manual',
       sourceRequestId,
       createdBy: actor,
@@ -355,7 +362,7 @@ export class RecordService {
       if (!personKeys.has(text(person?.key)) && !personIds.has(text(person?.id))) continue;
       const events = byRecord.get(text(record.id)) || [];
       const lifecycle = this.projectLifecycle(record, events);
-      const pricePercent = await this.pricePercent(tenantId, person);
+      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram);
       const fallbackSettlement = this.finance.calculateSettlement(
         this.settlementSources(
           arrayValue(record.procedures).map((item) => objectValue(item)),
@@ -400,6 +407,7 @@ export class RecordService {
     const productsChanged = !sameJson(arrayValue(current.products), arrayValue(incoming.products));
     const personChanged = !sameJson(objectValue(current.person), objectValue(incoming.person));
     const groupChanged = !sameJson(objectValue(current.group), objectValue(incoming.group));
+    const programChanged = !sameJson(objectValue(current.loyaltyProgram), objectValue(incoming.loyaltyProgram));
     const refreshProcedures = workplaceChanged || rawProceduresChanged;
 
     let procedures = arrayValue(current.procedures).map((item) => clone(objectValue(item)));
@@ -454,9 +462,10 @@ export class RecordService {
     const allowedGroupCapacity = rawProceduresChanged ? groupCapacityFromProcedures(procedures) : currentGroupCapacity;
     const group = normalizeGroup(groupSource, person, allowedGroupCapacity);
     if (group?.participants?.length) person = clone(group.participants[0]);
+    const loyaltyProgram = programChanged ? nullableObject(incoming.loyaltyProgram) : nullableObject(current.loyaltyProgram);
 
     const currentPerson = objectValue(current.person);
-    const currentPricePercent = await this.pricePercent(tenantId, currentPerson);
+    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram);
     const currentFallbackSettlement = this.finance.calculateSettlement(
       this.settlementSources(
         arrayValue(current.procedures).map((item) => objectValue(item)),
@@ -472,10 +481,10 @@ export class RecordService {
     ) || currentFallbackSettlement;
 
     const nextSettlementSources = this.settlementSources(procedures, products);
-    const nextPricePercent = await this.pricePercent(tenantId, person);
+    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
     const settlement = personChanged
       ? this.finance.calculateSettlement(nextSettlementSources, nextPricePercent)
-      : (refreshProcedures || productsChanged)
+      : (refreshProcedures || productsChanged || programChanged)
         ? this.finance.repriceSettlement(nextSettlementSources, currentSettlement, nextPricePercent)
         : null;
 
@@ -490,6 +499,7 @@ export class RecordService {
       group,
       procedures,
       products,
+      loyaltyProgram,
       updatedAt: text(incoming.updatedAt) || new Date().toISOString(),
       createdAt: text(current.createdAt),
       createdBy: clone(objectValue(current.createdBy)),
