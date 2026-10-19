@@ -155,6 +155,37 @@ export async function activeDepositPriceSources(db: Db, tenantId: string, person
     }));
 }
 
+export async function selectedDepositPriceSource(
+  db: Db,
+  tenantId: string,
+  personKey: string,
+  depositId: string,
+  at: Date,
+) {
+  const id = text(depositId);
+  if (!id) return null;
+  await expireDepositInstances(db, tenantId, id);
+  const row = await db.loyaltyDepositInstance.findUnique({
+    where: { tenantId_depositId: { tenantId, depositId: id } },
+  });
+  if (!row) throw new BadRequestException('Выбранный депозит не найден');
+  if (personKey && row.personKey !== personKey) throw new BadRequestException('Выбранный депозит принадлежит другому человеку');
+  if (row.status !== 'active' || !depositTermActiveAt(row.terms, at)) {
+    throw new BadRequestException(`Депозит «${row.programName || 'Депозит'}» недоступен`);
+  }
+  if (depositBenefitMode(row.terms) !== 'discount') return null;
+  const rate = depositBenefitRate(row.terms);
+  if (rate <= 0) return null;
+  return {
+    type: 'program',
+    programType: 'deposit',
+    depositId: row.depositId,
+    programId: row.programId,
+    name: row.programName || 'Депозит',
+    percent: rate,
+  };
+}
+
 export async function consumeDepositAllocations(db: Db, tenantId: string, values: unknown, expectedPersonKey: string, occurredAt: Date) {
   const requested = normalizedDepositAllocations(values);
   const seen = new Set<string>();

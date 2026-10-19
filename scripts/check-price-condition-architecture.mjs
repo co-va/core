@@ -22,28 +22,38 @@ if (!priceCondition.includes('personalPricePercentSource') || !priceCondition.in
 
 const settlement = readFileSync('core/finance/settlement.js', 'utf8');
 if (!settlement.includes('resolvePersonPriceCondition') || !settlement.includes('recordSettlementPriceCondition')) {
-  errors.push('core/finance/settlement.js must resolve the automatic program percent through the shared price-condition resolver');
+  errors.push('core/finance/settlement.js must resolve the selected program percent through the shared price-condition resolver');
 }
-if (!settlement.includes('resolvePersonPriceCondition(null, getPersonDepositPriceConditions(key))')) {
-  errors.push('automatic record pricing must resolve program conditions without promoting personal suggested discount');
+if (
+  !settlement.includes('record?.loyaltyProgram')
+  || !settlement.includes('resolvePersonPriceCondition(null, [{')
+  || settlement.includes('getPersonDepositPriceConditions')
+) {
+  errors.push('record pricing must use only the explicitly selected program and must not auto-apply an assigned deposit');
 }
 if (!settlement.includes('personalPricePercentSource') || !settlement.includes("correctionMode: 'percent'")) {
   errors.push('personal discount must seed the editable payment discount instead of becoming an automatic program condition');
 }
 
 const recordServer = readFileSync('server/src/record/record.service.ts', 'utf8');
-if (!recordServer.includes('resolvePersonPricePercent') || !recordServer.includes('this.pricePercent')) {
-  errors.push('server/src/record/record.service.ts must resolve automatic program percent through the canonical server resolver');
+if (
+  !recordServer.includes('resolveSelectedRecordProgramPricePercent')
+  || !recordServer.includes('this.pricePercent')
+  || !recordServer.includes('loyaltyProgram')
+  || !recordServer.includes('programChanged')
+) {
+  errors.push('server record owner must persist the selected program and reprice Settlement only from that explicit selection');
 }
 
 const serverPriceCondition = readFileSync('server/src/loyalty/price-condition.ts', 'utf8');
 if (
   !serverPriceCondition.includes('resolvePersonPricePercent')
-  || !serverPriceCondition.includes('resolvePersonPriceCondition')
-  || !serverPriceCondition.includes('resolvePersonPriceCondition(null, [...programSources, ...extraSources])')
+  || !serverPriceCondition.includes('resolveSelectedRecordProgramPricePercent')
+  || !serverPriceCondition.includes('selectedDepositPriceSource')
+  || !serverPriceCondition.includes('resolvePersonPriceCondition(null, source ? [source] : [])')
   || !serverPriceCondition.includes('condition.conflict')
 ) {
-  errors.push('server/src/loyalty/price-condition.ts must resolve program-only automatic percent and program conflicts through the shared resolver');
+  errors.push('server price-condition owner must preserve shared conflict resolution and validate the concrete selected deposit for Record');
 }
 
 const paymentUi = readFileSync('ui/payment/index.js', 'utf8');

@@ -230,6 +230,7 @@ export function recordConfirmationMiniCard({
   duration = '',
   discountMoney = '',
   total = '',
+  programControl = '',
   procedures = [],
 } = {}) {
   const serviceRows = (Array.isArray(procedures) ? procedures : []).map((item = {}) => v2ListEntry({
@@ -260,6 +261,7 @@ export function recordConfirmationMiniCard({
 
   return `<div class="record-confirmation-view">${v2ZBodySections([
     { kind: 'content', content: `<div class="record-confirmation-view__card">${card}</div>` },
+    ...(programControl ? [{ kind: 'content', content: `<div class="record-confirmation-view__program">${programControl}</div>` }] : []),
     { kind: 'content', content: `<div class="record-confirmation-view__procedures">${services}</div>` },
   ])}</div>`;
 }
