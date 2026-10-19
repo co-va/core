@@ -17,7 +17,7 @@ assert.match(recordView, /label: 'Скидка ₽'/);
 assert.match(recordView, /button\('Удалить процедуру'/);
 assert.match(recordView, /data-record-procedure-delete/);
 assert.match(recordView, /saveRecordProcedurePaymentAdjustment/);
-assert.match(recordView, /removeRecordProcedurePaymentAdjustment/);
+assert.match(recordView, /deleteRecordProcedurePaymentAdjustment/);
 assert.match(recordView, /checkRecordTime\(/);
 assert.match(recordView, /updateRecord\(latest\.id, \{ procedures: nextProcedures, to: nextTo \}\)/);
 assert.match(recordView, /payment\.hasPayments \? \{\} : \{/);
@@ -27,7 +27,7 @@ assert.doesNotMatch(recordView, /saveSettlementSnapshot/);
 assert.match(paymentAdjustment, /saveSettlementSnapshot/);
 assert.match(paymentAdjustment, /function assertProcedureMutable\(record\)[\s\S]*getRecordPaymentState\(record\)\.hasPayments/);
 assert.match(paymentAdjustment, /export async function saveRecordProcedurePaymentAdjustment/);
-assert.match(paymentAdjustment, /export async function removeRecordProcedurePaymentAdjustment/);
+assert.match(paymentAdjustment, /export async function deleteRecordProcedurePaymentAdjustment/);
 assert.match(paymentAdjustment, /settlement\.items\s*\.filter\(/);
 
 console.log('record procedure adjustment: ok');
