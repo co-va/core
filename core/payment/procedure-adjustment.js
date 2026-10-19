@@ -22,6 +22,12 @@ function procedureItem(record, procedureId) {
   return { settlement, item: item || null };
 }
 
+function assertProcedureMutable(record) {
+  if (getRecordPaymentState(record).hasPayments) {
+    throw new Error('После факта оплаты стоимость записи изменяется через корректировку оплаты.');
+  }
+}
+
 export function getRecordProcedurePaymentAdjustment(record, procedureId) {
   const current = getRecord(record?.id) || record;
   const { item } = procedureItem(current, procedureId);
@@ -49,9 +55,7 @@ export function getRecordProcedurePaymentAdjustment(record, procedureId) {
 export async function saveRecordProcedurePaymentAdjustment(record, procedureId, adjustment = {}) {
   const current = getRecord(record?.id) || record;
   if (!current?.id) return null;
-  if (getRecordPaymentState(current).hasPayments) {
-    throw new Error('После факта оплаты стоимость записи изменяется через корректировку оплаты.');
-  }
+  assertProcedureMutable(current);
 
   const id = String(procedureId || '');
   const { settlement, item: target } = procedureItem(current, id);
@@ -74,6 +78,22 @@ export async function saveRecordProcedurePaymentAdjustment(record, procedureId, 
       correctionMoney: mode === 'money' ? Math.min(price, numberValue(adjustment.discountMoney)) : '',
     };
   });
+  const next = calculateSettlement(items);
+  return saveSettlementSnapshot({ source: { type: 'record', id: current.id }, settlement: next });
+}
+
+export async function removeRecordProcedurePaymentAdjustment(record, procedureId) {
+  const current = getRecord(record?.id) || record;
+  if (!current?.id) return null;
+  assertProcedureMutable(current);
+
+  const id = String(procedureId || '');
+  const { settlement, item: target } = procedureItem(current, id);
+  if (!target || !settlement) return null;
+
+  const items = settlement.items
+    .filter((item) => String(item?.sourceType || 'procedure') !== 'procedure' || String(item?.sourceId || '') !== id)
+    .map((item) => ({ ...item }));
   const next = calculateSettlement(items);
   return saveSettlementSnapshot({ source: { type: 'record', id: current.id }, settlement: next });
 }
