@@ -22,6 +22,7 @@ import { openRecordPayment } from '../payment/record-payment.js';
 import { openRecordPaymentActions } from '../payment/record-payment.js';
 import {
   getRecordProcedurePaymentAdjustment,
+  removeRecordProcedurePaymentAdjustment,
   saveRecordProcedurePaymentAdjustment,
 } from '../payment/procedure-adjustment.js';
 import { openRecordSale } from '../sale/sale.js';
@@ -293,7 +294,10 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       `<div class="compact-form">
         ${field({ label: 'Длительность, мин', name: 'recordProcedureDuration', type: 'number', value: String(Math.max(1, Number(procedure.duration) || 0)), inputmode: 'numeric', min: 1, step: 1, data: 'data-record-procedure-duration' })}
         ${priceFields}
-        ${actionBlock(button('Сохранить', { data: 'data-record-procedure-adjustment-save' }))}
+        ${actionBlock([
+          button('Сохранить', { data: 'data-record-procedure-adjustment-save' }),
+          button('Удалить процедуру', { variant: 'critical', data: 'data-record-procedure-delete' }),
+        ].join(''))}
       </div>`,
       { variant: 'x', surface: 'app', title: procedure.name || 'Процедура', className: 'modal--form-sheet' },
     ));
@@ -371,6 +375,51 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
         syncCurrent();
         render();
         openNotice({ title: 'Не удалось сохранить', message: String(error?.message || 'Не удалось скорректировать процедуру.') });
+        if (submit.isConnected) submit.disabled = false;
+      }
+    });
+
+    editor.querySelector('[data-record-procedure-delete]')?.addEventListener('click', async (event) => {
+      const submit = event.currentTarget;
+      const latest = syncCurrent();
+      if (getRecordPaymentState(latest).hasPayments) {
+        editor.v2Close?.();
+        openNotice({ message: 'Оплата уже проведена. Используйте корректировку оплаты.' });
+        return;
+      }
+
+      const nextProcedures = (Array.isArray(latest.procedures) ? latest.procedures : [])
+        .filter((item) => String(item?.id || '') !== String(procedureId || ''))
+        .map((item) => ({ ...item }));
+      const start = timeToMinutes(latest.from);
+      const totalMinutes = nextProcedures.reduce((sum, item) => sum + Math.max(0, Number(item?.duration) || 0), 0);
+      const calculatedTo = start == null ? '' : minutesToTime(start + totalMinutes);
+      const nextTo = totalMinutes > 0 ? calculatedTo : String(latest.to || '');
+      if (!nextTo || !checkRecordTime({
+        date: latest.date,
+        workplaceId: latest.workplaceId,
+        from: latest.from,
+        to: nextTo,
+        excludeId: latest.id,
+      }).ok) {
+        openNotice({ title: 'Удаление процедуры', message: 'После удаления не удалось сохранить время записи.' });
+        return;
+      }
+
+      submit.disabled = true;
+      try {
+        await removeRecordProcedurePaymentAdjustment(latest, procedureId);
+        const updated = updateRecord(latest.id, { procedures: nextProcedures, to: nextTo });
+        if (!updated) throw new Error('Не удалось удалить процедуру из записи.');
+        currentRecord = updated;
+        await persistAndRefresh();
+        editor.v2Close?.();
+        render();
+      } catch (error) {
+        await refreshRecordsFromServer().catch(() => null);
+        syncCurrent();
+        render();
+        openNotice({ title: 'Не удалось удалить', message: String(error?.message || 'Не удалось удалить процедуру.') });
         if (submit.isConnected) submit.disabled = false;
       }
     });
