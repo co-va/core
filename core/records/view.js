@@ -15,6 +15,7 @@ import { readOnlyReceipt } from '../../ui/receipt/index.js';
 import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
 import { getWorkplaces } from '../workplace-time.js';
 import { getAllPeople } from '../people/data.js';
+import { openPersonHistoryQ } from '../people/people.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, resolveRecordSettlement } from '../finance/index.js';
 import { getRecordProgramOptions, recordProgramSelection } from '../loyalty/record-program.js';
@@ -158,6 +159,7 @@ function actionSheet({ cancelled = false } = {}) {
     !cancelled ? button('Корректировка', { variant: 'secondary', data: 'data-record-view-correct' }) : '',
     !cancelled ? button('Отмена', { variant: 'danger', data: 'data-record-view-cancel' }) : '',
     button('Удалить', { variant: 'critical', data: 'data-record-view-delete' }),
+    button('История', { variant: 'secondary', data: 'data-record-view-history' }),
   ].filter(Boolean).join(''));
 }
 
@@ -183,6 +185,20 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
   const syncCurrent = () => {
     currentRecord = getRecord(currentRecord.id) || currentRecord;
     return currentRecord;
+  };
+
+  const historyPerson = (source) => {
+    const personKey = String(source?.person?.key || source?.person?.id || '').trim();
+    const person = getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === personKey)
+      || source?.person
+      || {};
+    return person?.key ? person : { ...person, key: personKey };
+  };
+
+  const openHistory = (source = syncCurrent()) => {
+    const person = historyPerson(source);
+    if (!String(person?.key || '').trim()) return null;
+    return openPersonHistoryQ(document.body, person);
   };
 
   const persistAndRefresh = async () => {
@@ -268,11 +284,17 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     const source = syncCurrent();
     const paymentState = getRecordPaymentState(source);
     if (paymentState.hasPayments) {
-      openRecordPaymentActions(source, {
+      const actions = openRecordPaymentActions(source, {
         onSaved: () => {
           syncCurrent();
           render();
         },
+      });
+      const host = actions?.querySelector('.record-payment-actions');
+      host?.insertAdjacentHTML('beforeend', button('История', { variant: 'secondary', data: 'data-record-view-history' }));
+      actions?.querySelector('[data-record-view-history]')?.addEventListener('click', () => {
+        actions.v2Close?.();
+        void openHistory(source);
       });
       return;
     }
@@ -313,6 +335,11 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     actions.querySelector('[data-record-view-delete]')?.addEventListener('click', () => {
       actions.v2Close?.();
       confirmDelete(source);
+    });
+
+    actions.querySelector('[data-record-view-history]')?.addEventListener('click', () => {
+      actions.v2Close?.();
+      void openHistory(source);
     });
   };
 
