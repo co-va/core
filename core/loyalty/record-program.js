@@ -139,6 +139,7 @@ export function recordProgramSelection(optionValue = null) {
     assignmentId: text(optionValue.assignmentId),
     programId: text(optionValue.programId),
     name: text(optionValue.name),
+    pricePercent: percent(optionValue.pricePercent),
   };
 }
 
@@ -150,20 +151,12 @@ export function getSelectedRecordProgram(record = null) {
   const personKey = personKeyOf(record?.person);
   const options = getRecordProgramOptions(personKey);
   const storedKey = text(stored.key);
-  if (storedKey) return options.find((item) => item.key === storedKey) || null;
+  if (storedKey) return options.find((item) => item.key === storedKey) || { ...stored, pricePercent: percent(stored.pricePercent) };
   const storedType = text(stored.type);
   const storedAssignment = text(stored.assignmentId);
   const storedProgram = text(stored.programId);
   return options.find((item) => item.type === storedType
     && ((storedAssignment && item.assignmentId === storedAssignment)
-      || (!storedAssignment && storedProgram && item.programId === storedProgram))) || null;
-}
-
-export function selectedRecordProgramPricePercent(record = null) {
-  return percent(getSelectedRecordProgram(record)?.pricePercent);
-}
-
-export function selectedRecordDepositId(record = null) {
-  const selected = getSelectedRecordProgram(record);
-  return selected?.type === 'deposit' ? text(selected.assignmentId) : '';
+      || (!storedAssignment && storedProgram && item.programId === storedProgram)))
+    || { ...stored, pricePercent: percent(stored.pricePercent) };
 }
