@@ -160,3 +160,17 @@ export function getSelectedRecordProgram(record = null) {
       || (!storedAssignment && storedProgram && item.programId === storedProgram)))
     || { ...stored, pricePercent: percent(stored.pricePercent) };
 }
+
+export function selectedRecordProgramPricePercent(record = null) {
+  const stored = record?.loyaltyProgram && typeof record.loyaltyProgram === 'object'
+    ? record.loyaltyProgram
+    : null;
+  return percent(stored?.pricePercent);
+}
+
+export function selectedRecordDepositId(record = null) {
+  const stored = record?.loyaltyProgram && typeof record.loyaltyProgram === 'object'
+    ? record.loyaltyProgram
+    : null;
+  return text(stored?.type) === 'deposit' ? text(stored?.assignmentId) : '';
+}
