@@ -16,7 +16,7 @@ import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, recordAmountDue, resolveRecordSettlement } from '../finance/index.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts } from '../time/index.js';
-import { openRecordPayment } from '../payment/record-payment.js';
+import { openRecordPayment, openRecordPaymentActions } from '../payment/record-payment.js';
 import { openRecordSale } from '../sale/sale.js';
 import {
   cancelRecord,
@@ -261,6 +261,16 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
 
   const openActions = () => {
     const source = syncCurrent();
+    const paymentState = getRecordPaymentState(source);
+    if (paymentState.hasPayments) {
+      openRecordPaymentActions(source, {
+        onSaved: () => {
+          syncCurrent();
+          render();
+        },
+      });
+      return;
+    }
     const actions = mountModal(document.body, modal(
       actionSheet({ cancelled: source.status === 'cancelled' }),
       { variant: 'x', surface: 'app' },
