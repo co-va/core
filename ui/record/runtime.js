@@ -8,7 +8,6 @@ import { miniCard } from '../cards/mini-card.js';
 import { v2ListEntry, v2ListEntries } from '../lists/list-entry.js';
 import { v2HorizontalRail } from '../v2/index.js';
 import { timeSlots } from '../time/index.js';
-import { readOnlyReceipt } from '../receipt/index.js';
 
 function recordSurface() {
   return document.querySelector('[data-v2-workspace-surface]')
@@ -234,13 +233,16 @@ export function recordConfirmationMiniCard({
   total = '',
   procedures = [],
 } = {}) {
-  const services = readOnlyReceipt({
-    groups: (Array.isArray(procedures) ? procedures : []).map((item = {}) => [{
-      label: item.name || item.title || 'Процедура',
-      value: item.right || item.costText || '',
-      ...(item.action ? { action: item.action } : {}),
-    }]),
-  });
+  const serviceRows = (Array.isArray(procedures) ? procedures : []).map((item = {}) => v2ListEntry({
+    title: item.name || item.title || 'Процедура',
+    subtitle: item.durationText || item.secondary || '',
+    rightTop: item.right || item.costText || '',
+    interactive: false,
+    actionData: item.action?.data || '',
+    actionAria: item.action?.aria || '',
+    actionIcon: item.action?.label || '⚙',
+  }));
+  const services = serviceRows.length ? v2ListEntries(serviceRows) : '';
 
   const card = miniCard({
     className: 'record-confirmation-mini-card',

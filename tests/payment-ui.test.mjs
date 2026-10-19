@@ -127,6 +127,7 @@ const recordCss = readFileSync(new URL('../ui/record/record.css', import.meta.ur
 const pageSource = readFileSync(new URL('../ui/page/page.js', import.meta.url), 'utf8');
 const recordCreationSource = readFileSync(new URL('../ui/record/creation-flow.js', import.meta.url), 'utf8');
 const financeServiceSource = readFileSync(new URL('../core/finance/service.js', import.meta.url), 'utf8');
+const financeServerSource = readFileSync(new URL('../server/src/finance/finance.service.ts', import.meta.url), 'utf8');
 const paymentMechanismSource = readFileSync(new URL('../core/payment/record-payment.js', import.meta.url), 'utf8');
 const recordEventsSource = readFileSync(new URL('../core/record/events.js', import.meta.url), 'utf8');
 const recordServiceSource = readFileSync(new URL('../core/record/service.js', import.meta.url), 'utf8');
@@ -184,19 +185,31 @@ assert.match(recordViewSource, /querySelector\('\.record-confirmation-view__card
 assert.match(recordViewSource, /openRecordZReport\(syncCurrent\(\)\)/);
 assert.doesNotMatch(recordViewSource, /querySelector\('\.record-confirmation-view__procedures'\)/);
 assert.doesNotMatch(recordViewSource, /paymentForm|paymentMethods|recordPaymentIncome/);
-assert.match(paymentMechanismSource, /export function openRecordPayment\(record\)/);
-assert.match(paymentMechanismSource, /paymentForm\(/);
+
+// Record payment now goes directly to one X with payment sources. Price/discount editing stays with procedure settings.
+assert.match(paymentMechanismSource, /export function openRecordPayment\(record,/);
+assert.match(paymentMechanismSource, /data-record-payment-entry-host/);
+assert.match(paymentMechanismSource, /variant: 'x'/);
 assert.match(paymentMechanismSource, /paymentMethods\(/);
 assert.match(paymentMechanismSource, /recordPaymentIncome\(/);
+assert.doesNotMatch(paymentMechanismSource, /paymentForm\(/);
+assert.doesNotMatch(paymentMechanismSource, /name="recordPaymentDate"/);
+assert.match(paymentMechanismSource, /function recordServiceOccurredAt\(record\)/);
+assert.match(paymentMechanismSource, /occurredAt: recordServiceOccurredAt|const occurredAt = recordServiceOccurredAt/);
+assert.match(paymentMechanismSource, /if \(state\.fullyPaid \|\| paymentInFlightRecords\.has\(recordId\)\)/);
+assert.doesNotMatch(paymentMechanismSource, /if \(state\.hasPayments \|\| paymentInFlightRecords\.has\(recordId\)\)/);
 assert.match(paymentMechanismSource, /const gratuityOnly = total <= 0\.009/);
 assert.match(paymentMechanismSource, /gratuityOnly\s*\?\s*\[\[\], null\]/);
 assert.match(paymentMechanismSource, /button\(gratuityOnly \? 'Завершить' : 'Оплатить'/);
 assert.match(paymentMechanismSource, /const label = gratuityOnly && !hasMoney \? 'Завершить' : 'Оплатить'/);
-assert.match(paymentMechanismSource, /await persistRecordCompletion\(current\)/);
+assert.match(paymentMechanismSource, /await persistRecordCompletion\(latest\)/);
 assert.match(paymentMechanismSource, /serviceAmount: allocationState\.applied/);
 assert.match(paymentMechanismSource, /tips: allocationState\.tips/);
 assert.doesNotMatch(paymentMechanismSource, /data-record-payment-allocation-primary/);
 assert.doesNotMatch(paymentMechanismSource, /openRecordPaymentZReport|payment-summary-mini-card-wrap/);
+
+// Finance keeps two dates: occurredAt is the economic/service date, recordedAt is the actual entry timestamp.
+assert.match(financeServerSource, /occurredAt: row\.occurredAt\.toISOString\(\), recordedAt: row\.createdAt\.toISOString\(\)/);
 assert.match(recordEventsSource, /COMPLETED: 'completed'/);
 assert.match(recordServiceSource, /export function completeRecord/);
 assert.equal(existsSync(new URL('../journal/journal-view.js', import.meta.url)), false);

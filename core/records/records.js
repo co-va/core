@@ -1,6 +1,7 @@
 import {
   actionBlock,
   button,
+  columnLayout,
   durationText,
   emptyState,
   field,
@@ -19,7 +20,7 @@ import {
   select,
   viewNavigation,
 } from '../../ui/ui.js';
-import { createRecord, updateRecord } from '../record/index.js';
+import { createRecord, getRecord, updateRecord } from '../record/index.js';
 import { createJournalBreak } from '../../journal/break-service.js';
 import { getPeople } from '../people/data.js';
 import { openPersonCreate } from '../people/create.js';
@@ -40,7 +41,12 @@ import {
 import { getWorkplaces, getWorkplaceWorkingDates } from '../workplace-time.js';
 import { getProfile } from '../profile/data.js';
 import { workplaceCardAppearance, workplaceCardFields, workplaceCardPhoto } from '../profile/card-presentation.js';
-import { calculateSettlement, recordSettlementPricePercent } from '../finance/index.js';
+import { calculateSettlement, getRecordPaymentState, recordSettlementPricePercent } from '../finance/index.js';
+import {
+  deleteRecordProcedurePaymentAdjustment,
+  getRecordProcedurePaymentAdjustment,
+  saveRecordProcedurePaymentAdjustment,
+} from '../payment/procedure-adjustment.js';
 
 const JOURNAL_MODES = [
   { id: 'record', label: 'Создать запись' },
@@ -56,6 +62,11 @@ function dateKey(value) {
 function formatDate(value) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}.${match[2]}.${match[1].slice(-2)}` : String(value || '');
+}
+
+function inputNumber(value = 0) {
+  const number = Number(value) || 0;
+  return String(Math.round(number * 100) / 100);
 }
 
 function personSnapshot(person = {}) {
@@ -172,6 +183,144 @@ function selectionEntry(provider, raw, workplaceId) {
 
 function totalDuration(items = []) {
   return items.reduce((sum, item) => sum + Math.max(0, Number(item?.duration) || 0), 0);
+}
+
+export function openProcedureAdjustment(record, procedureId, { onSaved = () => {} } = {}) {
+  const source = getRecord(record?.id) || record;
+  if (!source?.id || getRecordPaymentState(source).hasPayments) return null;
+  const procedure = (Array.isArray(source.procedures) ? source.procedures : [])
+    .find((item) => String(item?.id || '') === String(procedureId || ''));
+  const adjustment = getRecordProcedurePaymentAdjustment(source, procedureId);
+  if (!procedure || !adjustment) return null;
+
+  const priceFields = columnLayout([
+    field({ label: 'Цена', name: 'recordProcedurePrice', type: 'number', value: inputNumber(adjustment.price), inputmode: 'decimal', min: 0, step: '0.01', data: 'data-record-procedure-price' }),
+    field({ label: 'Скидка %', name: 'recordProcedureDiscountPercent', type: 'number', value: inputNumber(adjustment.discountPercent), inputmode: 'decimal', min: 0, max: 100, step: '0.01', disabled: adjustment.programDiscount, data: 'data-record-procedure-discount-percent' }),
+    field({ label: 'Скидка ₽', name: 'recordProcedureDiscountMoney', type: 'number', value: inputNumber(adjustment.discountMoney), inputmode: 'decimal', min: 0, step: '0.01', disabled: adjustment.programDiscount, data: 'data-record-procedure-discount-money' }),
+  ], { columns: 3, ariaLabel: 'Цена и скидка процедуры' });
+  const editor = mountModal(document.body, modal(
+    `<div class="compact-form">
+      ${field({ label: 'Длительность, мин', name: 'recordProcedureDuration', type: 'number', value: String(Math.max(1, Number(procedure.duration) || 0)), inputmode: 'numeric', min: 1, step: 1, data: 'data-record-procedure-duration' })}
+      ${priceFields}
+      ${actionBlock([
+        button('Сохранить', { data: 'data-record-procedure-adjustment-save' }),
+        button('Удалить процедуру', { variant: 'critical', data: 'data-record-procedure-delete' }),
+      ].join(''))}
+    </div>`,
+    { variant: 'x', surface: 'app', title: procedure.name || 'Процедура', className: 'modal--form-sheet' },
+  ));
+  if (!editor) return null;
+
+  const priceInput = editor.querySelector('[data-record-procedure-price]');
+  const percentInput = editor.querySelector('[data-record-procedure-discount-percent]');
+  const moneyInput = editor.querySelector('[data-record-procedure-discount-money]');
+  let correctionMode = adjustment.correctionMode;
+  const numeric = (input) => Math.max(0, Number(String(input?.value || '0').replace(',', '.')) || 0);
+  const syncDiscount = (origin = '') => {
+    const price = numeric(priceInput);
+    if (adjustment.programDiscount) {
+      if (percentInput) percentInput.value = inputNumber(adjustment.programPercent);
+      if (moneyInput) moneyInput.value = inputNumber(price * adjustment.programPercent / 100);
+      return;
+    }
+    if (origin === 'percent') correctionMode = numeric(percentInput) > 0 ? 'percent' : 'none';
+    if (origin === 'money') correctionMode = numeric(moneyInput) > 0 ? 'money' : 'none';
+    if (correctionMode === 'percent') {
+      if (moneyInput) moneyInput.value = inputNumber(Math.min(price, price * Math.min(100, numeric(percentInput)) / 100));
+    } else if (correctionMode === 'money') {
+      const money = Math.min(price, numeric(moneyInput));
+      if (moneyInput) moneyInput.value = inputNumber(money);
+      if (percentInput) percentInput.value = price > 0 ? inputNumber(Math.min(100, money / price * 100)) : '0';
+    }
+  };
+  priceInput?.addEventListener('input', () => syncDiscount('price'));
+  percentInput?.addEventListener('input', () => syncDiscount('percent'));
+  moneyInput?.addEventListener('input', () => syncDiscount('money'));
+  syncDiscount();
+
+  editor.querySelector('[data-record-procedure-adjustment-save]')?.addEventListener('click', async (event) => {
+    const submit = event.currentTarget;
+    const latest = getRecord(source.id) || source;
+    if (getRecordPaymentState(latest).hasPayments) {
+      editor.v2Close?.();
+      openNotice({ message: 'Оплата уже проведена. Используйте корректировку оплаты.' });
+      return;
+    }
+    const duration = Math.max(1, Math.round(numeric(editor.querySelector('[data-record-procedure-duration]'))));
+    const nextProcedures = (Array.isArray(latest.procedures) ? latest.procedures : []).map((item) =>
+      String(item?.id || '') === String(procedureId || '') ? { ...item, duration } : { ...item });
+    const start = timeToMinutes(latest.from);
+    const nextTo = start == null ? '' : minutesToTime(start + totalDuration(nextProcedures));
+    if (!nextTo || !checkTimeAvailability({
+      date: latest.date,
+      workplaceId: latest.workplaceId,
+      from: latest.from,
+      to: nextTo,
+      excludeId: latest.id,
+    }).ok) {
+      openNotice({ title: 'Время процедуры', message: 'Новая длительность пересекается с занятым или недоступным временем.' });
+      return;
+    }
+
+    submit.disabled = true;
+    try {
+      await saveRecordProcedurePaymentAdjustment(latest, procedureId, {
+        price: numeric(priceInput),
+        correctionMode,
+        discountPercent: numeric(percentInput),
+        discountMoney: numeric(moneyInput),
+      });
+      const updated = updateRecord(latest.id, { procedures: nextProcedures, to: nextTo });
+      if (!updated) throw new Error('Не удалось сохранить длительность процедуры.');
+      await onSaved(updated);
+      editor.v2Close?.();
+    } catch (error) {
+      openNotice({ title: 'Не удалось сохранить', message: String(error?.message || 'Не удалось скорректировать процедуру.') });
+      if (submit.isConnected) submit.disabled = false;
+    }
+  });
+
+  editor.querySelector('[data-record-procedure-delete]')?.addEventListener('click', async (event) => {
+    const submit = event.currentTarget;
+    const latest = getRecord(source.id) || source;
+    if (getRecordPaymentState(latest).hasPayments) {
+      editor.v2Close?.();
+      openNotice({ message: 'Оплата уже проведена. Используйте корректировку оплаты.' });
+      return;
+    }
+
+    const nextProcedures = (Array.isArray(latest.procedures) ? latest.procedures : [])
+      .filter((item) => String(item?.id || '') !== String(procedureId || ''))
+      .map((item) => ({ ...item }));
+    const start = timeToMinutes(latest.from);
+    const minutes = totalDuration(nextProcedures);
+    const calculatedTo = start == null ? '' : minutesToTime(start + minutes);
+    const nextTo = minutes > 0 ? calculatedTo : String(latest.to || '');
+    if (!nextTo || !checkTimeAvailability({
+      date: latest.date,
+      workplaceId: latest.workplaceId,
+      from: latest.from,
+      to: nextTo,
+      excludeId: latest.id,
+    }).ok) {
+      openNotice({ title: 'Удаление процедуры', message: 'После удаления не удалось сохранить время записи.' });
+      return;
+    }
+
+    submit.disabled = true;
+    try {
+      await deleteRecordProcedurePaymentAdjustment(latest, procedureId);
+      const updated = updateRecord(latest.id, { procedures: nextProcedures, to: nextTo });
+      if (!updated) throw new Error('Не удалось удалить процедуру из записи.');
+      await onSaved(updated);
+      editor.v2Close?.();
+    } catch (error) {
+      openNotice({ title: 'Не удалось удалить', message: String(error?.message || 'Не удалось удалить процедуру.') });
+      if (submit.isConnected) submit.disabled = false;
+    }
+  });
+
+  return editor;
 }
 
 export function openRecords({

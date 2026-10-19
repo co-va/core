@@ -28,7 +28,7 @@ import {
   setRecordConfirmed,
 } from '../record/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
-import { openRecords } from './records.js';
+import { openProcedureAdjustment, openRecords } from './records.js';
 
 function formatDate(value) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -335,6 +335,10 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     const products = Array.isArray(source.products) ? source.products : [];
     const totalDuration = procedures.reduce((sum, item) => sum + (Number(item?.duration) || 0), 0);
     const payment = getRecordPaymentState(source);
+    const settlement = resolveRecordSettlement(source);
+    const settlementByProcedure = new Map((Array.isArray(settlement?.items) ? settlement.items : [])
+      .filter((item) => String(item?.sourceType || 'procedure') === 'procedure')
+      .map((item) => [String(item?.sourceId || ''), item]));
     const discountPercent = Number(source?.finance?.discountPercent || 0);
     const card = recordConfirmationMiniCard({
       workplace: workplaceName(source.workplaceId),
@@ -348,13 +352,24 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       discount: discountPercent > 0 ? `${discountPercent}%` : '0%',
       total: formatMoney(recordAmountDue(source)),
       procedures: [
-        ...procedures.map((item) => ({
-          name: item?.name || '',
-          durationText: durationText(Number(item?.duration) || 0),
-          right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
-        })),
+        ...procedures.map((item) => {
+          const financeItem = settlementByProcedure.get(String(item?.id || ''));
+          return {
+            name: item?.name || 'Процедура',
+            durationText: durationText(Number(item?.duration) || 0),
+            right: formatMoney(financeItem?.planAmount ?? item?.cost ?? 0),
+            ...(payment.hasPayments ? {} : {
+              action: {
+                data: 'data-record-view-procedure-settings',
+                aria: `Настроить ${item?.name || 'процедуру'}`,
+                label: '⚙',
+              },
+            }),
+          };
+        }),
         ...products.map((item) => ({
-          name: item?.name || '',
+          name: item?.name || 'Товар',
+          secondary: 'Товар',
           right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
         })),
       ],
@@ -378,6 +393,36 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
         button(payment.fullyPaid ? 'Оплачено' : `К оплате: ${formatMoney(payment.remaining)}`, { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' }),
       ].filter(Boolean).join(''))}
     </div>`;
+
+    root.querySelectorAll('[data-record-view-procedure-settings]').forEach((node, index) => {
+      const procedure = procedures[index];
+      if (!procedure) return;
+      const open = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openProcedureAdjustment(syncCurrent(), procedure.id, {
+          onSaved: async (saved) => {
+            currentRecord = saved;
+            render();
+            try {
+              await persistAndRefresh();
+              render();
+            } catch (error) {
+              await refreshRecordsFromServer().catch(() => null);
+              syncCurrent();
+              render();
+              openNotice({ title: 'Не удалось сохранить', message: String(error?.message || 'Сервер не подтвердил изменения.') });
+            }
+          },
+        });
+      };
+      node.addEventListener('click', open);
+      node.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        open(event);
+      });
+    });
+
     const reportCard = root.querySelector('.record-confirmation-view__card');
     reportCard?.setAttribute('role', 'button');
     reportCard?.setAttribute('tabindex', '0');
