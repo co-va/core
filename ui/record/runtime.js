@@ -222,14 +222,13 @@ export function recordTimeRows(items = [], {
 
 export function recordConfirmationMiniCard({
   workplace = '',
+  contactDiscount = '',
   date = '',
   period = '',
-  uei = '',
-  name = '',
+  identity = '',
   phone = '',
-  groupText = '',
   duration = '',
-  discount = '',
+  discountMoney = '',
   total = '',
   procedures = [],
 } = {}) {
@@ -247,16 +246,15 @@ export function recordConfirmationMiniCard({
   const card = miniCard({
     className: 'record-confirmation-mini-card',
     lines: [
-      { value: workplace || '—', strong: true },
-      { value: discount || '0%', align: 'right', strong: true },
-      { value: date || '—', align: 'right' },
-      { value: period || '—', align: 'right' },
-      { value: uei || '—', strong: true },
-      { value: name || '—', strong: true },
-      { value: phone || '—' },
-      ...(groupText ? [{ value: groupText, strong: true }] : []),
-      { value: duration || '—', strong: true },
-      { value: total || '—', align: 'right', strong: true },
+      { value: workplace, strong: true },
+      { value: contactDiscount, align: 'right', strong: true },
+      { value: date },
+      { value: period, align: 'right' },
+      { value: identity, strong: true },
+      { value: phone },
+      { value: duration, strong: true },
+      { value: discountMoney, strong: true },
+      { value: total, align: 'right', strong: true },
     ],
   });
 
