@@ -41,7 +41,7 @@ import {
 import { getWorkplaces, getWorkplaceWorkingDates } from '../workplace-time.js';
 import { getProfile } from '../profile/data.js';
 import { workplaceCardAppearance, workplaceCardFields, workplaceCardPhoto } from '../profile/card-presentation.js';
-import { calculateSettlement, getRecordPaymentState, recordSettlementPricePercent } from '../finance/index.js';
+import { getRecordPaymentState, resolveRecordSettlement } from '../finance/index.js';
 import {
   deleteRecordProcedurePaymentAdjustment,
   getRecordProcedurePaymentAdjustment,
@@ -62,6 +62,10 @@ function dateKey(value) {
 function formatDate(value) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}.${match[2]}.${match[1].slice(-2)}` : String(value || '');
+}
+
+function formatMoney(value) {
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)} ₽`;
 }
 
 function inputNumber(value = 0) {
@@ -820,30 +824,43 @@ export function openRecords({
     : personDisplay(confirmationPerson());
 
   const renderConfirmation = () => {
+    const contact = confirmationPerson();
     const personInfo = confirmationDisplay();
-    const capacity = groupCapacity(state.procedures);
     const settlement = source.settlement
       ? source.settlement(state)
-      : calculateSettlement(state.procedures.map((entry) => ({ id: entry.id, name: entry.name, cost: entry.cost })), {
-        pricePercent: recordSettlementPricePercent(confirmationPerson()),
+      : resolveRecordSettlement({
+        person: contact,
+        procedures: state.procedures.map((entry) => ({
+          id: entry.id,
+          name: entry.name,
+          cost: entry.cost,
+          duration: entry.duration,
+        })),
       });
-    const discount = source.discount ? source.discount(state) : recordSettlementPricePercent(confirmationPerson());
-    const total = source.total ? source.total(state) : settlement.planTotal;
+    const contactDiscountPercent = Math.max(0, Math.min(100, Number(contact?.discountPercent) || 0));
+    const discountMoney = Math.max(0, (Number(settlement?.serviceTotal) || 0) - (Number(settlement?.planTotal) || 0));
+    const grossTotal = Number(settlement?.serviceTotal ?? (source.total ? source.total(state) : 0)) || 0;
+    const identityNameParts = [contact?.name, contact?.surname].map((value) => String(value || '').trim()).filter(Boolean);
+    const identity = [
+      String(personInfo.uei || '').trim(),
+      ...(identityNameParts.length
+        ? identityNameParts
+        : [String(personInfo.name || '').trim()].filter((value) => value && value !== 'Без имени')),
+    ].filter(Boolean).join('; ');
     const card = recordConfirmationMiniCard({
       workplace: source.workplaceName(state.workplaceId),
+      contactDiscount: contactDiscountPercent > 0 ? `${contactDiscountPercent}%` : '',
       date: formatDate(state.date),
       period: `${state.from} - ${state.to}`,
-      uei: personInfo.uei || '',
-      name: personInfo.name || 'Запись',
+      identity,
       phone: personInfo.phone || '',
-      groupText: capacity > 1 ? `Участники: ${state.people.length} / ${capacity}` : '',
       duration: durationText(totalDuration(state.procedures)),
-      discount: `${discount || 0}%`,
-      total: `${total || 0} ₽`,
+      discountMoney: discountMoney > 0.009 ? formatMoney(discountMoney) : '',
+      total: formatMoney(grossTotal),
       procedures: state.procedures.map((entry) => ({
         name: entry.name,
         durationText: durationText(entry.duration),
-        right: entry.cost === '' || entry.cost == null ? '' : `${entry.cost} ₽`,
+        right: entry.cost === '' || entry.cost == null ? '' : formatMoney(entry.cost),
       })),
     });
     const view = owner.render({
