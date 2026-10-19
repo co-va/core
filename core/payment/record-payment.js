@@ -24,6 +24,7 @@ import {
   saveSettlementSnapshot,
 } from '../finance/index.js';
 import { listPersonDeposits } from '../loyalty/deposit/data.js';
+import { selectedRecordDepositId } from '../loyalty/record-program.js';
 import { loadPersonalAccount } from '../loyalty/personal-account/data.js';
 import { getWorkplaces } from '../workplace-time.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts, zonedDateTimeToDate } from '../time/index.js';
@@ -183,14 +184,20 @@ function mountPaymentQ(record, {
 }
 
 async function depositsForRecord(record, payment = null) {
+  const selectedDepositId = selectedRecordDepositId(record);
+  const current = paymentDepositAllocations(payment);
+  const currentIds = new Set(current.map((item) => String(item?.depositId || '')).filter(Boolean));
+  if (!selectedDepositId && !currentIds.size) return [];
+
   const person = personForRecord(record);
   const key = String(person?.key || person?.id || '');
   if (!key) return [];
   const deposits = await listPersonDeposits(key).catch(() => []);
-  const current = paymentDepositAllocations(payment);
-  if (!current.length) return deposits;
+  const allowedIds = new Set([...currentIds, ...(selectedDepositId ? [selectedDepositId] : [])]);
+  const scoped = deposits.filter((item) => allowedIds.has(String(item?.depositId || item?.id || '')));
+  if (!current.length) return scoped;
   const used = new Map(current.map((item) => [String(item.depositId || ''), Number(item.amount || 0)]));
-  return deposits.map((item) => ({
+  return scoped.map((item) => ({
     ...item,
     balance: Number(item.balance || 0) + Number(used.get(String(item.depositId || '')) || 0),
   }));
