@@ -2,30 +2,40 @@ import {
   actionBlock,
   bindRecordSettings,
   button,
+  columnLayout,
   durationText,
+  field,
   modal,
   mountModal,
   mountRecordZ,
   openNotice,
   recordConfirmationMiniCard,
   recordZHost,
+  v2ListEntries,
+  v2ListEntry,
 } from '../../ui/ui.js';
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
 import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
 import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, recordAmountDue, resolveRecordSettlement } from '../finance/index.js';
-import { normalizeWorkplaceTimeZone, zonedDateTimeParts } from '../time/index.js';
+import { minutesToTime, normalizeWorkplaceTimeZone, timeToMinutes, zonedDateTimeParts } from '../time/index.js';
 import { openRecordPayment } from '../payment/record-payment.js';
 import { openRecordPaymentActions } from '../payment/record-payment.js';
+import {
+  getRecordProcedurePaymentAdjustment,
+  saveRecordProcedurePaymentAdjustment,
+} from '../payment/procedure-adjustment.js';
 import { openRecordSale } from '../sale/sale.js';
 import {
   cancelRecord,
+  checkRecordTime,
   deleteRecord,
   getRecord,
   refreshRecordsFromServer,
   setRecordAttendance,
   setRecordConfirmed,
+  updateRecord,
 } from '../record/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
 import { openRecords } from './records.js';
@@ -37,6 +47,11 @@ function formatDate(value) {
 
 function formatMoney(value) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)} ₽`;
+}
+
+function inputNumber(value = 0) {
+  const number = Number(value) || 0;
+  return String(Math.round(number * 100) / 100);
 }
 
 function workplaceForId(id) {
@@ -260,6 +275,109 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     });
   };
 
+  const openProcedureAdjustment = (procedureId) => {
+    const source = syncCurrent();
+    if (getRecordPaymentState(source).hasPayments) {
+      openNotice({ message: 'После факта оплаты процедура изменяется только через корректировку оплаты.' });
+      return;
+    }
+    const procedure = (Array.isArray(source.procedures) ? source.procedures : [])
+      .find((item) => String(item?.id || '') === String(procedureId || ''));
+    const adjustment = getRecordProcedurePaymentAdjustment(source, procedureId);
+    if (!procedure || !adjustment) return;
+
+    const priceFields = columnLayout([
+      field({ label: 'Цена', name: 'recordProcedurePrice', type: 'number', value: inputNumber(adjustment.price), inputmode: 'decimal', min: 0, step: '0.01', data: 'data-record-procedure-price' }),
+      field({ label: 'Скидка %', name: 'recordProcedureDiscountPercent', type: 'number', value: inputNumber(adjustment.discountPercent), inputmode: 'decimal', min: 0, max: 100, step: '0.01', disabled: adjustment.programDiscount, data: 'data-record-procedure-discount-percent' }),
+      field({ label: 'Скидка ₽', name: 'recordProcedureDiscountMoney', type: 'number', value: inputNumber(adjustment.discountMoney), inputmode: 'decimal', min: 0, step: '0.01', disabled: adjustment.programDiscount, data: 'data-record-procedure-discount-money' }),
+    ], { columns: 3, ariaLabel: 'Цена и скидка процедуры' });
+    const editor = mountModal(document.body, modal(
+      `<div class="compact-form">
+        ${field({ label: 'Длительность, мин', name: 'recordProcedureDuration', type: 'number', value: String(Math.max(1, Number(procedure.duration) || 0)), inputmode: 'numeric', min: 1, step: 1, data: 'data-record-procedure-duration' })}
+        ${priceFields}
+        ${actionBlock(button('Сохранить', { data: 'data-record-procedure-adjustment-save' }))}
+      </div>`,
+      { variant: 'x', surface: 'app', title: procedure.name || 'Процедура', className: 'modal--form-sheet' },
+    ));
+    if (!editor) return;
+
+    const priceInput = editor.querySelector('[data-record-procedure-price]');
+    const percentInput = editor.querySelector('[data-record-procedure-discount-percent]');
+    const moneyInput = editor.querySelector('[data-record-procedure-discount-money]');
+    let correctionMode = adjustment.correctionMode;
+    const numeric = (input) => Math.max(0, Number(String(input?.value || '0').replace(',', '.')) || 0);
+    const syncDiscount = (origin = '') => {
+      const price = numeric(priceInput);
+      if (adjustment.programDiscount) {
+        if (percentInput) percentInput.value = inputNumber(adjustment.programPercent);
+        if (moneyInput) moneyInput.value = inputNumber(price * adjustment.programPercent / 100);
+        return;
+      }
+      if (origin === 'percent') correctionMode = numeric(percentInput) > 0 ? 'percent' : 'none';
+      if (origin === 'money') correctionMode = numeric(moneyInput) > 0 ? 'money' : 'none';
+      if (correctionMode === 'percent') {
+        if (moneyInput) moneyInput.value = inputNumber(Math.min(price, price * Math.min(100, numeric(percentInput)) / 100));
+      } else if (correctionMode === 'money') {
+        const money = Math.min(price, numeric(moneyInput));
+        if (moneyInput) moneyInput.value = inputNumber(money);
+        if (percentInput) percentInput.value = price > 0 ? inputNumber(Math.min(100, money / price * 100)) : '0';
+      }
+    };
+    priceInput?.addEventListener('input', () => syncDiscount('price'));
+    percentInput?.addEventListener('input', () => syncDiscount('percent'));
+    moneyInput?.addEventListener('input', () => syncDiscount('money'));
+    syncDiscount();
+
+    editor.querySelector('[data-record-procedure-adjustment-save]')?.addEventListener('click', async (event) => {
+      const submit = event.currentTarget;
+      const latest = syncCurrent();
+      if (getRecordPaymentState(latest).hasPayments) {
+        editor.v2Close?.();
+        openNotice({ message: 'Оплата уже проведена. Используйте корректировку оплаты.' });
+        return;
+      }
+      const durationInput = editor.querySelector('[data-record-procedure-duration]');
+      const duration = Math.max(1, Math.round(numeric(durationInput)));
+      const nextProcedures = (Array.isArray(latest.procedures) ? latest.procedures : []).map((item) =>
+        String(item?.id || '') === String(procedureId || '') ? { ...item, duration } : { ...item });
+      const start = timeToMinutes(latest.from);
+      const totalMinutes = nextProcedures.reduce((sum, item) => sum + Math.max(0, Number(item?.duration) || 0), 0);
+      const nextTo = start == null ? '' : minutesToTime(start + totalMinutes);
+      if (!nextTo || !checkRecordTime({
+        date: latest.date,
+        workplaceId: latest.workplaceId,
+        from: latest.from,
+        to: nextTo,
+        excludeId: latest.id,
+      }).ok) {
+        openNotice({ title: 'Время процедуры', message: 'Новая длительность пересекается с занятым или недоступным временем.' });
+        return;
+      }
+
+      submit.disabled = true;
+      try {
+        await saveRecordProcedurePaymentAdjustment(latest, procedureId, {
+          price: numeric(priceInput),
+          correctionMode,
+          discountPercent: numeric(percentInput),
+          discountMoney: numeric(moneyInput),
+        });
+        const updated = updateRecord(latest.id, { procedures: nextProcedures, to: nextTo });
+        if (!updated) throw new Error('Не удалось сохранить длительность процедуры.');
+        currentRecord = updated;
+        await persistAndRefresh();
+        editor.v2Close?.();
+        render();
+      } catch (error) {
+        await refreshRecordsFromServer().catch(() => null);
+        syncCurrent();
+        render();
+        openNotice({ title: 'Не удалось сохранить', message: String(error?.message || 'Не удалось скорректировать процедуру.') });
+        if (submit.isConnected) submit.disabled = false;
+      }
+    });
+  };
+
   const openActions = () => {
     const source = syncCurrent();
     const paymentState = getRecordPaymentState(source);
@@ -335,6 +453,10 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     const products = Array.isArray(source.products) ? source.products : [];
     const totalDuration = procedures.reduce((sum, item) => sum + (Number(item?.duration) || 0), 0);
     const payment = getRecordPaymentState(source);
+    const settlement = resolveRecordSettlement(source);
+    const settlementByProcedure = new Map((Array.isArray(settlement?.items) ? settlement.items : [])
+      .filter((item) => String(item?.sourceType || 'procedure') === 'procedure')
+      .map((item) => [String(item?.sourceId || ''), item]));
     const discountPercent = Number(source?.finance?.discountPercent || 0);
     const card = recordConfirmationMiniCard({
       workplace: workplaceName(source.workplaceId),
@@ -347,17 +469,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       duration: durationText(totalDuration || 30),
       discount: discountPercent > 0 ? `${discountPercent}%` : '0%',
       total: formatMoney(recordAmountDue(source)),
-      procedures: [
-        ...procedures.map((item) => ({
-          name: item?.name || '',
-          durationText: durationText(Number(item?.duration) || 0),
-          right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
-        })),
-        ...products.map((item) => ({
-          name: item?.name || '',
-          right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
-        })),
-      ],
+      procedures: [],
     });
 
     const started = hasAppointmentStarted(source);
@@ -378,6 +490,45 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
         button(payment.fullyPaid ? 'Оплачено' : `К оплате: ${formatMoney(payment.remaining)}`, { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' }),
       ].filter(Boolean).join(''))}
     </div>`;
+
+    const procedureHost = root.querySelector('.record-confirmation-view__procedures');
+    if (procedureHost) {
+      procedureHost.innerHTML = v2ListEntries([
+        ...procedures.map((item) => {
+          const financeItem = settlementByProcedure.get(String(item?.id || ''));
+          return v2ListEntry({
+            title: item?.name || 'Процедура',
+            subtitle: durationText(Number(item?.duration) || 0),
+            rightTop: formatMoney(financeItem?.planAmount ?? item?.cost ?? 0),
+            interactive: false,
+            actionData: payment.hasPayments ? '' : 'data-record-view-procedure-settings',
+            actionAria: `Настроить ${item?.name || 'процедуру'}`,
+            actionIcon: '⚙',
+          });
+        }),
+        ...products.map((item) => v2ListEntry({
+          title: item?.name || 'Товар',
+          subtitle: 'Товар',
+          rightTop: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
+          interactive: false,
+        })),
+      ]);
+      procedureHost.querySelectorAll('[data-record-view-procedure-settings]').forEach((node, index) => {
+        const procedure = procedures[index];
+        if (!procedure) return;
+        const open = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openProcedureAdjustment(procedure.id);
+        };
+        node.addEventListener('click', open);
+        node.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          open(event);
+        });
+      });
+    }
+
     const reportCard = root.querySelector('.record-confirmation-view__card');
     reportCard?.setAttribute('role', 'button');
     reportCard?.setAttribute('tabindex', '0');
