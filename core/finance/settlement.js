@@ -3,7 +3,6 @@
 // Canonical Settlement snapshots live in Finance. Record receives finance only as a read projection.
 import { getStoredSettlement } from './data.js';
 import { getActiveDDSMovements, getActiveDDSMovementsForSource } from './read.js';
-import { getSelectedRecordProgram } from '../loyalty/record-program.js';
 import { personalPricePercentSource, resolvePriceConditionSources } from '../loyalty/price-condition.js';
 import { getAllPeople } from '../people/data.js';
 import {
@@ -142,15 +141,17 @@ export function recordAmountDue(record = null) {
 }
 
 export function recordSettlementPriceCondition(record = null) {
-  const selected = getSelectedRecordProgram(record);
+  const selected = record?.loyaltyProgram && typeof record.loyaltyProgram === 'object'
+    ? record.loyaltyProgram
+    : null;
   const selectedPercent = clampFinancialPercent(selected?.pricePercent || 0);
   if (!selected || selectedPercent <= 0) return resolvePriceConditionSources([]);
   return resolvePriceConditionSources([{
     type: 'program',
-    programType: selected.type,
-    programId: selected.programId,
-    assignmentId: selected.assignmentId,
-    name: selected.name,
+    programType: String(selected?.type || ''),
+    programId: String(selected?.programId || ''),
+    assignmentId: String(selected?.assignmentId || ''),
+    name: String(selected?.name || 'Программа'),
     percent: selectedPercent,
   }]);
 }
