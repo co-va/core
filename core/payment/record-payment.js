@@ -606,3 +606,22 @@ export function openRecordPayment(record) {
   renderPaymentLayer(layer, current.id);
   return layer;
 }
+
+export function openRecordPaymentActions(record, { onSaved = () => {} } = {}) {
+  if (!record?.id) return null;
+  const current = getRecord(record.id) || record;
+  const state = paymentStateForRecord(current);
+  if (!state?.latestPayment) return null;
+  const layer = mountModal(document.body, modal(
+    paymentActionsBody(state),
+    { variant: 'x', surface: 'app' },
+  ));
+  if (!layer) return null;
+  bindPaymentBodyActions(layer, current, state, onSaved);
+  [
+    '[data-record-payment-correct]',
+    '[data-record-payment-refund]',
+    '[data-record-payment-delete]',
+  ].forEach((selector) => layer.querySelector(selector)?.addEventListener('click', () => layer.v2Close?.()));
+  return layer;
+}
