@@ -389,7 +389,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     root.innerHTML = `<div class="record-screen record-screen--state-view record-screen--record-view">
       ${card}
       ${actionBlock([
-        payment.fullyPaid ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
+        payment.hasPayments ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
         payment.fullyPaid
           ? button('Оплачено', { disabled: true })
           : button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' }),
