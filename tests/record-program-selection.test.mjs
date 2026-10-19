@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const runtime = fs.readFileSync('ui/record/runtime.js', 'utf8');
+const view = fs.readFileSync('core/records/view.js', 'utf8');
+const finance = fs.readFileSync('core/finance/settlement.js', 'utf8');
+const payment = fs.readFileSync('core/payment/record-payment.js', 'utf8');
+const program = fs.readFileSync('core/loyalty/record-program.js', 'utf8');
+
+// Shared Record UI: mini-card -> program selector -> procedures.
+assert.match(runtime, /programControl = ''/);
+assert.match(runtime, /record-confirmation-view__card[^]*record-confirmation-view__program[^]*record-confirmation-view__procedures/);
+
+// Record View shows a Program selector only when assigned programs exist.
+assert.match(view, /programOptions\.length \? select\(\{/);
+assert.match(view, /label: 'Программа'/);
+assert.match(view, /\{ value: '', label: 'Не выбрано' \}/);
+assert.match(view, /data-record-view-program/);
+assert.match(view, /updateRecord\(source\.id, \{ loyaltyProgram: recordProgramSelection\(nextProgram\) \}\)/);
+
+// Personal account stays outside the Program selector.
+assert.doesNotMatch(program, /personal-account/);
+assert.doesNotMatch(program, /PersonalAccount/);
+assert.match(program, /type: 'deposit'/);
+assert.match(program, /type: 'certificate'/);
+assert.match(program, /type: 'subscription'/);
+assert.match(program, /type: 'referral'/);
+assert.match(program, /type: 'bonus'/);
+
+// Finance applies only the program explicitly stored on the record.
+assert.doesNotMatch(finance, /getPersonDepositPriceConditions/);
+assert.match(finance, /record\?\.loyaltyProgram/);
+assert.match(finance, /selected\?\.pricePercent/);
+
+// A deposit appears as a payment source only when that deposit was selected for the record.
+assert.match(payment, /selectedRecordDepositId\(record\)/);
+assert.match(payment, /if \(!selectedDepositId && !currentIds\.size\) return \[\]/);
+
+console.log('Record explicit program selection smoke test passed');
