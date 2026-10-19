@@ -97,7 +97,7 @@ assert.match(people, /variant: 'q'/);
 assert.match(people, /data-v2-q-header-content/);
 assert.match(people, /data-person-history-search/);
 assert.match(people, /data-person-history-host/);
-assert.match(people, /personHistoryMarkup\(person, query\)/);
+assert.match(people, /personHistoryMarkup\(sourceItems, query\)/);
 assert.doesNotMatch(people, /data-person-history-filter/);
 assert.match(people, /people-history-q/);
 
