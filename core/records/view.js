@@ -390,7 +390,9 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       ${card}
       ${actionBlock([
         payment.fullyPaid ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
-        button(payment.fullyPaid ? 'Оплачено' : `К оплате: ${formatMoney(payment.remaining)}`, { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' }),
+        payment.fullyPaid
+          ? button('Оплачено', { variant: 'secondary', disabled: true })
+          : button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' }),
       ].filter(Boolean).join(''))}
     </div>`;
 
