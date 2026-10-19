@@ -82,7 +82,7 @@ export async function saveRecordProcedurePaymentAdjustment(record, procedureId, 
   return saveSettlementSnapshot({ source: { type: 'record', id: current.id }, settlement: next });
 }
 
-export async function removeRecordProcedurePaymentAdjustment(record, procedureId) {
+export async function deleteRecordProcedurePaymentAdjustment(record, procedureId) {
   const current = getRecord(record?.id) || record;
   if (!current?.id) return null;
   assertProcedureMutable(current);
