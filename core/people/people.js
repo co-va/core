@@ -25,6 +25,7 @@ import {
   repeatedField,
   select,
   setV2ZHeaderRows,
+  shortDate,
   shortDateTime,
   tags,
   uei,
@@ -226,8 +227,7 @@ function openPersonDocuments(root, person) {
   return layer;
 }
 
-function historyItems(person, query = '') {
-  const items = getPersonHistory(person.key);
+function historyItems(items = [], query = '') {
   const needle = String(query || '').trim().toLocaleLowerCase('ru');
   if (!needle) return items;
   return items.filter((item) => {
@@ -241,10 +241,10 @@ function historyItems(person, query = '') {
   });
 }
 
-function personHistoryMarkup(person, query = '') {
-  const items = historyItems(person, query);
-  if (!items.length) return emptyState(query ? 'Ничего не найдено' : 'Истории пока нет', query ? 'Измените запрос.' : 'Здесь появятся записи, продажи и связанные события.');
-  return v2ListEntries(items.map((item, index) => v2ListEntry({
+function personHistoryMarkup(items = [], query = '') {
+  const filtered = historyItems(items, query);
+  if (!filtered.length) return emptyState(query ? 'Ничего не найдено' : 'Истории пока нет', query ? 'Измените запрос.' : 'Здесь появятся записи, продажи и связанные события.');
+  return v2ListEntries(filtered.map((item, index) => v2ListEntry({
     overline: item.kind === 'finance' ? 'Продажа / операция' : 'Запись',
     title: item.title || (item.kind === 'finance' ? 'Финансовая операция' : 'Запись'),
     subtitle: item.subtitle || '',
@@ -277,14 +277,69 @@ function personQContext(person, { c = null } = {}) {
   });
 }
 
+function durationLabel(minutes = 0) {
+  const value = Math.max(0, Math.round(Number(minutes) || 0));
+  if (!value) return '—';
+  const hours = Math.floor(value / 60);
+  const rest = value % 60;
+  if (!hours) return `${rest} мин`;
+  if (!rest) return `${hours} ч`;
+  return `${hours} ч ${rest} мин`;
+}
+
+function paymentStateLabel(item = {}) {
+  if (item.paymentState === 'paid') return 'Оплачено';
+  if (item.paymentState === 'partial') return 'Частично оплачено';
+  if (item.paymentState === 'unpaid') return 'К оплате';
+  return '—';
+}
+
+function recordHistoryDetail(item = {}) {
+  const recordBlock = v2Section('Запись', details([
+    { label: 'Процедуры', value: item.procedures?.join(', ') || item.products?.join(', ') || item.title || '—' },
+    { label: 'Запись создана', value: shortDateTime(item.createdAt, '—') },
+    { label: 'Дата посещения', value: shortDate(item.appointmentDate, '—') },
+    { label: 'Время', value: [item.from, item.to].filter(Boolean).join(' — ') || '—' },
+    { label: 'Продолжительность', value: durationLabel(item.durationMinutes) },
+    { label: 'Статус', value: item.subtitle || '—' },
+  ]));
+
+  const paymentRows = (Array.isArray(item.payments) ? item.payments : []).map((payment, index) => v2Section(
+    item.payments.length > 1 ? `Оплата ${index + 1}` : 'Оплата',
+    details([
+      { label: 'Дата оплаты', value: shortDateTime(payment.occurredAt, '—') },
+      { label: 'Сумма', value: money(payment.total) },
+    ]),
+  )).join('');
+  const refundRows = (Array.isArray(item.refunds) ? item.refunds : []).map((refund, index) => v2Section(
+    item.refunds.length > 1 ? `Возврат ${index + 1}` : 'Возврат',
+    details([
+      { label: 'Дата возврата', value: shortDateTime(refund.occurredAt, '—') },
+      { label: 'Сумма', value: money(refund.total) },
+    ]),
+  )).join('');
+  const paymentSummary = (item.payments?.length || item.refunds?.length || item.planTotal > 0)
+    ? v2Section('Итог оплаты', details([
+      { label: 'Статус', value: paymentStateLabel(item) },
+      { label: 'Оплачено', value: money(item.paidAmount) },
+      { label: 'К оплате', value: money(item.due) },
+    ]))
+    : '';
+  return `${recordBlock}${paymentRows}${refundRows}${paymentSummary}`;
+}
+
+function financeHistoryDetail(item = {}) {
+  return v2Section('Операция', details([
+    { label: 'Операция', value: item.title || 'Финансовая операция' },
+    ...(item.subtitle ? [{ label: 'Описание', value: item.subtitle }] : []),
+    { label: 'Дата', value: shortDateTime(item.occurredAt, '—') },
+    { label: 'Сумма', value: money(item.amount) },
+  ]));
+}
+
 function openPersonHistoryItemQ(root, person, item, options = {}) {
-  const layer = mountModal(root, modal(`${personQContext(person)}${details([
-    { label: 'Тип', value: item.kind === 'finance' ? 'Продажа / операция' : 'Запись' },
-    { label: 'Событие', value: item.title || '—' },
-    { label: 'Описание', value: item.subtitle || '—' },
-    { label: 'Дата / время', value: shortDateTime(item.occurredAt, '—') },
-    ...(item.amount == null ? [] : [{ label: 'Сумма', value: money(item.amount) }]),
-  ])}`, {
+  const body = item.kind === 'record' ? recordHistoryDetail(item) : financeHistoryDetail(item);
+  const layer = mountModal(root, modal(`${personQContext(person)}${body}`, {
     title: name(person),
     variant: 'q',
     surface: 'app',
@@ -294,7 +349,7 @@ function openPersonHistoryItemQ(root, person, item, options = {}) {
   return layer;
 }
 
-function openPersonHistoryQ(root, person, options = {}) {
+export async function openPersonHistoryQ(root, person, options = {}) {
   const layer = mountModal(root, modal(`${personQContext(person)}<div data-person-history-host></div>`, {
     title: 'История',
     variant: 'q',
@@ -311,10 +366,11 @@ function openPersonHistoryQ(root, person, options = {}) {
   }
   const host = layer.querySelector('[data-person-history-host]');
   const search = layer.querySelector('[data-person-history-search]');
+  let sourceItems = [];
   const render = () => {
     const query = String(search?.value || '').trim();
-    const items = historyItems(person, query);
-    if (host) host.innerHTML = personHistoryMarkup(person, query);
+    const items = historyItems(sourceItems, query);
+    if (host) host.innerHTML = personHistoryMarkup(sourceItems, query);
     host?.querySelectorAll('[data-person-history-item]').forEach((node) => {
       node.addEventListener('click', () => {
         const item = items[Number(node.dataset.personHistoryItem)];
@@ -324,7 +380,13 @@ function openPersonHistoryQ(root, person, options = {}) {
   };
   search?.addEventListener('input', render);
   bindPersonContext(layer, person, options);
-  render();
+  if (host) host.innerHTML = emptyState('История', 'Загружаем данные…');
+  try {
+    sourceItems = await getPersonHistory(person.key);
+    render();
+  } catch (error) {
+    if (host) host.innerHTML = emptyState('История недоступна', error instanceof Error ? error.message : 'Не удалось загрузить историю.');
+  }
   return layer;
 }
 
@@ -346,7 +408,7 @@ function openPersonSettings(root, person, options = {}) {
   });
   layer.querySelector('[data-person-settings-history]')?.addEventListener('click', () => {
     layer.v2Close?.();
-    openPersonHistoryQ(root, person, options);
+    void openPersonHistoryQ(root, person, options);
   });
   layer.querySelector('[data-person-settings-record]')?.addEventListener('click', () => {
     layer.v2Close?.();
