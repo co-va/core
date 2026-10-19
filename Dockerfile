@@ -1,9 +1,9 @@
-FROM node:24-alpine AS frontend-build
+FROM node:24 AS frontend-build
 WORKDIR /app
 COPY . .
 RUN node scripts/build-pages.mjs
 
-FROM node:24-alpine AS build
+FROM node:24 AS build
 WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm install
@@ -15,8 +15,8 @@ COPY core/finance/rules.js core/finance/rules.d.ts /app/core/finance/
 COPY core/loyalty/price-condition.js core/loyalty/price-condition.d.ts /app/core/loyalty/
 RUN npm run build
 
-FROM node:24-alpine AS runtime
-RUN apk add --no-cache font-dejavu
+FROM node:24 AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app/server
 COPY server/package*.json ./
