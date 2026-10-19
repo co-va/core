@@ -177,6 +177,12 @@ assert.match(recordViewSource, /import \{ openRecordPayment \} from '\.\.\/payme
 assert.match(recordViewSource, /data-record-view-payment/);
 assert.match(recordViewSource, /К оплате: \$\{formatMoney\(payment\.remaining\)\}/);
 assert.match(recordViewSource, /openRecordPayment\(syncCurrent\(\)\)/);
+assert.match(recordViewSource, /settings: true/);
+assert.match(recordViewSource, /bindRecordSettings\(layer, openActions\)/);
+assert.doesNotMatch(recordViewSource, /data-record-view-actions/);
+assert.match(recordViewSource, /querySelector\('\.record-confirmation-view__card'\)/);
+assert.match(recordViewSource, /openRecordZReport\(syncCurrent\(\)\)/);
+assert.doesNotMatch(recordViewSource, /querySelector\('\.record-confirmation-view__procedures'\)/);
 assert.doesNotMatch(recordViewSource, /paymentForm|paymentMethods|recordPaymentIncome/);
 assert.match(paymentMechanismSource, /export function openRecordPayment\(record\)/);
 assert.match(paymentMechanismSource, /paymentForm\(/);
@@ -190,6 +196,7 @@ assert.match(paymentMechanismSource, /await persistRecordCompletion\(current\)/)
 assert.match(paymentMechanismSource, /serviceAmount: allocationState\.applied/);
 assert.match(paymentMechanismSource, /tips: allocationState\.tips/);
 assert.doesNotMatch(paymentMechanismSource, /data-record-payment-allocation-primary/);
+assert.doesNotMatch(paymentMechanismSource, /openRecordPaymentZReport|payment-summary-mini-card-wrap/);
 assert.match(recordEventsSource, /COMPLETED: 'completed'/);
 assert.match(recordServiceSource, /export function completeRecord/);
 assert.equal(existsSync(new URL('../journal/journal-view.js', import.meta.url)), false);
