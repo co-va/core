@@ -29,10 +29,10 @@ import {
   refreshRecordsFromServer,
   setRecordAttendance,
   setRecordConfirmed,
-  updateRecord,
 } from '../record/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
 import { openProcedureAdjustment, openRecords } from './records.js';
+import { setRecordLoyaltyProgram } from './program-selection.js';
 
 function formatDate(value) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -434,7 +434,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       }
       const nextKey = String(event.currentTarget?.value || '');
       const nextProgram = programOptions.find((item) => item.key === nextKey) || null;
-      const updated = updateRecord(source.id, { loyaltyProgram: recordProgramSelection(nextProgram) });
+      const updated = setRecordLoyaltyProgram(source, recordProgramSelection(nextProgram));
       if (!updated) return;
       currentRecord = updated;
       render();
