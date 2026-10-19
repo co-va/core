@@ -9,6 +9,7 @@ import {
   openNotice,
   recordConfirmationMiniCard,
   recordZHost,
+  select,
 } from '../../ui/ui.js';
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
 import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
@@ -16,6 +17,7 @@ import { getWorkplaces } from '../workplace-time.js';
 import { getAllPeople } from '../people/data.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, resolveRecordSettlement } from '../finance/index.js';
+import { getRecordProgramOptions, recordProgramSelection } from '../loyalty/record-program.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts } from '../time/index.js';
 import { openRecordPayment } from '../payment/record-payment.js';
 import { openRecordPaymentActions } from '../payment/record-payment.js';
@@ -27,6 +29,7 @@ import {
   refreshRecordsFromServer,
   setRecordAttendance,
   setRecordConfirmed,
+  updateRecord,
 } from '../record/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
 import { openProcedureAdjustment, openRecords } from './records.js';
@@ -341,6 +344,19 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       .map((item) => [String(item?.sourceId || ''), item]));
     const personKey = String(source?.person?.key || source?.person?.id || '').trim();
     const contact = getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === personKey) || source.person || {};
+    const programOptions = getRecordProgramOptions(personKey);
+    const selectedProgramKey = String(source?.loyaltyProgram?.key || '');
+    const programControl = programOptions.length ? select({
+      label: 'Программа',
+      name: 'recordLoyaltyProgram',
+      value: selectedProgramKey,
+      options: [
+        { value: '', label: 'Не выбрано' },
+        ...programOptions.map((item) => ({ value: item.key, label: item.name, meta: item.typeLabel })),
+      ],
+      data: 'data-record-view-program',
+      aria: 'Выбрать программу записи',
+    }) : '';
     const contactDiscountPercent = Math.max(0, Math.min(100, Number(contact?.discountPercent) || 0));
     const discountMoney = Math.max(0, (Number(settlement?.serviceTotal) || 0) - (Number(settlement?.planTotal) || 0));
     const grossTotal = Math.max(0, Number(settlement?.serviceTotal) || 0);
@@ -364,6 +380,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       duration: durationText(appointmentMinutes),
       discountMoney: discountMoney > 0.009 ? formatMoney(discountMoney) : '',
       total: formatMoney(grossTotal),
+      programControl,
       procedures: [
         ...procedures.map((item) => {
           const financeItem = settlementByProcedure.get(String(item?.id || ''));
@@ -408,6 +425,29 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
           : button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' }),
       ].filter(Boolean).join(''))}
     </div>`;
+
+    root.querySelector('[data-record-view-program]')?.addEventListener('change', async (event) => {
+      if (payment.hasPayments) {
+        render();
+        openNotice({ message: 'После оплаты программа записи не изменяется.' });
+        return;
+      }
+      const nextKey = String(event.currentTarget?.value || '');
+      const nextProgram = programOptions.find((item) => item.key === nextKey) || null;
+      const updated = updateRecord(source.id, { loyaltyProgram: recordProgramSelection(nextProgram) });
+      if (!updated) return;
+      currentRecord = updated;
+      render();
+      try {
+        await persistAndRefresh();
+        render();
+      } catch (error) {
+        await refreshRecordsFromServer().catch(() => null);
+        syncCurrent();
+        render();
+        openNotice({ title: 'Не удалось сохранить', message: String(error?.message || 'Сервер не подтвердил выбор программы.') });
+      }
+    });
 
     root.querySelectorAll('[data-record-view-procedure-settings]').forEach((node, index) => {
       const procedure = procedures[index];
