@@ -389,8 +389,10 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     root.innerHTML = `<div class="record-screen record-screen--state-view record-screen--record-view">
       ${card}
       ${actionBlock([
-        payment.fullyPaid ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
-        button(payment.fullyPaid ? 'Оплачено' : `К оплате: ${formatMoney(payment.remaining)}`, { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' }),
+        payment.hasPayments ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
+        payment.fullyPaid
+          ? button('Оплачено', { disabled: true })
+          : button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' }),
       ].filter(Boolean).join(''))}
     </div>`;
 
@@ -442,7 +444,12 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       });
     });
     root.querySelector('[data-record-view-payment]')?.addEventListener('click', () => {
-      openRecordPayment(syncCurrent());
+      openRecordPayment(syncCurrent(), {
+        onCompleted: () => {
+          syncCurrent();
+          render();
+        },
+      });
     });
 
     layer.querySelector('[data-record-view-confirmed]')?.addEventListener('click', () => {
