@@ -1,5 +1,6 @@
 import {
   actionBlock,
+  bindRecordSettings,
   button,
   durationText,
   modal,
@@ -9,10 +10,12 @@ import {
   recordConfirmationMiniCard,
   recordZHost,
 } from '../../ui/ui.js';
+import { readOnlyReceipt } from '../../ui/receipt/index.js';
 import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
 import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
-import { getRecordPaymentState, recordAmountDue } from '../finance/index.js';
+import { getRecordPaymentState, recordAmountDue, resolveRecordSettlement } from '../finance/index.js';
+import { normalizeWorkplaceTimeZone, zonedDateTimeParts } from '../time/index.js';
 import { openRecordPayment } from '../payment/record-payment.js';
 import { openRecordSale } from '../sale/sale.js';
 import {
@@ -35,9 +38,97 @@ function formatMoney(value) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)} ₽`;
 }
 
+function workplaceForId(id) {
+  return getWorkplaces().find((item) => String(item?.key ?? item?.id ?? '') === String(id || '')) || null;
+}
+
 function workplaceName(id) {
-  const workplace = getWorkplaces().find((item) => String(item?.key ?? item?.id ?? '') === String(id || ''));
+  const workplace = workplaceForId(id);
   return workplace?.name || workplace?.title || 'Рабочее пространство';
+}
+
+function formatReportRubles(value = 0) {
+  const amount = Math.max(0, Math.round(Number(value) || 0));
+  return `${amount.toLocaleString('ru-RU').replaceAll('\u00a0', ' ')} р.`;
+}
+
+function formatReportNumber(value = 0) {
+  const number = Math.max(0, Number(value) || 0);
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(number).replaceAll('\u00a0', ' ');
+}
+
+function timeMinutes(value = '') {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function recordDurationHours(record = null) {
+  const from = timeMinutes(record?.from);
+  const to = timeMinutes(record?.to);
+  if (from == null || to == null || to <= from) return 0;
+  return (to - from) / 60;
+}
+
+function recordWorkplaceTimeZone(record = null) {
+  const workplace = workplaceForId(record?.workplaceId);
+  return normalizeWorkplaceTimeZone(workplace?.timeZone || '');
+}
+
+function recordHasEnded(record = null, now = new Date()) {
+  const date = String(record?.date || '').slice(0, 10);
+  const to = String(record?.to || record?.from || '').slice(0, 5);
+  if (!date || !/^\d{2}:\d{2}$/.test(to)) return false;
+  const current = zonedDateTimeParts(now, recordWorkplaceTimeZone(record));
+  if (!current?.date || !/^\d{2}:\d{2}$/.test(current?.time || '')) return false;
+  return `${current.date}T${current.time}` >= `${date}T${to}`;
+}
+
+function recordReportStatusRows(record, state) {
+  const paidTotal = Math.max(0, Number(state?.paidTotal) || 0);
+  const remaining = Math.max(0, Number(state?.remaining) || 0);
+  if (remaining <= 0.009) return [{ label: 'Статус', value: 'Оплачено' }];
+  const outstandingLabel = recordHasEnded(record) ? 'Задолженность' : 'К оплате';
+  if (paidTotal > 0.009) {
+    return [
+      { label: 'Оплачено', value: formatReportRubles(paidTotal) },
+      { label: outstandingLabel, value: formatReportRubles(remaining) },
+    ];
+  }
+  return [{ label: 'Статус', value: outstandingLabel }];
+}
+
+function openRecordZReport(record) {
+  const current = getRecord(record?.id) || record;
+  if (!current?.id) return null;
+  const settlement = resolveRecordSettlement(current);
+  const state = getRecordPaymentState(current);
+  const procedures = Array.isArray(current?.procedures) ? current.procedures : [];
+  const procedureCount = procedures.length;
+  const hours = recordDurationHours(current);
+  const total = Math.max(0, Number(settlement?.planTotal) || 0);
+  const averageProcedure = procedureCount ? total / procedureCount : 0;
+  const averageHour = hours ? total / hours : 0;
+  const date = String(current?.date || '').slice(0, 10);
+  const dateLabel = date ? new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU') : '';
+  const groups = [
+    [
+      { label: workplaceName(current?.workplaceId), value: dateLabel },
+      { label: 'Кол-во процедур', value: String(procedureCount) },
+      { label: 'Кол-во часов', value: formatReportNumber(hours) },
+      { label: 'Средний чек процедуры', value: formatReportRubles(averageProcedure) },
+      { label: 'Средний чек часа', value: formatReportRubles(averageHour) },
+    ],
+    recordReportStatusRows(current, state),
+    [{ label: 'Сумма', value: formatReportRubles(total), strong: true }],
+  ];
+  return mountModal(document.body, modal(readOnlyReceipt({
+    title: 'Z - Отчет',
+    groups,
+  }), { variant: 's', surface: 'app', title: 'Z - Отчет' }));
 }
 
 function normalizedAttendance(value) {
@@ -71,7 +162,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
   let currentRecord = getRecord(record.id) || record;
   let startTimer = null;
   const layer = mountRecordZ({
-    settings: false,
+    settings: true,
     title: personDisplay(currentRecord.person || {}).name || 'Запись',
     className: 'record-view-z journal-view-z',
     onClose: () => {
@@ -210,6 +301,8 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     });
   };
 
+  bindRecordSettings(layer, openActions);
+
   const scheduleStartRender = (source) => {
     if (startTimer) clearTimeout(startTimer);
     startTimer = null;
@@ -268,18 +361,21 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     setV2ZHeaderRows(layer, [confirmedControl, attendanceControl]);
 
     root.innerHTML = `<div class="record-screen record-screen--state-view record-screen--record-view">
-      <div role="button" tabindex="0" data-record-view-actions>${card}</div>
+      ${card}
       ${actionBlock([
         payment.fullyPaid ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
         button(payment.fullyPaid ? 'Оплачено' : `К оплате: ${formatMoney(payment.remaining)}`, { variant: payment.fullyPaid ? 'secondary' : '', data: 'data-record-view-payment' }),
       ].filter(Boolean).join(''))}
     </div>`;
-    const cardButton = root.querySelector('[data-record-view-actions]');
-    cardButton?.addEventListener('click', openActions);
-    cardButton?.addEventListener('keydown', (event) => {
+    const reportCard = root.querySelector('.record-confirmation-view__card');
+    reportCard?.setAttribute('role', 'button');
+    reportCard?.setAttribute('tabindex', '0');
+    reportCard?.setAttribute('aria-label', 'Z-отчёт записи');
+    reportCard?.addEventListener('click', () => openRecordZReport(syncCurrent()));
+    reportCard?.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      openActions();
+      openRecordZReport(syncCurrent());
     });
     root.querySelector('[data-record-view-sale]')?.addEventListener('click', () => {
       openRecordSale(syncCurrent(), {
