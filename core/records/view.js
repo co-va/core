@@ -13,8 +13,9 @@ import {
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
 import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
 import { getWorkplaces } from '../workplace-time.js';
+import { getAllPeople } from '../people/data.js';
 import { personDisplay } from '../people/presentation.js';
-import { getRecordPaymentState, recordAmountDue, resolveRecordSettlement } from '../finance/index.js';
+import { getRecordPaymentState, resolveRecordSettlement } from '../finance/index.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts } from '../time/index.js';
 import { openRecordPayment } from '../payment/record-payment.js';
 import { openRecordPaymentActions } from '../payment/record-payment.js';
@@ -333,24 +334,36 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     const person = personDisplay(source.person || {});
     const procedures = Array.isArray(source.procedures) ? source.procedures : [];
     const products = Array.isArray(source.products) ? source.products : [];
-    const totalDuration = procedures.reduce((sum, item) => sum + (Number(item?.duration) || 0), 0);
     const payment = getRecordPaymentState(source);
     const settlement = resolveRecordSettlement(source);
     const settlementByProcedure = new Map((Array.isArray(settlement?.items) ? settlement.items : [])
       .filter((item) => String(item?.sourceType || 'procedure') === 'procedure')
       .map((item) => [String(item?.sourceId || ''), item]));
-    const discountPercent = Number(source?.finance?.discountPercent || 0);
+    const personKey = String(source?.person?.key || source?.person?.id || '').trim();
+    const contact = getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === personKey) || source.person || {};
+    const contactDiscountPercent = Math.max(0, Math.min(100, Number(contact?.discountPercent) || 0));
+    const discountMoney = Math.max(0, (Number(settlement?.serviceTotal) || 0) - (Number(settlement?.planTotal) || 0));
+    const grossTotal = Math.max(0, Number(settlement?.serviceTotal) || 0);
+    const fromMinutes = timeMinutes(source.from);
+    const toMinutes = timeMinutes(source.to);
+    const appointmentMinutes = fromMinutes != null && toMinutes != null && toMinutes > fromMinutes
+      ? toMinutes - fromMinutes
+      : procedures.reduce((sum, item) => sum + (Number(item?.duration) || 0), 0);
+    const identity = [
+      String(person.uei || '').trim(),
+      String(source?.person?.name || '').trim(),
+      String(source?.person?.surname || '').trim(),
+    ].filter(Boolean).join('; ');
     const card = recordConfirmationMiniCard({
       workplace: workplaceName(source.workplaceId),
+      contactDiscount: contactDiscountPercent > 0 ? `${contactDiscountPercent}%` : '',
       date: formatDate(source.date),
       period: `${source.from || ''} - ${source.to || ''}`,
-      uei: person.uei || '',
-      name: person.name || 'Запись',
+      identity,
       phone: person.phone || '',
-      groupText: source.group ? `Участники: ${Array.isArray(source.group?.participants) ? source.group.participants.length : 0} / ${Math.max(2, Math.floor(Number(source.group?.capacity) || 2))}` : '',
-      duration: durationText(totalDuration || 30),
-      discount: discountPercent > 0 ? `${discountPercent}%` : '0%',
-      total: formatMoney(recordAmountDue(source)),
+      duration: durationText(appointmentMinutes),
+      discountMoney: discountMoney > 0.009 ? formatMoney(discountMoney) : '',
+      total: formatMoney(grossTotal),
       procedures: [
         ...procedures.map((item) => {
           const financeItem = settlementByProcedure.get(String(item?.id || ''));
