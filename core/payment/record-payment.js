@@ -455,13 +455,14 @@ function openPaymentDeletion(payment, onSaved) {
   return layer;
 }
 
-function paymentActionsBody(state) {
+function paymentActionsBody(state, extraActions = '') {
   if (!state?.latestPayment) return '';
   return actionBlock([
     button('Корректировка оплаты', { variant: 'secondary', data: 'data-record-payment-correct' }),
     button('Возврат', { variant: 'danger', data: 'data-record-payment-refund' }),
     button('Удаление оплаты', { variant: 'critical', data: 'data-record-payment-delete' }),
-  ].join(''), { className: 'record-payment-actions' });
+    extraActions,
+  ].filter(Boolean).join(''), { className: 'record-payment-actions' });
 }
 
 function bindPaymentBodyActions(host, record, state, onSaved) {
@@ -477,13 +478,13 @@ export function openRecordPayment(record, { onCompleted = () => {} } = {}) {
   return openPaymentEntry(record, onCompleted);
 }
 
-export function openRecordPaymentActions(record, { onSaved = () => {} } = {}) {
+export function openRecordPaymentActions(record, { onSaved = () => {}, extraActions = '' } = {}) {
   if (!record?.id) return null;
   const current = getRecord(record.id) || record;
   const state = paymentStateForRecord(current);
   if (!state?.latestPayment) return null;
   const layer = mountModal(document.body, modal(
-    paymentActionsBody(state),
+    paymentActionsBody(state, extraActions),
     { variant: 'x', surface: 'app' },
   ));
   if (!layer) return null;
