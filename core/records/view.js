@@ -11,8 +11,6 @@ import {
   openNotice,
   recordConfirmationMiniCard,
   recordZHost,
-  v2ListEntries,
-  v2ListEntry,
 } from '../../ui/ui.js';
 import { readOnlyReceipt } from '../../ui/receipt/index.js';
 import { setV2ZHeaderRows } from '../../ui/v2/z-layout.js';
@@ -469,7 +467,28 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       duration: durationText(totalDuration || 30),
       discount: discountPercent > 0 ? `${discountPercent}%` : '0%',
       total: formatMoney(recordAmountDue(source)),
-      procedures: [],
+      procedures: [
+        ...procedures.map((item) => {
+          const financeItem = settlementByProcedure.get(String(item?.id || ''));
+          return {
+            name: item?.name || 'Процедура',
+            durationText: durationText(Number(item?.duration) || 0),
+            right: formatMoney(financeItem?.planAmount ?? item?.cost ?? 0),
+            ...(payment.hasPayments ? {} : {
+              action: {
+                data: 'data-record-view-procedure-settings',
+                aria: `Настроить ${item?.name || 'процедуру'}`,
+                label: '⚙',
+              },
+            }),
+          };
+        }),
+        ...products.map((item) => ({
+          name: item?.name || 'Товар',
+          secondary: 'Товар',
+          right: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
+        })),
+      ],
     });
 
     const started = hasAppointmentStarted(source);
@@ -491,43 +510,20 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       ].filter(Boolean).join(''))}
     </div>`;
 
-    const procedureHost = root.querySelector('.record-confirmation-view__procedures');
-    if (procedureHost) {
-      procedureHost.innerHTML = v2ListEntries([
-        ...procedures.map((item) => {
-          const financeItem = settlementByProcedure.get(String(item?.id || ''));
-          return v2ListEntry({
-            title: item?.name || 'Процедура',
-            subtitle: durationText(Number(item?.duration) || 0),
-            rightTop: formatMoney(financeItem?.planAmount ?? item?.cost ?? 0),
-            interactive: false,
-            actionData: payment.hasPayments ? '' : 'data-record-view-procedure-settings',
-            actionAria: `Настроить ${item?.name || 'процедуру'}`,
-            actionIcon: '⚙',
-          });
-        }),
-        ...products.map((item) => v2ListEntry({
-          title: item?.name || 'Товар',
-          subtitle: 'Товар',
-          rightTop: item?.cost === '' || item?.cost == null ? '' : formatMoney(item.cost),
-          interactive: false,
-        })),
-      ]);
-      procedureHost.querySelectorAll('[data-record-view-procedure-settings]').forEach((node, index) => {
-        const procedure = procedures[index];
-        if (!procedure) return;
-        const open = (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openProcedureAdjustment(procedure.id);
-        };
-        node.addEventListener('click', open);
-        node.addEventListener('keydown', (event) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          open(event);
-        });
+    root.querySelectorAll('[data-record-view-procedure-settings]').forEach((node, index) => {
+      const procedure = procedures[index];
+      if (!procedure) return;
+      const open = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openProcedureAdjustment(procedure.id);
+      };
+      node.addEventListener('click', open);
+      node.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        open(event);
       });
-    }
+    });
 
     const reportCard = root.querySelector('.record-confirmation-view__card');
     reportCard?.setAttribute('role', 'button');
