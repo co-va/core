@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { hydrateDaysFromServer } from '../core/day/index.js';
 import { configureTimeUsageSource } from '../core/time/index.js';
 import {
@@ -13,6 +14,9 @@ import {
   setRecordConfirmed,
 } from '../core/record/index.js';
 import { getJournalTimeUsages } from '../journal/time-usage-source.js';
+
+const personHistorySource = readFileSync(new URL('../core/people/history.js', import.meta.url), 'utf8');
+const recordViewSource = readFileSync(new URL('../core/records/view.js', import.meta.url), 'utf8');
 
 globalThis.window = { dispatchEvent() {} };
 globalThis.CustomEvent = class CustomEvent { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } };
@@ -94,5 +98,19 @@ assert.equal(cancelledEvent?.type, RECORD_EVENT_TYPES.CANCELLED);
 assert.equal(cancelledEvent?.actor?.profileId, 'profile-1');
 assert.equal(cancelledEvent?.source, 'journal');
 assert.equal(getJournalTimeUsages({ date: '2026-09-21', workplaceId: 'studio' }).some((usage) => usage.sourceId === record.id), false);
+
+// Person History is a projection: one Record card owns its linked payment/refund presentation.
+assert.match(personHistorySource, /const finance = recordFinance\(facts, recordId\);/);
+assert.match(personHistorySource, /const payments = operations\.filter\(\(operation\) => operation\.kind === 'payment'/);
+assert.match(personHistorySource, /const refunds = operations\.filter\(\(operation\) => operation\.kind === 'refund'/);
+assert.match(personHistorySource, /const records = recordIds\.map\(\(recordId\) => recordItem\(rows, recordId\)\)\.filter\(Boolean\);/);
+assert.match(personHistorySource, /fact\.entityType === 'finance-operation' && !text\(fact\.recordId\)/);
+assert.match(personHistorySource, /return \[\.\.\.records, \.\.\.standaloneFinance\]/);
+
+// Record View opens the same canonical Person History in both unpaid and paid action flows.
+assert.match(recordViewSource, /import \{ openPersonHistoryQ \} from '\.\.\/people\/people\.js';/);
+assert.match(recordViewSource, /return openPersonHistoryQ\(document\.body, person\);/);
+assert.match(recordViewSource, /button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)/);
+assert.match(recordViewSource, /querySelector\('\.record-payment-actions'\);\s*host\?\.insertAdjacentHTML\('beforeend', button\('История'/s);
 
 console.log('record lifecycle tests: OK');
