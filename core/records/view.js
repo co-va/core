@@ -21,8 +21,8 @@ import { minutesToTime, normalizeWorkplaceTimeZone, timeToMinutes, zonedDateTime
 import { openRecordPayment } from '../payment/record-payment.js';
 import { openRecordPaymentActions } from '../payment/record-payment.js';
 import {
+  deleteRecordProcedurePaymentAdjustment,
   getRecordProcedurePaymentAdjustment,
-  removeRecordProcedurePaymentAdjustment,
   saveRecordProcedurePaymentAdjustment,
 } from '../payment/procedure-adjustment.js';
 import { openRecordSale } from '../sale/sale.js';
@@ -408,7 +408,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
 
       submit.disabled = true;
       try {
-        await removeRecordProcedurePaymentAdjustment(latest, procedureId);
+        await deleteRecordProcedurePaymentAdjustment(latest, procedureId);
         const updated = updateRecord(latest.id, { procedures: nextProcedures, to: nextTo });
         if (!updated) throw new Error('Не удалось удалить процедуру из записи.');
         currentRecord = updated;
