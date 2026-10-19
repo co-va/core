@@ -205,7 +205,7 @@ export class RecordService {
       : requestedProcedures.map((item) => text(item?.id)).filter(Boolean))];
     let procedureSnapshots = requestedProcedures.map((item) => clone(objectValue(item)));
     if (procedureIds.length) {
-      const canonical = await this.procedures.snapshots(tenantId, workplaceId, procedureIds);
+      const canonical = await this.procedures.snapshots(tenantId, workplaceId, procedureIds, date);
       const requestedById = new Map(requestedProcedures.map((item) => [text(item?.id), objectValue(item)]));
       procedureSnapshots = canonical.map((item) => {
         const requested = requestedById.get(item.id);
@@ -402,6 +402,7 @@ export class RecordService {
 
     const current = objectValue(existing.data);
     const incomingWorkplaceId = text(incoming.workplaceId);
+    const date = dateValue(incoming.date);
     const workplaceChanged = text(current.workplaceId) !== incomingWorkplaceId;
     const rawProceduresChanged = !sameJson(arrayValue(current.procedures), arrayValue(incoming.procedures));
     const productsChanged = !sameJson(arrayValue(current.products), arrayValue(incoming.products));
@@ -414,7 +415,7 @@ export class RecordService {
     if (refreshProcedures) {
       const requested = rawProceduresChanged ? arrayValue(incoming.procedures) : arrayValue(current.procedures);
       const ids = requested.map((item) => text(item?.id)).filter(Boolean);
-      const canonical = ids.length ? await this.procedures.snapshots(tenantId, incomingWorkplaceId, ids) : [];
+      const canonical = ids.length ? await this.procedures.snapshots(tenantId, incomingWorkplaceId, ids, date) : [];
       const requestedById = new Map(requested.map((item) => [text(item?.id), objectValue(item)]));
       procedures = canonical.map((item) => {
         const draft = requestedById.get(item.id);
@@ -435,7 +436,6 @@ export class RecordService {
       ? this.time.minutesToTime(startMinutes + totalDuration)
       : '';
     const to = derivedTo || text(incoming.to);
-    const date = dateValue(incoming.date);
 
     const scheduleChanged = dateValue(current.date) !== date
       || workplaceChanged

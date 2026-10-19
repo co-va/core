@@ -12,6 +12,7 @@ import { AuxiliaryStateModule } from './auxiliary-state/auxiliary-state.module';
 import { FinanceModule } from './finance/finance.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { HistoryModule } from './history/history.module';
 import { NotificationModule } from './notification/notification.module';
 import { CommunicationModule } from './communication/communication.module';
 import { SaasAccessModule } from './saas-access/saas-access.module';
@@ -33,6 +34,7 @@ import { AccountUnreadModule } from './account-unread/account-unread.module';
     FinanceModule,
     LoyaltyModule,
     InventoryModule,
+    HistoryModule,
     NotificationModule,
     CommunicationModule,
     OnlineBookingModule,

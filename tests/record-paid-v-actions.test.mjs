@@ -9,7 +9,12 @@ assert.match(payment, /button\('Корректировка оплаты'/);
 assert.match(payment, /button\('Возврат'/);
 assert.match(payment, /button\('Удаление оплаты'/);
 assert.match(recordView, /import \{ openRecordPaymentActions \} from '\.\.\/payment\/record-payment\.js'/);
-assert.match(recordView, /const paymentState = getRecordPaymentState\(source\);\s*if \(paymentState\.hasPayments\) \{\s*openRecordPaymentActions\(source,/s);
+assert.match(recordView, /import \{ openPersonHistoryQ \} from '\.\.\/people\/people\.js'/);
+assert.match(recordView, /const paymentState = getRecordPaymentState\(source\);\s*if \(paymentState\.hasPayments\) \{\s*const actions = openRecordPaymentActions\(source,/s);
+assert.match(recordView, /button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)/);
+assert.match(recordView, /querySelector\('\.record-payment-actions'\);\s*host\?\.insertAdjacentHTML\('beforeend', button\('История'/s);
+assert.match(recordView, /return openPersonHistoryQ\(document\.body, person\);/);
+assert.doesNotMatch(payment, /openPersonHistoryQ|people\/people\.js/);
 assert.doesNotMatch(recordView, /correctFinanceOperation|recordRefundExpense|hardDeleteFinanceOperation/);
 
 console.log('record paid V actions: ok');
