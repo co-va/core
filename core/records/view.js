@@ -16,7 +16,8 @@ import { getWorkplaces } from '../workplace-time.js';
 import { personDisplay } from '../people/presentation.js';
 import { getRecordPaymentState, recordAmountDue, resolveRecordSettlement } from '../finance/index.js';
 import { normalizeWorkplaceTimeZone, zonedDateTimeParts } from '../time/index.js';
-import { openRecordPayment, openRecordPaymentActions } from '../payment/record-payment.js';
+import { openRecordPayment } from '../payment/record-payment.js';
+import { openRecordPaymentActions } from '../payment/record-payment.js';
 import { openRecordSale } from '../sale/sale.js';
 import {
   cancelRecord,
