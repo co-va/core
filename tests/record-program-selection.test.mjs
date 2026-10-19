@@ -6,6 +6,9 @@ const view = fs.readFileSync('core/records/view.js', 'utf8');
 const finance = fs.readFileSync('core/finance/settlement.js', 'utf8');
 const payment = fs.readFileSync('core/payment/record-payment.js', 'utf8');
 const program = fs.readFileSync('core/loyalty/record-program.js', 'utf8');
+const recordServer = fs.readFileSync('server/src/record/record.service.ts', 'utf8');
+const serverPriceCondition = fs.readFileSync('server/src/loyalty/price-condition.ts', 'utf8');
+const depositState = fs.readFileSync('server/src/loyalty/deposit-state.ts', 'utf8');
 
 // Shared Record UI: mini-card -> program selector -> procedures.
 assert.match(runtime, /programControl = ''/);
@@ -27,10 +30,21 @@ assert.match(program, /type: 'subscription'/);
 assert.match(program, /type: 'referral'/);
 assert.match(program, /type: 'bonus'/);
 
-// Finance applies only the program explicitly stored on the record.
+// Client Finance applies only the program explicitly stored on the record.
 assert.doesNotMatch(finance, /getPersonDepositPriceConditions/);
 assert.match(finance, /record\?\.loyaltyProgram/);
 assert.match(finance, /selected\?\.pricePercent/);
+assert.match(finance, /resolvePersonPriceCondition\(null, \[\{/);
+
+// Server Record persists that explicit selection and validates the concrete selected deposit.
+assert.match(recordServer, /resolveSelectedRecordProgramPricePercent/);
+assert.match(recordServer, /const programChanged =/);
+assert.match(recordServer, /loyaltyProgram,/);
+assert.match(recordServer, /refreshProcedures \|\| productsChanged \|\| programChanged/);
+assert.match(serverPriceCondition, /selectedDepositPriceSource/);
+assert.match(serverPriceCondition, /resolvePersonPriceCondition\(null, source \? \[source\] : \[\]\)/);
+assert.match(depositState, /export async function selectedDepositPriceSource/);
+assert.match(depositState, /Выбранный депозит принадлежит другому человеку/);
 
 // A deposit appears as a payment source only when that deposit was selected for the record.
 assert.match(payment, /selectedRecordDepositId\(record\)/);
