@@ -324,6 +324,7 @@ export class RecordService {
       const record = objectValue(found.data);
       if (input.personKey && record.person?.key !== input.personKey || input.date && dateValue(record.date) !== input.date
         || input.workplaceId && record.workplaceId !== input.workplaceId || input.from && record.from !== input.from) throw new ConflictException('Данные не совпадают с указанной записью');
+      if (text(input.procedure)) this.procedures.matchTransferredProcedure(record, input.procedure);
       return record;
     }
     if (!text(input.personKey) || !text(input.date)) throw new ConflictException('Для определения записи укажите человека и дату обслуживания');
@@ -334,6 +335,7 @@ export class RecordService {
     const named = input.procedure ? base.filter(record => arrayValue(record.procedures).some(p => text(p.name) === text(input.procedure))) : base;
     const matches = named.length ? named : base;
     if (matches.length !== 1) throw new ConflictException('Не удалось однозначно определить запись.');
+    if (text(input.procedure)) this.procedures.matchTransferredProcedure(matches[0], input.procedure);
     return matches[0];
   }
 

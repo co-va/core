@@ -39,9 +39,12 @@ export function render(root) {
     root.querySelectorAll('[data-sheet-domain]').forEach(input => input.addEventListener('change', () => {
       collect(); state.input.sheets[input.dataset.sheetDomain].columns = state.inspected.sheets.find(sheet => sheet.name === input.dataset.sheetDomain).columns; draw();
     }));
-    root.querySelectorAll('[data-sheet-without-procedure]').forEach(control => control.addEventListener('click', () => {
-      collect(); const item = state.input.sheets[control.dataset.sheetWithoutProcedure]; item.withoutProcedure = !item.withoutProcedure; draw();
-    }));
+    root.querySelectorAll('[data-fact-without-procedure]').forEach(control => control.addEventListener('click', () => run(async () => {
+      const key = control.dataset.factWithoutProcedure;
+      const selected = state.input.withoutProcedureFacts || [];
+      state.input.withoutProcedureFacts = selected.includes(key) ? selected.filter(value => value !== key) : [...selected, key];
+      state.result = await request('check', state.input); draw();
+    })));
     initAccordions(root);
     bindDataTable(root, key => { state.descending = state.sortKey === key ? !state.descending : false; state.sortKey = key; draw(); });
     window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
@@ -49,12 +52,11 @@ export function render(root) {
   function mapping() {
     return `${field({ label: 'Источник', name: 'transfer-source', value: state.input.source })}${state.inspected.sheets.map((sheet, index) => {
       const config = state.input.sheets[sheet.name];
-      const fields = ['transferId','externalId','sourceKey', ...(state.inspected.domainFields[config.domain] || [])];
+      const fields = ['transferId','externalId','sourceKey', ...(config.domain === 'mixed' ? Object.keys(state.inspected.fields) : state.inspected.domainFields[config.domain] || [])];
       const options = [{ value: '', label: 'Не переносить колонку' }, ...sheet.headers.map((header, i) => ({ value: String(i), label: header || `Колонка ${i + 1}` }))];
       return `<section>${details([{ label: 'Лист', value: `${sheet.name} · ${sheet.count} строк` }])}
         ${select({ label: 'Что переносим', name: `domain-${index}`, value: config.domain, data: `data-sheet-domain="${escapeHtml(sheet.name)}"`, options: [{ value: '', label: 'Выберите данные' }, ...Object.entries(state.inspected.domains).map(([value,label]) => ({ value,label })), { value: 'skip', label: 'Пропустить лист' }] })}
         ${config.domain && config.domain !== 'skip' ? accordion([{ title: 'Колонки файла', content: [...new Set(fields)].map(key => select({ label: state.inspected.fields[key], name: `column-${index}-${key}`, value: config.columns[key] == null ? '' : String(config.columns[key]), data: `data-column="${escapeHtml(key)}" data-sheet-index="${index}"`, options })).join('') }]) : ''}
-        ${config.domain === 'consumables' ? `<p>Если процедура отсутствует, расходник требует исправления.</p>${settingToggle({ label: 'Импортировать без процедуры', checked: config.withoutProcedure === true, data: `data-sheet-without-procedure="${escapeHtml(sheet.name)}"` })}` : ''}
       </section>`;
     }).join('')}`;
   }
@@ -77,6 +79,7 @@ export function render(root) {
       ${button('Скачать всю таблицу с ID', { variant: 'secondary', data: 'data-transfer-table' })}
       ${result.failed ? button('Скачать данные для исправления', { variant: 'secondary', data: 'data-transfer-errors-file' }) : ''}
       ${settingToggle({ label: 'Только требуют исправления', checked: state.onlyErrors, data: 'data-transfer-only-errors' })}
+      ${state.step === 'checked' ? result.rows.filter(row => row.domain === 'consumables' && !row.values.procedure && (row.reason?.startsWith('Не указана процедура для расходника') || state.input.withoutProcedureFacts?.includes(row.sourceKey))).map(row => `<section>${details([{ label: 'Расходник', value: `${row.sheet} · строка ${row.row} · ${row.values.material || row.values.itemId || ''}` }])}${settingToggle({ label: 'Импортировать без процедуры', checked: state.input.withoutProcedureFacts?.includes(row.sourceKey), data: `data-fact-without-procedure="${escapeHtml(row.sourceKey)}"` })}</section>`).join('') : ''}
       ${rows.length ? dataTable({ caption: 'Результат проверки данных', columns: [{ key: 'sheet', label: 'Данные' }, { key: 'row', label: 'Строка' }, { key: 'reason', label: 'Причина' }, { key: 'transferId', label: 'ID переноса' }, { key: 'values', label: 'Исходные значения' }], rows, sortKey: state.sortKey, descending: state.descending }) : ''}`;
   }
   async function run(work) {
@@ -95,7 +98,7 @@ export function render(root) {
       await run(async () => {
         const input = { dataUrl: file.dataUrl, filename: file.name || file.file?.name || 'данные.xlsx', source: file.name || file.file?.name || 'Файл', sheets: {} };
         const inspected = await request('inspect', input);
-        inspected.sheets.forEach(sheet => { input.sheets[sheet.name] = { domain: sheet.domain, columns: sheet.columns, withoutProcedure: false }; });
+        inspected.sheets.forEach(sheet => { input.sheets[sheet.name] = { domain: sheet.domain, columns: sheet.columns }; });
         Object.assign(state, { input, inspected, step: 'mapping', result: null }); draw();
       });
     } else if (state.step === 'mapping') {

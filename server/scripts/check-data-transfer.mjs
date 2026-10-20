@@ -97,16 +97,47 @@ try {
   error(await run('consumables',[{...consumption,externalId:'missing',procedure:''}]),/Не указана процедура для расходника/);
   result=await run('consumables',[{...consumption,externalId:'free',procedure:'',withoutProcedure:'Да'}]);assert.equal(result.failed,0);
   const free=await db.inventoryMovement.findFirst({where:{tenantId,movementId:target(result,'consumables').targetId}});assert.equal(free.procedureKey,'');assert.equal(free.recordId,recordId);
+  // Permission is per fact; even a legacy sheet-wide flag grants no permission.
+  const scoped=await file('consumables',[{...consumption,externalId:'scope-one',procedure:''},{...consumption,externalId:'scope-two',procedure:''}]);
+  scoped.sheets={consumables:{domain:'consumables',withoutProcedure:true}};
+  result=await service.run(tenantId,accountId,scoped,true);assert.equal(result.failed,2);
+  const selected=result.rows[0].sourceKey;
+  scoped.withoutProcedureFacts=[selected];
+  result=await service.run(tenantId,accountId,scoped,true);assert.equal(result.failed,1);assert.equal(result.transferred,1);
+  assert.equal(result.rows.find(row=>!row.reason).sourceKey,selected);
+  result=await service.run(tenantId,accountId,scoped,false);assert.equal(result.failed,1);assert.equal(result.transferred,1);
+  const selectedMovement=await db.inventoryMovement.findFirst({where:{tenantId,movementId:target(result,'consumables').targetId}});
+  assert.equal(selectedMovement.procedureKey,'');assert.equal(selectedMovement.recordId,recordId);
+  assert.ok(result.rows.find(row=>row.sourceKey!==selected).reason.includes('Не указана процедура для расходника'));
   // Excel's technical 00:00 must not become a service-time constraint.
   result=await run('consumables',[{...consumption,externalId:'midnight',date:new Date('2024-05-15T00:00:00Z')}]);assert.equal(result.failed,0);
   result=await run('records',[{...record,externalId:'r2',from:'17:00',to:'18:00'}]);assert.equal(result.failed,0);
   error(await run('consumables',[{...consumption,externalId:'ambiguous'}]),/Не удалось однозначно определить запись/);
-  // Explicit transfer ID updates only its linked fact, even after file/name changes.
-  result=await run('people',[{transferId:personTransfer,name:'Света',phone:'79991234567',uei:'12'}]);assert.equal(result.failed,0);
-  assert.equal(target(result,'people').targetId,personId);assert.equal((await db.person.findFirst({where:{tenantId,key:personId}})).data.name,'Света');
+  // A transfer that matched an independent Person owns only its new values.
+  await people.upsertPerson(tenantId,'independent-anna',{person:{key:'independent-anna',name:'Анна',phones:['+79990000010'],emails:['independent@example.test']}});
+  result=await run('people',[{externalId:'matched-anna',name:'Анна',phone:'79990000010',email:'imported@example.test'}]);assert.equal(result.failed,0);
+  const matchedTransfer=target(result,'people').transferId;
+  error(await run('people',[{transferId:matchedTransfer,name:'Света',phone:'79990000010',email:'changed@example.test'}]),/имя.*не принадлежит этому переносу/);
+  let independent=(await db.person.findFirst({where:{tenantId,key:'independent-anna'}})).data;
+  assert.equal(independent.name,'Анна');assert.ok(independent.emails.includes('imported@example.test'));
+  result=await run('people',[{transferId:matchedTransfer,name:'Анна',phone:'79990000010',email:'corrected@example.test'}]);assert.equal(result.failed,0);
+  independent=(await db.person.findFirst({where:{tenantId,key:'independent-anna'}})).data;
+  assert.ok(independent.emails.includes('independent@example.test'));assert.ok(independent.emails.includes('corrected@example.test'));assert.ok(!independent.emails.includes('imported@example.test'));
+  result=await run('people',[{transferId:matchedTransfer,name:'Анна',phone:'79990000011',email:'corrected@example.test'}]);assert.equal(result.failed,0);
+  independent=(await db.person.findFirst({where:{tenantId,key:'independent-anna'}})).data;
+  assert.ok(independent.phones.includes('+79990000010'));assert.ok(independent.phones.includes('+79990000011'));
+  // Independently edited imported values are no longer owned by the transfer.
+  const original=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
+  await people.upsertPerson(tenantId,personId,{person:{...original,name:'Анна независимое исправление'}});
+  error(await run('people',[{transferId:personTransfer,name:'Света',phone:person.phone,uei:'12'}]),/имя.*не принадлежит этому переносу/);
+  await people.upsertPerson(tenantId,personId,{person:original});
   result=await run('consumables',[{...consumption,transferId:consumptionTransfer,recordId,quantity:15}]);assert.equal(result.failed,0,JSON.stringify(result));
   assert.equal(await db.inventoryMovement.count({where:{tenantId,recordId,procedureKey:stored.procedures[0].id}}),2);
   const payment={externalId:'pay1',recordTransferId:recordTransfer,amount:2000,wallet:'Наличные',occurredAt:'2023-05-17'};
+  const paymentCount=await db.financeOperation.count({where:{tenantId}});
+  error(await run('payments',[{...payment,externalId:'wrong-procedure',procedure:'Смывка'}]),/Не удалось сопоставить процедуру.*Осветление.*Смывка/);
+  error(await run('payments',[{...payment,externalId:'wrong-procedure-natural',recordTransferId:'',uei:'12',date:'2024-05-16',procedure:'Смывка'}]),/Не удалось сопоставить процедуру/);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),paymentCount);
   result=await run('payments',[payment]);assert.equal(result.failed,0,JSON.stringify(result));const paymentTransfer=target(result,'payments').transferId;
   const operationId=target(result,'payments').targetId;
   result=await run('payments',[payment]);assert.equal(result.unchanged,1);
@@ -121,12 +152,12 @@ try {
   assert.equal(history[0].provenance.type,'import');assert.equal(history[0].provenance.transferId,paymentTransfer);
   assert.equal(Number((await db.$queryRaw`SELECT COUNT(*) AS count FROM "Notification" WHERE "tenantId"=${tenantId}`)[0].count),0);
   // Correction keeps the Record ID, line IDs and single Settlement owner.
-  result=await run('records',[{...record,name:'Света',transferId:recordTransfer,cost:7500}]);assert.equal(result.failed,0,JSON.stringify(result));
+  result=await run('records',[{...record,name:'Анна',transferId:recordTransfer,cost:7500}]);assert.equal(result.failed,0,JSON.stringify(result));
   assert.equal(target(result,'records').targetId,recordId);
   const corrected=(await db.record.findFirst({where:{tenantId,recordId}})).data;
   assert.equal(corrected.procedures[0].id,stored.procedures[0].id);assert.equal(corrected.procedures[0].cost,7500);
   assert.equal(await db.financeSettlement.count({where:{tenantId,sourceId:recordId}}),1);
-  result=await run('records',[{...record,name:'Света',externalId:'discount',date:'2024-05-20',discountPercent:20}]);assert.equal(result.failed,0);
+  result=await run('records',[{...record,name:'Анна',externalId:'discount',date:'2024-05-20',discountPercent:20}]);assert.equal(result.failed,0);
   const explicitDiscount=(await db.record.findFirst({where:{tenantId,recordId:target(result,'records').targetId}})).data;
   assert.equal(explicitDiscount.procedures[0].historicalDiscount.value,20);assert.equal(explicitDiscount.procedures[0].cost,7000);
   result=await run('payments',[{externalId:'standalone-payment',amount:100,wallet:'Наличные',occurredAt:'2023-06-01'}]);assert.equal(result.failed,0);
@@ -140,6 +171,37 @@ try {
   const epochSheet=epoch1904.addWorksheet('people');epochSheet.addRow(['name','phone']);epochSheet.addRow(['Пример 1904','79991110001']);
   result=await service.run(tenantId,accountId,{filename:'epoch.xlsx',source:'epoch',dataUrl:`data:application/octet-stream;base64,${Buffer.from(await epoch1904.xlsx.writeBuffer()).toString('base64')}`},false);
   assert.equal(result.failed,0);assert.equal(result.transferred,1);
+  // Historical catalog prices do not mutate today's catalog or workplace price.
+  const state=(await db.businessOperationalState.findUnique({where:{tenantId}}))?.data || {};
+  const workplaceKey=stored.workplaceId;
+  const currentProcedure={id:'current-procedure',name:'Текущая процедура',duration:60,cost:{amount:10000},workplaces:[{workplaceId:workplaceKey,cost:{amount:11000}}]};
+  await db.businessOperationalState.upsert({where:{tenantId},create:{tenantId,data:{...state,procedures:[currentProcedure]}},update:{data:{...state,procedures:[currentProcedure]}}});
+  result=await run('procedures',[{externalId:'old-price',name:'Текущая процедура',price:3000,duration:45,workplaceKey,occurredAt:'2022-05-01'}]);assert.equal(result.failed,0,JSON.stringify(result));
+  const priceTransfer=target(result,'procedures').transferId;
+  assert.deepEqual((await db.businessOperationalState.findUnique({where:{tenantId}})).data.procedures,[currentProcedure]);
+  let priceHistory=await db.$queryRaw`SELECT "occurredAt", "effectiveAt", "provenance", "data", "sourceType", "sourceId" FROM "BusinessHistoryEvent" WHERE "tenantId"=${tenantId} AND "entityType"='procedure' AND "eventType"='versioned' ORDER BY "id" DESC LIMIT 1`;
+  assert.equal(priceHistory[0].occurredAt.toISOString().slice(0,10),'2022-05-01');assert.equal(priceHistory[0].effectiveAt.toISOString().slice(0,10),'2022-05-01');
+  assert.equal(priceHistory[0].provenance.transferId,priceTransfer);assert.equal(priceHistory[0].data.current.cost.amount,3000);assert.equal(priceHistory[0].sourceType,'procedure');assert.equal(priceHistory[0].sourceId,currentProcedure.id);
+  assert.equal((await procedures.snapshots(tenantId,workplaceKey,[currentProcedure.id],'2022-05-02'))[0].cost,3000);
+  assert.equal((await procedures.snapshots(tenantId,workplaceKey,[currentProcedure.id]))[0].cost,11000);
+  result=await run('procedures',[{transferId:priceTransfer,name:'Текущая процедура',price:3500,workplaceKey,occurredAt:'2022-05-01'}]);assert.equal(result.failed,0);
+  assert.deepEqual((await db.businessOperationalState.findUnique({where:{tenantId}})).data.procedures,[currentProcedure]);
+  assert.equal((await db.businessOperationalState.findUnique({where:{tenantId}})).data.procedureHistory.filter(p=>p.transferId===priceTransfer).length,1);
+  // One explicitly mapped CRM row saves Person + Workplace + Record despite bad Payment.
+  const crm={externalId:'mixed-1',name:'Клиент CRM',phone:'79990000222',uei:'222',workplace:'CRM пространство',date:'2022-06-01',procedure:'Работа CRM',cost:7000,amount:'не сумма',occurredAt:'2022-06-01',wallet:'Наличные'};
+  const crmFile=await file('CRM',[crm]);crmFile.sheets={CRM:{domain:'mixed'}};
+  result=await service.run(tenantId,accountId,crmFile,false);assert.equal(result.transferred,3,JSON.stringify(result));assert.equal(result.failed,1);
+  assert.equal(result.rows.find(row=>row.reason).domain,'payments');assert.match(result.rows.find(row=>row.reason).reason,/Сумма оплаты/);
+  const crmPerson=target(result,'people').targetId;const crmRecord=target(result,'records').targetId;
+  assert.equal((await db.record.findFirst({where:{tenantId,recordId:crmRecord}})).data.person.key,crmPerson);
+  result=await service.run(tenantId,accountId,crmFile,false);assert.equal(result.unchanged,3);assert.equal(result.failed,1);
+  const correctedCrm=await file('CRM',[{...crm,amount:2000}]);correctedCrm.sheets=crmFile.sheets;
+  result=await service.run(tenantId,accountId,correctedCrm,false);assert.equal(result.failed,0,JSON.stringify(result));assert.equal(result.unchanged,3);assert.equal(result.transferred,1);
+  assert.equal(target(result,'records').targetId,crmRecord);
+  assert.equal((await db.financeOperation.findFirst({where:{tenantId,operationId:target(result,'payments').targetId}})).sourceId,crmRecord);
+  result=await service.run(tenantId,accountId,correctedCrm,false);assert.equal(result.unchanged,4);
+  // The recognized Record sheet also expands its explicitly mapped Payment fields.
+  result=await run('records',[{...crm,externalId:'record-with-payment',date:'2022-06-02',amount:500}]);assert.equal(result.failed,0);assert.ok(target(result,'payments'));
   // All-invalid source has neither a new transfer ID nor saved facts.
   const before=await db.dataTransferFact.count({where:{tenantId}});
   result=await run('people',[{name:'',phone:'invalid'}]);assert.ok(result.failed);assert.ok(result.rows.every(row=>!row.transferId));

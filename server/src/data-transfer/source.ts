@@ -16,14 +16,14 @@ export const DOMAIN_FIELDS: Record<string, string[]> = {
   people: ['name','surname','phone','email','uei','personKey','createdAt'],
   workplaces: ['name','workplaceKey','city','address','phone','currency','timeZone','from','to','about','createdAt'], procedures: ['name','procedureId','workplace','workplaceKey','price','duration','occurredAt'],
   schedule: ['workplace','workplaceKey','date','from','to'],
-  records: ['recordId','procedures','personKey','personTransferId','name','phone','uei','workplace','workplaceKey','workplaceTransferId','date','from','to','procedure','cost','price','discountPercent','discountMoney','duration','createdAt'],
+  records: ['recordId','procedures','personKey','personTransferId','name','phone','uei','workplace','workplaceKey','workplaceTransferId','date','from','to','procedure','cost','price','discountPercent','discountMoney','duration','createdAt','email','surname','amount','wallet','walletId','occurredAt','material','manufacturer','unit','quantity','unitCost','withoutProcedure'],
   payments: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','workplace','workplaceKey','occurredAt','amount','wallet','walletId'],
   items: ['name','itemId','manufacturer','unit','quantity','unitCost','occurredAt'],
   movements: ['itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','kind','occurredAt','workplace','workplaceKey'],
   consumables: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','withoutProcedure','itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','occurredAt','workplace','workplaceKey'],
 };
 export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean };
-export type SourceInput = { dataUrl?: string; filename?: string; source?: string; sheets?: Record<string, { domain: string; columns?: Record<string, number>; withoutProcedure?: boolean }> };
+export type SourceInput = { dataUrl?: string; filename?: string; source?: string; withoutProcedureFacts?: string[]; sheets?: Record<string, { domain: string; columns?: Record<string, number> }> };
 function cellValue(value: any): any {
   if (value == null || value instanceof Date || typeof value !== 'object') return value ?? '';
   // Do not execute formulas or accept stale cached formula results as source facts.
@@ -76,30 +76,40 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
       const values: Record<string, any> = {};
       for (const [field, col] of Object.entries(columns)) if (FIELDS[field] && Number.isInteger(col) && col >= 0 && col < sheet.headers.length && row[col] !== '' && row[col] != null) values[field] = row[col];
       if (sheet.date1904) for (const field of ['date','occurredAt','createdAt']) if (typeof values[field] === 'number') values[field] += 1462;
-      if (mapping?.withoutProcedure === true) values.withoutProcedure = true;
       const sourceKey = text(values.sourceKey) || (text(values.externalId)
         ? `${text(input.source)}:${domain}:${text(values.externalId)}`
         : `${fingerprint}:${sheet.name}:${index + 2}`);
       facts.push({ domain, sheet: sheet.name, row: index + 2, values, sourceKey });
     }
   }
-  // Explicit people/place facts embedded in a record are independent facts too.
-  const embedded: Fact[] = [];
-  for (const fact of facts) if (fact.domain === 'records') {
+  const expanded: Fact[] = [];
+  const meta = ['transferId','externalId','sourceKey','note'];
+  const project = (values: Record<string, any>, fields: string[]) => Object.fromEntries([...new Set(fields)].filter(k => values[k] !== undefined).map(k => [k, values[k]]));
+  for (const fact of facts) {
     const v = fact.values;
-    if (v.name && (v.phone || v.uei) && !v.personKey && !v.personTransferId) embedded.push({ ...fact, domain: 'people', sourceKey: fact.sourceKey + ':person',
-      values: Object.fromEntries(['name','surname','phone','email','uei'].filter(k => v[k] !== undefined).map(k => [k,v[k]])) });
-    if (v.workplace && !v.workplaceKey && !v.workplaceTransferId) embedded.push({ ...fact, domain: 'workplaces', sourceKey: fact.sourceKey + ':workplace', values: { name: v.workplace } });
+    if (fact.domain === 'records' || fact.domain === 'mixed') {
+      const embedded = (domain: string, suffix: string, values: Record<string, any>) => expanded.push({ ...fact, domain, sourceKey: fact.sourceKey + suffix, values });
+      if (v.name && (v.phone || v.uei) && !v.personKey && !v.personTransferId)
+        embedded('people', ':person', project(v, ['name','surname','phone','email','uei']));
+      if (v.workplace && !v.workplaceKey && !v.workplaceTransferId) embedded('workplaces', ':workplace', { name: v.workplace });
+      const recordFields = DOMAIN_FIELDS.records.filter(k => !['amount','wallet','walletId','occurredAt','material','manufacturer','unit','quantity','unitCost','withoutProcedure'].includes(k));
+      const hasRecord = fact.domain === 'records' || v.date !== undefined;
+      if (hasRecord) expanded.push({ ...fact, domain: 'records', values: project(v, [...meta, ...recordFields]) });
+      const linked = v.recordId || v.recordTransferId ? {} : hasRecord ? { recordTransferId: fact.sourceKey } : {};
+      if (v.amount !== undefined) embedded('payments', ':payment', { ...project(v, DOMAIN_FIELDS.payments), ...linked });
+      if (v.material !== undefined && v.quantity !== undefined) embedded('consumables', ':consumable', { ...project(v, DOMAIN_FIELDS.consumables), ...linked });
+      if (!hasRecord && v.amount === undefined && v.material === undefined && !v.name && !v.workplace)
+        expanded.push({ ...fact, values: { ...v, invalid: 'Не удалось определить факты строки' } });
+    } else if (fact.domain === 'items' && v.quantity != null) {
+      expanded.push({ ...fact, domain: 'movements', sourceKey: fact.sourceKey + ':stock', values: {
+        itemTransferId: text(v.transferId) || fact.sourceKey, material: v.name, manufacturer: v.manufacturer,
+        unit: v.unit, quantity: v.quantity, unitCost: v.unitCost, occurredAt: v.occurredAt, kind: 'RECEIPT',
+      } });
+      expanded.push({ ...fact, values: project(v, [...meta, ...DOMAIN_FIELDS.items.filter(k => !['quantity','unitCost','occurredAt'].includes(k))]) });
+    } else expanded.push({ ...fact, values: project(v, [...meta, ...(DOMAIN_FIELDS[fact.domain] || Object.keys(v))]) });
   }
-  for (const fact of facts) if (fact.domain === 'items' && fact.values.quantity != null) {
-    const v = fact.values;
-    embedded.push({ ...fact, domain: 'movements', sourceKey: fact.sourceKey + ':stock', values: {
-      itemTransferId: text(v.transferId) || fact.sourceKey, material: v.name, manufacturer: v.manufacturer,
-      unit: v.unit, quantity: v.quantity, unitCost: v.unitCost, occurredAt: v.occurredAt, kind: 'RECEIPT',
-    } });
-    fact.values = Object.fromEntries(Object.entries(v).filter(([key]) => !['quantity','unitCost','occurredAt'].includes(key)));
-  }
-  facts.push(...embedded);
+  for (const fact of expanded) if (fact.domain === 'consumables' && input.withoutProcedureFacts?.includes(fact.sourceKey)) fact.values.withoutProcedure = true;
+  facts.length = 0; facts.push(...expanded);
   return facts.sort((a, b) => DOMAINS.indexOf(a.domain) - DOMAINS.indexOf(b.domain));
 }
 export async function transferWorkbook(rows: any[], template = false) {

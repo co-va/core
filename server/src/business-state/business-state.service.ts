@@ -1,3 +1,4 @@
+import { normalizeUEI as normalizeUEIValue } from '../../../core/uei-format.js';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { randomUUID } from 'node:crypto';
 import { resolveTransferredPerson } from './person-transfer';
@@ -172,33 +173,64 @@ export class BusinessStateService {
     return person;
   }
 
-  async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient, previousInput: JsonObject | null = null) {
+  async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient, ownership: JsonObject = {}) {
     const rows = await tx.person.findMany({ where: { tenantId } });
     const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
     const identity = normalizeUEI(identityRow?.data || {});
-    const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), identity, input, targetId);
+    const savedUei = text(identity.relations[`person:${targetId}`]);
+    const mayCorrectUei = !!targetId && ownership.uei && ownership.uei === savedUei;
+    const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), identity,
+      mayCorrectUei ? { ...input, uei: undefined } : input, targetId);
     if (!text(input.name)) throw new BadRequestException('Не указано имя');
     const previous = resolved.person;
     const key = previous?.key || randomUUID();
-    const phones = (previous?.phones || []).filter((phone: unknown) => !(previousInput?.phone && input.phone !== undefined && normalizePhone(phone) === normalizePhone(previousInput.phone)));
-    if (resolved.phone && !phones.some((phone: unknown) => normalizePhone(phone) === resolved.phone)) phones.push(resolved.phone);
-    const emails = (previous?.emails || []).filter((email: unknown) => !(previousInput?.email && input.email !== undefined && text(email) === text(previousInput.email)));
-    if (text(input.email) && !emails.includes(text(input.email))) emails.push(text(input.email));
-    const person = { ...(previous || {}), key, name: text(input.name),
-      ...(input.surname !== undefined ? { surname: text(input.surname) } : {}),
-      ...(input.phone !== undefined ? { phones } : {}),
-      ...(input.email !== undefined ? { emails } : {}),
-      ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
-    };
-    await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },
-      create: { tenantId, key, position: rows.length, data: json(person) }, update: { data: json(person) } });
+    const person: JsonObject = { ...(previous || {}), key };
+    // Ownership is recorded only for values actually introduced by this fact.
+    // Matching an existing value never grants permission to overwrite it later.
+    for (const field of ['name', 'surname', 'createdAt']) {
+      if (input[field] === undefined) continue;
+      const value = text(input[field]); const current = text(previous?.[field]);
+      const ownsCurrent = ownership[field] !== undefined && ownership[field] === current;
+      if (previous && current && current !== value && !ownsCurrent) throw new ConflictException(`Нельзя изменить ${field === 'name' ? 'имя' : field === 'surname' ? 'фамилию' : 'дату создания'}: значение не принадлежит этому переносу. Проверьте данные.`);
+      person[field] = value;
+      if (!previous || !current || ownsCurrent) ownership[field] = value;
+      else delete ownership[field];
+    }
+    for (const [field, collection] of [['phone', 'phones'], ['email', 'emails']]) {
+      if (input[field] === undefined) continue;
+      const normalize = field === 'phone' ? normalizePhone : text;
+      const value = normalize(input[field]);
+      const values = arrayValue(previous?.[collection]);
+      const owned = text(ownership[field]);
+      const retained = values.filter(item => !owned || normalize(item) !== owned);
+      const independent = retained.some(item => normalize(item) === value);
+      if (value && !independent) retained.push(value);
+      person[collection] = retained;
+      if (value && !independent) ownership[field] = value; else delete ownership[field];
+    }
+    if (mayCorrectUei && input.uei !== undefined) {
+      const next = text(input.uei) ? normalizeUEIValue(input.uei) : '';
+      if (next === '0000') throw new ConflictException('0000 не является действительным UEI');
+      const used = identity.entities[next];
+      if (next && used && (used.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI конфликтует с уже сохранённым UEI');
+      if (next !== savedUei) {
+        const old = identity.entities[savedUei];
+        if (old && (old.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI имеет независимые связи. Проверьте данные.');
+        delete identity.entities[savedUei]; delete identity.relations[`person:${key}`];
+      }
+      resolved.uei = next;
+      ownership.uei = next;
+    }
     if (resolved.uei && !identity.relations[`person:${key}`]) {
       const used = identity.entities[resolved.uei];
       if (used && (used.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI конфликтует с уже сохранённым UEI');
       identity.entities[resolved.uei] = used || { uei: resolved.uei, owner: { type: 'person', id: key }, members: [`person:${key}`], history: [], reserved: true };
       identity.relations[`person:${key}`] = resolved.uei;
-      await tx.ueiState.upsert({ where: { tenantId }, create: { tenantId, data: json(identity) }, update: { data: json(identity) } });
+      ownership.uei = resolved.uei;
     }
+    await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },
+      create: { tenantId, key, position: rows.length, data: json(person) }, update: { data: json(person) } });
+    await tx.ueiState.upsert({ where: { tenantId }, create: { tenantId, data: json(identity) }, update: { data: json(identity) } });
     return key;
   }
 

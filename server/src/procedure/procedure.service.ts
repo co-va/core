@@ -89,12 +89,32 @@ export class ProcedureService {
     if (targetId && index < 0) throw new BadRequestException('Перенесённая процедура не найдена');
     const value = { ...(catalog[index] || {}), id, name: text(input.name),
       ...(input.duration !== undefined ? { duration: input.duration } : {}),
-      ...(input.price !== undefined ? { cost: { amount: input.price } } : {}),
-      ...(input.workplaceId ? { workplaces: [...arrayValue(catalog[index]?.workplaces).filter(w => text(w.workplaceId) !== text(input.workplaceId)), { ...arrayValue(catalog[index]?.workplaces).find(w => text(w.workplaceId) === text(input.workplaceId)), workplaceId: input.workplaceId, ...(input.price !== undefined ? { cost: { amount: input.price } } : {}) }] } : {}),
+      ...(input.workplaceId ? { workplaces: [...arrayValue(catalog[index]?.workplaces).filter(w => text(w.workplaceId) !== text(input.workplaceId)), { ...arrayValue(catalog[index]?.workplaces).find(w => text(w.workplaceId) === text(input.workplaceId)), workplaceId: input.workplaceId }] } : {}),
     };
-    if (index < 0) catalog.push(value); else catalog[index] = value;
+    // A dated price is a historical version, never an update of today's catalog.
+    if (index < 0) catalog.push(value); else if (input.price === undefined) catalog[index] = value;
+    let historicalVersion: JsonObject | null = null;
+    if (input.price !== undefined) {
+      const provenanceRows = await tx.$queryRaw<Array<{ value: string }>>`SELECT current_setting('co_va.transfer_provenance', true) AS value`;
+      const provenance = JSON.parse(provenanceRows[0]?.value || '{}');
+      const history = arrayValue(operational.procedureHistory);
+      const version = { id, name: text(input.name), cost: { amount: input.price },
+        ...(input.duration !== undefined ? { duration: input.duration } : {}),
+        workplaces: input.workplaceId ? [{ workplaceId: input.workplaceId, cost: { amount: input.price } }] : [],
+        effectiveAt: input.occurredAt, historyAction: 'versioned', transferId: provenance.transferId };
+      operational.procedureHistory = [...history.filter(p => p.transferId !== provenance.transferId), version];
+      historicalVersion = version;
+    }
     operational.procedures = catalog;
     await tx.businessOperationalState.upsert({ where: { tenantId }, create: { tenantId, data: operational as Prisma.InputJsonValue }, update: { data: operational as Prisma.InputJsonValue } });
+    if (historicalVersion) {
+      await tx.$queryRaw`SELECT "professional_history_write"(
+        ${tenantId}::text, 'procedure', ${id}::text, 'versioned', 'active',
+        ${new Date(input.occurredAt)}::timestamp, ${new Date(input.occurredAt)}::timestamp, 'procedure', ${id}::text,
+        '', '', ${text(input.workplaceId)}::text, ${id}::text, '', '', '',
+        ${JSON.stringify({ procedure: id })}::jsonb, ${JSON.stringify({ current: historicalVersion })}::jsonb
+      )::text`;
+    }
     return id;
   }
 

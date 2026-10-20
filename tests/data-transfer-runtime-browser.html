@@ -13,11 +13,24 @@ const wait=()=>new Promise(r=>setTimeout(r,30));
 async function until(fn){for(let i=0;i<70;i++){if(fn())return;await wait()}throw Error(stage+': timed out')}
 const fields={name:'Имя',phone:'Телефон',uei:'UEI',transferId:'ID переноса',externalId:'ID источника',sourceKey:'Ключ строки'};
 const row={domain:'people',sheet:'Данные',row:2,sourceKey:'row-1',values:{name:'Пример',phone:'79990000000'},reason:'Телефон уже принадлежит другому имени'};
-let commits=0;
+let commits=0; let scenario='people'; let lastCommit;
 const nativeFetch=window.fetch.bind(window);
 window.fetch=async(url,options)=>{
  if(!String(url).includes('/data-transfer/'))return nativeFetch(url,options);
  const path=String(url).split('/').pop();
+ if(scenario==='consumables'){
+  const body=JSON.parse(options.body);let value;
+  const candidates=[1,2].map(i=>({domain:'consumables',sheet:'Расходники',row:i+1,sourceKey:`fact-${i}`,values:{material:`Материал ${i}`,quantity:1},reason:'Не указана процедура для расходника.'}));
+  if(path==='inspect')value={fields:{...fields,material:'Расходник',quantity:'Количество',amount:'Сумма оплаты'},domainFields:{consumables:['material','quantity']},domains:{consumables:'Расходники',mixed:'Несколько видов данных (CRM)'},sheets:[{name:'Расходники',headers:['Расходник','Количество'],count:2,domain:'consumables',columns:{material:0,quantity:1}}]};
+  else if(path==='check'||path==='commit'){
+   const selected=body.withoutProcedureFacts||[];
+   const rows=candidates.map(row=>selected.includes(row.sourceKey)?{...row,reason:'',transferId:path==='commit'?'consumable-id':''}:row);
+   const failed=rows.filter(row=>row.reason).length;
+   value={preview:path==='check',transferred:2-failed,unchanged:0,failed,domains:{consumables:{label:'Расходники',transferred:2-failed,unchanged:0,failed}},rows};
+   if(path==='commit')lastCommit=body;
+  }else return new Response('',{status:400});
+  return new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}});
+ }
  let value;
  if(path==='inspect')value={fields,domainFields:{people:['name','phone','uei']},domains:{people:'Люди'},sheets:[{name:'Данные',headers:['Имя','Телефон'],count:1,domain:'people',columns:{name:0,phone:1}}]};
  else if(path==='check')value={preview:true,transferred:0,unchanged:0,failed:1,domains:{people:{label:'Люди',transferred:0,unchanged:0,failed:1}},rows:[row]};
@@ -44,6 +57,24 @@ try{
  ok(headerStates.includes(true)&&headerStates.at(-1)===false,'Shared Header was not notified that the action is available again');
  root.querySelector('[data-transfer-only-errors]').click();ok(root.textContent.includes('stable-test-id'),'stable ID is missing');
  ok(root.querySelector('.ui-data-table').scrollWidth>=root.querySelector('.ui-data-table').clientWidth,'table must own horizontal scroll');
+ mark('consumables upload');scenario='consumables';render(root);root.querySelector('[data-transfer-next]').click();await until(()=>root.querySelector('[data-sheet-domain]'));
+ ok(!root.querySelector('[data-sheet-without-procedure]'),'sheet-wide permission must not exist');
+ const domain=root.querySelector('[data-sheet-domain]');domain.value='mixed';domain.dispatchEvent(new Event('change',{bubbles:true}));
+ ok(root.querySelector('[data-column="amount"]'),'mixed CRM mapping must expose explicit payment fields');
+ const resetDomain=root.querySelector('[data-sheet-domain]');resetDomain.value='consumables';resetDomain.dispatchEvent(new Event('change',{bubbles:true}));
+ await until(()=>!root.querySelector('[data-transfer-next]').disabled);root.querySelector('[data-transfer-next]').click();await until(()=>root.querySelectorAll('[data-fact-without-procedure]').length===2);
+ mark('per-fact permission');root.querySelector('[data-fact-without-procedure="fact-1"]').click();
+ await until(()=>root.querySelector('[data-fact-without-procedure="fact-1"]')?.getAttribute('aria-pressed')==='true');
+ ok(root.querySelector('[data-fact-without-procedure="fact-2"]').getAttribute('aria-pressed')==='false','permission leaked to second fact');
+ ok(root.querySelector('.ui-data-table').textContent.includes('Не указана процедура для расходника'),'second fact must remain an error');
+ // Revoking and rechecking must restore the selected fact's own error.
+ await until(()=>!root.querySelector('[data-transfer-next]').disabled);root.querySelector('[data-fact-without-procedure="fact-1"]').click();
+ await until(()=>root.querySelector('[data-fact-without-procedure="fact-1"]')?.getAttribute('aria-pressed')==='false');
+ await until(()=>!root.querySelector('[data-transfer-next]').disabled);root.querySelector('[data-fact-without-procedure="fact-1"]').click();
+ await until(()=>root.querySelector('[data-fact-without-procedure="fact-1"]')?.getAttribute('aria-pressed')==='true');
+ await until(()=>!root.querySelector('[data-transfer-next]').disabled);root.querySelector('[data-transfer-next]').click();await until(()=>lastCommit);
+ ok(JSON.stringify(lastCommit.withoutProcedureFacts)===JSON.stringify(['fact-1']),'commit permission must contain only selected fact');
+ await until(()=>root.textContent.includes('Результат'));ok(root.textContent.includes('Не указана процедура для расходника'),'unselected error lost after commit');
  mark('finished');
 }catch(error){failures.push(String(error.stack||error));}
 HTMLInputElement.prototype.click=nativeClick;

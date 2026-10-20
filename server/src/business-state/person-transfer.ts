@@ -19,7 +19,7 @@ export function resolveTransferredPerson(people: Row[], identity: Row, input: Ro
   if (byUei[0] && person && byUei[0].key !== person.key) throw Error('UEI конфликтует с уже сохранённым UEI');
   if (person) {
     if (!targetId && text(input.name) && text(input.name) !== text(person.name)) throw Error(`Телефон уже принадлежит ${person.name}. В импортируемых данных указано имя ${input.name}. Проверьте данные.`);
-    if (!targetId && text(input.surname) && text(input.surname) !== text(person.surname)) throw Error('Фамилия не совпадает с сохранённой. Проверьте данные.');
+    if (!targetId && text(person.surname) && text(input.surname) && text(input.surname) !== text(person.surname)) throw Error('Фамилия не совпадает с сохранённой. Проверьте данные.');
     const saved = text(identity.relations?.[`person:${person.key}`] || person.uei);
     if (code && saved && code !== saved) throw Error(`Телефон уже связан с ${person.name}. Сохранён UEI ${saved}, в импортируемых данных UEI ${code}. Проверьте данные.`);
   }

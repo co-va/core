@@ -26,7 +26,7 @@ export class DataTransferService {
   async inspect(input: SourceInput) {
     try {
       const parsed = await readSource(input);
-      return { fields: FIELDS, domainFields: DOMAIN_FIELDS, domains: LABELS, sheets: parsed.sheets.map(sheet => ({
+      return { fields: FIELDS, domainFields: DOMAIN_FIELDS, domains: { ...LABELS, mixed: 'Несколько видов данных (CRM)' }, sheets: parsed.sheets.map(sheet => ({
         name: sheet.name, headers: sheet.headers, count: sheet.rows.length, sample: sheet.rows.slice(0, 3),
         domain: defaultDomain(sheet.name), columns: defaultColumns(sheet.headers),
       })) };
@@ -105,9 +105,10 @@ export class DataTransferService {
     const v = await this.linkedValues(tx, tenantId, input, source);
     const target = previous?.targetId || '';
     let targetId = '';
+    const ownership: Values = { ...((previous?.ownership as Values) || {}) };
     if (fact.domain === 'people') {
       if (!limits.realPersonalData) throw Error('Перенос людей доступен после перехода в рабочий режим');
-      targetId = await this.people.importPerson(tenantId, v, target, tx, previous?.input as Values | null);
+      targetId = await this.people.importPerson(tenantId, v, target, tx, ownership);
     } else if (fact.domain === 'workplaces') {
       if (!target && limits.workplaces != null && await tx.workplace.count({ where: { tenantId, deletedAt: null } }) >= limits.workplaces) throw Error(`Доступно рабочих пространств: ${limits.workplaces}`);
       targetId = await this.profiles.importWorkplace(tenantId, accountId, v, target, tx);
@@ -159,8 +160,8 @@ export class DataTransferService {
       if (!v.kind) throw Error('Не указан тип складского движения');
       targetId = await this.inventory.importMovement(tenantId, v, target, tx);
     }
-    await tx.dataTransferFact.upsert({ where: { id }, create: { id, tenantId, domain: fact.domain, sourceKey: fact.sourceKey, targetId, source, input: input as Prisma.InputJsonValue },
-      update: { targetId, source, input: input as Prisma.InputJsonValue, revision: { increment: 1 } } });
+    await tx.dataTransferFact.upsert({ where: { id }, create: { id, tenantId, domain: fact.domain, sourceKey: fact.sourceKey, targetId, source, input: input as Prisma.InputJsonValue, ownership: ownership as Prisma.InputJsonValue },
+      update: { targetId, source, input: input as Prisma.InputJsonValue, ownership: ownership as Prisma.InputJsonValue, revision: { increment: 1 } } });
     return { transferId: id, targetId, status: previous ? 'corrected' : 'saved' };
   }
 
