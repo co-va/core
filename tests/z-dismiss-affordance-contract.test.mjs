@@ -3,6 +3,8 @@ import fs from 'node:fs';
 
 const affordance = fs.readFileSync('ui/v2/z-affordance.js', 'utf8');
 const stack = fs.readFileSync('ui/v2/z-stack.js', 'utf8');
+const workspaceNavigation = fs.readFileSync('ui/v2/workspace-navigation.js', 'utf8');
+const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 
 assert.match(
   affordance,
@@ -28,6 +30,26 @@ assert.match(
   stack,
   /node\.style\.setProperty\('--v2-z-layer-shift', `\$\{depth \* 12\}px`\);/,
   'Each nested Z layer must retain its own physical layer shift so the active affordance moves with that layer.',
+);
+assert.match(
+  workspaceNavigation,
+  /import \{ bindV2StableZFrame \} from '\.\/z-stack\.js';/,
+  'Shared workspace interaction must own the stable base Z frame lifecycle.',
+);
+assert.match(
+  workspaceNavigation,
+  /const z = app\.querySelector\('\[data-v2-front\] > \[data-v2-z\]'\);[\s\S]*?bindV2StableZFrame\(z\);/,
+  'Every app shell using shared workspace interaction must bind the same stable base Z frame.',
+);
+assert.match(
+  accountShell,
+  /initV2WorkspaceInteraction\(root, \{/,
+  'End-user account shell must stay on the shared workspace interaction contour.',
+);
+assert.doesNotMatch(
+  accountShell,
+  /bindV2ZDismissAffordance/,
+  'End-user account shell must not own a separate Z dismiss implementation.',
 );
 
 console.log('z-dismiss-affordance-contract: PASS');
