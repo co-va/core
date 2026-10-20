@@ -20,7 +20,6 @@ import {
   textareaField,
   workspaceHeaderContext,
 } from '../../ui/ui.js';
-import { getWorkplaces } from '../../core/profile/workplaces/data.js';
 
 let publicRouteState = { profileSlug: '', workplaces: [] };
 
@@ -53,7 +52,7 @@ function copyLinkField(label, value, kind) {
 function bindCopyButtons(root) {
   root.querySelectorAll('[data-copy-booking-link]').forEach((copyButton) => {
     copyButton.addEventListener('click', async () => {
-      const value = copyButton.closest('.array-row')?.querySelector('input')?.value || '';
+      const value = copyButton.closest('.input-action-row')?.querySelector('input')?.value || '';
       if (!value) return;
       try {
         if (await copyTextToClipboard(value)) setCopyButtonCopied(copyButton);
@@ -66,9 +65,8 @@ function bindCopyButtons(root) {
 
 function selectedWorkplaceLink(workplaces, key) {
   const selected = workplaces.find((item) => item.key === key) || null;
-  const route = publicRouteState.workplaces.find((item) => item.key === key) || null;
-  if (!selected || !route?.slug) return '';
-  return copyLinkField(selected.name || 'Ссылка рабочего пространства', bookingLink(publicRouteState.profileSlug, route.slug), 'workplace');
+  if (!selected?.slug) return '';
+  return copyLinkField(selected.name || 'Ссылка рабочего пространства', bookingLink(publicRouteState.profileSlug, selected.slug), 'workplace');
 }
 
 function settingsSignature(value) {
@@ -155,7 +153,7 @@ function mountScreen(root, body) {
 }
 
 function renderReady(root) {
-  const workplaces = getWorkplaces();
+  const workplaces = publicRouteState.workplaces.filter((item) => item.key && item.slug);
   const options = [
     { value: '', label: 'Выбрать рабочее пространство' },
     ...workplaces.map((item) => ({ value: item.key, label: item.name || 'Без названия' })),
