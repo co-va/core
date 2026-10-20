@@ -4,7 +4,8 @@ import { DOMAINS, LABELS, Fact, parseCsv, text } from './formats';
 
 export const FIELDS: Record<string, string> = {
   transferId: 'ID переноса', externalId: 'ID источника', sourceKey: 'Ключ строки', name: 'Имя', surname: 'Фамилия', phone: 'Телефон', email: 'Email', uei: 'UEI',
-  personKey: 'ID человека CO-VA', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства CO-VA', procedure: 'Процедура', procedureId: 'ID процедуры CO-VA',
+  city: 'Город', address: 'Адрес', currency: 'Валюта', timeZone: 'Часовой пояс', about: 'Описание',
+  personKey: 'ID человека CO-VA', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства CO-VA', procedure: 'Процедура', procedures: 'Процедуры (JSON)', procedureId: 'ID процедуры CO-VA',
   date: 'Дата обслуживания', from: 'Время обслуживания', to: 'Окончание обслуживания', createdAt: 'Дата создания в источнике', occurredAt: 'Дата факта',
   recordId: 'ID записи CO-VA', recordTransferId: 'ID переноса записи', personTransferId: 'ID переноса человека', workplaceTransferId: 'ID переноса пространства',
   price: 'Исторический прайс', cost: 'Цена работы', discountPercent: 'Скидка %', discountMoney: 'Скидка суммой', duration: 'Длительность',
@@ -13,9 +14,9 @@ export const FIELDS: Record<string, string> = {
 };
 export const DOMAIN_FIELDS: Record<string, string[]> = {
   people: ['name','surname','phone','email','uei','personKey','createdAt'],
-  workplaces: ['name','workplaceKey','note'], procedures: ['name','procedureId','workplace','workplaceKey','price','duration','occurredAt'],
+  workplaces: ['name','workplaceKey','city','address','phone','currency','timeZone','from','to','about','createdAt'], procedures: ['name','procedureId','workplace','workplaceKey','price','duration','occurredAt'],
   schedule: ['workplace','workplaceKey','date','from','to'],
-  records: ['personKey','personTransferId','name','phone','uei','workplace','workplaceKey','workplaceTransferId','date','from','to','procedure','cost','price','discountPercent','discountMoney','duration','createdAt'],
+  records: ['recordId','procedures','personKey','personTransferId','name','phone','uei','workplace','workplaceKey','workplaceTransferId','date','from','to','procedure','cost','price','discountPercent','discountMoney','duration','createdAt'],
   payments: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','workplace','workplaceKey','occurredAt','amount','wallet','walletId'],
   items: ['name','itemId','manufacturer','unit','quantity','unitCost','occurredAt'],
   movements: ['itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','kind','occurredAt','workplace','workplaceKey'],

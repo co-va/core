@@ -427,7 +427,8 @@ export class RecordService {
         ),
         pricePercent,
       );
-      const settlement = await this.finance.settlementForSource(
+      const unknownPrice = record.historicalTransfer && (!arrayValue(record.procedures).length || arrayValue(record.procedures).some(item => item.cost == null || item.cost === ''));
+      const settlement = unknownPrice ? null : await this.finance.settlementForSource(
         tenantId,
         'record',
         text(record.id),

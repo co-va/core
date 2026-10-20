@@ -78,6 +78,7 @@ export class ProcedureService {
 
   async importProcedure(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
     if (!text(input.name)) throw new BadRequestException('Не указана процедура');
+    if (input.price != null && !input.occurredAt) throw new BadRequestException('Не указана дата исторического прайса');
     const stored = await tx.businessOperationalState.findUnique({ where: { tenantId } });
     const operational = objectValue(stored?.data);
     const catalog = arrayValue(operational.procedures);

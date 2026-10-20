@@ -48,7 +48,7 @@ try {
   const personId=target(result,'people').targetId;const personTransfer=target(result,'people').transferId;
   assert.ok(personTransfer); assert.equal(result.rows.find(row=>row.reason).transferId,'');
   result=await run('people',[{...person,externalId:'p1'}]);assert.equal(result.unchanged,1);
-  error(await run('people',[{name:'Аня',phone:person.phone}]),/Телефон уже принадлежит Анне/);
+  error(await run('people',[{name:'Аня',phone:person.phone}]),/Телефон уже принадлежит.*Анна/);
   error(await run('people',[{...person,uei:'315'}]),/Сохранён UEI 0012/);
   error(await run('people',[{name:'Другая',phone:'79997654321',uei:'12'}]),/Проверьте|UEI|имя/);
   // Adding an initially absent UEI updates the same canonical person.
@@ -114,6 +114,22 @@ try {
   assert.equal(history[0].occurredAt.toISOString().slice(0,10),'2023-05-17');assert.ok(history[0].recordedAt>history[0].occurredAt);
   assert.equal(history[0].provenance.type,'import');assert.equal(history[0].provenance.transferId,paymentTransfer);
   assert.equal(Number((await db.$queryRaw`SELECT COUNT(*) AS count FROM "Notification" WHERE "tenantId"=${tenantId}`)[0].count),0);
+  // Correction keeps the Record ID, line IDs and single Settlement owner.
+  result=await run('records',[{...record,name:'Света',transferId:recordTransfer,cost:7500}]);assert.equal(result.failed,0,JSON.stringify(result));
+  assert.equal(target(result,'records').targetId,recordId);
+  const corrected=(await db.record.findFirst({where:{tenantId,recordId}})).data;
+  assert.equal(corrected.procedures[0].id,stored.procedures[0].id);assert.equal(corrected.procedures[0].cost,7500);
+  assert.equal(await db.financeSettlement.count({where:{tenantId,sourceId:recordId}}),1);
+  result=await run('records',[{...record,name:'Света',externalId:'discount',date:'2024-05-20',discountPercent:20}]);assert.equal(result.failed,0);
+  const explicitDiscount=(await db.record.findFirst({where:{tenantId,recordId:target(result,'records').targetId}})).data;
+  assert.equal(explicitDiscount.procedures[0].historicalDiscount.value,20);assert.equal(explicitDiscount.procedures[0].cost,7000);
+  result=await run('payments',[{externalId:'standalone-payment',amount:100,wallet:'Наличные',occurredAt:'2023-06-01'}]);assert.equal(result.failed,0);
+  assert.equal((await db.financeOperation.findFirst({where:{tenantId,operationId:target(result,'payments').targetId}})).sourceType,'payment');
+  result=await run('schedule',[{workplace:'BeautyToria',date:'2020-01-01',from:'09:00',to:'18:00'}]);assert.equal(result.failed,0);
+  result=await run('items',[{name:'Позиция с ошибкой остатка',unit:'г',quantity:'не число',occurredAt:'2024-01-01'}]);assert.equal(result.transferred,1);assert.equal(result.failed,1);
+  assert.equal(await db.inventoryItem.count({where:{tenantId,name:'Позиция с ошибкой остатка'}}),1);
+  const unknownRecord=(await records.listForPeople(tenantId,[{key:personId}])).find(row=>row.id===noPriceId);
+  assert.equal(unknownRecord.payment.state,'unknown');assert.equal(unknownRecord.payment.due,null);
   // All-invalid source has neither a new transfer ID nor saved facts.
   const before=await db.dataTransferFact.count({where:{tenantId}});
   result=await run('people',[{name:'',phone:'invalid'}]);assert.ok(result.failed);assert.ok(result.rows.every(row=>!row.transferId));

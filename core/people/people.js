@@ -323,7 +323,7 @@ function recordHistoryDetail(item = {}) {
     ? v2Section('Итог оплаты', details([
       { label: 'Статус', value: paymentStateLabel(item) },
       { label: 'Оплачено', value: money(item.paidAmount) },
-      { label: 'К оплате', value: money(item.due) },
+      { label: 'К оплате', value: item.due == null ? 'Не указано' : money(item.due) },
     ]))
     : '';
   return `${recordBlock}${paymentRows}${refundRows}${paymentSummary}`;

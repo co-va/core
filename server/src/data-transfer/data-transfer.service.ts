@@ -66,6 +66,19 @@ export class DataTransferService {
     for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
+    if (v.procedures != null) {
+      let list: any;
+      try { list = JSON.parse(text(v.procedures)); } catch { throw Error('Процедуры: неверный формат JSON'); }
+      if (!Array.isArray(list)) throw Error('Процедуры: укажите список');
+      v.procedures = list.map((item: any) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item) || !text(item.name)) throw Error('Не указана процедура');
+        const p: Values = { name: text(item.name) };
+        for (const key of ['cost','price','duration','discountPercent','discountMoney']) if (item[key] != null) p[key] = decimal(item[key], FIELDS[key]);
+        if (p.discountPercent > 100 || p.discountPercent != null && p.discountMoney != null) throw Error('Не удалось определить явно указанную скидку процедуры');
+        return p;
+      });
+      if (v.procedure) throw Error('Укажите либо одну процедуру, либо список процедур');
+    }
     if (v.discountPercent > 100) throw Error('Скидка %: значение больше 100');
     if (v.discountPercent != null && v.discountMoney != null) throw Error('Указаны два вида скидки. Оставьте один явно заданный вид.');
     if (v.withoutProcedure != null) {
@@ -111,14 +124,16 @@ export class DataTransferService {
       const person = await this.people.resolveTransferPerson(tenantId, v, tx);
       const workplace = await this.profiles.resolveTransferWorkplace(tenantId, v, tx);
       if (v.to && (!v.from || v.to <= v.from)) throw Error('Окончание обслуживания должно быть позже начала');
-      const procedure = text(v.procedure) ? { name: text(v.procedure), ...(v.duration != null ? { duration: v.duration } : {}),
-        ...(v.cost != null ? { cost: v.cost } : {}), ...(v.price != null ? { historicalPrice: v.price } : {}),
-        ...(v.discountPercent != null ? { historicalDiscount: { type: 'percent', value: v.discountPercent } } : {}),
-        ...(v.discountMoney != null ? { historicalDiscount: { type: 'money', value: v.discountMoney } } : {}) } : null;
-      if (!procedure && (v.cost != null || v.price != null || v.discountPercent != null || v.discountMoney != null)) throw Error('Не указана процедура для цены или скидки');
+      const snapshots = (v.procedures || (text(v.procedure) ? [{ ...v, name: text(v.procedure) }] : [])).map((p: Values) => ({
+        name: p.name, ...(p.duration != null ? { duration: p.duration } : {}), ...(p.cost != null ? { cost: p.cost } : {}),
+        ...(p.price != null ? { historicalPrice: p.price } : {}),
+        ...(p.discountPercent != null ? { historicalDiscount: { type: 'percent', value: p.discountPercent } } : {}),
+        ...(p.discountMoney != null ? { historicalDiscount: { type: 'money', value: p.discountMoney } } : {}),
+      }));
+      if (!snapshots.length && (v.cost != null || v.price != null || v.discountPercent != null || v.discountMoney != null)) throw Error('Не указана процедура для цены или скидки');
       targetId = await this.records.importHistorical(tenantId, { date: v.date, from: v.from, to: v.to,
         workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
-        procedures: procedure ? [procedure] : [], ...(v.createdAt ? { createdAt: v.createdAt } : {}) }, target || text(v.recordId), tx);
+        procedures: snapshots, ...(v.createdAt ? { createdAt: v.createdAt } : {}) }, target || text(v.recordId), tx);
     } else if (fact.domain === 'payments') {
       if (v.amount == null) throw Error('Сумма имеет неверный формат');
       if (!v.occurredAt) throw Error('Не указана дата оплаты');
@@ -174,7 +189,7 @@ export class DataTransferService {
       result.rows.push({ ...fact, ...saved, transferId: preview ? '' : saved?.transferId || '', reason });
     };
     const perform = async (tx: Tx, fact: Fact) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))::text`;
       const conflict = conflicts.get(`${fact.domain}:${fact.sourceKey}`); if (conflict) throw Error(conflict);
       return this.save(tx, tenantId, accountId, fact, source, limits);
     };

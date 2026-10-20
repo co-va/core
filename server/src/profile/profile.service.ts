@@ -404,8 +404,8 @@ export class ProfileService {
   }
 
   async resolveTransferWorkplace(tenantId: string, input: Record<string, any>, tx: Prisma.TransactionClient) {
-    const key = text(input.workplaceKey);
-    const name = text(input.workplace);
+    const key = stringValue(input.workplaceKey).trim();
+    const name = stringValue(input.workplace).trim();
     const rows = await tx.workplace.findMany({ where: { tenantId, deletedAt: null, ...(key ? { key } : { name }) } });
     if ((!key && !name) || rows.length !== 1) throw new BadRequestException('Не удалось однозначно определить рабочее пространство');
     if (key && name && rows[0].name !== name) throw new BadRequestException('Название рабочего пространства не совпадает с указанным ID');
@@ -413,13 +413,13 @@ export class ProfileService {
   }
 
   async importWorkplace(tenantId: string, platformAccountId: string, input: Record<string, any>, targetId: string, tx: Prisma.TransactionClient) {
-    if (!text(input.name)) throw new BadRequestException('Не указано название рабочего пространства');
+    if (!stringValue(input.name).trim()) throw new BadRequestException('Не указано название рабочего пространства');
     const profile = await tx.profile.findUnique({ where: { tenantId_platformAccountId: { tenantId, platformAccountId } } });
     if (!profile) throw new NotFoundException('Профиль не найден');
     const rows = await tx.workplace.findMany({ where: { tenantId, deletedAt: null } });
-    const named = rows.filter(row => row.name === text(input.name));
-    if (!targetId && !text(input.workplaceKey) && named.length > 1) throw new BadRequestException('Не удалось однозначно определить рабочее пространство');
-    const key = targetId || text(input.workplaceKey) || named[0]?.key || randomUUID();
+    const named = rows.filter(row => row.name === stringValue(input.name).trim());
+    if (!targetId && !stringValue(input.workplaceKey).trim() && named.length > 1) throw new BadRequestException('Не удалось однозначно определить рабочее пространство');
+    const key = targetId || stringValue(input.workplaceKey).trim() || named[0]?.key || randomUUID();
     const previous = rows.find(row => row.key === key);
     if (targetId && !previous) throw new NotFoundException('Перенесённое рабочее пространство не найдено');
     const value = normalizeWorkplace({ ...(previous || {}), ...input, key });

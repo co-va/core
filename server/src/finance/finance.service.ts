@@ -557,8 +557,9 @@ export class FinanceService {
     if (capability.enabled !== true) throw new ForbiddenException('Этот режим инвестиций недоступен');
   }
 
-  async recordSettlementPaymentState(tenantId: string, recordId: string, settlement: JsonObject) {
+  async recordSettlementPaymentState(tenantId: string, recordId: string, settlement: JsonObject | null) {
     const paid = Math.max(0, await this.serviceNet(this.prisma, tenantId, 'record', text(recordId)));
+    if (!settlement) return { state: 'unknown', paid, due: null };
     const total = money(settlement?.planTotal);
     const due = Math.max(0, money(total - paid));
     return { state: due <= 0.009 ? 'paid' : paid > 0.009 ? 'partial' : 'unpaid', paid, due };

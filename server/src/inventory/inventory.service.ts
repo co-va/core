@@ -425,7 +425,10 @@ export class InventoryService {
 
   async importItem(tenantId: string, input: AnyRecord, targetId: string, tx: Tx) {
     if (!text(input.name) || !text(input.unit)) throw new BadRequestException('Не указано наименование или единица склада');
-    const itemId = targetId || text(input.itemId) || randomUUID();
+    const matches = !targetId && !input.itemId ? await tx.inventoryItem.findMany({ where: { tenantId, archivedAt: null,
+      name: text(input.name), unit: text(input.unit), ...(input.manufacturer ? { manufacturer: text(input.manufacturer) } : {}) } }) : [];
+    if (matches.length > 1) throw new BadRequestException('Не удалось однозначно определить позицию склада');
+    const itemId = targetId || text(input.itemId) || matches[0]?.itemId || randomUUID();
     const existing = await tx.inventoryItem.findFirst({ where: { tenantId, itemId } });
     if (targetId && !existing) throw new NotFoundException('Перенесённая позиция склада не найдена');
     if (existing) await this.updateItem(tenantId, itemId, input, tx);
@@ -456,6 +459,7 @@ export class InventoryService {
       await tx.inventoryMovementLine.update({ where: { id: line.id }, data: { quantity, costKnown: known, unitCost: input.unitCost ?? 0, amount: quantity * (input.unitCost ?? 0) } });
       if (line.direction === 'IN') for (const allocation of allocations) {
         const lot = await tx.inventoryLot.findUnique({ where: { id: allocation.inventoryLotId } });
+        await tx.inventoryMovementAllocation.update({ where: { id: allocation.id }, data: { quantity, unitCost: input.unitCost ?? 0, amount: quantity * (input.unitCost ?? 0) } });
         if (lot) await tx.inventoryLot.update({ where: { id: lot.id }, data: { quantityReceived: quantity,
           quantityRemaining: Math.max(0, Number(lot.quantityRemaining) + quantity - Number(line.quantity)),
           costKnown: known, unitCost: input.unitCost ?? 0, receivedAt: new Date(input.occurredAt) } });
