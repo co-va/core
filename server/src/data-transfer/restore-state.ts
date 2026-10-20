@@ -5,6 +5,7 @@ type Row = Record<string, any>;
 export type TransferState = Record<string, Row[]>;
 const encode = (v: any): string => JSON.stringify(v, (_, value) => typeof value === 'bigint' ? value.toString() : value);
 const same = (a: any, b: any) => encode(a) === encode(b);
+const comparableRow = (row: Row | undefined) => row ? Object.fromEntries(Object.entries(row).filter(([key]) => !['updatedAt','recordedAt'].includes(key))) : row;
 const describe=(path:string)=>{const names:Row={Person:'человека',UeiState:'UEI',BusinessOperationalState:'графика или процедур',BusinessAuxiliaryState:'кошелька, займа или инвестиции',Workplace:'рабочего пространства',BusinessRecord:'записи',FinanceSettlement:'расчёта записи',FinanceOperation:'финансовой операции',FinanceLedgerEntry:'движения денег',LoyaltyDepositProgram:'программы',LoyaltyDepositInstance:'депозита',LoyaltyPersonalAccount:'личного счёта',LoyaltyPersonalAccountMovement:'операций личного счёта',LoyaltyPersonalAccountDebt:'задолженности',InventoryItem:'складской позиции',InventoryLot:'складской партии',InventoryMovement:'складского движения',InventoryMovementLine:'складского движения',InventoryMovementAllocation:'складской партии',DataTransferFact:'повторного переноса'};return names[path.split('.')[0]]||'связанных фактов';};
 const identifier = (v: string) => { if (!/^[A-Za-z][A-Za-z0-9]*$/.test(v)) throw Error('Invalid state identifier'); return Prisma.raw('"' + v + '"'); };
 export async function captureOwnedState(tx: Prisma.TransactionClient, tenantId: string, tables: string[]): Promise<TransferState> {
@@ -51,8 +52,7 @@ export function restorePlan(before: TransferState, after: TransferState, current
     const c = new Map((current[table] || []).map(row=>[String(row.id),row]));
     result[table] = [];
     for (const id of new Set([...b.keys(),...a.keys()])) if (!same(b.get(id),a.get(id))) {
-      const clean = (row: Row | undefined) => row ? Object.fromEntries(Object.entries(row).filter(([k])=>!['updatedAt','recordedAt'].includes(k))) : undefined;
-      const value = inverse(clean(b.get(id)),clean(a.get(id)),clean(c.get(id)),table);
+      const value = inverse(comparableRow(b.get(id)),comparableRow(a.get(id)),comparableRow(c.get(id)),table);
       result[table].push({id,value: value ? {...b.get(id),...c.get(id),...value} : undefined});
     }
   }
@@ -92,6 +92,6 @@ export function assertNoIndependentReferences(before: TransferState, after: Tran
   const hasReference = (value: any): boolean => typeof value === 'string' ? (created.has(value) || value.startsWith('person:')&&created.has(value.slice(7))) : Array.isArray(value) ? value.some(hasReference) : value && typeof value === 'object' ? Object.values(value).some(hasReference) : false;
   for (const table of Object.keys(current)) {
     const a = new Map((after[table]||[]).map(row=>[String(row.id),row]));
-    for (const row of current[table]) if (!same(row,a.get(String(row.id))) && hasReference(row)) throw new ConflictException('Перенос нельзя отменить: появились независимые данные или связи. Сначала разрешите конфликт.');
+    for (const row of current[table]) if (!same(comparableRow(row),comparableRow(a.get(String(row.id)))) && hasReference(row)) throw new ConflictException('Перенос нельзя отменить: появились независимые данные или связи. Сначала разрешите конфликт.');
   }
 }
