@@ -1,5 +1,6 @@
 import { retainV2EdgeHost } from './lifecycle.js';
 import { bindV2ZDismissAffordance } from './z-affordance.js';
+import { bindV2StableZFrame } from './z-stack.js';
 
 export function setV2DeckOpen(root, open) {
   const app = root?.matches?.('[data-v2-app]')
@@ -42,6 +43,7 @@ export function initV2WorkspaceInteraction(root, {
   const z = app.querySelector('[data-v2-front] > [data-v2-z]');
   const edgeHost = app.querySelector('[data-v2-edge-swipe]') || stage;
   if (!stage || !front) return () => {};
+  bindV2StableZFrame(z);
   const releaseEdgeHost = retainV2EdgeHost(bindZ && edgeHost?.matches?.('[data-v2-edge-swipe]') ? edgeHost : null);
 
   const fCards = [...(fDeck?.querySelectorAll?.('[data-v2-card-item]') || [])];
