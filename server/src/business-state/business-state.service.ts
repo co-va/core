@@ -1,3 +1,7 @@
+import { normalizeUEI as normalizeUEIValue } from '../../../core/uei-format.js';
+import { normalizePhone } from '../../../core/phone/index.js';
+import { randomUUID } from 'node:crypto';
+import { resolveTransferredPerson } from './person-transfer';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -167,6 +171,89 @@ export class BusinessStateService {
       update: { position: positionValue(source.position), data: json(person) },
     });
     return person;
+  }
+
+  async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient, ownership: JsonObject = {}) {
+    const rows = await tx.person.findMany({ where: { tenantId } });
+    const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
+    const identity = normalizeUEI(identityRow?.data || {});
+    const savedUei = text(identity.relations[`person:${targetId}`]);
+    const mayCorrectUei = !!targetId && ownership.uei && ownership.uei === savedUei;
+    const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), identity,
+      mayCorrectUei ? { ...input, uei: undefined } : input, targetId);
+    if (!text(input.name)) throw new BadRequestException('Не указано имя');
+    const previous = resolved.person;
+    const key = previous?.key || randomUUID();
+    const person: JsonObject = { ...(previous || {}), key };
+    // Ownership is recorded only for values actually introduced by this fact.
+    // Matching an existing value never grants permission to overwrite it later.
+    for (const field of ['name', 'surname', 'createdAt']) {
+      if (input[field] === undefined) continue;
+      const value = text(input[field]); const current = text(previous?.[field]);
+      const ownsCurrent = ownership[field] !== undefined && ownership[field] === current;
+      if (previous && current && current !== value && !ownsCurrent) throw new ConflictException(`Нельзя изменить ${field === 'name' ? 'имя' : field === 'surname' ? 'фамилию' : 'дату создания'}: значение не принадлежит этому переносу. Проверьте данные.`);
+      person[field] = value;
+      if (!previous || !current || ownsCurrent) ownership[field] = value;
+      else delete ownership[field];
+    }
+    for (const [field, collection] of [['phone', 'phones'], ['email', 'emails']]) {
+      if (input[field] === undefined) continue;
+      const normalize = field === 'phone' ? normalizePhone : text;
+      const value = normalize(input[field]);
+      const values: any[] = Array.isArray(previous?.[collection]) ? previous[collection] : [];
+      const owned = text(ownership[field]);
+      const retained = values.filter(item => !owned || normalize(item) !== owned);
+      const independent = retained.some(item => normalize(item) === value);
+      if (value && !independent) retained.push(value);
+      person[collection] = retained;
+      if (value && !independent) ownership[field] = value; else delete ownership[field];
+    }
+    if (mayCorrectUei && input.uei !== undefined) {
+      const next = text(input.uei) ? normalizeUEIValue(input.uei) : '';
+      if (next === '0000') throw new ConflictException('0000 не является действительным UEI');
+      const used = identity.entities[next];
+      if (next && used && (used.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI конфликтует с уже сохранённым UEI');
+      if (next !== savedUei) {
+        const old = identity.entities[savedUei];
+        if (old && (old.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI имеет независимые связи. Проверьте данные.');
+        delete identity.entities[savedUei]; delete identity.relations[`person:${key}`];
+      }
+      resolved.uei = next;
+      ownership.uei = next;
+    }
+    if (resolved.uei && !identity.relations[`person:${key}`]) {
+      const used = identity.entities[resolved.uei];
+      if (used && (used.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI конфликтует с уже сохранённым UEI');
+      identity.entities[resolved.uei] = used || { uei: resolved.uei, owner: { type: 'person', id: key }, members: [`person:${key}`], history: [], reserved: true };
+      identity.relations[`person:${key}`] = resolved.uei;
+      ownership.uei = resolved.uei;
+    }
+    await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },
+      create: { tenantId, key, position: rows.length, data: json(person) }, update: { data: json(person) } });
+    await tx.ueiState.upsert({ where: { tenantId }, create: { tenantId, data: json(identity) }, update: { data: json(identity) } });
+    return key;
+  }
+
+  async resolveTransferPerson(tenantId: string, input: JsonObject, tx: Prisma.TransactionClient) {
+    const rows = await tx.person.findMany({ where: { tenantId } });
+    const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
+    const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), normalizeUEI(identityRow?.data || {}), input);
+    if (!resolved.person) throw new BadRequestException('Не удалось однозначно определить человека');
+    return resolved.person;
+  }
+
+  async importSchedule(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const row = await tx.businessOperationalState.findUnique({ where: { tenantId } });
+    const bundle = normalizeOperational(row?.data || {});
+    const existing = bundle.days.filter(day => text(day.workplaceId) === text(input.workplaceId) && text(day.date).slice(0, 10) === input.date);
+    if (!targetId && existing.length) throw new ConflictException('График на эту дату уже существует. Укажите ID переноса для корректировки.');
+    const id = targetId || randomUUID();
+    const day = { ...input, id };
+    const position = bundle.days.findIndex(day => day.id === id);
+    if (targetId && position < 0) throw new BadRequestException('Перенесённый день графика не найден');
+    if (position < 0) bundle.days.push(day); else bundle.days[position] = day;
+    await tx.businessOperationalState.upsert({ where: { tenantId }, create: { tenantId, data: json(bundle) }, update: { data: json(bundle) } });
+    return id;
   }
 
   async deletePerson(tenantId: string, key: string) {

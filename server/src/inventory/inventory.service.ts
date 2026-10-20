@@ -161,8 +161,8 @@ export class InventoryService {
         unit: item?.unit || '',
         direction: line.direction,
         quantity: decimalNumber(line.quantity),
-        unitCost: decimalNumber(line.unitCost),
-        amount: decimalNumber(line.amount),
+        unitCost: line.costKnown === false ? null : decimalNumber(line.unitCost),
+        amount: line.costKnown === false ? null : decimalNumber(line.amount),
         expectedQuantity: line.expectedQuantity == null ? null : decimalNumber(line.expectedQuantity),
         actualQuantity: line.actualQuantity == null ? null : decimalNumber(line.actualQuantity),
         note: line.note,
@@ -206,7 +206,7 @@ export class InventoryService {
         itemId: (itemByInternal.get(lot.inventoryItemId) as AnyRecord | undefined)?.itemId || '',
         quantityReceived: decimalNumber(lot.quantityReceived),
         quantityRemaining: decimalNumber(lot.quantityRemaining),
-        unitCost: decimalNumber(lot.unitCost),
+        unitCost: lot.costKnown === false ? null : decimalNumber(lot.unitCost),
         listPrice: lot.listPrice == null ? null : decimalNumber(lot.listPrice),
         discountPercent: lot.discountPercent == null ? null : decimalNumber(lot.discountPercent),
         receivedAt: lot.receivedAt,
@@ -234,7 +234,7 @@ export class InventoryService {
     };
   }
 
-  async createItem(tenantId: string, body: unknown) {
+  async createItem(tenantId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
     const name = text(source.name);
     if (!name) throw new BadRequestException('Укажите наименование позиции');
@@ -248,7 +248,7 @@ export class InventoryService {
       throw new BadRequestException('Масса тары не может быть больше массы брутто');
     }
 
-    await this.prisma.$transaction(async (tx: Tx) => {
+    const work = async (tx: Tx) => {
       await tx.inventoryItem.create({
         data: {
           tenantId,
@@ -292,14 +292,16 @@ export class InventoryService {
           }],
         });
       }
-    });
+    };
+    if (db) await work(db); else await this.prisma.$transaction(work);
 
-    return this.snapshot(tenantId);
+    return db ? { itemId } : this.snapshot(tenantId);
   }
 
-  async updateItem(tenantId: string, itemId: string, body: unknown) {
+  async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
+    const owner = db || this.prisma;
     const source = objectValue(body);
-    const current = await this.prisma.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
+    const current = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!current) throw new NotFoundException('Позиция склада не найдена');
 
     const data: AnyRecord = {};
@@ -326,8 +328,8 @@ export class InventoryService {
     if ('position' in source && Number.isInteger(source.position)) data.position = source.position;
     if (source.archived === true) data.archivedAt = new Date();
 
-    await this.prisma.inventoryItem.update({ where: { id: current.id }, data });
-    return this.snapshot(tenantId);
+    await owner.inventoryItem.update({ where: { id: current.id }, data });
+    return db ? { itemId } : this.snapshot(tenantId);
   }
 
   async createMovement(tenantId: string, body: unknown) {
@@ -411,6 +413,59 @@ export class InventoryService {
     });
 
     return this.snapshot(tenantId);
+  }
+
+  async resolveTransferredItem(tenantId: string, input: AnyRecord, tx: Tx) {
+    const rows = await tx.inventoryItem.findMany({ where: { tenantId, archivedAt: null,
+      ...(text(input.itemId) ? { itemId: text(input.itemId) } : { name: text(input.material || input.name) }) } });
+    const matches = rows.filter((row: AnyRecord) => (!input.manufacturer || row.manufacturer === text(input.manufacturer)) && (!input.unit || row.unit === text(input.unit)));
+    if (matches.length !== 1) throw new BadRequestException('Не удалось однозначно определить позицию склада');
+    return matches[0];
+  }
+
+  async importItem(tenantId: string, input: AnyRecord, targetId: string, tx: Tx) {
+    if (!text(input.name) || !text(input.unit)) throw new BadRequestException('Не указано наименование или единица склада');
+    const matches = !targetId && !input.itemId ? await tx.inventoryItem.findMany({ where: { tenantId, archivedAt: null,
+      name: text(input.name), unit: text(input.unit), ...(input.manufacturer ? { manufacturer: text(input.manufacturer) } : {}) } }) : [];
+    if (matches.length > 1) throw new BadRequestException('Не удалось однозначно определить позицию склада');
+    const itemId = targetId || text(input.itemId) || matches[0]?.itemId || randomUUID();
+    const existing = await tx.inventoryItem.findFirst({ where: { tenantId, itemId } });
+    if (targetId && !existing) throw new NotFoundException('Перенесённая позиция склада не найдена');
+    if (existing) await this.updateItem(tenantId, itemId, input, tx);
+    else await this.createItem(tenantId, { ...input, itemId, quantity: 0 }, tx);
+    return itemId;
+  }
+
+  async importMovement(tenantId: string, input: AnyRecord, targetId: string, tx: Tx, initialStock = false) {
+    const movementId = targetId || randomUUID();
+    const item = await this.resolveTransferredItem(tenantId, input, tx);
+    const quantity = Number(input.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) throw new BadRequestException('Количество имеет неверный формат');
+    if (!input.occurredAt) throw new BadRequestException('Не указана дата складского движения');
+    const existing = await tx.inventoryMovement.findFirst({ where: { tenantId, movementId }, include: { lines: true } });
+    const raw = { ...input, movementId, historicalTransfer: true, lines: [{ itemId: item.itemId, quantity,
+      unitCost: input.unitCost, listPrice: input.listPrice, discountPercent: input.discountPercent, supplier: input.supplier }] };
+    if (!existing) {
+      if (targetId && !initialStock) throw new NotFoundException('Перенесённое складское движение не найдено');
+      await this.createMovementInTx(tx, tenantId, raw);
+    } else {
+      if (existing.lines.length !== 1 || existing.lines[0].inventoryItemId !== item.id || existing.kind !== input.kind) throw new BadRequestException('Позиция или тип движения не совпадает с ID переноса');
+      const line = existing.lines[0];
+      const known = input.unitCost != null;
+      const allocations = await tx.inventoryMovementAllocation.findMany({ where: { inventoryMovementLineId: line.id } });
+      await tx.inventoryMovement.update({ where: { id: existing.id }, data: { occurredAt: new Date(input.occurredAt),
+        personKey: text(input.personKey), personUei: text(input.personUei), recordId: text(input.recordId),
+        procedureKey: text(input.procedureKey), workplaceKey: text(input.workplaceKey), note: text(input.note) } });
+      await tx.inventoryMovementLine.update({ where: { id: line.id }, data: { quantity, costKnown: known, unitCost: input.unitCost ?? 0, amount: quantity * (input.unitCost ?? 0) } });
+      if (line.direction === 'IN') for (const allocation of allocations) {
+        const lot = await tx.inventoryLot.findUnique({ where: { id: allocation.inventoryLotId } });
+        await tx.inventoryMovementAllocation.update({ where: { id: allocation.id }, data: { quantity, unitCost: input.unitCost ?? 0, amount: quantity * (input.unitCost ?? 0) } });
+        if (lot) await tx.inventoryLot.update({ where: { id: lot.id }, data: { quantityReceived: quantity,
+          quantityRemaining: Math.max(0, Number(lot.quantityRemaining) + quantity - Number(line.quantity)),
+          costKnown: known, unitCost: input.unitCost ?? 0, receivedAt: new Date(input.occurredAt) } });
+      }
+    }
+    return movementId;
   }
 
   private async maxKnownUnitCostInTx(tx: Tx, tenantId: string, inventoryItemId: string, fallback: number) {
@@ -607,7 +662,7 @@ export class InventoryService {
       affectedInternalIds.add(item.id);
 
       if (line.direction === 'IN') {
-        const unitCost = line.unitCost ?? decimalNumber(item.lastPurchasePrice);
+        const unitCost = line.unitCost ?? (raw.historicalTransfer ? 0 : decimalNumber(item.lastPurchasePrice));
         const lineRow = await tx.inventoryMovementLine.create({
           data: {
             tenantId,
@@ -616,6 +671,7 @@ export class InventoryService {
             lineId: randomUUID(),
             position,
             direction: 'IN',
+            costKnown: !raw.historicalTransfer || line.unitCost != null,
             quantity: line.quantity,
             unitCost,
             amount: line.quantity * unitCost,
@@ -629,6 +685,7 @@ export class InventoryService {
             tenantId,
             lotId: randomUUID(),
             inventoryItemId: item.id,
+            costKnown: !raw.historicalTransfer || line.unitCost != null,
             quantityReceived: line.quantity,
             quantityRemaining: line.quantity,
             unitCost,
@@ -663,8 +720,9 @@ export class InventoryService {
           position,
           direction: 'OUT',
           quantity: line.quantity,
-          unitCost: 0,
-          amount: 0,
+          costKnown: !raw.historicalTransfer || line.unitCost != null,
+          unitCost: raw.historicalTransfer ? line.unitCost ?? 0 : 0,
+          amount: raw.historicalTransfer ? line.quantity * (line.unitCost ?? 0) : 0,
           expectedQuantity: line.expectedQuantity,
           actualQuantity: line.actualQuantity,
           note: line.note,
@@ -672,7 +730,7 @@ export class InventoryService {
       });
     }
 
-    for (const inventoryItemId of affectedInternalIds) {
+    if (!raw.historicalTransfer) for (const inventoryItemId of affectedInternalIds) {
       await this.rebuildItemCostingInTx(tx, tenantId, inventoryItemId);
     }
 

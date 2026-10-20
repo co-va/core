@@ -22,6 +22,7 @@ type HistoryRow = {
   recordedAt: Date;
   relations: unknown;
   data: unknown;
+  provenance: unknown;
 };
 
 type HistoryFilters = {
@@ -71,6 +72,7 @@ function publicRow(row: HistoryRow) {
     recordedAt: row.recordedAt.toISOString(),
     relations: row.relations,
     data: row.data,
+    provenance: row.provenance,
   };
 }
 
@@ -100,7 +102,7 @@ export class HistoryService {
         "eventId", "entityType", "entityId", "eventType", "status",
         "personKey", "recordId", "workplaceKey", "procedureId", "documentId",
         "inventoryItemId", "financeOperationId", "sourceType", "sourceId",
-        "effectiveAt", "occurredAt", "recordedAt", "relations", "data"
+        "effectiveAt", "occurredAt", "recordedAt", "relations", "data", "provenance"
       FROM "BusinessHistoryEvent"
       WHERE "tenantId" = ${tenantId}
         AND (${personKeys.length === 0} OR "personKey" IN (${Prisma.join(personKeys.length ? personKeys : [''])}))
@@ -132,7 +134,7 @@ export class HistoryService {
         "eventId", "entityType", "entityId", "eventType", "status",
         "personKey", "recordId", "workplaceKey", "procedureId", "documentId",
         "inventoryItemId", "financeOperationId", "sourceType", "sourceId",
-        "effectiveAt", "occurredAt", "recordedAt", "relations", "data"
+        "effectiveAt", "occurredAt", "recordedAt", "relations", "data", "provenance"
       FROM "BusinessHistoryEvent"
       WHERE "tenantId" = ${tenantId}
         AND "entityType" = ${entityType}

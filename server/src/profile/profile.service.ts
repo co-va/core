@@ -403,6 +403,32 @@ export class ProfileService {
     return this.bundle(tenantId, platformAccountId);
   }
 
+  async resolveTransferWorkplace(tenantId: string, input: Record<string, any>, tx: Prisma.TransactionClient) {
+    const key = stringValue(input.workplaceKey).trim();
+    const name = stringValue(input.workplace).trim();
+    const rows = await tx.workplace.findMany({ where: { tenantId, deletedAt: null, ...(key ? { key } : { name }) } });
+    if ((!key && !name) || rows.length !== 1) throw new BadRequestException('Не удалось однозначно определить рабочее пространство');
+    if (key && name && rows[0].name !== name) throw new BadRequestException('Название рабочего пространства не совпадает с указанным ID');
+    return rows[0];
+  }
+
+  async importWorkplace(tenantId: string, platformAccountId: string, input: Record<string, any>, targetId: string, tx: Prisma.TransactionClient) {
+    if (!stringValue(input.name).trim()) throw new BadRequestException('Не указано название рабочего пространства');
+    const profile = await tx.profile.findUnique({ where: { tenantId_platformAccountId: { tenantId, platformAccountId } } });
+    if (!profile) throw new NotFoundException('Профиль не найден');
+    const rows = await tx.workplace.findMany({ where: { tenantId, deletedAt: null } });
+    const named = rows.filter(row => row.name === stringValue(input.name).trim());
+    if (!targetId && !stringValue(input.workplaceKey).trim() && named.length > 1) throw new BadRequestException('Не удалось однозначно определить рабочее пространство');
+    const key = targetId || stringValue(input.workplaceKey).trim() || named[0]?.key || randomUUID();
+    const previous = rows.find(row => row.key === key);
+    if (targetId && !previous) throw new NotFoundException('Перенесённое рабочее пространство не найдено');
+    const value = normalizeWorkplace({ ...(previous || {}), ...input, key });
+    const position = previous?.position ?? rows.length;
+    await tx.workplace.upsert({ where: { tenantId_key: { tenantId, key } },
+      create: { tenantId, profileId: profile.id, ...workplaceData(value, position) }, update: workplaceData(value, position) });
+    return key;
+  }
+
   async deleteWorkplace(tenantId: string, platformAccountId: string, key: string) {
     const profile = await this.prisma.profile.findUnique({ where: { tenantId_platformAccountId: { tenantId, platformAccountId } } });
     if (!profile) throw new NotFoundException('Профиль не найден');

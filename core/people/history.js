@@ -130,10 +130,10 @@ function recordFinance(facts = [], recordId = '') {
   const settlementFact = facts.find((fact) => fact.entityType === 'finance-settlement'
     && text(fact.recordId || fact.source?.id) === recordId);
   const settlement = settlementFact ? factSnapshot(settlementFact) : {};
-  const planTotal = moneyNumber(settlement.planTotal);
+  const planTotal = settlementFact ? moneyNumber(settlement.planTotal) : null;
   const netService = moneyNumber(Math.max(0, paidService - refundedService));
-  const due = moneyNumber(Math.max(0, planTotal - netService));
-  const paymentState = netService <= 0
+  const due = planTotal == null ? null : moneyNumber(Math.max(0, planTotal - netService));
+  const paymentState = !settlementFact ? '' : netService <= 0
     ? (planTotal > 0 ? 'unpaid' : '')
     : due > 0.009 ? 'partial' : 'paid';
 
@@ -163,7 +163,9 @@ function recordItem(facts = [], recordId = '') {
     kind: 'record',
     recordId,
     occurredAt: appointmentMoment(record),
-    createdAt: text(record.createdAt) || text(recordFact.recordedAt || recordFact.occurredAt),
+    createdAt: record.historicalTransfer ? text(record.createdAt) : text(record.createdAt) || text(recordFact.recordedAt || recordFact.occurredAt),
+    provenance: recordFact.provenance || {},
+    recordedAt: text(recordFact.recordedAt),
     appointmentDate: text(record.date),
     from: text(record.from),
     to: text(record.to),
@@ -203,6 +205,8 @@ function standaloneFinanceItem(fact = {}) {
     subtitle: lines.join(', ') || text(data.financeEntityName || data.workplace || data.note),
     amount,
     operationId: operation.id,
+    provenance: fact.provenance || {},
+    recordedAt: text(fact.recordedAt),
   };
 }
 

@@ -50,8 +50,8 @@ assert.match(people, /label: 'Окраска ярлыка'/);
 assert.match(people, /label: 'Почта'/);
 assert.match(people, /label: 'Посещения'/);
 assert.match(people, /Выгрузить/);
-assert.match(people, /Загрузить/);
-assert.match(people, /Шаблон/);
+assert.doesNotMatch(people, /data-import|function importCsv/);
+assert.match(readFileSync('settings/settings.js', 'utf8'), /Перенос данных/);
 
 // C1: add from device contacts or quick manual X; never a create Z2.
 assert.match(people, /Из контакта/);

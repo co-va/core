@@ -286,6 +286,11 @@ export class FinanceService {
     const id = text(sourceId);
     const row = await this.prisma.financeSettlement.findUnique({ where: { tenantId_sourceType_sourceId: { tenantId, sourceType: type, sourceId: id } } });
     if (row) return normalizeSettlement(row.data);
+    if (type === 'record') {
+      const recordRow = await this.prisma.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
+      const record = objectValue(recordRow?.data);
+      if (record.historicalTransfer && (!arrayValue(record.procedures).length || arrayValue(record.procedures).some(item => item.cost == null || item.cost === ''))) return null;
+    }
     const settlement = validSettlement(fallback);
     if (!settlement) return null;
     return this.saveSettlementWith(this.prisma, tenantId, type, id, settlement);
@@ -552,8 +557,9 @@ export class FinanceService {
     if (capability.enabled !== true) throw new ForbiddenException('Этот режим инвестиций недоступен');
   }
 
-  async recordSettlementPaymentState(tenantId: string, recordId: string, settlement: JsonObject) {
+  async recordSettlementPaymentState(tenantId: string, recordId: string, settlement: JsonObject | null) {
     const paid = Math.max(0, await this.serviceNet(this.prisma, tenantId, 'record', text(recordId)));
+    if (!settlement) return { state: 'unknown', paid, due: null };
     const total = money(settlement?.planTotal);
     const due = Math.max(0, money(total - paid));
     return { state: due <= 0.009 ? 'paid' : paid > 0.009 ? 'partial' : 'unpaid', paid, due };
@@ -854,6 +860,42 @@ export class FinanceService {
       });
     });
     return this.snapshot(tenantId);
+  }
+
+  async importRecordSettlement(tenantId: string, recordId: string, procedures: JsonObject[], tx: Prisma.TransactionClient) {
+    // Actual work price and historical catalog price are independent input facts.
+    if (!procedures.length || procedures.some(item => item.cost == null || item.cost === '')) return;
+    const settlement = this.calculateSettlement(procedures.map(item => ({ ...item, sourceType: 'procedure', sourceId: item.id })), 0);
+    await this.saveSettlementWith(tx, tenantId, 'record', recordId, settlement);
+  }
+
+  async resolveTransferredWallet(tenantId: string, input: JsonObject, tx: Prisma.TransactionClient) {
+    const row = await tx.businessAuxiliaryState.findUnique({ where: { tenantId } });
+    const wallets = arrayValue(objectValue(row?.data).wallets);
+    const found = wallets.filter(wallet => input.walletId ? text(wallet.id) === text(input.walletId) : text(wallet.name) === text(input.wallet));
+    if (found.length !== 1) throw new BadRequestException('Не удалось однозначно определить кошелёк оплаты');
+    return found[0];
+  }
+
+  async importPayment(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const operationId = targetId || randomUUID();
+    const amount = Number(input.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Сумма имеет неверный формат');
+    if (!text(input.walletId)) throw new BadRequestException('Не указан кошелёк оплаты');
+    const occurredAt = requiredOccurredAt(input.occurredAt);
+    const source = input.recordId ? { type: 'record', id: text(input.recordId) } : { type: 'payment', id: operationId };
+    const allocations = [{ walletId: text(input.walletId), walletName: text(input.walletName), amount }];
+    const data = { workplace: text(input.workplaceId), person: clone(objectValue(input.person)), allocations,
+      cashTotal: amount, cashServiceAmount: amount, total: amount, serviceAmount: amount, tips: 0 };
+    const entries = allocations.map(entry => ({ ...entry, component: 'service', direction: 'IN', economicType: 'SERVICE_REVENUE' }));
+    const existing = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } });
+    if (targetId && !existing) throw new NotFoundException('Перенесённая оплата не найдена');
+    if (existing) {
+      if (existing.sourceType !== source.type || existing.sourceId !== source.id) throw new BadRequestException('Источник перенесённой оплаты не совпадает. Проверьте запись.');
+      await this.replaceOperationWithEntries(tx, tenantId, existing, occurredAt, data, entries);
+    } else await this.createOperationWithEntries(tx, tenantId, { operationId, kind: 'payment', source, occurredAt, data, entries });
+    // A payment never manufactures a Record settlement.
+    return operationId;
   }
 
   async recordRefund(tenantId: string, operationId: string, body: unknown) {

@@ -20,29 +20,9 @@ function sendWorkbook(response: Response, buffer: Buffer, filename: string) {
 export class InventoryExcelController {
   constructor(private readonly excel: InventoryExcelService) {}
 
-  @Get('items/template')
-  async itemTemplate(@Res() response: Response) {
-    sendWorkbook(response, await this.excel.stockTemplate(), 'ostatki_template.xlsx');
-  }
-
   @Get('items/export')
   async itemExport(@Req() request: AuthenticatedRequest, @Res() response: Response) {
     sendWorkbook(response, await this.excel.stockExport(request.auth!.tenantId), 'ostatki.xlsx');
-  }
-
-  @Post('items/preview')
-  itemPreview(@Req() request: AuthenticatedRequest, @Body() body: { dataUrl?: string }) {
-    return this.excel.stockPreview(request.auth!.tenantId, body?.dataUrl);
-  }
-
-  @Post('items/import')
-  itemImport(@Req() request: AuthenticatedRequest, @Body() body: { dataUrl?: string }) {
-    return this.excel.stockImport(request.auth!.tenantId, body?.dataUrl);
-  }
-
-  @Get('movements/template')
-  async movementTemplate(@Res() response: Response) {
-    sendWorkbook(response, await this.excel.movementTemplate(), 'dvizheniya_template.xlsx');
   }
 
   @Get('movements/export')
@@ -58,16 +38,6 @@ export class InventoryExcelController {
       await this.excel.movementExport(request.auth!.tenantId, from, to),
       `dvizheniya${suffix ? `_${suffix}` : ''}.xlsx`,
     );
-  }
-
-  @Post('movements/preview')
-  movementPreview(@Req() request: AuthenticatedRequest, @Body() body: { dataUrl?: string }) {
-    return this.excel.movementPreview(request.auth!.tenantId, body?.dataUrl);
-  }
-
-  @Post('movements/import')
-  movementImport(@Req() request: AuthenticatedRequest, @Body() body: { dataUrl?: string }) {
-    return this.excel.movementImport(request.auth!.tenantId, body?.dataUrl);
   }
 
   @Post('orders/export')

@@ -4,7 +4,6 @@ import {
   modal,
   mountModal,
   openNotice,
-  selectFile,
   v2ListEntries,
   v2ListEntry,
   workspaceHeaderContext,
@@ -22,7 +21,6 @@ import {
 } from './service.js';
 import { renderInventory } from './inventory.js';
 
-const XLSX_ACCEPT = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 let activeMovementId = '';
 let activeMovementKind = 'CONSUMPTION';
 let movementKindListenerReady = false;
@@ -88,42 +86,9 @@ function excelAction(trigger, actions = [], title = 'Excel') {
   });
 }
 
-function previewMarkup(preview = {}, kind = 'items') {
-  const errors = Array.isArray(preview.errors) ? preview.errors : [];
-  const stats = kind === 'movements'
-    ? `Строк: ${Number(preview.rows) || 0} · Блоков: ${Number(preview.groups) || 0}`
-    : `Строк: ${Number(preview.rows) || 0} · Новых: ${Number(preview.create) || 0} · Обновлений: ${Number(preview.update) || 0}`;
-  return `<div class="entity-details"><div><span>Проверка</span><strong>${escapeHtml(stats)}</strong></div></div>
-    ${errors.length ? `<div class="entity-details">${errors.slice(0, 20).map((message) => `<div><span>Ошибка</span><strong>${escapeHtml(message)}</strong></div>`).join('')}</div>` : ''}`;
-}
-
 async function refresh(root, section) {
   await renderInventory(root, section);
   enhanceInventoryExcel(root, section);
-}
-
-async function importWorkbook(root, section, kind) {
-  const file = await selectFile({ accept: XLSX_ACCEPT });
-  if (!file?.dataUrl) return;
-  const preview = await jsonRequest(`/${kind}/preview`, {
-    method: 'POST',
-    body: JSON.stringify({ dataUrl: file.dataUrl }),
-  });
-  const errors = Array.isArray(preview.errors) ? preview.errors : [];
-  const content = `${previewMarkup(preview, kind)}${errors.length ? '' : button('Импортировать', { type: 'button', data: 'data-inventory-excel-confirm' })}`;
-  const modalRoot = mountModal(document.body, modal(content, { title: 'Импорт Excel', variant: 'x' }));
-  modalRoot?.querySelector('[data-inventory-excel-confirm]')?.addEventListener('click', async () => {
-    try {
-      await jsonRequest(`/${kind}/import`, {
-        method: 'POST',
-        body: JSON.stringify({ dataUrl: file.dataUrl }),
-      });
-      modalRoot.v2Close?.();
-      await refresh(root, section);
-    } catch (error) {
-      openNotice({ title: 'Импорт', message: errorMessage(error) });
-    }
-  });
 }
 
 function replaceContextAction(root, action, onClick) {
@@ -167,8 +132,6 @@ function replacePrimaryAction(root, action, onClick) {
 function enhanceStock(root) {
   replaceContextAction(root, { kind: 'settings', label: 'Excel', aria: 'Excel склада' }, (event) => {
     excelAction(event.currentTarget, [
-      { id: 'template', label: 'Скачать шаблон', run: () => downloadWorkbook('/items/template', { fallback: 'ostatki_template.xlsx' }) },
-      { id: 'import', label: 'Импортировать', run: () => importWorkbook(root, 'stock', 'items') },
       { id: 'export', label: 'Выгрузить', run: () => downloadWorkbook('/items/export', { fallback: 'ostatki.xlsx' }) },
     ]);
   });
@@ -275,8 +238,6 @@ function enhanceMovementEditor(root, layer) {
 function enhanceMovements(root) {
   replaceContextAction(root, { kind: 'settings', label: 'Excel', aria: 'Excel движений' }, (event) => {
     excelAction(event.currentTarget, [
-      { id: 'template', label: 'Скачать шаблон', run: () => downloadWorkbook('/movements/template', { fallback: 'dvizheniya_template.xlsx' }) },
-      { id: 'import', label: 'Импортировать', run: () => importWorkbook(root, 'movements', 'movements') },
       { id: 'export', label: 'Выгрузить за период', run: () => openMovementExport(event.currentTarget) },
     ]);
   });

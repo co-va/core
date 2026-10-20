@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -73,6 +74,61 @@ export class ProcedureService {
       const procedure = historySnapshot(row.data);
       return Object.keys(procedure).length ? procedure : null;
     });
+  }
+
+  async importProcedure(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    if (!text(input.name)) throw new BadRequestException('Не указана процедура');
+    if (input.price != null && !input.occurredAt) throw new BadRequestException('Не указана дата исторического прайса');
+    const stored = await tx.businessOperationalState.findUnique({ where: { tenantId } });
+    const operational = objectValue(stored?.data);
+    const catalog = arrayValue(operational.procedures);
+    const matches = catalog.filter(p => text(p.name) === text(input.name));
+    if (!targetId && matches.length > 1) throw new BadRequestException('Не удалось однозначно определить процедуру');
+    const id = targetId || text(input.procedureId) || matches[0]?.id || randomUUID();
+    const index = catalog.findIndex(p => p.id === id);
+    if (targetId && index < 0) throw new BadRequestException('Перенесённая процедура не найдена');
+    const value = { ...(catalog[index] || {}), id, name: text(input.name),
+      ...(input.duration !== undefined ? { duration: input.duration } : {}),
+      ...(input.workplaceId ? { workplaces: [...arrayValue(catalog[index]?.workplaces).filter(w => text(w.workplaceId) !== text(input.workplaceId)), { ...arrayValue(catalog[index]?.workplaces).find(w => text(w.workplaceId) === text(input.workplaceId)), workplaceId: input.workplaceId }] } : {}),
+    };
+    // A dated price is a historical version, never an update of today's catalog.
+    if (index < 0) catalog.push(value); else if (input.price === undefined) catalog[index] = value;
+    let historicalVersion: JsonObject | null = null;
+    if (input.price !== undefined) {
+      const provenanceRows = await tx.$queryRaw<Array<{ value: string }>>`SELECT current_setting('co_va.transfer_provenance', true) AS value`;
+      const provenance = JSON.parse(provenanceRows[0]?.value || '{}');
+      const history = arrayValue(operational.procedureHistory);
+      const version = { id, name: text(input.name), cost: { amount: input.price },
+        ...(input.duration !== undefined ? { duration: input.duration } : {}),
+        workplaces: input.workplaceId ? [{ workplaceId: input.workplaceId, cost: { amount: input.price } }] : [],
+        effectiveAt: input.occurredAt, historyAction: 'versioned', transferId: provenance.transferId };
+      operational.procedureHistory = [...history.filter(p => p.transferId !== provenance.transferId), version];
+      historicalVersion = version;
+    }
+    operational.procedures = catalog;
+    await tx.businessOperationalState.upsert({ where: { tenantId }, create: { tenantId, data: operational as Prisma.InputJsonValue }, update: { data: operational as Prisma.InputJsonValue } });
+    if (historicalVersion) {
+      await tx.$queryRaw`SELECT "professional_history_write"(
+        ${tenantId}::text, 'procedure', ${id}::text, 'versioned', 'active',
+        ${new Date(input.occurredAt)}::timestamp, ${new Date(input.occurredAt)}::timestamp, 'procedure', ${id}::text,
+        '', '', ${text(input.workplaceId)}::text, ${id}::text, '', '', '',
+        ${JSON.stringify({ procedure: id })}::jsonb, ${JSON.stringify({ current: historicalVersion })}::jsonb
+      )::text`;
+    }
+    return id;
+  }
+
+  matchTransferredProcedure(record: JsonObject, nameValue: unknown, allowWithoutProcedure = false) {
+    const name = text(nameValue);
+    if (!name) {
+      if (allowWithoutProcedure) return null;
+      throw new BadRequestException('Не указана процедура для расходника.');
+    }
+    const procedures = arrayValue(record.procedures);
+    const found = procedures.filter(p => text(p.name) === name);
+    if (found.length > 1) throw new BadRequestException('Не удалось однозначно определить процедуру');
+    if (!found.length) throw new BadRequestException(`Не удалось сопоставить процедуру: в записи “${procedures.map(p => text(p.name)).join(', ')}”, в импортируемых данных “${name}”.`);
+    return found[0];
   }
 
   async snapshots(tenantId: string, workplaceId: string, procedureIds: string[], atValue: unknown = '') {
