@@ -2,6 +2,7 @@ import { canUseBookCapability } from '../core/access.js';
 import { folderList, pageHeader } from '../ui/ui.js';
 
 const folders = [
+  ['data-transfer', 'Перенос данных', '◫', () => import('./data-transfer/data-transfer.js'), ''],
   ['online-booking', 'Онлайн-запись', '◫', () => import('./online-booking/online-booking.js'), 'online_booking.access'],
   ['notifications', 'Уведомления', '◫', () => import('./notifications/notifications.js'), 'online_booking.access'],
   ['integrations', 'Интеграции', '◫', () => import('./integrations/integrations.js'), 'integrations.access'],
@@ -10,7 +11,7 @@ const folders = [
 ];
 
 function availableFolders() {
-  return folders.filter((folder) => canUseBookCapability(folder[4]));
+  return folders.filter((folder) => !folder[4] || canUseBookCapability(folder[4]));
 }
 
 function workspaceFolders() {

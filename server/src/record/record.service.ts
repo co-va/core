@@ -1,3 +1,4 @@
+import { zonedDateTimeToDate } from '../../../core/time/zone.js';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -278,6 +279,62 @@ export class RecordService {
     }
     await this.finance.upsertSettlement(tenantId, 'record', id, settlement);
     return record;
+  }
+
+  // Historical input stays inside the Record owner, without current availability,
+  // loyalty repricing, inferred duration, booking requests or notification delivery.
+  async importHistorical(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const id = targetId || randomUUID();
+    const existing = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
+    if (targetId && !existing) throw new ConflictException('Перенесённая запись не найдена');
+    const previous = objectValue(existing?.data);
+    if (!targetId) {
+      const rows = await tx.record.findMany({ where: { tenantId } });
+      const matches = rows.map(row => objectValue(row.data)).filter(record => text(record.person?.key) === text(input.person?.key)
+        && dateValue(record.date) === text(input.date) && record.workplaceId === input.workplaceId && text(record.from) === text(input.from)
+        && sameJson(arrayValue(record.procedures).map(p => text(p.name)), arrayValue(input.procedures).map(p => text(p.name))));
+      if (matches.length) throw new ConflictException('Запись уже существует. Укажите ID записи или ID переноса; автоматическое объединение запрещено.');
+    }
+    const procedures = arrayValue(input.procedures).map((raw, index) => {
+      const item = objectValue(raw);
+      if (!text(item.name)) throw new ConflictException('Не указана процедура');
+      return { ...item, id: text(item.id) || text(arrayValue(previous.procedures)[index]?.id) || randomUUID() };
+    });
+    const record = { ...previous, id, date: text(input.date), workplaceId: text(input.workplaceId),
+      from: text(input.from), to: text(input.to), person: clone(input.person), procedures,
+      timePrecision: input.from ? 'minute' : 'date', historicalTransfer: true,
+      ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
+    };
+    if (input.from) {
+      const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(input.workplaceId) } } });
+      const occurredAt = zonedDateTimeToDate(`${input.date}T${input.from}`, workplace?.timeZone)?.toISOString();
+      if (occurredAt) await tx.$queryRaw`SELECT set_config('co_va.transfer_time', ${occurredAt}, true)`;
+    }
+    await tx.record.upsert({ where: { tenantId_recordId: { tenantId, recordId: id } },
+      create: { tenantId, recordId: id, position: await tx.record.count({ where: { tenantId } }), data: json(record) }, update: { data: json(record) } });
+    await this.finance.importRecordSettlement(tenantId, id, procedures, tx);
+    return id;
+  }
+
+  async resolveTransferredRecord(tenantId: string, input: JsonObject, tx: Prisma.TransactionClient) {
+    const rows = await tx.record.findMany({ where: { tenantId } });
+    if (text(input.recordId)) {
+      const found = rows.find(row => row.recordId === text(input.recordId));
+      if (!found) throw new ConflictException('Не удалось определить запись');
+      const record = objectValue(found.data);
+      if (input.personKey && record.person?.key !== input.personKey || input.date && dateValue(record.date) !== input.date
+        || input.workplaceId && record.workplaceId !== input.workplaceId || input.from && record.from !== input.from) throw new ConflictException('Данные не совпадают с указанной записью');
+      return record;
+    }
+    if (!text(input.personKey) || !text(input.date)) throw new ConflictException('Для определения записи укажите человека и дату обслуживания');
+    const base = rows.map(row => objectValue(row.data)).filter(record =>
+      text(record.person?.key) === text(input.personKey) && dateValue(record.date) === input.date
+      && (!input.workplaceId || text(record.workplaceId) === input.workplaceId)
+      && (!input.from || text(record.from) === input.from));
+    const named = input.procedure ? base.filter(record => arrayValue(record.procedures).some(p => text(p.name) === text(input.procedure))) : base;
+    const matches = named.length ? named : base;
+    if (matches.length !== 1) throw new ConflictException('Не удалось однозначно определить запись.');
+    return matches[0];
   }
 
   async publicOccupancy(tenantId: string) {

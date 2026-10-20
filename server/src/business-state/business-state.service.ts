@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { resolveTransferredPerson } from './person-transfer';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -167,6 +169,54 @@ export class BusinessStateService {
       update: { position: positionValue(source.position), data: json(person) },
     });
     return person;
+  }
+
+  async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const rows = await tx.person.findMany({ where: { tenantId } });
+    const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
+    const identity = normalizeUEI(identityRow?.data || {});
+    const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), identity, input, targetId);
+    if (!text(input.name)) throw new BadRequestException('Не указано имя');
+    const previous = resolved.person;
+    const key = previous?.key || randomUUID();
+    const person = { ...(previous || {}), key, name: text(input.name),
+      ...(input.surname !== undefined ? { surname: text(input.surname) } : {}),
+      ...(input.phone !== undefined ? { phones: resolved.phone ? [resolved.phone] : [] } : {}),
+      ...(input.email !== undefined ? { emails: text(input.email) ? [text(input.email)] : [] } : {}),
+      ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
+    };
+    await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },
+      create: { tenantId, key, position: rows.length, data: json(person) }, update: { data: json(person) } });
+    if (resolved.uei && !identity.relations[`person:${key}`]) {
+      const used = identity.entities[resolved.uei];
+      if (used && (used.members || []).some((member: string) => member !== `person:${key}`)) throw new ConflictException('UEI конфликтует с уже сохранённым UEI');
+      identity.entities[resolved.uei] = used || { uei: resolved.uei, owner: { type: 'person', id: key }, members: [`person:${key}`], history: [], reserved: true };
+      identity.relations[`person:${key}`] = resolved.uei;
+      await tx.ueiState.upsert({ where: { tenantId }, create: { tenantId, data: json(identity) }, update: { data: json(identity) } });
+    }
+    return key;
+  }
+
+  async resolveTransferPerson(tenantId: string, input: JsonObject, tx: Prisma.TransactionClient) {
+    const rows = await tx.person.findMany({ where: { tenantId } });
+    const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
+    const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), normalizeUEI(identityRow?.data || {}), input);
+    if (!resolved.person) throw new BadRequestException('Не удалось однозначно определить человека');
+    return resolved.person;
+  }
+
+  async importSchedule(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const row = await tx.businessOperationalState.findUnique({ where: { tenantId } });
+    const bundle = normalizeOperational(row?.data || {});
+    const existing = bundle.days.filter(day => text(day.workplaceId) === text(input.workplaceId) && text(day.date).slice(0, 10) === input.date);
+    if (!targetId && existing.length) throw new ConflictException('График на эту дату уже существует. Укажите ID переноса для корректировки.');
+    const id = targetId || randomUUID();
+    const day = { ...input, id };
+    const position = bundle.days.findIndex(day => day.id === id);
+    if (targetId && position < 0) throw new BadRequestException('Перенесённый день графика не найден');
+    if (position < 0) bundle.days.push(day); else bundle.days[position] = day;
+    await tx.businessOperationalState.upsert({ where: { tenantId }, create: { tenantId, data: json(bundle) }, update: { data: json(bundle) } });
+    return id;
   }
 
   async deletePerson(tenantId: string, key: string) {

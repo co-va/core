@@ -781,6 +781,7 @@ model InventoryLot {
   inventoryItemId   String
   quantityReceived  Decimal  @db.Decimal(14, 3)
   quantityRemaining Decimal  @db.Decimal(14, 3)
+  costKnown         Boolean @default(true)
   unitCost          Decimal  @db.Decimal(14, 4)
   listPrice         Decimal? @db.Decimal(14, 4)
   discountPercent   Decimal? @db.Decimal(7, 4)
@@ -835,6 +836,7 @@ model InventoryMovementLine {
   position            Int      @default(0)
   direction           String
   quantity            Decimal  @db.Decimal(14, 3)
+  costKnown         Boolean @default(true)
   unitCost            Decimal  @db.Decimal(14, 4)
   amount              Decimal  @db.Decimal(16, 4)
   expectedQuantity    Decimal? @db.Decimal(14, 3)
@@ -868,4 +870,21 @@ model InventoryMovementAllocation {
   @@unique([tenantId, allocationId])
   @@index([inventoryMovementLineId])
   @@index([inventoryLotId])
+}
+
+// Stable provenance links; business facts remain owned by their canonical domains.
+model DataTransferFact {
+  id         String   @id
+  tenantId   String
+  domain     String
+  sourceKey  String
+  targetId   String
+  source     String
+  input      Json
+  revision   Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, domain, sourceKey])
+  @@index([tenantId, domain, targetId])
 }

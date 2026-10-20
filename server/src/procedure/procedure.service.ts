@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -73,6 +74,40 @@ export class ProcedureService {
       const procedure = historySnapshot(row.data);
       return Object.keys(procedure).length ? procedure : null;
     });
+  }
+
+  async importProcedure(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    if (!text(input.name)) throw new BadRequestException('Не указана процедура');
+    const stored = await tx.businessOperationalState.findUnique({ where: { tenantId } });
+    const operational = objectValue(stored?.data);
+    const catalog = arrayValue(operational.procedures);
+    const matches = catalog.filter(p => text(p.name) === text(input.name));
+    if (!targetId && matches.length > 1) throw new BadRequestException('Не удалось однозначно определить процедуру');
+    const id = targetId || text(input.procedureId) || matches[0]?.id || randomUUID();
+    const index = catalog.findIndex(p => p.id === id);
+    if (targetId && index < 0) throw new BadRequestException('Перенесённая процедура не найдена');
+    const value = { ...(catalog[index] || {}), id, name: text(input.name),
+      ...(input.duration !== undefined ? { duration: input.duration } : {}),
+      ...(input.price !== undefined ? { cost: { amount: input.price } } : {}),
+      ...(input.workplaceId ? { workplaces: [{ workplaceId: input.workplaceId, ...(input.price !== undefined ? { cost: { amount: input.price } } : {}) }] } : {}),
+    };
+    if (index < 0) catalog.push(value); else catalog[index] = value;
+    operational.procedures = catalog;
+    await tx.businessOperationalState.upsert({ where: { tenantId }, create: { tenantId, data: operational as Prisma.InputJsonValue }, update: { data: operational as Prisma.InputJsonValue } });
+    return id;
+  }
+
+  matchTransferredProcedure(record: JsonObject, nameValue: unknown, allowWithoutProcedure = false) {
+    const name = text(nameValue);
+    if (!name) {
+      if (allowWithoutProcedure) return null;
+      throw new BadRequestException('Не указана процедура для расходника.');
+    }
+    const procedures = arrayValue(record.procedures);
+    const found = procedures.filter(p => text(p.name) === name);
+    if (found.length > 1) throw new BadRequestException('Не удалось однозначно определить процедуру');
+    if (!found.length) throw new BadRequestException(`Не удалось сопоставить процедуру: в записи “${procedures.map(p => text(p.name)).join(', ')}”, в импортируемых данных “${name}”.`);
+    return found[0];
   }
 
   async snapshots(tenantId: string, workplaceId: string, procedureIds: string[], atValue: unknown = '') {

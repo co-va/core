@@ -1,3 +1,4 @@
+import { DataTransferModule } from './data-transfer/data-transfer.module';
 import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { PrismaService } from './prisma.service';
@@ -25,6 +26,7 @@ import { AccountUnreadModule } from './account-unread/account-unread.module';
 @Module({
   imports: [
     AuthModule,
+    DataTransferModule,
     WorkspaceModule,
     ProfileModule,
     BusinessStateModule,

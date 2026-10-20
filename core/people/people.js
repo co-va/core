@@ -40,7 +40,7 @@ import { applyUEI, detachUEI, getMembers, getOptions, getUEI } from '../uei.js';
 import { getTags } from '../../settings/tags/data.js';
 import { getDocuments } from '../../settings/documents/data.js';
 import { getConsents } from '../../settings/documents/consents.js';
-import { createPerson, getAllPeople, getPeople, savePeople } from './data.js';
+import { getAllPeople, getPeople, savePeople } from './data.js';
 import { bindPersonCreateForm, personCreateForm } from './create.js';
 import { personDisplay } from './presentation.js';
 import { personCardAppearance, personCardFields } from './card-presentation.js';
@@ -298,6 +298,7 @@ function recordHistoryDetail(item = {}) {
   const recordBlock = v2Section('Запись', details([
     { label: 'Процедуры', value: item.procedures?.join(', ') || item.products?.join(', ') || item.title || '—' },
     { label: 'Запись создана', value: shortDateTime(item.createdAt, '—') },
+    ...(item.provenance?.type === 'import' ? [{ label: 'Происхождение', value: 'Импорт' }, { label: 'Перенесено в CO-VA', value: shortDateTime(item.recordedAt, '—') }] : []),
     { label: 'Дата посещения', value: shortDate(item.appointmentDate, '—') },
     { label: 'Время', value: [item.from, item.to].filter(Boolean).join(' — ') || '—' },
     { label: 'Продолжительность', value: durationLabel(item.durationMinutes) },
@@ -333,6 +334,7 @@ function financeHistoryDetail(item = {}) {
     { label: 'Операция', value: item.title || 'Финансовая операция' },
     ...(item.subtitle ? [{ label: 'Описание', value: item.subtitle }] : []),
     { label: 'Дата', value: shortDateTime(item.occurredAt, '—') },
+    ...(item.provenance?.type === 'import' ? [{ label: 'Происхождение', value: 'Импорт' }, { label: 'Перенесено в CO-VA', value: shortDateTime(item.recordedAt, '—') }] : []),
     { label: 'Сумма', value: money(item.amount) },
   ]));
 }
@@ -579,25 +581,11 @@ function openFilterSettings(root) {
   return layer;
 }
 
-function openExcelSettings(root, options = {}) {
-  const allowReal = canUseRealPersonalData();
+function openExcelSettings(root) {
   const layer = mountModal(root, modal(`<div class="modal-actions">
     ${button('Выгрузить', { variant: 'secondary', data: 'data-export' })}
-    ${button('Загрузить', { variant: 'secondary', data: 'data-import', disabled: !allowReal })}
-    ${button('Шаблон', { variant: 'secondary', data: 'data-template' })}
-    <input class="file-input" type="file" accept=".csv,text/csv" data-file>
-    ${allowReal ? '' : '<p class="muted">Импорт реальных персональных данных недоступен в текущем режиме.</p>'}
   </div>`, { title: 'Excel', variant: 'x', surface: 'app' }));
-  if (!layer) return null;
-  layer.querySelector('[data-export]')?.addEventListener('click', () => downloadCsv(false));
-  layer.querySelector('[data-template]')?.addEventListener('click', () => downloadCsv(true));
-  layer.querySelector('[data-import]')?.addEventListener('click', () => layer.querySelector('[data-file]')?.click());
-  layer.querySelector('[data-file]')?.addEventListener('change', (event) => {
-    importCsv(event.target.files?.[0], () => {
-      layer.v2Close?.();
-      renderPeople(root, options);
-    });
-  });
+  layer?.querySelector('[data-export]')?.addEventListener('click', () => downloadCsv());
   return layer;
 }
 
@@ -642,41 +630,20 @@ function openPeopleAppearanceQ(root, options = {}) {
   });
 }
 
-function downloadCsv(template) {
+function downloadCsv() {
   const headers = ['Имя', 'Фамилия', 'Телефон', 'Email'];
-  const rows = template ? [] : getPeople().map((person) => [person.name, person.surname, person.phones?.[0], person.emails?.[0]]);
+  const rows = getPeople().map((person) => [person.name, person.surname, person.phones?.[0], person.emails?.[0]]);
   const text = '\uFEFF' + [headers, ...rows]
     .map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';'))
     .join('\r\n');
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = template ? 'шаблон-люди.csv' : 'люди.csv';
+  anchor.download = 'люди.csv';
   anchor.click();
   URL.revokeObjectURL(url);
 }
 
-function importCsv(file, onDone) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const rows = String(reader.result)
-      .replace(/^\uFEFF/, '')
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map((line) => line.split(';').map((cell) => cell.replace(/^"|"$/g, '').replaceAll('""', '"')));
-    const all = getAllPeople();
-    rows.slice(1).forEach(([firstName, surname, phone, email]) => {
-      if (!firstName || !phone) return;
-      const person = createPerson(firstName, surname, phone);
-      if (email) person.emails = [email];
-      all.push(person);
-    });
-    savePeople(all);
-    onDone?.();
-  };
-  reader.readAsText(file, 'utf-8');
-}
 
 function openAddMenu(root, options = {}) {
   const allowReal = canUseRealPersonalData();

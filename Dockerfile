@@ -13,6 +13,9 @@ COPY server/tsconfig.json server/nest-cli.json ./
 COPY server/src ./src
 COPY core/finance/rules.js core/finance/rules.d.ts /app/core/finance/
 COPY core/loyalty/price-condition.js core/loyalty/price-condition.d.ts /app/core/loyalty/
+COPY core/phone/index.js core/phone/index.d.ts /app/core/phone/
+COPY core/uei-format.js core/uei-format.d.ts /app/core/
+COPY core/time/zone.js core/time/zone.d.ts /app/core/time/
 RUN npm run build
 
 FROM node:24 AS runtime

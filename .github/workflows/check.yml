@@ -878,6 +878,8 @@ jobs:
           done
           docker compose -f docker-compose.staging.yml logs db backend
           exit 1
+      - name: Verify centralized data transfer with PostgreSQL
+        run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-data-transfer.mjs
       - name: Verify all four production domains
         shell: bash
         run: |

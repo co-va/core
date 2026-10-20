@@ -163,7 +163,9 @@ function recordItem(facts = [], recordId = '') {
     kind: 'record',
     recordId,
     occurredAt: appointmentMoment(record),
-    createdAt: text(record.createdAt) || text(recordFact.recordedAt || recordFact.occurredAt),
+    createdAt: record.historicalTransfer ? text(record.createdAt) : text(record.createdAt) || text(recordFact.recordedAt || recordFact.occurredAt),
+    provenance: recordFact.provenance || {},
+    recordedAt: text(recordFact.recordedAt),
     appointmentDate: text(record.date),
     from: text(record.from),
     to: text(record.to),
@@ -203,6 +205,8 @@ function standaloneFinanceItem(fact = {}) {
     subtitle: lines.join(', ') || text(data.financeEntityName || data.workplace || data.note),
     amount,
     operationId: operation.id,
+    provenance: fact.provenance || {},
+    recordedAt: text(fact.recordedAt),
   };
 }
 
