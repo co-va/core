@@ -1,3 +1,4 @@
+import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma, Workplace as WorkplaceRow } from '@prisma/client';
@@ -261,6 +262,9 @@ type ProfessionClient = Pick<Prisma.TransactionClient, 'platformProfession'>;
 
 @Injectable()
 export class ProfileService {
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['Workplace', 'BookingPublication', 'BookingPublicRoute']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['Workplace', 'BookingPublication', 'BookingPublicRoute'],before,after,checkOnly); }
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async observeProfessions(client: ProfessionClient, values: unknown[]) {

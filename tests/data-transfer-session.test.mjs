@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
+const code=stripTypeScriptTypes(fs.readFileSync('server/src/data-transfer/restore-state.ts','utf8').replace(/^import .*\n/gm,''));
+const {restorePlan,assertNoIndependentReferences}=await import('data:text/javascript;base64,'+Buffer.from('const ConflictException=Error;const Prisma={};\n'+code).toString('base64'));
+const before={Person:[{id:'existing',data:{name:'Анна',phones:['old'],emails:['independent']}}]};
+const after={Person:[{id:'existing',data:{name:'Анна',phones:['old'],emails:['independent','imported']}}]};
+const current={Person:[{id:'existing',data:{name:'Анна',phones:['old','later'],emails:['independent','imported']}}]};
+assert.deepEqual(restorePlan(before,after,current).Person[0].value.data,{name:'Анна',phones:['old','later'],emails:['independent']});
+assert.throws(()=>restorePlan({Person:[]},{Person:[{id:'new',data:{name:'Анна'}}]},{Person:[{id:'new',data:{name:'Независимое изменение'}}]}),/независимо изменены/);
+assert.throws(()=>assertNoIndependentReferences({BusinessAuxiliaryState:[{id:'state',data:{wallets:[]}}]},{BusinessAuxiliaryState:[{id:'state',data:{wallets:[{id:'new-wallet'}]}}]},{FinanceOperation:[{id:'later-payment',data:{walletId:'new-wallet'}}]}),/независимые/);
+assert.throws(()=>assertNoIndependentReferences({Person:[]},{Person:[{id:'new-person',key:'person-key'}]},{Other:[{id:'later',data:{owner:'person:person-key'}}]}),/независимые/);
+assert.deepEqual(restorePlan({Person:[]},{Person:[{id:'new',data:{name:'Анна'}}]},{Person:[{id:'new',data:{name:'Анна'}}]}).Person,[{id:'new',value:undefined}]);
+console.log('Data transfer three-way rollback and independent references: OK');

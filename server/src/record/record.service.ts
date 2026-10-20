@@ -1,3 +1,4 @@
+import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { zonedDateTimeToDate } from '../../../core/time/zone.js';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -86,6 +87,9 @@ function normalizeGroup(value: unknown, fallbackPerson: unknown, allowedCapacity
 
 @Injectable()
 export class RecordService {
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['BusinessRecord', 'BusinessRecordEvent', 'BookingRequest']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['BusinessRecord', 'BusinessRecordEvent', 'BookingRequest'],before,after,checkOnly); }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly time: TimeService,
@@ -284,22 +288,29 @@ export class RecordService {
   // Historical input stays inside the Record owner, without current availability,
   // loyalty repricing, inferred duration, booking requests or notification delivery.
   async importHistorical(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
-    const id = targetId || randomUUID();
-    const existing = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
+    let id = targetId || randomUUID();
+    let existing = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
     if (targetId && !existing) throw new ConflictException('Перенесённая запись не найдена');
+    if(input.appendProcedures && !existing) {
+      const rows=await tx.record.findMany({where:{tenantId}});
+      const matches=rows.filter(row=>{const data=objectValue(row.data);return data.person?.key===input.person?.key && dateValue(data.date)===text(input.date) && data.workplaceId===input.workplaceId && (!input.from || text(data.from)===text(input.from));});
+      if(matches.length>1)throw new ConflictException('Не удалось однозначно определить запись.');
+      if(matches.length===1){existing=matches[0];id=existing.recordId;}
+    }
     const previous = objectValue(existing?.data);
-    if (!targetId) {
+    if (!targetId && !input.appendProcedures) {
       const rows = await tx.record.findMany({ where: { tenantId } });
       const matches = rows.map(row => objectValue(row.data)).filter(record => text(record.person?.key) === text(input.person?.key)
         && dateValue(record.date) === text(input.date) && record.workplaceId === input.workplaceId && text(record.from) === text(input.from)
         && sameJson(arrayValue(record.procedures).map(p => text(p.name)), arrayValue(input.procedures).map(p => text(p.name))));
       if (matches.length) throw new ConflictException('Запись уже существует. Укажите ID записи или ID переноса; автоматическое объединение запрещено.');
     }
-    const procedures = arrayValue(input.procedures).map((raw, index) => {
+    const incomingProcedures = arrayValue(input.procedures).map((raw, index) => {
       const item = objectValue(raw);
       if (!text(item.name)) throw new ConflictException('Не указана процедура');
       return { ...item, id: text(item.id) || text(arrayValue(previous.procedures)[index]?.id) || randomUUID() };
     });
+    const procedures=input.appendProcedures ? [...arrayValue(previous.procedures).filter(p=>!incomingProcedures.some(next=>next.id===p.id)),...incomingProcedures] : incomingProcedures;
     const record = { ...previous, id, date: text(input.date), workplaceId: text(input.workplaceId),
       from: text(input.from), to: text(input.to), person: clone(input.person), procedures,
       timePrecision: input.from ? 'minute' : 'date', historicalTransfer: true,

@@ -13,6 +13,9 @@ const { InventoryService } = require('../dist/inventory/inventory.service.js');
 const { ProcedureService } = require('../dist/procedure/procedure.service.js');
 const { TimeService } = require('../dist/time/time.service.js');
 const { SaasAccessService } = require('../dist/saas-access/saas-access.service.js');
+const { AuxiliaryStateService } = require('../dist/auxiliary-state/auxiliary-state.service.js');
+const { PersonalAccountFinanceService } = require('../dist/finance/personal-account-finance.service.js');
+const { HistoryService } = require('../dist/history/history.service.js');
 const db = new PrismaClient();
 const tenantId = `transfer-check-${randomUUID()}`;
 const accountId = `transfer-check-${randomUUID()}`;
@@ -22,7 +25,7 @@ const procedures = new ProcedureService(db);
 const records = new RecordService(db, new TimeService(), finance, procedures);
 const people = new BusinessStateService(db, records);
 const inventory = new InventoryService(db);
-const service = new DataTransferService(db, people, new ProfileService(db), records, finance, inventory, procedures, access);
+const service = new DataTransferService(db, people, new ProfileService(db), records, finance, inventory, procedures, access, new AuxiliaryStateService(db,access), new PersonalAccountFinanceService(db), new HistoryService(db));
 async function file(domain, rows, filename='fixture.xlsx') {
   const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet(domain);
   const keys=[...new Set(rows.flatMap(row=>Object.keys(row)))]; sheet.addRow(keys);
@@ -208,6 +211,7 @@ try {
   assert.equal(await db.dataTransferFact.count({where:{tenantId}}),before);
   // A corrected bad row complements the successful original row.
   result=await run('people',[{externalId:'bad',name:'Мария',phone:'79991112233'}]);assert.equal(result.failed,0);
+  await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
   // This script owns only its random isolated fixture, never existing tenant data.

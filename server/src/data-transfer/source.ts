@@ -1,8 +1,10 @@
+import { STANDARD_FIELDS, STANDARD_LABELS, STANDARD_META, standardColumns, isStandard } from './standard';
+import { standardFacts } from './standard-facts';
 import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
 import { DOMAINS, LABELS, Fact, parseCsv, text } from './formats';
 
-export const FIELDS: Record<string, string> = {
+export const FIELDS: Record<string, string> = { ...STANDARD_LABELS,
   transferId: 'ID переноса', externalId: 'ID источника', sourceKey: 'Ключ строки', name: 'Имя', surname: 'Фамилия', phone: 'Телефон', email: 'Email', uei: 'UEI',
   city: 'Город', address: 'Адрес', currency: 'Валюта', timeZone: 'Часовой пояс', about: 'Описание',
   personKey: 'ID человека CO-VA', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства CO-VA', procedure: 'Процедура', procedures: 'Процедуры (JSON)', procedureId: 'ID процедуры CO-VA',
@@ -55,7 +57,7 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
   if (sheets.reduce((n, s) => n + s.rows.length, 0) > 20000) throw Error('В одном файле допускается до 20 000 строк');
   return { sheets, fingerprint };
 }
-export function defaultDomain(name: string) { return DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
+export function defaultDomain(name: string) { return name === 'Данные' ? 'standard' : DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
 export function defaultColumns(headers: string[]) {
   const result: Record<string, number> = {};
   for (const [field, label] of Object.entries(FIELDS)) {
@@ -68,18 +70,24 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
   const facts: Fact[] = [];
   for (const sheet of sheets) {
     const mapping = input.sheets?.[sheet.name];
-    const domain = mapping?.domain ?? defaultDomain(sheet.name);
+    const standard = isStandard(sheet.headers) || mapping?.domain === 'standard';
+    const domain = standard ? 'standard' : mapping?.domain ?? defaultDomain(sheet.name);
     if (domain === 'skip') continue;
-    const columns = mapping?.columns || defaultColumns(sheet.headers);
+    const columns = mapping?.columns || (standard ? standardColumns(sheet.headers) : defaultColumns(sheet.headers));
     for (let index = 0; index < sheet.rows.length; index++) {
       const row = sheet.rows[index]; if (!row.some(v => v !== '' && v != null)) continue;
       const values: Record<string, any> = {};
       for (const [field, col] of Object.entries(columns)) if (FIELDS[field] && Number.isInteger(col) && col >= 0 && col < sheet.headers.length && row[col] !== '' && row[col] != null) values[field] = row[col];
-      if (sheet.date1904) for (const field of ['date','occurredAt','createdAt']) if (typeof values[field] === 'number') values[field] += 1462;
+      if (sheet.date1904) for (const field of ['date','occurredAt','createdAt','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt']) if (typeof values[field] === 'number') values[field] += 1462;
       const sourceKey = text(values.sourceKey) || (text(values.externalId)
         ? `${text(input.source)}:${domain}:${text(values.externalId)}`
         : `${fingerprint}:${sheet.name}:${index + 2}`);
-      facts.push({ domain, sheet: sheet.name, row: index + 2, values, sourceKey });
+      if (standard) {
+        const raw = row[sheet.headers.indexOf(STANDARD_META)];
+        let metadata: any;
+        if (raw) { try { metadata = JSON.parse(text(raw)); } catch { throw Error('Служебные данные файла повреждены. Загрузите исходную таблицу.'); } }
+        facts.push(...standardFacts(sheet.name,index+2,values,sourceKey,metadata));
+      } else facts.push({ domain, sheet: sheet.name, row: index + 2, values, sourceKey });
     }
   }
   const expanded: Fact[] = [];
@@ -87,6 +95,7 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
   const project = (values: Record<string, any>, fields: string[]) => Object.fromEntries([...new Set(fields)].filter(k => values[k] !== undefined).map(k => [k, values[k]]));
   for (const fact of facts) {
     const v = fact.values;
+    if (v.appendProcedures) { expanded.push(fact); continue; }
     if (fact.domain === 'records' || fact.domain === 'mixed') {
       const embedded = (domain: string, suffix: string, values: Record<string, any>) => expanded.push({ ...fact, domain, sourceKey: fact.sourceKey + suffix, values });
       if (v.name && (v.phone || v.uei) && !v.personKey && !v.personTransferId)
@@ -106,7 +115,7 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
         unit: v.unit, quantity: v.quantity, unitCost: v.unitCost, occurredAt: v.occurredAt, kind: 'RECEIPT',
       } });
       expanded.push({ ...fact, values: project(v, [...meta, ...DOMAIN_FIELDS.items.filter(k => !['quantity','unitCost','occurredAt'].includes(k))]) });
-    } else expanded.push({ ...fact, values: project(v, [...meta, ...(DOMAIN_FIELDS[fact.domain] || Object.keys(v))]) });
+    } else expanded.push({ ...fact, values: project(v, [...meta, ...Object.keys(v)]) });
   }
   for (const fact of expanded) if (fact.domain === 'consumables' && input.withoutProcedureFacts?.includes(fact.sourceKey)) fact.values.withoutProcedure = true;
   facts.length = 0; facts.push(...expanded);
@@ -114,16 +123,28 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
 }
 export async function transferWorkbook(rows: any[], template = false) {
   const workbook = new ExcelJS.Workbook();
-  for (const domain of DOMAINS) {
-    const facts = rows.filter(row => row.domain === domain);
-    if (!template && !facts.length) continue;
-    const sheet = workbook.addWorksheet(LABELS[domain]);
-    const keys = ['transferId','externalId','sourceKey', ...DOMAIN_FIELDS[domain], 'note'];
-    const unique = [...new Set(keys)];
-    sheet.columns = [...unique.map(key => ({ header: FIELDS[key] || key, key, width: 24 })), { header: 'Причина', key: 'reason', width: 65 }];
-    sheet.getRow(1).font = { bold: true }; sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    for (const fact of facts) sheet.addRow({ ...Object.fromEntries(Object.entries(fact.values || {}).map(([key,value]) => [key, value && typeof value === 'object' && !(value instanceof Date) ? JSON.stringify(value) : value])), transferId: fact.transferId || '', sourceKey: fact.sourceKey, reason: fact.reason || '' });
-    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, sheet.rowCount), column: unique.length + 1 } };
+  const sheet = workbook.addWorksheet('Данные');
+  sheet.columns = [...STANDARD_FIELDS.map(field=>({header:field.label,key:field.key,width:25})),
+    ...(!template ? [{header:'Причина',key:'reason',width:65}] : []), {header:STANDARD_META,key:STANDARD_META,hidden:true,width:1}];
+  sheet.getRow(1).font={bold:true};sheet.views=[{state:'frozen',ySplit:1}];
+  STANDARD_FIELDS.forEach((field,index)=>{ sheet.getCell(1,index+1).note=field.help+' Заполняйте только известные данные; иначе оставьте пустым.'; });
+  for (const fact of rows) {
+    const value={...fact.values};
+    if (fact.domain==='items') value.material=value.name;
+    if (fact.domain==='workplaces') value.workplace=value.name;
+    if (fact.domain==='procedures') value.catalogProcedure=value.name;
+    if (fact.domain==='wallets') value.wallet=value.name;
+    if (fact.domain==='programs') value.program=value.name;
+    if (fact.domain==='loans') value.loan=value.name;
+    if (fact.domain==='investments') value.investment=value.name;
+    if (fact.domain==='schedule') Object.assign(value,{scheduleDate:value.date,scheduleFrom:value.from,scheduleTo:value.to,date:undefined,from:undefined,to:undefined});
+    if (value.discountPercent != null) value.discount=String(value.discountPercent)+'%';
+    if (value.discountMoney != null) value.discount=String(value.discountMoney);
+    const internal=Object.fromEntries(Object.entries(fact.values || {}).filter(([key])=>!STANDARD_FIELDS.some(field=>field.key===key)));
+    if (fact.domain!=='people') delete value.name;
+    for(const [key,item]of Object.entries(value))if(item && typeof item==='object' && !(item instanceof Date))value[key]=String((item as any).invalid || 'Проверьте значение');
+    sheet.addRow({...value,reason:fact.reason || '',[STANDARD_META]:JSON.stringify({version:1,domain:fact.domain,sourceKey:fact.sourceKey,transferId:fact.transferId || '',internal})});
   }
+  sheet.autoFilter={from:{row:1,column:1},to:{row:Math.max(1,sheet.rowCount),column:STANDARD_FIELDS.length}};
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

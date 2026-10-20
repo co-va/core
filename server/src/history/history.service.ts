@@ -80,6 +80,14 @@ function publicRow(row: HistoryRow) {
 export class HistoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async cancelTransfer(tx:Prisma.TransactionClient,tenantId:string,sessionId:string) {
+    await tx.$executeRaw`DELETE FROM "BusinessHistoryEvent" WHERE "tenantId"=${tenantId} AND "provenance"->>'sessionId'=${sessionId}`;
+  }
+  async transferReferences(tx:Prisma.TransactionClient,tenantId:string) {
+    const rows=await tx.$queryRaw<Array<{value:any}>>`SELECT to_jsonb(t) AS value FROM "BusinessHistoryEvent" t WHERE "tenantId"=${tenantId} ORDER BY "id"`;
+    return {BusinessHistoryEvent:rows.map(row=>row.value)};
+  }
+
   async list(tenantId: string, filters: HistoryFilters = {}) {
     const personKeys = [...new Set([
       text(filters.personKey),

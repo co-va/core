@@ -1,3 +1,4 @@
+import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { normalizeUEI as normalizeUEIValue } from '../../../core/uei-format.js';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { randomUUID } from 'node:crypto';
@@ -135,6 +136,9 @@ function personHasPhone(person: JsonObject, phone: unknown) {
 
 @Injectable()
 export class BusinessStateService {
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['Person', 'UeiState', 'BusinessOperationalState']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['Person', 'UeiState', 'BusinessOperationalState'],before,after,checkOnly); }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly records: RecordService,
@@ -174,6 +178,8 @@ export class BusinessStateService {
   }
 
   async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient, ownership: JsonObject = {}) {
+    input={...input,...(input.birthday!==undefined?{birthDate:input.birthday}:{})};
+    if(input.gender){const genders:JsonObject={'Мужской':'male','Женский':'female',male:'male',female:'female'};if(!genders[input.gender])throw new BadRequestException('Не удалось определить пол');input.gender=genders[input.gender];}
     const rows = await tx.person.findMany({ where: { tenantId } });
     const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
     const identity = normalizeUEI(identityRow?.data || {});
@@ -187,7 +193,7 @@ export class BusinessStateService {
     const person: JsonObject = { ...(previous || {}), key };
     // Ownership is recorded only for values actually introduced by this fact.
     // Matching an existing value never grants permission to overwrite it later.
-    for (const field of ['name', 'surname', 'createdAt']) {
+    for (const field of ['name', 'surname', 'createdAt','birthDate','gender']) {
       if (input[field] === undefined) continue;
       const value = text(input[field]); const current = text(previous?.[field]);
       const ownsCurrent = ownership[field] !== undefined && ownership[field] === current;
@@ -227,6 +233,14 @@ export class BusinessStateService {
       identity.entities[resolved.uei] = used || { uei: resolved.uei, owner: { type: 'person', id: key }, members: [`person:${key}`], history: [], reserved: true };
       identity.relations[`person:${key}`] = resolved.uei;
       ownership.uei = resolved.uei;
+    }
+    if(input.additionalPhone!==undefined) {
+      const additional=normalizePhone(input.additionalPhone);if(!additional)throw new BadRequestException('Неверный формат дополнительного телефона');
+      resolveTransferredPerson(rows.map(row=>objectValue(row.data)),identity,{phone:input.additionalPhone},key);
+      const values=Array.isArray(person.phones)?person.phones:[];const previousAdditional=text(ownership.additionalPhone);
+      const phones=values.filter((value:unknown)=>!previousAdditional || normalizePhone(value)!==previousAdditional);
+      if(!phones.some((value:unknown)=>normalizePhone(value)===additional)){phones.push(additional);ownership.additionalPhone=additional;}else delete ownership.additionalPhone;
+      person.phones=phones;
     }
     await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },
       create: { tenantId, key, position: rows.length, data: json(person) }, update: { data: json(person) } });

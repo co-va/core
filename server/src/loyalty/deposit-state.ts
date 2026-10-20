@@ -186,7 +186,7 @@ export async function selectedDepositPriceSource(
   };
 }
 
-export async function consumeDepositAllocations(db: Db, tenantId: string, values: unknown, expectedPersonKey: string, occurredAt: Date) {
+export async function consumeDepositAllocations(db: Db, tenantId: string, values: unknown, expectedPersonKey: string, occurredAt: Date, historical = false) {
   const requested = normalizedDepositAllocations(values);
   const seen = new Set<string>();
   const result: DepositAllocation[] = [];
@@ -194,7 +194,7 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
   for (const request of requested) {
     if (seen.has(request.depositId)) throw new BadRequestException('Один депозит нельзя указать дважды');
     seen.add(request.depositId);
-    await expireDepositInstances(db, tenantId, request.depositId);
+    if(!historical) await expireDepositInstances(db, tenantId, request.depositId);
     const row = await db.loyaltyDepositInstance.findUnique({
       where: { tenantId_depositId: { tenantId, depositId: request.depositId } },
     });
