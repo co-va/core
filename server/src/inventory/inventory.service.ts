@@ -433,7 +433,7 @@ export class InventoryService {
     const existing=await tx.inventorySupplierOffer.findMany({where:{tenantId,inventoryItemId:item.id,supplier:text(input.supplier)}});
     if(!targetId&&existing.length>1)throw new BadRequestException('Не удалось однозначно определить предложение поставщика');
     const offerId=targetId || existing[0]?.offerId || randomUUID();
-    const data={inventoryItemId:item.id,supplier:text(input.supplier),...(input.listPrice!==undefined?{listPrice:input.listPrice}:{}),...(input.supplierDiscount!==undefined?{discountPercent:input.supplierDiscount}:{}),...(input.supplierSku!==undefined?{supplierSku:text(input.supplierSku)}:{}),note:text(input.note)};
+    const data={inventoryItemId:item.id,supplier:text(input.supplier),...(input.listPrice!==undefined?{listPrice:input.listPrice}:{}),...(input.actualPrice!==undefined?{actualPrice:input.actualPrice}:{}),...(input.supplierDiscount!==undefined?{discountPercent:input.supplierDiscount}:{}),...(input.supplierSku!==undefined?{supplierSku:text(input.supplierSku)}:{}),note:text(input.note)};
     await tx.inventorySupplierOffer.upsert({where:{tenantId_offerId:{tenantId,offerId}},create:{tenantId,offerId,...data},update:data});return offerId;
   }
 
@@ -479,6 +479,7 @@ export class InventoryService {
           costKnown: known, unitCost: input.unitCost ?? 0, receivedAt: new Date(input.occurredAt) } });
       }
     }
+    await this.rebuildItemCostingInTx(tx,tenantId,item.id,true);
     return movementId;
   }
 
@@ -506,7 +507,7 @@ export class InventoryService {
     return maximum;
   }
 
-  private async rebuildItemCostingInTx(tx: Tx, tenantId: string, inventoryItemId: string) {
+  private async rebuildItemCostingInTx(tx: Tx, tenantId: string, inventoryItemId: string, preserveCosts = false) {
     const item = await tx.inventoryItem.findFirst({ where: { tenantId, id: inventoryItemId } });
     if (!item) return;
 
@@ -611,7 +612,7 @@ export class InventoryService {
       if (remaining > EPSILON) totalCost += remaining * maxKnownUnitCost;
       const quantity = decimalNumber(line.quantity);
       const unitCost = quantity > 0 ? totalCost / quantity : 0;
-      await tx.inventoryMovementLine.update({
+      if(!preserveCosts) await tx.inventoryMovementLine.update({
         where: { id: line.id },
         data: { unitCost, amount: totalCost },
       });
@@ -629,7 +630,7 @@ export class InventoryService {
       if (byFact !== 0) return byFact;
       return compareDates(right.createdAt, left.createdAt);
     })[0];
-    if (latestLot) {
+    if (latestLot && !preserveCosts) {
       await tx.inventoryItem.update({
         where: { id: item.id },
         data: { lastPurchasePrice: decimalNumber(latestLot.unitCost) },

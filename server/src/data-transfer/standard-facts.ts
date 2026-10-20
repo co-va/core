@@ -22,7 +22,7 @@ export function standardFacts(sheet: string, row: number, values: Record<string,
   }
   if (v.name) add('people',{...identity,...pick('additionalPhone','email','birthday','gender')});
   if (v.workplace) add('workplaces',{name:v.workplace,...pick('city','address','currency','timeZone','about')});
-  if (v.wallet) add('wallets',{name:v.wallet,walletType:v.walletType});
+  if (v.wallet) add('wallets',{name:v.wallet});
   if (v.program) add('programs',{name:v.program,...pick('programAmount','benefitType','benefitValue','termStartDate','termEndDate','programStatus')});
   if (v.loan) add('loans',{name:v.loan,...pick('lenderName','interestRate','ratePeriod','repaymentMode','endDate')});
   if (v.investment) add('investments',{name:v.investment,...pick('investmentRole','endDate')});
@@ -39,9 +39,9 @@ export function standardFacts(sheet: string, row: number, values: Record<string,
   if (v.amount !== undefined) add('payments',{...reference,...linked,...pick('amount','occurredAt','wallet','paymentSource','deposit','note')});
   if (v.financeKind || v.financeAmount !== undefined) add('operations',pick('financeKind','financeAmount','occurredAt','wallet','toWallet','article','loan','investment','note'));
   if (v.material && v.unit) add('items',{name:v.material,...pick('manufacturer','unit','productType','category','sku','barcode','location','supplier','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','trackLots','canConsume','canSell')});
-  if (v.material && v.supplier && (v.listPrice !== undefined || v.supplierSku)) add('offers',pick('material','manufacturer','unit','supplier','listPrice','supplierDiscount','supplierSku','note'));
+  if (v.material && v.supplier && (v.listPrice !== undefined || v.actualPrice !== undefined || v.supplierSku)) add('offers',pick('material','manufacturer','unit','supplier','listPrice','supplierDiscount','supplierSku','actualPrice','note'));
   if (v.quantity !== undefined) {
-    const data = {...reference,...linked,...pick('material','manufacturer','unit','quantity','unitCost','kind','occurredAt','expiresAt','supplier','listPrice','withoutProcedure','note')};
+    const data = {...reference,...linked,...pick('material','manufacturer','unit','quantity','unitCost','kind','direction','expectedQuantity','actualQuantity','occurredAt','expiresAt','supplier','listPrice','withoutProcedure','note')};
     if (v.date && !v.kind) add('consumables',data); else add('movements',data);
   }
   if (!facts.length) add('people',{...v,name:undefined});

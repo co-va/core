@@ -74,7 +74,7 @@ export async function verifyUniversalTransfer({db,service,people,accountId}){
    {phone:'79990007705',date:'2022-01-03',from:'12:00',procedure:'Услуга',paymentSource:'Депозит',deposit:'Депозитная программа',amount:300,occurredAt:'2022-01-03'},
    {material:'Позиция',unit:'г',sku:'A-1',manufacturer:'Фабрика',category:'Материалы',supplier:'Поставщик',grossWeight:100,tareWeight:10,minStock:5,targetStock:20,quantity:100,unitCost:5,kind:'Приход',occurredAt:'2022-01-01',listPrice:6,supplierSku:'SUP-1'},
    {phone:'79990007705',date:'2022-01-03',procedure:'Услуга',material:'Позиция',manufacturer:'Фабрика',unit:'г',quantity:5},
-   {wallet:'Наличные',article:'Прочий доход',articleDirection:'Доход',financeKind:'Доход',financeAmount:400,occurredAt:'2022-01-04'}];
+   {wallet:'Наличные',article:'Прочий доход',articleDirection:'Доход',articleEconomicType:'Услуги',financeKind:'Доход',financeAmount:400,occurredAt:'2022-01-04'}];
   const baseline={people:await db.person.count({where:{tenantId}}),records:await db.record.count({where:{tenantId}}),history:await historyCount(),operations:await db.financeOperation.count({where:{tenantId}})};
   result=await run(complex);assertOk(result);
   const deposit=await db.loyaltyDepositInstance.findFirst({where:{tenantId}});assert.equal(Number(deposit.principalBalance),700);assert.equal(Number(deposit.benefitBalance),0);

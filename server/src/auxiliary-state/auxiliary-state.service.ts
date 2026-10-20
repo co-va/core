@@ -79,6 +79,8 @@ export class AuxiliaryStateService {
       const data: JsonObject={...objectValue(existing?.data),id,name};
       if (input.benefitType !== undefined) { data.benefitType=modes[input.benefitType] || input.benefitType; if (!['none','discount','accrual'].includes(data.benefitType)) throw new BadRequestException('Неизвестный вид выгоды программы'); }
       for (const [field,to] of [['programAmount','amount'],['benefitValue','benefitValue'],['termStartDate','termStartDate'],['termEndDate','termEndDate'],['programStatus','status']]) if(input[field]!==undefined)data[to]=input[field];
+      if(data.status)data.status=({'Действует':'active','Закрыта':'closed','Архив':'archived'} as JsonObject)[data.status]||data.status;
+      if(data.status&&!['active','closed','archived'].includes(data.status))throw new BadRequestException('Уточните статус программы');
       if (data.termEndDate) data.termMode='dated';
       if (existing) this.protectDepositPrograms([existing.data],[data]);
       await tx.loyaltyDepositProgram.upsert({where:{tenantId_programId:{tenantId,programId:id}},create:{tenantId,programId:id,data:json(data)},update:{data:json(data)}});
@@ -91,11 +93,15 @@ export class AuxiliaryStateService {
     if(!targetId && matches.length>1)throw new ConflictException('Название неоднозначно. Проверьте данные.');
     const existing=targetId?rows.find((row:JsonObject)=>row.id===targetId):matches[0];
     if(targetId&&!existing)throw new BadRequestException('Перенесённые данные не найдены');
-    const id=existing?.id || randomUUID();
+    const system:JsonObject={'Наличные':'cash','Безналичные':'cashless'};
+    const id=existing?.id || (domain==='wallets'?system[name]:'') || randomUUID();
     const data={...existing,id,name};
-    if (domain==='wallets' && input.walletType) { const types:JsonObject={'Наличные':'cash','Безналичные':'noncash'};if(!types[input.walletType])throw new BadRequestException('Уточните вид кошелька');data.type=types[input.walletType]; }
+    if(domain==='wallets' && ['cash','cashless'].includes(id))data.system=true;
+    if(input.ratePeriod)input.ratePeriod=({'Месяц':'monthly','Год':'annual'} as JsonObject)[input.ratePeriod]||input.ratePeriod;
+    if(input.repaymentMode)input.repaymentMode=({'Свободно':'free','В конце срока':'end','Ежемесячно':'monthly'} as JsonObject)[input.repaymentMode]||input.repaymentMode;
     if(domain==='loans') data.loanTerms={...existing?.loanTerms,...Object.fromEntries(['lenderName','interestRate','ratePeriod','repaymentMode','endDate'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.endDate?{termMode:'date'}:{})};
     if(domain==='investments') {
+      if(input.investmentRole)input.investmentRole=({'В себя':'self','Привлекаю':'raise','Я инвестор':'external'} as JsonObject)[input.investmentRole]||input.investmentRole;
       if(input.investmentRole && !['self','raise','external'].includes(input.investmentRole)) throw new BadRequestException('Уточните роль инвестиции');
       data.investmentTerms={...existing?.investmentTerms,...(input.investmentRole?{role:input.investmentRole}:{}),...(input.endDate?{termMode:'date',endDate:input.endDate}:{})};
       await this.assertInvestmentMutationAllowed(tenantId,existing?[existing]:[],[data]);

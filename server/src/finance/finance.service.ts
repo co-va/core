@@ -252,7 +252,10 @@ export class FinanceService {
     const id=targetId || rows[0]?.articleId || randomUUID();
     const current=await tx.financeArticle.findUnique({where:{tenantId_articleId:{tenantId,articleId:id}}});
     if(current && (current.name!==name || current.direction!==direction))throw new BadRequestException('Статья конфликтует с сохранённой');
-    if(!current)await tx.financeArticle.create({data:{tenantId,articleId:id,name,direction,economicType:text(input.articleEconomicType)|| (direction==='IN'?'OTHER_INCOME':'OPERATING_EXPENSE')}});
+    const types:JsonObject={'Услуги':'OPERATING_REVENUE','Товары':'PRODUCT_REVENUE','Чаевые':'TIPS','Прочий доход':'OPERATING_REVENUE','Операционные расходы':'OPERATING_EXPENSE'};
+    const economicType=types[text(input.articleEconomicType)]||text(input.articleEconomicType);
+    if(!ARTICLE_ECONOMIC_TYPES.has(economicType)||economicType==='GROUP')throw new BadRequestException('Уточните тип статьи');
+    if(!current)await tx.financeArticle.create({data:{tenantId,articleId:id,name,direction,economicType}});
     return id;
   }
   async resolveHistoricalDeposit(tenantId:string,input:JsonObject,tx:Prisma.TransactionClient) {
@@ -280,7 +283,8 @@ export class FinanceService {
     const operationId=targetId || randomUUID();const amount=money(input.financeAmount);const occurredAt=requiredOccurredAt(input.occurredAt);
     if(amount<=0)throw new BadRequestException('Укажите сумму финансовой операции');
     if(!text(input.walletId))throw new BadRequestException('Укажите кошелёк финансовой операции');
-    const kind=text(input.financeKind);let entries:JsonObject[]=[];let data:JsonObject={...input,total:amount};
+    const names:JsonObject={'Получение займа':'loan-received','Возврат займа':'loan-repayment','Получение инвестиций':'investment-received','Возврат инвестиций':'investment-return','Вклад в инвестицию':'investment-contribution','Возврат капитала':'investment-capital-return','Доход инвестиции':'investment-income','Расход инвестиции':'investment-expense','Выплата дохода инвестору':'investment-income-payment'};
+    const kind=names[text(input.financeKind)]||text(input.financeKind);let entries:JsonObject[]=[];let data:JsonObject={...input,total:amount};
     if(kind==='Перевод') {
       const to=await this.resolveTransferredWallet(tenantId,{wallet:input.toWallet},tx);
       if(to.id===input.walletId)throw new BadRequestException('Для перевода нужны разные кошельки');
@@ -295,6 +299,7 @@ export class FinanceService {
       const definition=SPECIAL_FINANCE_DEFINITIONS[kind];if(!definition)throw new BadRequestException('Уточните вид финансовой операции');
       const state=await tx.businessAuxiliaryState.findUnique({where:{tenantId}});const entities=arrayValue(objectValue(state?.data)[definition.financeEntityType==='loan'?'loans':'investments']);
       const found=entities.filter(p=>text(p.name)===text(input.loan || input.investment));if(found.length!==1)throw new BadRequestException('Не удалось однозначно определить займ или инвестицию');
+      if(definition.financeEntityType==='investment'){const role=text(found[0].investmentTerms?.role)||'raise';if(!definition.roles?.includes(role as any))throw new BadRequestException('Операция не соответствует роли инвестиции');await this.assertInvestmentRoleAllowed(tenantId,role);}
       data={...data,financeEntityType:definition.financeEntityType,financeEntityId:found[0].id,financeEntityName:found[0].name};
       entries=[{walletId:input.walletId,walletName:input.walletName,direction:definition.direction,economicType:definition.economicType,amount}];
     }

@@ -69,7 +69,7 @@ export class DataTransferService {
     for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
     for (const field of ['from', 'to','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
     for (const field of ['occurredAt', 'createdAt']) if (v[field] != null) v[field] = instant(v[field]);
-    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','listPrice','supplierDiscount']) {
+    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
     if(v.discount!==undefined) {
@@ -186,6 +186,8 @@ export class DataTransferService {
         v.occurredAt = v.occurredAt || (v.date ? `${v.date}T00:00:00Z` : '');
         await tx.$queryRaw`SELECT set_config('co_va.transfer_time', ${v.occurredAt || ''}, true)`;
       } else v.kind = kindValues[v.kind] || text(v.kind);
+      if(v.direction)v.direction=({'Приход':'IN','Расход':'OUT'} as Values)[v.direction] || v.direction;
+      if(['ADJUSTMENT','CORRECTION'].includes(v.kind)&&!['IN','OUT'].includes(v.direction))throw Error('Укажите направление корректировки: Приход или Расход');
       if (!v.kind) throw Error('Не указан тип складского движения');
       targetId = await this.inventory.importMovement(tenantId, v, target, tx);
     }

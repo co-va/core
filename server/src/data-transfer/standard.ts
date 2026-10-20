@@ -30,7 +30,6 @@ export const STANDARD_FIELDS = [
   {"key": "amount", "label": "Сумма оплаты", "help": "Только реально полученная оплата. Не копируйте сюда цену работы."},
   {"key": "occurredAt", "label": "Дата факта", "help": "Историческая дата оплаты, пополнения, движения или прайса."},
   {"key": "wallet", "label": "Кошелёк", "help": "Точное название кошелька, куда приняты или откуда выданы деньги."},
-  {"key": "walletType", "label": "Вид кошелька", "help": "Наличные или Безналичные, когда создаётся кошелёк."},
   {"key": "paymentSource", "label": "Источник оплаты", "help": "Кошелёк, Личный счёт или Депозит. Укажите для безналичного источника средств."},
   {"key": "deposit", "label": "Депозит", "help": "Точное название программы человека для операции по депозиту."},
   {"key": "depositAction", "label": "Операция депозита", "help": "Пополнение или Возврат. Использование в оплате задаётся Источником оплаты."},
@@ -41,24 +40,24 @@ export const STANDARD_FIELDS = [
   {"key": "benefitValue", "label": "Размер выгоды программы", "help": "Процент по известным условиям программы."},
   {"key": "termStartDate", "label": "Начало программы", "help": "Дата начала действия, если известна."},
   {"key": "termEndDate", "label": "Окончание программы", "help": "Дата окончания, если известна."},
-  {"key": "programStatus", "label": "Статус программы", "help": "active, closed или archived — только известный статус."},
+  {"key": "programStatus", "label": "Статус программы", "help": "Действует, Закрыта или Архив. Оставьте пустым, если неизвестно."},
   {"key": "accountAction", "label": "Операция личного счёта", "help": "Пополнение, Возврат, Оплата, Долг или Погашение долга. Не путайте с депозитом."},
   {"key": "accountAmount", "label": "Сумма операции личного счёта", "help": "Известная сумма конкретной операции, не общий баланс."},
   {"key": "spendLimitPercent", "label": "Лимит личного счёта", "help": "Известный процент допустимой оплаты с личного счёта."},
   {"key": "visibleToEndUser", "label": "Показывать личный счёт", "help": "Да или Нет, если известно."},
-  {"key": "financeKind", "label": "Финансовая операция", "help": "Доход, Расход, Перевод или существующий вид операции займа/инвестиции."},
+  {"key": "financeKind", "label": "Финансовая операция", "help": "Доход, Расход, Перевод, Получение займа, Возврат займа, Получение инвестиций, Возврат инвестиций, Вклад в инвестицию, Возврат капитала, Доход инвестиции, Расход инвестиции или Выплата дохода инвестору."},
   {"key": "financeAmount", "label": "Сумма финансовой операции", "help": "Сумма отдельного финансового факта."},
   {"key": "article", "label": "Статья", "help": "Точное название статьи дохода или расхода."},
   {"key": "articleDirection", "label": "Направление статьи", "help": "Доход или Расход для отдельной статьи."},
-  {"key": "articleEconomicType", "label": "Тип статьи", "help": "Известный тип: SERVICE_REVENUE, OTHER_INCOME, OPERATING_EXPENSE и т. д."},
+  {"key": "articleEconomicType", "label": "Тип статьи", "help": "Услуги, Товары, Чаевые, Прочий доход или Операционные расходы."},
   {"key": "toWallet", "label": "Кошелёк получателя", "help": "Кошелёк назначения для перевода между кошельками."},
   {"key": "loan", "label": "Займ", "help": "Название займа. Денежное получение и возврат задаются отдельными операциями."},
   {"key": "investment", "label": "Инвестиция", "help": "Название инвестиции."},
-  {"key": "investmentRole", "label": "Роль инвестиции", "help": "self, raise или external — существующая роль приложения."},
+  {"key": "investmentRole", "label": "Роль инвестиции", "help": "В себя, Привлекаю или Я инвестор."},
   {"key": "lenderName", "label": "Заимодавец", "help": "Известное имя заимодавца."},
   {"key": "interestRate", "label": "Ставка займа", "help": "Явно заданная ставка, не рассчитанная по платежам."},
-  {"key": "ratePeriod", "label": "Период ставки", "help": "monthly или annual."},
-  {"key": "repaymentMode", "label": "Возврат займа", "help": "free, end или monthly."},
+  {"key": "ratePeriod", "label": "Период ставки", "help": "Месяц или Год — период известной ставки."},
+  {"key": "repaymentMode", "label": "Возврат займа", "help": "Свободно, В конце срока или Ежемесячно."},
   {"key": "endDate", "label": "Дата окончания договора", "help": "Известная дата окончания займа или инвестиции."},
   {"key": "material", "label": "Материал / товар", "help": "Точное название складской позиции."},
   {"key": "manufacturer", "label": "Производитель", "help": "Известный производитель позиции."},
@@ -86,12 +85,16 @@ export const STANDARD_FIELDS = [
   {"key": "canConsume", "label": "Можно расходовать", "help": "Да или Нет."},
   {"key": "canSell", "label": "Можно продавать", "help": "Да или Нет."},
   {"key": "withoutProcedure", "label": "Импортировать без процедуры", "help": "Да — явное разрешение только для расходника этой строки."},
-  {"key": "note", "label": "Примечание", "help": "Известный комментарий к факту."}
+  {"key": "note", "label": "Примечание", "help": "Известный комментарий к факту."},
+  {"key": "direction", "label": "Направление движения", "help": "Приход или Расход. Обязательно для корректировки, когда количество задано без знака."},
+  {"key": "expectedQuantity", "label": "Учётное количество", "help": "Известное учётное количество инвентаризации. Не рассчитывайте отсутствующее значение."},
+  {"key": "actualQuantity", "label": "Фактическое количество", "help": "Известное фактическое количество инвентаризации."},
+  {"key": "actualPrice", "label": "Цена закупки у поставщика", "help": "Явно известная фактическая цена предложения поставщика; не вычисляется из чужого прайса."}
 ] as const;
 export const STANDARD_LABELS: Record<string,string> = Object.fromEntries(STANDARD_FIELDS.map(field=>[field.key,field.label]));
 export const STANDARD_META = '_co_va_transfer';
-export function standardColumns(headers: string[]) {
-  return Object.fromEntries(STANDARD_FIELDS.map(field=>[field.key, headers.indexOf(field.label)]).filter(([,index])=>Number(index)>=0));
+export function standardColumns(headers: string[]): Record<string,number> {
+  const result:Record<string,number>={};for(const field of STANDARD_FIELDS){const index=headers.indexOf(field.label);if(index>=0)result[field.key]=index;}return result;
 }
 export function isStandard(headers: string[]) {
   const known = new Set<string>(STANDARD_FIELDS.map(field=>field.label));
