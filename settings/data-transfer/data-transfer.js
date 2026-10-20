@@ -83,9 +83,10 @@ export function render(root) {
     if (state.busy) return;
     state.busy = true;
     const control = root.querySelector('[data-transfer-next]'); if (control) control.disabled = true;
+    window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
     try { await work(); }
     catch (error) { const node = root.querySelector('[data-transfer-error]'); if (node) node.textContent = errorText(error); else openNotice({ title: 'Перенос данных', message: errorText(error) }); }
-    finally { state.busy = false; const control = root.querySelector('[data-transfer-next]'); if (control) control.disabled = false; }
+    finally { state.busy = false; const control = root.querySelector('[data-transfer-next]'); if (control) control.disabled = false; window.dispatchEvent(new CustomEvent('book:v2-context-changed')); }
   }
   async function advance() {
     if (state.busy) return;

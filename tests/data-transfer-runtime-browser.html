@@ -3,7 +3,8 @@
 <link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/ui/page/page.css"><link rel="stylesheet" href="/ui/buttons/buttons.css"><link rel="stylesheet" href="/ui/inputs/inputs.css"><link rel="stylesheet" href="/ui/selectors/selectors.css"><link rel="stylesheet" href="/ui/settings/settings.css"><link rel="stylesheet" href="/ui/lists/list-entry.css"><link rel="stylesheet" href="/ui/accordion/accordion.css"><link rel="stylesheet" href="/ui/modals/modal.css"><link rel="stylesheet" href="/ui/v2/v2.css">
 </head><body><div id="app"></div><pre id="result">pending</pre>
 <script type="module">
-const failures=[]; let stage='boot';
+const failures=[]; const headerStates=[]; let stage='boot';
+window.addEventListener('book:v2-context-changed',()=>headerStates.push(document.querySelector('#transfer-root [data-transfer-next]')?.disabled));
 const mark=v=>{stage=v;document.documentElement.dataset.transferRuntimeStage=v;};
 const ok=(v,message)=>{if(!v)failures.push(stage+': '+message)};
 window.addEventListener('error',e=>failures.push(stage+': '+e.message));
@@ -40,6 +41,7 @@ try{
  mark('commit');await until(()=>!root.querySelector('[data-transfer-next]').disabled);root.querySelector('[data-transfer-next]').click();await until(()=>commits===1&&root.textContent.includes('Результат'));
  await until(()=>!root.querySelector('[data-transfer-next]').disabled);
  ok(root.querySelector('[data-transfer-next]').dataset.v2PrimaryLabel==='Загрузить','next action did not reset');
+ ok(headerStates.includes(true)&&headerStates.at(-1)===false,'Shared Header was not notified that the action is available again');
  root.querySelector('[data-transfer-only-errors]').click();ok(root.textContent.includes('stable-test-id'),'stable ID is missing');
  ok(root.querySelector('.ui-data-table').scrollWidth>=root.querySelector('.ui-data-table').clientWidth,'table must own horizontal scroll');
  mark('finished');

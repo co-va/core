@@ -1,3 +1,4 @@
+import { normalizePhone } from '../../../core/phone/index.js';
 import { randomUUID } from 'node:crypto';
 import { resolveTransferredPerson } from './person-transfer';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
@@ -171,7 +172,7 @@ export class BusinessStateService {
     return person;
   }
 
-  async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+  async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient, previousInput: JsonObject | null = null) {
     const rows = await tx.person.findMany({ where: { tenantId } });
     const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
     const identity = normalizeUEI(identityRow?.data || {});
@@ -179,10 +180,14 @@ export class BusinessStateService {
     if (!text(input.name)) throw new BadRequestException('Не указано имя');
     const previous = resolved.person;
     const key = previous?.key || randomUUID();
+    const phones = (previous?.phones || []).filter((phone: unknown) => !(previousInput?.phone && input.phone !== undefined && normalizePhone(phone) === normalizePhone(previousInput.phone)));
+    if (resolved.phone && !phones.some((phone: unknown) => normalizePhone(phone) === resolved.phone)) phones.push(resolved.phone);
+    const emails = (previous?.emails || []).filter((email: unknown) => !(previousInput?.email && input.email !== undefined && text(email) === text(previousInput.email)));
+    if (text(input.email) && !emails.includes(text(input.email))) emails.push(text(input.email));
     const person = { ...(previous || {}), key, name: text(input.name),
       ...(input.surname !== undefined ? { surname: text(input.surname) } : {}),
-      ...(input.phone !== undefined ? { phones: resolved.phone ? [resolved.phone] : [] } : {}),
-      ...(input.email !== undefined ? { emails: text(input.email) ? [text(input.email)] : [] } : {}),
+      ...(input.phone !== undefined ? { phones } : {}),
+      ...(input.email !== undefined ? { emails } : {}),
       ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
     };
     await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },

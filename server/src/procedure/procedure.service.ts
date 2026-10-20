@@ -90,7 +90,7 @@ export class ProcedureService {
     const value = { ...(catalog[index] || {}), id, name: text(input.name),
       ...(input.duration !== undefined ? { duration: input.duration } : {}),
       ...(input.price !== undefined ? { cost: { amount: input.price } } : {}),
-      ...(input.workplaceId ? { workplaces: [{ workplaceId: input.workplaceId, ...(input.price !== undefined ? { cost: { amount: input.price } } : {}) }] } : {}),
+      ...(input.workplaceId ? { workplaces: [...arrayValue(catalog[index]?.workplaces).filter(w => text(w.workplaceId) !== text(input.workplaceId)), { ...arrayValue(catalog[index]?.workplaces).find(w => text(w.workplaceId) === text(input.workplaceId)), workplaceId: input.workplaceId, ...(input.price !== undefined ? { cost: { amount: input.price } } : {}) }] } : {}),
     };
     if (index < 0) catalog.push(value); else catalog[index] = value;
     operational.procedures = catalog;

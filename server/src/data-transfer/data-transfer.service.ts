@@ -107,7 +107,7 @@ export class DataTransferService {
     let targetId = '';
     if (fact.domain === 'people') {
       if (!limits.realPersonalData) throw Error('Перенос людей доступен после перехода в рабочий режим');
-      targetId = await this.people.importPerson(tenantId, v, target, tx);
+      targetId = await this.people.importPerson(tenantId, v, target, tx, previous?.input as Values | null);
     } else if (fact.domain === 'workplaces') {
       if (!target && limits.workplaces != null && await tx.workplace.count({ where: { tenantId, deletedAt: null } }) >= limits.workplaces) throw Error(`Доступно рабочих пространств: ${limits.workplaces}`);
       targetId = await this.profiles.importWorkplace(tenantId, accountId, v, target, tx);

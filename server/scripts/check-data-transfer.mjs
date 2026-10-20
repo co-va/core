@@ -48,6 +48,12 @@ try {
   const personId=target(result,'people').targetId;const personTransfer=target(result,'people').transferId;
   assert.ok(personTransfer); assert.equal(result.rows.find(row=>row.reason).transferId,'');
   result=await run('people',[{...person,externalId:'p1'}]);assert.equal(result.unchanged,1);
+  const originalPerson=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
+  await people.upsertPerson(tenantId,personId,{person:{...originalPerson,phones:[...originalPerson.phones,'+79991230000'],emails:['keep@example.test']}});
+  result=await run('people',[{...person,externalId:'p-extra',email:'new@example.test'}]);assert.equal(result.failed,0);
+  const supplemented=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
+  assert.equal(supplemented.phones.length,2);assert.ok(supplemented.emails.includes('keep@example.test'));assert.ok(supplemented.emails.includes('new@example.test'));
+
   error(await run('people',[{name:'Аня',phone:person.phone}]),/Телефон уже принадлежит.*Анна/);
   error(await run('people',[{...person,uei:'315'}]),/Сохранён UEI 0012/);
   error(await run('people',[{name:'Другая',phone:'79997654321',uei:'12'}]),/Проверьте|UEI|имя/);
