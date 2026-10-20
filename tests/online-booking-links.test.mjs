@@ -24,7 +24,7 @@ const profileServiceSource = readFileSync(new URL('../server/src/profile/profile
 const schemaSource = readFileSync(new URL('../server/prisma/schema.prisma', import.meta.url), 'utf8');
 
 assert.match(settingsSource, /'online-booking', 'Онлайн-запись'/);
-assert.match(bookingSource, /getWorkplaces/);
+assert.doesNotMatch(bookingSource, /getWorkplaces/);
 assert.match(bookingSource, /ACCOUNT_APP_ORIGIN/);
 assert.match(bookingSource, /\/online-booking\/owner\/route/);
 assert.match(bookingSource, /profileSlug/);
@@ -34,6 +34,10 @@ assert.match(bookingSource, /Ссылка рабочего пространст�
 assert.match(bookingSource, /copyIconButton/);
 assert.match(bookingSource, /copyTextToClipboard/);
 assert.match(bookingSource, /function selectedWorkplaceLink\(/);
+assert.match(bookingSource, /copyButton\.closest\('\.input-action-row'\)/);
+assert.doesNotMatch(bookingSource, /copyButton\.closest\('\.array-row'\)/);
+assert.match(bookingSource, /const workplaces = publicRouteState\.workplaces\.filter\(\(item\) => item\.key && item\.slug\)/);
+assert.match(bookingSource, /bookingLink\(publicRouteState\.profileSlug, selected\.slug\)/);
 assert.doesNotMatch(bookingSource, /[?&]booking=/);
 assert.doesNotMatch(bookingSource, /workplaces\.map\(\s*\(item\)\s*=>\s*copyLinkField/);
 
