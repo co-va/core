@@ -24,7 +24,7 @@ export const DOMAIN_FIELDS: Record<string, string[]> = {
   movements: ['itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','kind','occurredAt','workplace','workplaceKey'],
   consumables: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','withoutProcedure','itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','occurredAt','workplace','workplaceKey'],
 };
-export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean };
+export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean; stableFingerprint?: string };
 export type SourceInput = { dataUrl?: string; filename?: string; source?: string; withoutProcedureFacts?: string[]; sheets?: Record<string, { domain: string; columns?: Record<string, number> }> };
 function cellValue(value: any): any {
   if (value == null || value instanceof Date || typeof value !== 'object') return value ?? '';
@@ -55,7 +55,9 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
   } else throw Error('Загрузите XLSX, CSV или TSV');
   if (sheets.reduce((n, s) => n + s.rows.length, 0) > 20000) throw Error('В одном файле допускается до 20 000 строк');
   // ZIP timestamps and workbook author metadata do not change source facts.
-  const fingerprint=createHash('sha256').update(JSON.stringify(sheets)).digest('hex');
+  const stableFingerprint=createHash('sha256').update(JSON.stringify(sheets)).digest('hex');
+  for(const sheet of sheets)sheet.stableFingerprint=stableFingerprint;
+  const fingerprint=createHash('sha256').update(buffer).digest('hex');
   return { sheets, fingerprint };
 }
 export function defaultDomain(name: string) { return name === 'Данные' ? 'standard' : DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
@@ -71,7 +73,7 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
   const facts: Fact[] = [];
   for (const sheet of sheets) {
     const mapping = input.sheets?.[sheet.name];
-    const standard = isStandard(sheet.headers) || mapping?.domain === 'standard';
+    const standard = sheet.name==='Данные' && isStandard(sheet.headers) || mapping?.domain === 'standard';
     const domain = standard ? 'standard' : mapping?.domain ?? defaultDomain(sheet.name);
     if (domain === 'skip') continue;
     const columns = mapping?.columns || (standard ? standardColumns(sheet.headers) : defaultColumns(sheet.headers));
@@ -82,7 +84,7 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
       if (sheet.date1904) for (const field of ['date','occurredAt','createdAt','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt']) if (typeof values[field] === 'number') values[field] += 1462;
       const sourceKey = text(values.sourceKey) || (text(values.externalId)
         ? `${text(input.source)}:${domain}:${text(values.externalId)}`
-        : `${fingerprint}:${sheet.name}:${index + 2}`);
+        : `${standard?sheet.stableFingerprint || fingerprint:fingerprint}:${sheet.name}:${index + 2}`);
       if (standard) {
         const raw = row[sheet.headers.indexOf(STANDARD_META)];
         let metadata: any;

@@ -266,7 +266,7 @@ export class FinanceService {
     const id=targetId || randomUUID();const amount=money(input.depositAmount);const occurredAt=requiredOccurredAt(input.occurredAt);
     if(amount<=0 || !input.person?.key || !input.walletId)throw new BadRequestException('Укажите человека, кошелёк и сумму операции депозита');
     if(input.depositAction==='Возврат') {
-      if(targetId)throw new BadRequestException('Возврат уже выполнен. Отмените его сеанс перед заменой.');
+      if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId:id}}}))throw new BadRequestException('Возврат уже выполнен. Есть зависимые данные.');
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person.key},tx);
       await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
       await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
@@ -275,7 +275,7 @@ export class FinanceService {
     const programs=await this.depositProgramsWith(tx,tenantId);const found=programs.filter(p=>text(p.name)===text(input.program || input.deposit));
     if(found.length!==1)throw new BadRequestException('Не удалось однозначно определить программу депозита');
     const program=found[0];
-    if(targetId)throw new BadRequestException('Депозит уже создан. Отмените его сеанс перед заменой условий.');
+    if(targetId && await tx.loyaltyDepositInstance.findUnique({where:{tenantId_depositId:{tenantId,depositId:id}}}))throw new BadRequestException('Депозит уже создан. Есть зависимые данные.');
     await createDepositInstance(tx,tenantId,{depositId:id,programId:program.id,programName:program.name,person:input.person,terms:clone(program),amount,occurredAt,fundingOperationId:id});
     await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-funding',source:{type:'deposit',id},occurredAt,data:{depositId:id,programId:program.id,programName:program.name,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName,terms:clone(program)},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'IN',economicType:'DEPOSIT_RECEIVED',amount,component:'deposit-funding'}]});return id;
   }
@@ -959,7 +959,7 @@ export class FinanceService {
     const source = input.recordId ? { type: 'record', id: text(input.recordId) } : { type: 'payment', id: operationId };
     let depositAllocations: JsonObject[]=[];
     if(fromDeposit) {
-      if(targetId)throw new BadRequestException('Оплата депозитом уже выполнена. Отмените её сеанс перед заменой.');
+      if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId}}}))throw new BadRequestException('Оплата депозитом уже выполнена. Есть зависимые данные.');
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person?.key},tx);
       depositAllocations=await consumeDepositAllocations(tx,tenantId,[{depositId:deposit.depositId,amount}],text(input.person?.key),occurredAt,true);
     }
@@ -968,7 +968,7 @@ export class FinanceService {
       cashTotal: fromDeposit?0:amount, cashServiceAmount: fromDeposit?0:amount, total: amount, serviceAmount: amount, tips: 0, depositAllocations };
     const entries = allocations.map(entry => ({ ...entry, component: 'service', direction: 'IN', economicType: 'SERVICE_REVENUE' }));
     const existing = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } });
-    if (targetId && !existing) throw new NotFoundException('Перенесённая оплата не найдена');
+    if (targetId && !existing && !fromDeposit) throw new NotFoundException('Перенесённая оплата не найдена');
     if (existing) {
       if (existing.sourceType !== source.type || existing.sourceId !== source.id) throw new BadRequestException('Источник перенесённой оплаты не совпадает. Проверьте запись.');
       await this.replaceOperationWithEntries(tx, tenantId, existing, occurredAt, data, entries);

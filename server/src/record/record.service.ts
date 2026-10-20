@@ -305,7 +305,7 @@ export class RecordService {
         && sameJson(arrayValue(record.procedures).map(p => text(p.name)), arrayValue(input.procedures).map(p => text(p.name))));
       if (matches.length) throw new ConflictException('Запись уже существует. Укажите ID записи или ID переноса; автоматическое объединение запрещено.');
     }
-    const incomingProcedures = arrayValue(input.procedures).map((raw, index) => {
+    const incomingProcedures = arrayValue(input.procedures).map((raw, index): JsonObject => {
       const item = objectValue(raw);
       if (!text(item.name)) throw new ConflictException('Не указана процедура');
       return { ...item, id: text(item.id) || text(arrayValue(previous.procedures)[index]?.id) || randomUUID() };

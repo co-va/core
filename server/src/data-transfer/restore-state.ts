@@ -5,6 +5,7 @@ type Row = Record<string, any>;
 export type TransferState = Record<string, Row[]>;
 const encode = (v: any): string => JSON.stringify(v, (_, value) => typeof value === 'bigint' ? value.toString() : value);
 const same = (a: any, b: any) => encode(a) === encode(b);
+const describe=(path:string)=>{const names:Row={Person:'человека',UeiState:'UEI',BusinessOperationalState:'графика или процедур',BusinessAuxiliaryState:'кошелька, займа или инвестиции',Workplace:'рабочего пространства',BusinessRecord:'записи',FinanceSettlement:'расчёта записи',FinanceOperation:'финансовой операции',FinanceLedgerEntry:'движения денег',LoyaltyDepositProgram:'программы',LoyaltyDepositInstance:'депозита',LoyaltyPersonalAccount:'личного счёта',LoyaltyPersonalAccountMovement:'операций личного счёта',LoyaltyPersonalAccountDebt:'задолженности',InventoryItem:'складской позиции',InventoryLot:'складской партии',InventoryMovement:'складского движения',InventoryMovementLine:'складского движения',InventoryMovementAllocation:'складской партии',DataTransferFact:'повторного переноса'};return names[path.split('.')[0]]||'связанных фактов';};
 const identifier = (v: string) => { if (!/^[A-Za-z][A-Za-z0-9]*$/.test(v)) throw Error('Invalid state identifier'); return Prisma.raw('"' + v + '"'); };
 export async function captureOwnedState(tx: Prisma.TransactionClient, tenantId: string, tables: string[]): Promise<TransferState> {
   const result: TransferState = {};
@@ -32,7 +33,7 @@ function inverse(before: any, after: any, current: any, path: string): any {
     if ([...before, ...after, ...current].every(v => key(v))) {
       const b = new Map(before.map(v => [key(v),v])); const a = new Map(after.map(v => [key(v),v]));
       const c = new Map(current.map(v => [key(v),v]));
-      if (b.size !== before.length || a.size !== after.length || c.size !== current.length) throw new ConflictException(`Перенос нельзя отменить: изменены данные ${path}.`);
+      if (b.size !== before.length || a.size !== after.length || c.size !== current.length) throw new ConflictException(`Перенос нельзя отменить: изменены данные ${describe(path)}.`);
       for (const id of new Set([...b.keys(),...a.keys()])) {
         const value = inverse(b.get(id),a.get(id),c.get(id),path+'.'+id);
         if (value === undefined) c.delete(id); else c.set(id,value);
@@ -40,7 +41,7 @@ function inverse(before: any, after: any, current: any, path: string): any {
       return [...c.values()];
     }
   }
-  throw new ConflictException(`Перенос нельзя отменить: после загрузки независимо изменены данные ${path}.`);
+  throw new ConflictException(`Перенос нельзя отменить: после загрузки независимо изменены данные ${describe(path)}.`);
 }
 export function restorePlan(before: TransferState, after: TransferState, current: TransferState) {
   const result: Record<string, Array<{ id: string; value: Row | undefined }>> = {};
@@ -82,6 +83,12 @@ export function assertNoIndependentReferences(before: TransferState, after: Tran
     return result;
   };
   const previous=identifiers(before);const created=new Set([...identifiers(after)].filter(id=>!previous.has(id)));
+  const oldAccounts=new Set((before.LoyaltyPersonalAccount||[]).map(row=>row.id));
+  const newAccountPeople=new Set((after.LoyaltyPersonalAccount||[]).filter(row=>!oldAccounts.has(row.id)).map(row=>row.personKey));
+  for(const table of ['LoyaltyPersonalAccountMovement','LoyaltyPersonalAccountDebt']){
+    const known=new Set((after[table]||[]).map(row=>row.id));
+    if((current[table]||[]).some(row=>!known.has(row.id)&&newAccountPeople.has(row.personKey)))throw new ConflictException('Перенос нельзя отменить: у личного счёта появились независимые операции.');
+  }
   const hasReference = (value: any): boolean => typeof value === 'string' ? (created.has(value) || value.startsWith('person:')&&created.has(value.slice(7))) : Array.isArray(value) ? value.some(hasReference) : value && typeof value === 'object' ? Object.values(value).some(hasReference) : false;
   for (const table of Object.keys(current)) {
     const a = new Map((after[table]||[]).map(row=>[String(row.id),row]));

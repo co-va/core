@@ -66,6 +66,24 @@ export async function verifyUniversalTransfer({db,service,people,accountId}){
   await people.upsertPerson(tenantId,created,{person:{...createdPerson,surname:'Независимая'}});
   await assert.rejects(()=>service.cancel(tenantId,result.sessionId),/независим|изменены/);
   assert.equal((await db.person.findFirst({where:{tenantId,key:created}})).data.surname,'Независимая');
+  // Correct only a fact owned by this transfer; keep the business operation/deposit ID stable.
+  const correctAmount=async(result,domain,label,amount)=>{
+    const bytes=await transferWorkbook(result.rows.filter(row=>row.domain===domain));const book=new ExcelJS.Workbook();await book.xlsx.load(bytes);
+    const sheet=book.worksheets[0],headers=sheet.getRow(1).values.slice(1);sheet.getCell(2,headers.indexOf(label)+1).value=amount;
+    return service.run(tenantId,accountId,{filename:'correction.xlsx',source:'correction',dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await book.xlsx.writeBuffer()).toString('base64')},false);
+  };
+  let funding=await run([{name:'Коррекция депозита',phone:'79990007706',wallet:'Кошелёк коррекции',program:'Программа коррекции',benefitType:'Нет',depositAction:'Пополнение',depositAmount:500,occurredAt:'2022-01-01'}]);assertOk(funding);
+  const depositId=funding.rows.find(row=>row.domain==='deposits').targetId;
+  let correctionResult=await correctAmount(funding,'deposits','Сумма операции депозита',800);assertOk(correctionResult);
+  assert.equal(correctionResult.rows[0].targetId,depositId);assert.equal(Number((await db.loyaltyDepositInstance.findFirst({where:{tenantId,depositId}})).principalBalance),800);
+  await service.cancel(tenantId,correctionResult.sessionId);assert.equal(Number((await db.loyaltyDepositInstance.findFirst({where:{tenantId,depositId}})).principalBalance),500);
+  await service.cancel(tenantId,funding.sessionId);assert.equal(await db.loyaltyDepositInstance.count({where:{tenantId,depositId}}),0);
+  funding=await run([{name:'Коррекция счёта',phone:'79990007707',wallet:'Кошелёк счёта',accountAction:'Пополнение',accountAmount:500,occurredAt:'2022-01-01'}]);assertOk(funding);
+  const operationId=funding.rows.find(row=>row.domain==='accounts').targetId;
+  correctionResult=await correctAmount(funding,'accounts','Сумма операции личного счёта',700);assertOk(correctionResult);assert.equal(correctionResult.rows[0].targetId,operationId);
+  let accountRows=await db.$queryRaw`SELECT "balance" FROM "LoyaltyPersonalAccount" WHERE "tenantId"=${tenantId}`;assert.equal(Number(accountRows[0].balance),700);
+  await service.cancel(tenantId,correctionResult.sessionId);accountRows=await db.$queryRaw`SELECT "balance" FROM "LoyaltyPersonalAccount" WHERE "tenantId"=${tenantId}`;assert.equal(Number(accountRows[0].balance),500);
+  await service.cancel(tenantId,funding.sessionId);
   // Existing owners: program, deposit funding, account funding/payment, general finance and inventory.
   const complex=[{name:'Финансы',phone:'79990007705',workplace:'Место финансов',wallet:'Наличные',program:'Депозитная программа',benefitType:'Нет',depositAction:'Пополнение',depositAmount:1000,occurredAt:'2022-01-01'},
    {phone:'79990007705',name:'Финансы',accountAction:'Пополнение',accountAmount:500,wallet:'Наличные',occurredAt:'2022-01-02'},

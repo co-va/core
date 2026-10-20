@@ -34,7 +34,7 @@ export class DataTransferService {
       const parsed = await readSource(input);
       return { fields: STANDARD_LABELS, instructions: STANDARD_FIELDS, domainFields: DOMAIN_FIELDS, domains: { ...LABELS, mixed: 'Несколько видов данных (CRM)' }, sheets: parsed.sheets.map(sheet => ({
         name: sheet.name, headers: sheet.headers, count: sheet.rows.length, sample: sheet.rows.slice(0, 3),
-        standard: isStandard(sheet.headers), domain: isStandard(sheet.headers)?'standard':defaultDomain(sheet.name), columns: isStandard(sheet.headers)?standardColumns(sheet.headers):defaultColumns(sheet.headers),
+        standard: sheet.name==='Данные'&&isStandard(sheet.headers), domain: sheet.name==='Данные'&&isStandard(sheet.headers)?'standard':defaultDomain(sheet.name), columns: isStandard(sheet.headers)?standardColumns(sheet.headers):defaultColumns(sheet.headers),
       })) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
   }
@@ -117,6 +117,19 @@ export class DataTransferService {
     await tx.$queryRaw`SELECT set_config('co_va.transfer_provenance', ${JSON.stringify(provenance)}, true)`;
     const occurredAt = input.occurredAt || (fact.domain === 'records' || fact.domain === 'schedule' ? input.date ? `${input.date}T00:00:00Z` : '' : input.createdAt || '');
     await tx.$queryRaw`SELECT set_config('co_va.transfer_time', ${occurredAt || ''}, true)`;
+    const journalled=['accounts','deposits'].includes(fact.domain) || fact.domain==='payments' && ['Депозит','Личный счёт'].includes(input.paymentSource);
+    const oldOwnership=(previous?.ownership as Values)||{};
+    const financialOwners=[this.finance,this.personalAccounts];
+    const financialState=async()=>{const state:TransferState={};for(const owner of financialOwners)Object.assign(state,await owner.transferState(tx,tenantId));return state;};
+    if(journalled && previous && oldOwnership.canonicalBefore && oldOwnership.canonicalAfter){
+      const current=await financialState();
+      assertNoIndependentReferences(oldOwnership.canonicalBefore,oldOwnership.canonicalAfter,current);
+      for(const owner of financialOwners)await owner.restoreTransfer(tx,tenantId,oldOwnership.canonicalBefore,oldOwnership.canonicalAfter,true);
+      await tx.$queryRaw`SELECT set_config('co_va.suppress_history','true',true)`;
+      for(const owner of financialOwners)await owner.restoreTransfer(tx,tenantId,oldOwnership.canonicalBefore,oldOwnership.canonicalAfter);
+      await tx.$queryRaw`SELECT set_config('co_va.suppress_history','false',true)`;
+    }
+    const canonicalBefore=journalled?await financialState():null;
     const v = await this.linkedValues(tx, tenantId, input, source);
     const target = previous?.targetId || '';
     let targetId = '';
@@ -191,6 +204,7 @@ export class DataTransferService {
       if (!v.kind) throw Error('Не указан тип складского движения');
       targetId = await this.inventory.importMovement(tenantId, v, target, tx);
     }
+    if(journalled){ownership.canonicalBefore=canonicalBefore;ownership.canonicalAfter=await financialState();}
     await tx.dataTransferFact.upsert({ where: { id }, create: { id, tenantId, domain: fact.domain, sourceKey: fact.sourceKey, targetId, source, input: input as Prisma.InputJsonValue, ownership: ownership as Prisma.InputJsonValue },
       update: { targetId, source, input: input as Prisma.InputJsonValue, ownership: ownership as Prisma.InputJsonValue, revision: { increment: 1 } } });
     return { transferId: id, targetId, status: previous ? 'corrected' : 'saved' };
