@@ -200,7 +200,7 @@ export class BusinessStateService {
       if (input[field] === undefined) continue;
       const normalize = field === 'phone' ? normalizePhone : text;
       const value = normalize(input[field]);
-      const values = arrayValue(previous?.[collection]);
+      const values: any[] = Array.isArray(previous?.[collection]) ? previous[collection] : [];
       const owned = text(ownership[field]);
       const retained = values.filter(item => !owned || normalize(item) !== owned);
       const independent = retained.some(item => normalize(item) === value);
