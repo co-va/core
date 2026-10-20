@@ -24,13 +24,14 @@ export async function verifyUniversalTransfer({db,service,people,accountId}){
   assert.ok(!visible.some(header=>/CO-VA|ID|JSON|Ключ строки|Скидка %|Скидка суммой/.test(header)));
   assert.ok(visible.includes('Скидка'));assert.ok(visible.includes('Операция личного счёта'));assert.ok(visible.includes('Сумма операции депозита'));assert.ok(visible.includes('Артикул'));
   const data=[{name:'Проверка',phone:'79990007701',workplace:'Место',date:'2022-05-15',from:'14:00',procedure:'Первая',cost:7000,discount:'20%',amount:'не сумма',occurredAt:'2022-05-15',wallet:'Касса'},
-   {name:'Проверка',phone:'79990007701',workplace:'Место',date:'2022-05-15',from:'14:00',procedure:'Вторая',cost:3000,discount:'500'}];
+   {name:'Проверка',phone:'79990007701',workplace:'Место',date:'2022-05-15',procedure:'Вторая',cost:3000,discount:'500'}];
   const inspected=await service.inspect(await file(data));assert.equal(inspected.sheets[0].standard,true);
   const preHistory=await historyCount();let result=await run(data,true);assert.equal(result.failed,1,JSON.stringify(result));
   assert.equal(await db.dataTransferSession.count({where:{tenantId}}),0);assert.equal(await db.record.count({where:{tenantId}}),0);assert.equal(await historyCount(),preHistory);
   result=await run(data);assert.equal(result.failed,1,JSON.stringify(result));assert.ok(result.sessionId);
   assert.equal(await db.record.count({where:{tenantId}}),1);assert.equal(await db.person.count({where:{tenantId}}),1);
   const record=(await db.record.findFirst({where:{tenantId}})).data;
+  assert.equal(record.from,'14:00');assert.equal(record.timePrecision,'minute');
   assert.equal(record.procedures.length,2);assert.equal(record.procedures[0].historicalDiscount.value,20);assert.equal(record.procedures[1].historicalDiscount.value,500);
   assert.equal(await db.financeOperation.count({where:{tenantId}}),0);
   const again=await run(data);assert.equal(again.transferred,0);assert.equal(again.failed,1);
@@ -53,6 +54,7 @@ export async function verifyUniversalTransfer({db,service,people,accountId}){
   assert.equal(await db.record.count({where:{tenantId}}),0);assert.equal(await db.person.count({where:{tenantId}}),0);assert.equal(await db.financeLedgerEntry.count({where:{tenantId}}),0);assert.equal(await historyCount(),preHistory);
   // Restore only imported changes on an existing Person, preserving an independent later phone.
   await people.upsertPerson(tenantId,'existing',{person:{key:'existing',name:'Существующий',phones:['+79990007702'],emails:['keep@example.test']}});
+  const contacts=await run([{phone:'79990007702',email:'contact@example.test'}]);assertOk(contacts);await service.cancel(tenantId,contacts.sessionId);
   const previousHistory=await historyCount();result=await run([{name:'Существующий',phone:'79990007702',email:'new@example.test'}]);assertOk(result);
   let existing=(await db.person.findFirst({where:{tenantId,key:'existing'}})).data;
   await people.upsertPerson(tenantId,'existing',{person:{...existing,phones:[...existing.phones,'+79990007703']}});

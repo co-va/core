@@ -20,7 +20,7 @@ export function standardFacts(sheet: string, row: number, values: Record<string,
     if (metadata.domain==='schedule') Object.assign(data,{date:v.scheduleDate,from:v.scheduleFrom,to:v.scheduleTo});
     return [{domain:metadata.domain,sheet,row,sourceKey:metadata.sourceKey,values:data}];
   }
-  if (v.name) add('people',{...identity,...pick('additionalPhone','email','birthday','gender')});
+  if (v.name || v.additionalPhone || v.email || v.birthday || v.gender || v.phone && v.uei) add('people',{...identity,...pick('additionalPhone','email','birthday','gender')});
   if (v.workplace) add('workplaces',{name:v.workplace,...pick('city','address','currency','timeZone','about')});
   if (v.wallet) add('wallets',{name:v.wallet});
   if (v.program) add('programs',{name:v.program,...pick('programAmount','benefitType','benefitValue','termStartDate','termEndDate','programStatus')});

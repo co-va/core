@@ -94,6 +94,7 @@ export class DataTransferService {
       });
       if (v.procedure) throw Error('Укажите либо одну процедуру, либо список процедур');
     }
+    for(const field of ['spendLimitPercent','benefitValue','interestRate','supplierDiscount'])if(v[field]>100)throw Error(`${FIELDS[field]}: значение больше 100`);
     if (v.discountPercent > 100) throw Error('Скидка %: значение больше 100');
     if (v.discountPercent != null && v.discountMoney != null) throw Error('Указаны два вида скидки. Оставьте один явно заданный вид.');
     if (v.withoutProcedure != null) {

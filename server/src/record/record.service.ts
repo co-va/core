@@ -313,8 +313,8 @@ export class RecordService {
     if(input.appendProcedures && incomingProcedures.some(next=>arrayValue(previous.procedures).some(saved=>text(saved.name)===text(next.name) && saved.id!==next.id)))throw new ConflictException('В записи уже есть такая процедура. Для исправления используйте файл результата этого переноса.');
     const procedures=input.appendProcedures ? [...arrayValue(previous.procedures).filter(p=>!incomingProcedures.some(next=>next.id===p.id)),...incomingProcedures] : incomingProcedures;
     const record = { ...previous, id, date: text(input.date), workplaceId: text(input.workplaceId),
-      from: text(input.from), to: text(input.to), person: clone(input.person), procedures,
-      timePrecision: input.from ? 'minute' : 'date', historicalTransfer: true,
+      from: input.from!==undefined?text(input.from):text(previous.from), to: input.to!==undefined?text(input.to):text(previous.to), person: clone(input.person), procedures,
+      timePrecision: (input.from!==undefined?input.from:previous.from) ? 'minute' : 'date', historicalTransfer: true,
       ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
     };
     if (input.from) {

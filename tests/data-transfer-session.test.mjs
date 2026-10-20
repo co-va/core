@@ -11,4 +11,6 @@ assert.throws(()=>restorePlan({Person:[]},{Person:[{id:'new',data:{name:'Анн�
 assert.throws(()=>assertNoIndependentReferences({BusinessAuxiliaryState:[{id:'state',data:{wallets:[]}}]},{BusinessAuxiliaryState:[{id:'state',data:{wallets:[{id:'new-wallet'}]}}]},{FinanceOperation:[{id:'later-payment',data:{walletId:'new-wallet'}}]}),/независимые/);
 assert.throws(()=>assertNoIndependentReferences({Person:[]},{Person:[{id:'new-person',key:'person-key'}]},{Other:[{id:'later',data:{owner:'person:person-key'}}]}),/независимые/);
 assert.deepEqual(restorePlan({Person:[]},{Person:[{id:'new',data:{name:'Анна'}}]},{Person:[{id:'new',data:{name:'Анна'}}]}).Person,[{id:'new',value:undefined}]);
+const removed={id:'old-operation',amount:'500.00',updatedAt:'2022-01-01T00:00:00.000Z'};
+assert.deepEqual(restorePlan({FinanceOperation:[removed]},{FinanceOperation:[]},{FinanceOperation:[]}).FinanceOperation[0].value,removed);
 console.log('Data transfer three-way rollback and independent references: OK');

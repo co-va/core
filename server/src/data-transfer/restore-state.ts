@@ -53,7 +53,7 @@ export function restorePlan(before: TransferState, after: TransferState, current
     for (const id of new Set([...b.keys(),...a.keys()])) if (!same(b.get(id),a.get(id))) {
       const clean = (row: Row | undefined) => row ? Object.fromEntries(Object.entries(row).filter(([k])=>!['updatedAt','recordedAt'].includes(k))) : undefined;
       const value = inverse(clean(b.get(id)),clean(a.get(id)),clean(c.get(id)),table);
-      result[table].push({id,value: value ? {...c.get(id),...value} : undefined});
+      result[table].push({id,value: value ? {...b.get(id),...c.get(id),...value} : undefined});
     }
   }
   return result;

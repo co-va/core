@@ -187,7 +187,7 @@ export class BusinessStateService {
     const mayCorrectUei = !!targetId && ownership.uei && ownership.uei === savedUei;
     const resolved = resolveTransferredPerson(rows.map(row => objectValue(row.data)), identity,
       mayCorrectUei ? { ...input, uei: undefined } : input, targetId);
-    if (!text(input.name)) throw new BadRequestException('Не указано имя');
+    if (!text(input.name) && !resolved.person) throw new BadRequestException('Не указано имя');
     const previous = resolved.person;
     const key = previous?.key || randomUUID();
     const person: JsonObject = { ...(previous || {}), key };
