@@ -38,7 +38,6 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
   if (!match) throw Error('Не удалось прочитать файл');
   const buffer = Buffer.from(match[1], 'base64');
   if (!buffer.length || buffer.length > 25 * 1024 * 1024) throw Error('Размер файла должен быть от 1 байта до 25 МБ');
-  const fingerprint = createHash('sha256').update(buffer).digest('hex');
   const sheets: Sheet[] = [];
   if (/\.csv$|\.tsv$/i.test(text(input.filename))) {
     const rows = parseCsv(buffer.toString('utf8')); sheets.push({ name: 'Данные', headers: rows.shift() || [], rows });
@@ -55,6 +54,8 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
     });
   } else throw Error('Загрузите XLSX, CSV или TSV');
   if (sheets.reduce((n, s) => n + s.rows.length, 0) > 20000) throw Error('В одном файле допускается до 20 000 строк');
+  // ZIP timestamps and workbook author metadata do not change source facts.
+  const fingerprint=createHash('sha256').update(JSON.stringify(sheets)).digest('hex');
   return { sheets, fingerprint };
 }
 export function defaultDomain(name: string) { return name === 'Данные' ? 'standard' : DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
@@ -140,7 +141,7 @@ export async function transferWorkbook(rows: any[], template = false) {
     if (fact.domain==='schedule') Object.assign(value,{scheduleDate:value.date,scheduleFrom:value.from,scheduleTo:value.to,date:undefined,from:undefined,to:undefined});
     if (value.discountPercent != null) value.discount=String(value.discountPercent)+'%';
     if (value.discountMoney != null) value.discount=String(value.discountMoney);
-    const internal=Object.fromEntries(Object.entries(fact.values || {}).filter(([key])=>!STANDARD_FIELDS.some(field=>field.key===key)));
+    const internal=Object.fromEntries(Object.entries(fact.values || {}).filter(([key])=>!['discountPercent','discountMoney'].includes(key) && !STANDARD_FIELDS.some(field=>field.key===key)));
     if (fact.domain!=='people') delete value.name;
     for(const [key,item]of Object.entries(value))if(item && typeof item==='object' && !(item instanceof Date))value[key]=String((item as any).invalid || 'Проверьте значение');
     sheet.addRow({...value,reason:fact.reason || '',[STANDARD_META]:JSON.stringify({version:1,domain:fact.domain,sourceKey:fact.sourceKey,transferId:fact.transferId || '',internal})});

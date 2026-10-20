@@ -310,6 +310,7 @@ export class RecordService {
       if (!text(item.name)) throw new ConflictException('Не указана процедура');
       return { ...item, id: text(item.id) || text(arrayValue(previous.procedures)[index]?.id) || randomUUID() };
     });
+    if(input.appendProcedures && incomingProcedures.some(next=>arrayValue(previous.procedures).some(saved=>text(saved.name)===text(next.name) && saved.id!==next.id)))throw new ConflictException('В записи уже есть такая процедура. Для исправления используйте файл результата этого переноса.');
     const procedures=input.appendProcedures ? [...arrayValue(previous.procedures).filter(p=>!incomingProcedures.some(next=>next.id===p.id)),...incomingProcedures] : incomingProcedures;
     const record = { ...previous, id, date: text(input.date), workplaceId: text(input.workplaceId),
       from: text(input.from), to: text(input.to), person: clone(input.person), procedures,

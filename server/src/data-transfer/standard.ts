@@ -98,6 +98,7 @@ export function standardColumns(headers: string[]): Record<string,number> {
 }
 export function isStandard(headers: string[]) {
   const known = new Set<string>(STANDARD_FIELDS.map(field=>field.label));
-  return headers.filter(h=>h && h !== STANDARD_META && h !== 'Причина').every(h=>known.has(h))
+  const visible=headers.filter(h=>h && h !== STANDARD_META && h !== 'Причина');
+  return new Set(visible).size===visible.length && visible.every(h=>known.has(h))
     && headers.some(h=>known.has(h));
 }
