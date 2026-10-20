@@ -131,15 +131,15 @@ export class RecordImportService {
       this.prisma.recordEvent.create({ data: { tenantId, eventId: createdEvent.id, recordId: id, position: 0, data: json(createdEvent) } }),
     ]);
 
-    const settlement = this.finance.calculateSettlement([
-      ...procedures.map((item) => ({ ...item, sourceType: 'procedure', sourceId: text(item.id) })),
-      ...products.map((item) => ({ ...item, sourceType: 'product', sourceId: text(item.id) })),
-    ], 0);
-    await this.finance.upsertSettlement(tenantId, 'record', id, {
-      ...settlement,
-      provenance,
-      pricingKnown,
-    });
-    return { record, duplicate: false, createdEventId: createdEvent.id };
+    let settlementCreated = false;
+    if (pricingKnown && (procedures.length > 0 || products.length > 0)) {
+      const settlement = this.finance.calculateSettlement([
+        ...procedures.map((item) => ({ ...item, sourceType: 'procedure', sourceId: text(item.id) })),
+        ...products.map((item) => ({ ...item, sourceType: 'product', sourceId: text(item.id) })),
+      ], 0);
+      await this.finance.upsertSettlement(tenantId, 'record', id, settlement);
+      settlementCreated = true;
+    }
+    return { record, duplicate: false, createdEventId: createdEvent.id, settlementCreated };
   }
 }
