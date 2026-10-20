@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -62,6 +64,53 @@ function protectedDepositSnapshot(value: unknown) {
 
 @Injectable()
 export class AuxiliaryStateService {
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['BusinessAuxiliaryState', 'LoyaltyDepositProgram']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['BusinessAuxiliaryState', 'LoyaltyDepositProgram'],before,after,checkOnly); }
+
+  async importNamedFact(tenantId: string, domain: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const name = text(input.name); if (!name) throw new BadRequestException('Не указано название');
+    if (domain === 'programs') {
+      const rows=await tx.loyaltyDepositProgram.findMany({where:{tenantId}});
+      const matches=rows.filter(row=>text(objectValue(row.data).name)===name);
+      if (!targetId && matches.length>1) throw new ConflictException('Не удалось однозначно определить программу');
+      const existing=targetId ? rows.find(row=>row.programId===targetId) : matches[0];
+      const id=existing?.programId || randomUUID();
+      const modes: JsonObject={'Нет':'none','Скидка':'discount','Начисление':'accrual'};
+      const data: JsonObject={...objectValue(existing?.data),id,name};
+      if (input.benefitType !== undefined) { data.benefitType=modes[input.benefitType] || input.benefitType; if (!['none','discount','accrual'].includes(data.benefitType)) throw new BadRequestException('Неизвестный вид выгоды программы'); }
+      for (const [field,to] of [['programAmount','amount'],['benefitValue','benefitValue'],['termStartDate','termStartDate'],['termEndDate','termEndDate'],['programStatus','status']]) if(input[field]!==undefined)data[to]=input[field];
+      if(data.status)data.status=({'Действует':'active','Закрыта':'closed','Архив':'archived'} as JsonObject)[data.status]||data.status;
+      if(data.status&&!['active','closed','archived'].includes(data.status))throw new BadRequestException('Уточните статус программы');
+      if (data.termEndDate) data.termMode='dated';
+      if (existing) this.protectDepositPrograms([existing.data],[data]);
+      await tx.loyaltyDepositProgram.upsert({where:{tenantId_programId:{tenantId,programId:id}},create:{tenantId,programId:id,data:json(data)},update:{data:json(data)}});
+      return id;
+    }
+    const dataset=domain==='wallets'?'wallets':domain==='loans'?'loans':'investments';
+    const stored=await tx.businessAuxiliaryState.findUnique({where:{tenantId}});const state=objectValue(stored?.data);
+    const rows=Array.isArray(state[dataset])?state[dataset]:[];
+    const matches=rows.filter((row: JsonObject)=>text(row.name)===name);
+    if(!targetId && matches.length>1)throw new ConflictException('Название неоднозначно. Проверьте данные.');
+    const existing=targetId?rows.find((row:JsonObject)=>row.id===targetId):matches[0];
+    if(targetId&&!existing)throw new BadRequestException('Перенесённые данные не найдены');
+    const system:JsonObject={'Наличные':'cash','Безналичные':'cashless'};
+    const id=existing?.id || (domain==='wallets'?system[name]:'') || randomUUID();
+    const data={...existing,id,name};
+    if(domain==='wallets' && ['cash','cashless'].includes(id))data.system=true;
+    if(input.ratePeriod)input.ratePeriod=({'Месяц':'monthly','Год':'annual'} as JsonObject)[input.ratePeriod]||input.ratePeriod;
+    if(input.repaymentMode)input.repaymentMode=({'Свободно':'free','В конце срока':'end','Ежемесячно':'monthly'} as JsonObject)[input.repaymentMode]||input.repaymentMode;
+    if(domain==='loans') data.loanTerms={...existing?.loanTerms,...Object.fromEntries(['lenderName','interestRate','ratePeriod','repaymentMode','endDate'].filter(k=>input[k]!==undefined).map(k=>[k,input[k]])),...(input.endDate?{termMode:'date'}:{})};
+    if(domain==='investments') {
+      if(input.investmentRole)input.investmentRole=({'В себя':'self','Привлекаю':'raise','Я инвестор':'external'} as JsonObject)[input.investmentRole]||input.investmentRole;
+      if(input.investmentRole && !['self','raise','external'].includes(input.investmentRole)) throw new BadRequestException('Уточните роль инвестиции');
+      data.investmentTerms={...existing?.investmentTerms,...(input.investmentRole?{role:input.investmentRole}:{}),...(input.endDate?{termMode:'date',endDate:input.endDate}:{})};
+      await this.assertInvestmentMutationAllowed(tenantId,existing?[existing]:[],[data]);
+    }
+    state[dataset]=existing?rows.map((row:JsonObject)=>row.id===id?data:row):[...rows,data];
+    await tx.businessAuxiliaryState.upsert({where:{tenantId},create:{tenantId,data:json(state)},update:{data:json(state)}});
+    return id;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: SaasAccessService,

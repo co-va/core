@@ -8,6 +8,8 @@ type AuthRequest = Request & { auth?: { tenantId: string; platformAccountId: str
 @UseGuards(JwtAuthGuard)
 export class DataTransferController {
   constructor(private readonly transfer: DataTransferService) {}
+  @Post('sessions') sessions(@Req() req:AuthRequest){return this.transfer.sessions(req.auth!.tenantId);}
+  @Post('cancel') cancel(@Req() req:AuthRequest,@Body() body:{sessionId:string}){return this.transfer.cancel(req.auth!.tenantId,body.sessionId);}
   @Post('inspect') inspect(@Body() body: SourceInput) { return this.transfer.inspect(body); }
   @Post('check') check(@Req() req: AuthRequest, @Body() body: SourceInput) { return this.transfer.run(req.auth!.tenantId, req.auth!.platformAccountId, body, true); }
   @Post('commit') commit(@Req() req: AuthRequest, @Body() body: SourceInput) { return this.transfer.run(req.auth!.tenantId, req.auth!.platformAccountId, body, false); }

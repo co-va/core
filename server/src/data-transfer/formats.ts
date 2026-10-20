@@ -1,7 +1,7 @@
 // Technical formats only. No identity or business inference belongs here.
 export type Fact = { domain: string; sheet: string; row: number; values: Record<string, any>; sourceKey: string };
-export const DOMAINS = ['people', 'workplaces', 'procedures', 'schedule', 'records', 'payments', 'items', 'movements', 'consumables'];
-export const LABELS: Record<string, string> = { people: 'Люди', workplaces: 'Рабочие пространства', procedures: 'Процедуры', schedule: 'График', records: 'Записи', payments: 'Оплаты', items: 'Склад', movements: 'Движения', consumables: 'Расходники' };
+export const DOMAINS = ['people', 'workplaces', 'wallets', 'programs', 'articles', 'loans', 'investments', 'procedures', 'schedule', 'records', 'deposits', 'accounts', 'payments', 'operations', 'items', 'offers', 'movements', 'consumables'];
+export const LABELS: Record<string, string> = { people: 'Люди', workplaces: 'Рабочие пространства', procedures: 'Процедуры', schedule: 'График', records: 'Записи', payments: 'Оплаты', items: 'Склад', movements: 'Движения', consumables: 'Расходники', wallets: 'Кошельки', programs: 'Программы', articles: 'Статьи', loans: 'Займы', investments: 'Инвестиции', deposits: 'Депозиты', accounts: 'Личные счета', operations: 'Финансовые операции', offers: 'Предложения поставщиков' };
 export function text(value: unknown): string { return String(value ?? '').trim(); }
 export function decimal(value: unknown, label: string, optional = false): number | undefined {
   if (value == null || value === '') { if (optional) return; throw Error(`Не указано значение: ${label}`); }

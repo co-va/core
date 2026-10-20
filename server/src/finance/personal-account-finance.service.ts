@@ -1,3 +1,4 @@
+import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -6,6 +7,7 @@ import { PrismaService } from '../prisma.service';
 import { resolvePersonPricePercent } from '../loyalty/price-condition';
 import {
   applyPersonalAccountMovement,
+  updatePersonalAccountSettingsWith,
   personalAccountDebtById,
   personalAccountMoney,
   personalAccountSnapshot,
@@ -65,6 +67,43 @@ function settlementPlanTotal(value: unknown) {
 
 @Injectable()
 export class PersonalAccountFinanceService {
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['LoyaltyPersonalAccount', 'LoyaltyPersonalAccountMovement', 'LoyaltyPersonalAccountDebt']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['LoyaltyPersonalAccount', 'LoyaltyPersonalAccountMovement', 'LoyaltyPersonalAccountDebt'],before,after,checkOnly); }
+
+  async importHistorical(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
+    const operationId=targetId || randomUUID();const personKey=text(input.personKey);
+    const action=text(input.accountAction);const amount=personalAccountMoney(input.accountAmount);
+    if (!personKey) throw new BadRequestException('Не удалось определить человека для личного счёта');
+    if (input.spendLimitPercent!==undefined || input.visibleToEndUser!==undefined) await updatePersonalAccountSettingsWith(tx,tenantId,personKey,input);
+    if (!action) return personKey;
+    if (!input.occurredAt || amount<=0) throw new BadRequestException('Укажите дату и сумму операции личного счёта');
+    const occurredAt=requiredOccurredAt(input.occurredAt);
+    if (targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId}}})) throw new BadRequestException('Операция личного счёта уже выполнена. Отмените её сеанс перед заменой суммы.');
+    const source=input.recordId?{type:'record',id:text(input.recordId)}:{type:'personal-account',id:operationId};
+    if(action==='Долг') { await syncPersonalAccountDebt(tx,{tenantId,personKey,sourceType:source.type,sourceId:source.id,outstandingAmount:amount,occurredAt,data:{note:text(input.note)}});return operationId; }
+    let settledDebt: any=null;
+    if(action==='Погашение долга') {
+      const debts=await tx.$queryRaw<Array<{id:string}>>`SELECT "id" FROM "LoyaltyPersonalAccountDebt" WHERE "tenantId"=${tenantId} AND "personKey"=${personKey} AND "outstandingAmount">0`;
+      if(debts.length!==1)throw new BadRequestException('Не удалось однозначно определить задолженность');
+      settledDebt=await personalAccountDebtById(tx,tenantId,debts[0].id,true);
+      await reducePersonalAccountDebt(tx,tenantId,debts[0].id,amount,occurredAt);
+    } else {
+      const kinds:JsonObject={'Пополнение':['funding','IN'],'Возврат':['withdrawal','OUT'],'Оплата':['payment','OUT']};
+      const kind=kinds[action];if(!kind)throw new BadRequestException('Неизвестная операция личного счёта');
+      if(action==='Оплата'&&!input.recordId)throw new BadRequestException('Не удалось определить запись для оплаты личным счётом');
+      await applyPersonalAccountMovement(tx,{eventId:`personal-account:${operationId}`,tenantId,personKey,kind:kind[0],direction:kind[1],amount,sourceType:source.type,sourceId:source.id,occurredAt,data:{operationId,note:text(input.note)}});
+    }
+    if(settledDebt){
+      await this.createMoneyFact(tx,tenantId,{operationId,kind:'payment',sourceType:settledDebt.sourceType,sourceId:settledDebt.sourceId,occurredAt,walletId:input.walletId,walletName:input.walletName,direction:'IN',economicType:'SERVICE_REVENUE',amount,data:{debtId:settledDebt.id,debtPayment:true,personKey,person:{key:personKey},amount,walletId:input.walletId,walletName:input.walletName,allocations:[{walletId:input.walletId,walletName:input.walletName,amount}],cashTotal:amount,cashServiceAmount:amount,total:amount,serviceAmount:amount,tips:0}});
+    } else if(action==='Оплата') {
+      await tx.financeOperation.create({data:{tenantId,operationId,kind:'payment',status:'completed',sourceType:source.type,sourceId:source.id,occurredAt,data:{person:{key:personKey},serviceAmount:amount,total:amount,cashTotal:0,tips:0,personalAccountAmount:amount}}});
+    } else {
+      if(!text(input.walletId))throw new BadRequestException('Не указан кошелёк операции личного счёта');
+      await this.createMoneyFact(tx,tenantId,{operationId,kind:action==='Пополнение'?'personal-account-funding':action==='Возврат'?'personal-account-withdrawal':'personal-account-debt-settlement',sourceType:'personal-account',sourceId:personKey,occurredAt,walletId:input.walletId,walletName:input.walletName,direction:action==='Возврат'?'OUT':'IN',economicType:action==='Возврат'?'PERSONAL_ACCOUNT_LIABILITY_OUT':'PERSONAL_ACCOUNT_LIABILITY_IN',amount,data:{personKey,amount,walletId:input.walletId,walletName:input.walletName,note:text(input.note)}});
+    }
+    return operationId;
+  }
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async serializable<T>(work: (tx: Prisma.TransactionClient) => Promise<T>) {

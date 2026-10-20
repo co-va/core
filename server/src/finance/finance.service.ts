@@ -1,3 +1,4 @@
+import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +10,7 @@ import {
   consumeDepositAllocations,
   createDepositInstance,
   depositBenefitMode,
+  expireDepositInstances,
   depositBenefitRate,
   depositTermActiveAt,
   restoreDepositAllocations,
@@ -237,6 +239,76 @@ function splitAllocationComponents(allocations: JsonObject[], serviceAmount: num
 
 @Injectable()
 export class FinanceService {
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['FinanceArticle', 'FinanceSettlement', 'FinanceOperation', 'FinanceLedgerEntry', 'LoyaltyDepositInstance']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['FinanceArticle', 'FinanceSettlement', 'FinanceOperation', 'FinanceLedgerEntry', 'LoyaltyDepositInstance'],before,after,checkOnly); }
+
+  async finishHistoricalDeposits(tx:Prisma.TransactionClient,tenantId:string,ids:string[]){for(const id of ids)await expireDepositInstances(tx,tenantId,id);}
+
+  async importArticle(tenantId:string,input:JsonObject,targetId:string,tx:Prisma.TransactionClient) {
+    const name=text(input.article);const direction=input.articleDirection==='Доход'?'IN':input.articleDirection==='Расход'?'OUT':text(input.articleDirection);
+    if(!name || !['IN','OUT'].includes(direction))throw new BadRequestException('Укажите название и направление статьи');
+    const rows=await tx.financeArticle.findMany({where:{tenantId,name,archivedAt:null}});
+    if(!targetId && rows.length>1)throw new BadRequestException('Не удалось однозначно определить статью');
+    const id=targetId || rows[0]?.articleId || randomUUID();
+    const current=await tx.financeArticle.findUnique({where:{tenantId_articleId:{tenantId,articleId:id}}});
+    if(current && (current.name!==name || current.direction!==direction))throw new BadRequestException('Статья конфликтует с сохранённой');
+    const types:JsonObject={'Услуги':'OPERATING_REVENUE','Товары':'PRODUCT_REVENUE','Чаевые':'TIPS','Прочий доход':'OPERATING_REVENUE','Операционные расходы':'OPERATING_EXPENSE'};
+    const economicType=types[text(input.articleEconomicType)]||text(input.articleEconomicType);
+    if(!ARTICLE_ECONOMIC_TYPES.has(economicType)||economicType==='GROUP')throw new BadRequestException('Уточните тип статьи');
+    if(!current)await tx.financeArticle.create({data:{tenantId,articleId:id,name,direction,economicType}});
+    return id;
+  }
+  async resolveHistoricalDeposit(tenantId:string,input:JsonObject,tx:Prisma.TransactionClient) {
+    const rows=await tx.loyaltyDepositInstance.findMany({where:{tenantId,personKey:text(input.personKey),programName:text(input.deposit || input.program)}});
+    if(rows.length!==1)throw new BadRequestException('Не удалось однозначно определить депозит');return rows[0];
+  }
+  async importDeposit(tenantId:string,input:JsonObject,targetId:string,tx:Prisma.TransactionClient) {
+    const id=targetId || randomUUID();const amount=money(input.depositAmount);const occurredAt=requiredOccurredAt(input.occurredAt);
+    if(amount<=0 || !input.person?.key || !input.walletId)throw new BadRequestException('Укажите человека, кошелёк и сумму операции депозита');
+    if(input.depositAction==='Возврат') {
+      if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId:id}}}))throw new BadRequestException('Возврат уже выполнен. Есть зависимые данные.');
+      const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person.key},tx);
+      await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
+      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
+    }
+    if(input.depositAction!=='Пополнение')throw new BadRequestException('Уточните операцию депозита');
+    const programs=await this.depositProgramsWith(tx,tenantId);const found=programs.filter(p=>text(p.name)===text(input.program || input.deposit));
+    if(found.length!==1)throw new BadRequestException('Не удалось однозначно определить программу депозита');
+    const program=found[0];
+    if(targetId && await tx.loyaltyDepositInstance.findUnique({where:{tenantId_depositId:{tenantId,depositId:id}}}))throw new BadRequestException('Депозит уже создан. Есть зависимые данные.');
+    await createDepositInstance(tx,tenantId,{depositId:id,programId:program.id,programName:program.name,person:input.person,terms:clone(program),amount,occurredAt,fundingOperationId:id});
+    await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-funding',source:{type:'deposit',id},occurredAt,data:{depositId:id,programId:program.id,programName:program.name,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName,terms:clone(program)},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'IN',economicType:'DEPOSIT_RECEIVED',amount,component:'deposit-funding'}]});return id;
+  }
+  async importFinancialOperation(tenantId:string,input:JsonObject,targetId:string,tx:Prisma.TransactionClient) {
+    const operationId=targetId || randomUUID();const amount=money(input.financeAmount);const occurredAt=requiredOccurredAt(input.occurredAt);
+    if(amount<=0)throw new BadRequestException('Укажите сумму финансовой операции');
+    if(!text(input.walletId))throw new BadRequestException('Укажите кошелёк финансовой операции');
+    const names:JsonObject={'Получение займа':'loan-received','Возврат займа':'loan-repayment','Получение инвестиций':'investment-received','Возврат инвестиций':'investment-return','Вклад в инвестицию':'investment-contribution','Возврат капитала':'investment-capital-return','Доход инвестиции':'investment-income','Расход инвестиции':'investment-expense','Выплата дохода инвестору':'investment-income-payment'};
+    const kind=names[text(input.financeKind)]||text(input.financeKind);let entries:JsonObject[]=[];let data:JsonObject={...input,total:amount};
+    if(kind==='Перевод') {
+      const to=await this.resolveTransferredWallet(tenantId,{wallet:input.toWallet},tx);
+      if(to.id===input.walletId)throw new BadRequestException('Для перевода нужны разные кошельки');
+      entries=[{walletId:input.walletId,direction:'OUT',economicType:'TRANSFER',amount},{walletId:to.id,direction:'IN',economicType:'TRANSFER',amount}];
+      data={...data,fromWalletId:input.walletId,toWalletId:to.id};
+    } else if(['Доход','Расход'].includes(kind)) {
+      const articles=await tx.financeArticle.findMany({where:{tenantId,name:text(input.article),archivedAt:null}});
+      if(articles.length!==1)throw new BadRequestException('Не удалось однозначно определить статью');
+      const direction=kind==='Доход'?'IN':'OUT';if(articles[0].direction!==direction || articles[0].economicType==='GROUP')throw new BadRequestException('Статья не соответствует операции');
+      entries=[{walletId:input.walletId,walletName:input.walletName,direction,economicType:articles[0].economicType,articleId:articles[0].articleId,articleName:articles[0].name,amount}];
+    } else {
+      const definition=SPECIAL_FINANCE_DEFINITIONS[kind];if(!definition)throw new BadRequestException('Уточните вид финансовой операции');
+      const state=await tx.businessAuxiliaryState.findUnique({where:{tenantId}});const entities=arrayValue(objectValue(state?.data)[definition.financeEntityType==='loan'?'loans':'investments']);
+      const found=entities.filter(p=>text(p.name)===text(input.loan || input.investment));if(found.length!==1)throw new BadRequestException('Не удалось однозначно определить займ или инвестицию');
+      if(definition.financeEntityType==='investment'){const role=text(found[0].investmentTerms?.role)||'raise';if(!definition.roles?.includes(role as any))throw new BadRequestException('Операция не соответствует роли инвестиции');await this.assertInvestmentRoleAllowed(tenantId,role);}
+      data={...data,financeEntityType:definition.financeEntityType,financeEntityId:found[0].id,financeEntityName:found[0].name};
+      entries=[{walletId:input.walletId,walletName:input.walletName,direction:definition.direction,economicType:definition.economicType,amount}];
+    }
+    const current=await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId}}});
+    if(current)await this.replaceOperationWithEntries(tx,tenantId,current,occurredAt,data,entries);
+    else await this.createOperationWithEntries(tx,tenantId,{operationId,kind:kind==='Перевод'?'transfer':kind==='Доход'?'manual-income':kind==='Расход'?'manual-expense':kind,source:{type:kind==='Доход'||kind==='Расход'?'manual':'finance',id:operationId},occurredAt,data,entries});
+    return operationId;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: SaasAccessService,
@@ -881,15 +953,22 @@ export class FinanceService {
     const operationId = targetId || randomUUID();
     const amount = Number(input.amount);
     if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Сумма имеет неверный формат');
-    if (!text(input.walletId)) throw new BadRequestException('Не указан кошелёк оплаты');
+    const fromDeposit=input.paymentSource==='Депозит';
+    if (!fromDeposit && !text(input.walletId)) throw new BadRequestException('Не указан кошелёк оплаты');
     const occurredAt = requiredOccurredAt(input.occurredAt);
     const source = input.recordId ? { type: 'record', id: text(input.recordId) } : { type: 'payment', id: operationId };
-    const allocations = [{ walletId: text(input.walletId), walletName: text(input.walletName), amount }];
+    let depositAllocations: JsonObject[]=[];
+    if(fromDeposit) {
+      if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId}}}))throw new BadRequestException('Оплата депозитом уже выполнена. Есть зависимые данные.');
+      const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person?.key},tx);
+      depositAllocations=await consumeDepositAllocations(tx,tenantId,[{depositId:deposit.depositId,amount}],text(input.person?.key),occurredAt,true);
+    }
+    const allocations = fromDeposit ? [] : [{ walletId: text(input.walletId), walletName: text(input.walletName), amount }];
     const data = { workplace: text(input.workplaceId), person: clone(objectValue(input.person)), allocations,
-      cashTotal: amount, cashServiceAmount: amount, total: amount, serviceAmount: amount, tips: 0 };
+      cashTotal: fromDeposit?0:amount, cashServiceAmount: fromDeposit?0:amount, total: amount, serviceAmount: amount, tips: 0, depositAllocations };
     const entries = allocations.map(entry => ({ ...entry, component: 'service', direction: 'IN', economicType: 'SERVICE_REVENUE' }));
     const existing = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } });
-    if (targetId && !existing) throw new NotFoundException('Перенесённая оплата не найдена');
+    if (targetId && !existing && !fromDeposit) throw new NotFoundException('Перенесённая оплата не найдена');
     if (existing) {
       if (existing.sourceType !== source.type || existing.sourceId !== source.id) throw new BadRequestException('Источник перенесённой оплаты не совпадает. Проверьте запись.');
       await this.replaceOperationWithEntries(tx, tenantId, existing, occurredAt, data, entries);

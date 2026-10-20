@@ -889,3 +889,21 @@ model DataTransferFact {
   @@unique([tenantId, domain, sourceKey])
   @@index([tenantId, domain, targetId])
 }
+
+// Technical audit of one actual transfer; canonical facts stay in their owners.
+model DataTransferSession {
+  id         String @id
+  tenantId   String
+  accountId  String
+  source     String
+  filename   String
+  status     String @default("completed")
+  transferred Int @default(0)
+  failed     Int @default(0)
+  facts      Json
+  before     Json
+  after      Json
+  createdAt  DateTime @default(now())
+  cancelledAt DateTime?
+  @@index([tenantId, createdAt])
+}
