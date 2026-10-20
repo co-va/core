@@ -39,7 +39,7 @@ try{
  mark('sort');root.querySelector('[data-table-sort="row"]').click();ok(root.querySelector('th[aria-sort="ascending"] [data-table-sort="row"]'),'sorting failed');
  mark('commit');await until(()=>!root.querySelector('[data-transfer-next]').disabled);root.querySelector('[data-transfer-next]').click();await until(()=>commits===1&&root.textContent.includes('Результат'));
  await until(()=>!root.querySelector('[data-transfer-next]').disabled);
- ok(root.querySelector('[data-transfer-next]').textContent==='Загрузить','next action did not reset');
+ ok(root.querySelector('[data-transfer-next]').dataset.v2PrimaryLabel==='Загрузить','next action did not reset');
  root.querySelector('[data-transfer-only-errors]').click();ok(root.textContent.includes('stable-test-id'),'stable ID is missing');
  ok(root.querySelector('.ui-data-table').scrollWidth>=root.querySelector('.ui-data-table').clientWidth,'table must own horizontal scroll');
  mark('finished');

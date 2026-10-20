@@ -22,7 +22,7 @@ export const DOMAIN_FIELDS: Record<string, string[]> = {
   movements: ['itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','kind','occurredAt','workplace','workplaceKey'],
   consumables: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','withoutProcedure','itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','occurredAt','workplace','workplaceKey'],
 };
-export type Sheet = { name: string; headers: string[]; rows: any[][] };
+export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean };
 export type SourceInput = { dataUrl?: string; filename?: string; source?: string; sheets?: Record<string, { domain: string; columns?: Record<string, number>; withoutProcedure?: boolean }> };
 function cellValue(value: any): any {
   if (value == null || value instanceof Date || typeof value !== 'object') return value ?? '';
@@ -42,7 +42,6 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
     const rows = parseCsv(buffer.toString('utf8')); sheets.push({ name: 'Данные', headers: rows.shift() || [], rows });
   } else if (/\.xlsx$/i.test(text(input.filename))) {
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(buffer as any);
-    if (workbook.properties.date1904) throw Error('Excel использует даты 1904. Сохраните даты текстом в формате ГГГГ-ММ-ДД.');
     workbook.eachSheet(sheet => {
       const header = sheet.getRow(1); const headers: string[] = [];
       for (let col = 1; col <= sheet.columnCount; col++) headers.push(text(cellValue(header.getCell(col).value)));
@@ -50,7 +49,7 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
       for (let row = 2; row <= sheet.rowCount; row++) {
         const values = headers.map((_, col) => cellValue(sheet.getCell(row, col + 1).value)); rows.push(values);
       }
-      if (headers.some(Boolean)) sheets.push({ name: sheet.name, headers, rows });
+      if (headers.some(Boolean)) sheets.push({ name: sheet.name, headers, rows, date1904: workbook.properties.date1904 === true });
     });
   } else throw Error('Загрузите XLSX, CSV или TSV');
   if (sheets.reduce((n, s) => n + s.rows.length, 0) > 20000) throw Error('В одном файле допускается до 20 000 строк');
@@ -76,6 +75,7 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
       const row = sheet.rows[index]; if (!row.some(v => v !== '' && v != null)) continue;
       const values: Record<string, any> = {};
       for (const [field, col] of Object.entries(columns)) if (FIELDS[field] && Number.isInteger(col) && col >= 0 && col < sheet.headers.length && row[col] !== '' && row[col] != null) values[field] = row[col];
+      if (sheet.date1904) for (const field of ['date','occurredAt','createdAt']) if (typeof values[field] === 'number') values[field] += 1462;
       if (mapping?.withoutProcedure === true) values.withoutProcedure = true;
       const sourceKey = text(values.sourceKey) || (text(values.externalId)
         ? `${text(input.source)}:${domain}:${text(values.externalId)}`
@@ -112,7 +112,7 @@ export async function transferWorkbook(rows: any[], template = false) {
     const unique = [...new Set(keys)];
     sheet.columns = [...unique.map(key => ({ header: FIELDS[key] || key, key, width: 24 })), { header: 'Причина', key: 'reason', width: 65 }];
     sheet.getRow(1).font = { bold: true }; sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    for (const fact of facts) sheet.addRow({ ...fact.values, transferId: fact.transferId || '', sourceKey: fact.sourceKey, reason: fact.reason || '' });
+    for (const fact of facts) sheet.addRow({ ...Object.fromEntries(Object.entries(fact.values || {}).map(([key,value]) => [key, value && typeof value === 'object' && !(value instanceof Date) ? JSON.stringify(value) : value])), transferId: fact.transferId || '', sourceKey: fact.sourceKey, reason: fact.reason || '' });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, sheet.rowCount), column: unique.length + 1 } };
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());

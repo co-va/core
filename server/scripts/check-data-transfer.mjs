@@ -130,6 +130,10 @@ try {
   assert.equal(await db.inventoryItem.count({where:{tenantId,name:'Позиция с ошибкой остатка'}}),1);
   const unknownRecord=(await records.listForPeople(tenantId,[{key:personId}])).find(row=>row.id===noPriceId);
   assert.equal(unknownRecord.payment.state,'unknown');assert.equal(unknownRecord.payment.due,null);
+  const epoch1904=new ExcelJS.Workbook();epoch1904.properties.date1904=true;
+  const epochSheet=epoch1904.addWorksheet('people');epochSheet.addRow(['name','phone']);epochSheet.addRow(['Пример 1904','79991110001']);
+  result=await service.run(tenantId,accountId,{filename:'epoch.xlsx',source:'epoch',dataUrl:`data:application/octet-stream;base64,${Buffer.from(await epoch1904.xlsx.writeBuffer()).toString('base64')}`},false);
+  assert.equal(result.failed,0);assert.equal(result.transferred,1);
   // All-invalid source has neither a new transfer ID nor saved facts.
   const before=await db.dataTransferFact.count({where:{tenantId}});
   result=await run('people',[{name:'',phone:'invalid'}]);assert.ok(result.failed);assert.ok(result.rows.every(row=>!row.transferId));
