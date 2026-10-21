@@ -1,5 +1,5 @@
 import { text } from './html.js';
-import { v2ModalPortalGeometry, currentVisualViewport } from './geometry.js';
+import { v2ModalPortalGeometry, v2QModalPortalGeometry, currentVisualViewport } from './geometry.js';
 import {
   activeV2ModalSurface,
   lockV2ModalSurface,
@@ -21,7 +21,7 @@ export function v2Layer(content = '', { kind = 'standard', title = '', className
   return `<div class="v2-layer-backdrop" data-v2-layer data-v2-layer-kind="${resolved}"><section class="v2-layer v2-layer--${resolved} ${text(className)}" role="dialog" aria-modal="true" aria-label="${text(title)}" tabindex="-1">${closeControl}${gestureZone}${title ? `<header class="v2-layer__header"><h2>${text(title)}</h2></header>` : ''}${content}</section></div>`;
 }
 
-function mountV2ModalPortal(host) {
+function mountV2ModalPortal(host, { qLayer = false } = {}) {
   if (!host) return null;
 
   const portal = document.createElement('div');
@@ -31,7 +31,13 @@ function mountV2ModalPortal(host) {
 
   const sync = () => {
     if (!portal.isConnected || !host.isConnected) return;
-    const geometry = v2ModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport());
+    const hostRect = host.getBoundingClientRect();
+    const viewport = currentVisualViewport();
+    const geometry = qLayer
+      ? v2QModalPortalGeometry(hostRect, viewport, {
+          hostIsZ: Boolean(host.matches?.('[data-v2-z], [data-v2-z-layer]')),
+        })
+      : v2ModalPortalGeometry(hostRect, viewport);
     portal.style.left = `${geometry.left}px`;
     portal.style.top = `${geometry.top}px`;
     portal.style.width = `${geometry.width}px`;
@@ -190,7 +196,7 @@ export function mountV2Layer(html, { root = null } = {}) {
                 header.classList.remove('is-modal-locked');
               }
             : lockModalHeader(app)));
-  const portalOwner = technical ? null : mountV2ModalPortal(host);
+  const portalOwner = technical ? null : mountV2ModalPortal(host, { qLayer });
   const mountHost = portalOwner?.portal || host;
   node.classList.add(technical ? 'v2-layer-backdrop--technical' : 'v2-layer-backdrop--contained');
   if (!technical && host.matches?.('[data-v2-z], [data-v2-z-layer]')) lockV2ModalSurface(host);
