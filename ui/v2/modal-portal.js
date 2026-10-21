@@ -21,23 +21,23 @@ export function v2Layer(content = '', { kind = 'standard', title = '', className
   return `<div class="v2-layer-backdrop" data-v2-layer data-v2-layer-kind="${resolved}"><section class="v2-layer v2-layer--${resolved} ${text(className)}" role="dialog" aria-modal="true" aria-label="${text(title)}" tabindex="-1">${closeControl}${gestureZone}${title ? `<header class="v2-layer__header"><h2>${text(title)}</h2></header>` : ''}${content}</section></div>`;
 }
 
-function mountV2ModalPortal(host, { qLayer = false } = {}) {
+function mountV2ModalPortal(host) {
   if (!host) return null;
 
   const portal = document.createElement('div');
   portal.className = 'v2-layer-portal v2-layer-portal--viewport';
   portal.dataset.v2LayerPortal = '';
   document.body.appendChild(portal);
+  let qLayer = false;
 
   const sync = () => {
     if (!portal.isConnected || !host.isConnected) return;
-    const hostRect = host.getBoundingClientRect();
-    const viewport = currentVisualViewport();
+    const standardGeometry = v2ModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport());
     const geometry = qLayer
-      ? v2QModalPortalGeometry(hostRect, viewport, {
+      ? v2QModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport(), {
           hostIsZ: Boolean(host.matches?.('[data-v2-z], [data-v2-z-layer]')),
         })
-      : v2ModalPortalGeometry(hostRect, viewport);
+      : standardGeometry;
     portal.style.left = `${geometry.left}px`;
     portal.style.top = `${geometry.top}px`;
     portal.style.width = `${geometry.width}px`;
@@ -70,6 +70,10 @@ function mountV2ModalPortal(host, { qLayer = false } = {}) {
   return {
     portal,
     sync: settle,
+    setQLayer(value) {
+      qLayer = Boolean(value);
+      settle();
+    },
     dispose() {
       resizeObserver?.disconnect();
       settleTimers.forEach((timer) => window.clearTimeout(timer));
@@ -196,7 +200,8 @@ export function mountV2Layer(html, { root = null } = {}) {
                 header.classList.remove('is-modal-locked');
               }
             : lockModalHeader(app)));
-  const portalOwner = technical ? null : mountV2ModalPortal(host, { qLayer });
+  const portalOwner = technical ? null : mountV2ModalPortal(host);
+  portalOwner?.setQLayer?.(qLayer);
   const mountHost = portalOwner?.portal || host;
   node.classList.add(technical ? 'v2-layer-backdrop--technical' : 'v2-layer-backdrop--contained');
   if (!technical && host.matches?.('[data-v2-z], [data-v2-z-layer]')) lockV2ModalSurface(host);
