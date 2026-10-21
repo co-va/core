@@ -20,6 +20,30 @@ export function v2ModalPortalGeometry(hostRect = {}, viewport = {}) {
   return { left, top, width, height, bottom: top + height };
 }
 
+export function v2QModalPortalGeometry(hostRect = {}, viewport = {}, {
+  hostIsZ = false,
+  edge = 16,
+  headerHeight = 72,
+} = {}) {
+  const base = v2ModalPortalGeometry(hostRect, viewport);
+  if (hostIsZ) return base;
+
+  const safeEdge = Math.max(0, Number(edge) || 0);
+  const safeHeaderHeight = Math.max(0, Number(headerHeight) || 0);
+  const viewportTop = Number(viewport.offsetTop ?? 0);
+  const right = base.left + base.width;
+  const left = Math.min(right, base.left + safeEdge);
+  const top = Math.min(base.bottom, Math.max(base.top, viewportTop + safeHeaderHeight));
+
+  return {
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, base.bottom - top),
+    bottom: base.bottom,
+  };
+}
+
 function cssPixelValue(name) {
   const value = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
   return Number.isFinite(value) && value > 0 ? value : 0;
