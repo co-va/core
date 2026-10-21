@@ -548,7 +548,6 @@ export class ProfileService {
       JOIN "PlatformDocumentVersion" v ON v."id" = e."documentVersionId"
       JOIN "PlatformDocument" d ON d."id" = v."documentId"
       WHERE e."platformAccountId" = ${platformAccountId}
-        AND d."isActive" = true
         AND d."type" LIKE '%CONSENT%'
       ORDER BY e."occurredAt" DESC, e."id" DESC
       LIMIT 200
