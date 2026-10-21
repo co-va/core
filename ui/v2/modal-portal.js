@@ -1,5 +1,5 @@
 import { text } from './html.js';
-import { v2ModalPortalGeometry, currentVisualViewport } from './geometry.js';
+import { v2ModalPortalGeometry, v2QModalPortalGeometry, currentVisualViewport } from './geometry.js';
 import {
   activeV2ModalSurface,
   lockV2ModalSurface,
@@ -28,10 +28,16 @@ function mountV2ModalPortal(host) {
   portal.className = 'v2-layer-portal v2-layer-portal--viewport';
   portal.dataset.v2LayerPortal = '';
   document.body.appendChild(portal);
+  let qLayer = false;
 
   const sync = () => {
     if (!portal.isConnected || !host.isConnected) return;
-    const geometry = v2ModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport());
+    const standardGeometry = v2ModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport());
+    const geometry = qLayer
+      ? v2QModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport(), {
+          hostIsZ: Boolean(host.matches?.('[data-v2-z], [data-v2-z-layer]')),
+        })
+      : standardGeometry;
     portal.style.left = `${geometry.left}px`;
     portal.style.top = `${geometry.top}px`;
     portal.style.width = `${geometry.width}px`;
@@ -64,6 +70,10 @@ function mountV2ModalPortal(host) {
   return {
     portal,
     sync: settle,
+    setQLayer(value) {
+      qLayer = Boolean(value);
+      settle();
+    },
     dispose() {
       resizeObserver?.disconnect();
       settleTimers.forEach((timer) => window.clearTimeout(timer));
@@ -191,6 +201,7 @@ export function mountV2Layer(html, { root = null } = {}) {
               }
             : lockModalHeader(app)));
   const portalOwner = technical ? null : mountV2ModalPortal(host);
+  portalOwner?.setQLayer?.(qLayer);
   const mountHost = portalOwner?.portal || host;
   node.classList.add(technical ? 'v2-layer-backdrop--technical' : 'v2-layer-backdrop--contained');
   if (!technical && host.matches?.('[data-v2-z], [data-v2-z-layer]')) lockV2ModalSurface(host);

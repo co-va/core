@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { currentVisualViewport, v2ModalPortalGeometry } from '../ui/v2/geometry.js';
+import { currentVisualViewport, v2ModalPortalGeometry, v2QModalPortalGeometry } from '../ui/v2/geometry.js';
 
 const baseHost={left:16,top:72,right:390,width:374,height:772,bottom:844};
+const fullViewport={offsetLeft:0,offsetTop:0,width:390,height:844};
 
-const full=v2ModalPortalGeometry(baseHost,{offsetLeft:0,offsetTop:0,width:390,height:844});
+const full=v2ModalPortalGeometry(baseHost,fullViewport);
 assert.equal(full.left,16);
 assert.equal(full.top,72);
 assert.equal(full.width,374);
@@ -17,7 +18,7 @@ assert.equal(keyboard.height,436);
 
 const restored=v2ModalPortalGeometry(
   {...baseHost,height:436,bottom:508},
-  {offsetLeft:0,offsetTop:0,width:390,height:844},
+  fullViewport,
 );
 assert.equal(restored.bottom,844);
 assert.equal(restored.height,772);
@@ -28,6 +29,27 @@ const shiftedViewport=v2ModalPortalGeometry(
 );
 assert.equal(shiftedViewport.bottom,844);
 assert.equal(shiftedViewport.left,28);
+
+const qFallback=v2QModalPortalGeometry(
+  {left:0,top:0,right:390,width:390,height:844,bottom:844},
+  fullViewport,
+);
+assert.deepEqual(qFallback,{left:16,top:72,width:374,height:772,bottom:844});
+
+const qExistingZ=v2QModalPortalGeometry(baseHost,fullViewport,{hostIsZ:true});
+assert.deepEqual(qExistingZ,{left:16,top:72,width:374,height:772,bottom:844});
+
+const qKeyboard=v2QModalPortalGeometry(
+  {left:0,top:0,right:390,width:390,height:844,bottom:844},
+  {offsetLeft:0,offsetTop:0,width:390,height:508},
+);
+assert.deepEqual(qKeyboard,{left:16,top:72,width:374,height:436,bottom:508});
+
+const qAlreadyBelowHeader=v2QModalPortalGeometry(
+  {left:0,top:72,right:390,width:390,height:772,bottom:844},
+  fullViewport,
+);
+assert.deepEqual(qAlreadyBelowHeader,{left:16,top:72,width:374,height:772,bottom:844});
 
 const originalWindow=globalThis.window;
 const originalDocument=globalThis.document;
@@ -58,6 +80,7 @@ const v2=['modal-portal.js','geometry.js'].map((file)=>fs.readFileSync(new URL(`
 const css=fs.readFileSync(new URL('../ui/v2/v2.css',import.meta.url),'utf8');
 const modals=fs.readFileSync(new URL('../ui/modals/index.js',import.meta.url),'utf8');
 const modalCss=fs.readFileSync(new URL('../ui/modals/modal.css',import.meta.url),'utf8');
+const recordCreation=fs.readFileSync(new URL('../ui/record/creation-flow.js',import.meta.url),'utf8');
 
 assert.match(core,/if \(target\.closest\('\[data-v2-layer\]'\)\) return;/);
 assert.match(selectors,/mountModal\(trigger, modal\(content, \{ variant: 'x', title: 'Выбор', xRole: 'picker' \}\)\)/);
@@ -84,6 +107,9 @@ assert.match(v2,/event\.stopImmediatePropagation\(\)/);
 assert.match(v2,/\.v2-header__slot--c \.v2-header__control/);
 assert.match(v2,/\.v2-header__slot--d \.v2-header__control/);
 assert.match(v2,/lockModalHeader\(app, \{ allowContextActions: true \}\)/);
+assert.match(v2,/v2QModalPortalGeometry/);
+assert.match(v2,/mountV2ModalPortal\(host\)/);
+assert.match(v2,/setQLayer\?\.\(qLayer\)/);
 assert.match(css,/\.v2-layer-portal--viewport\{position:fixed/);
 assert.match(modals,/const X_ROLES = new Set\(\['action', 'editor', 'picker'\]\)/);
 assert.match(modals,/data-v2-x-role/);
@@ -93,5 +119,7 @@ assert.doesNotMatch(modals,/data-notice-close|action = 'ОК'/);
 assert.match(modals,/variant === 'x'\) return 'bottom'/);
 assert.match(modals,/variant === 's'\) return 'top'/);
 assert.match(modalCss,/modal--bottom\.modal--form-sheet/);
+assert.match(recordCreation,/variant:\s*'q'/);
+assert.doesNotMatch(recordCreation,/mountRecordZ|record-creation-q\s*\{/);
 
 console.log('modal bottom geometry tests passed');
