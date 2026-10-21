@@ -56,6 +56,11 @@ type ProfileBundleInput = {
   workplaces: WorkplaceInput[];
 };
 
+type WorkplaceCardTemplate = {
+  appearance: Record<string, unknown>;
+  photo: string;
+};
+
 function stringValue(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : value == null ? fallback : String(value);
 }
@@ -218,8 +223,34 @@ function workplaceDto(workplace: WorkplaceRow): WorkplaceInput {
   };
 }
 
-function publicWorkplaceCardProfile(workplace: WorkplaceRow, profile: any) {
+function hasConfiguredCardAppearance(value: unknown) {
+  const appearance = objectValue(value);
+  return Array.isArray(appearance.lines)
+    && appearance.lines.some((line) => line && typeof line === 'object' && !Array.isArray(line) && stringValue((line as Record<string, unknown>).field).trim());
+}
+
+function workplaceCardTemplate(value: unknown): WorkplaceCardTemplate {
+  const source = objectValue(value);
+  const templates = Array.isArray(source.cardAppearanceTemplates) ? source.cardAppearanceTemplates : [];
+  const template = templates
+    .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    .map((item) => objectValue(item))
+    .find((item) => stringValue(item.scope).trim() === 'workplace') || {};
+  return {
+    appearance: objectValue(template.appearance),
+    photo: stringValue(template.photo),
+  };
+}
+
+function effectiveWorkplaceCardAppearance(workplace: WorkplaceRow, template: WorkplaceCardTemplate) {
   const appearance = objectValue(workplace.cardAppearance);
+  if (hasConfiguredCardAppearance(appearance)) return appearance;
+  if (hasConfiguredCardAppearance(template.appearance)) return template.appearance;
+  return appearance;
+}
+
+function publicWorkplaceCardProfile(workplace: WorkplaceRow, profile: any, appearanceValue: unknown = workplace.cardAppearance) {
+  const appearance = objectValue(appearanceValue);
   const lines = Array.isArray(appearance.lines)
     ? appearance.lines.filter((line) => line && typeof line === 'object' && !Array.isArray(line)) as Record<string, unknown>[]
     : [];
@@ -614,6 +645,7 @@ export class ProfileService {
   async accountRelationshipProfile(tenantId: string) {
     const row = await this.prisma.profile.findFirst({
       where: { tenantId },
+      include: { workplaces: { where: { deletedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] } },
       orderBy: { createdAt: 'asc' },
     });
     if (!row) throw new ConflictException('Профиль ещё не готов');
@@ -627,6 +659,7 @@ export class ProfileService {
       profession: row.profession,
       about: row.about,
       cardAppearance: objectValue(row.cardAppearance),
+      workplaces: row.workplaces.map(workplaceDto),
     };
   }
 
@@ -658,12 +691,16 @@ export class ProfileService {
   }
 
   async publicBookingBundle(tenantId: string) {
-    const row = await this.prisma.profile.findFirst({
-      where: { tenantId },
-      include: { workplaces: { where: { deletedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] } },
-      orderBy: { createdAt: 'asc' },
-    });
+    const [row, auxiliaryState] = await Promise.all([
+      this.prisma.profile.findFirst({
+        where: { tenantId },
+        include: { workplaces: { where: { deletedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] } },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.businessAuxiliaryState.findUnique({ where: { tenantId }, select: { data: true } }),
+    ]);
     if (!row) throw new ConflictException('Профиль для онлайн-записи ещё не готов');
+    const cardTemplate = workplaceCardTemplate(auxiliaryState?.data);
     return {
       profile: {
         name: row.name,
@@ -673,10 +710,16 @@ export class ProfileService {
         about: row.about,
         cardAppearance: objectValue(row.cardAppearance),
       },
-      workplaces: row.workplaces.map((workplace) => ({
-        ...workplaceDto(workplace),
-        cardProfile: publicWorkplaceCardProfile(workplace, row),
-      })),
+      workplaces: row.workplaces.map((workplace) => {
+        const dto = workplaceDto(workplace);
+        const cardAppearance = effectiveWorkplaceCardAppearance(workplace, cardTemplate);
+        return {
+          ...dto,
+          photo: dto.photo || cardTemplate.photo,
+          cardAppearance,
+          cardProfile: publicWorkplaceCardProfile(workplace, row, cardAppearance),
+        };
+      }),
       updatedAt: row.updatedAt,
     };
   }

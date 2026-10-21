@@ -40,7 +40,9 @@ function hasConfiguredLines(value = {}) {
 }
 
 export function profileCardFields(profile = {}, workplaces = []) {
-  const first=(Array.isArray(workplaces)?workplaces:[])[0]||{};
+  const supplied=Array.isArray(workplaces)?workplaces:[];
+  const values=supplied.length?supplied:(Array.isArray(profile?.workplaces)?profile.workplaces:[]);
+  const first=values[0]||{};
   return [
     {value:'unread',label:'Непрочитанное',text:unreadOf(profile)},
     {value:'workTime',label:'График',text:first.from||first.to?`${first.from||'—'} - ${first.to||'—'}`:''},
@@ -55,7 +57,7 @@ export function profileCardFields(profile = {}, workplaces = []) {
     {value:'experience',label:'Опыт',text:profile.experience||''},
     {value:'about',label:'О себе',text:profile.about||''},
     {value:'professionAbout',label:'О профессии',text:profile.professionAbout||''},
-    {value:'workplaceCount',label:'Количество пространств',text:String((Array.isArray(workplaces)?workplaces:[]).length||'')},
+    {value:'workplaceCount',label:'Количество пространств',text:String(values.length||'')},
   ];
 }
 
