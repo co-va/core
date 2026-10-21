@@ -70,6 +70,7 @@ async function bookingRoute() {
       tenantId: String(resolved?.tenantId || ''),
       workplaceKey: String(resolved?.workplaceKey || ''),
       ...bookingRouteQuery(params),
+      entry: 'account-booking',
     };
   } catch {
     return { tenantId: '', workplaceKey: '', ...bookingRouteQuery(params) };
