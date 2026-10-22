@@ -320,29 +320,26 @@ function sourceText(node, fallback = '') {
   return value || fallback;
 }
 
+function isAddPrimarySource(source) {
+  if (!source) return false;
+  const label = String(source.dataset.v2PrimaryLabel || source.getAttribute('aria-label') || source.textContent || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('ru-RU');
+  if (label === '+' || label.startsWith('добав')) return true;
+  if (source.matches('[data-add],[data-add-workplace]')) return true;
+  return [...source.attributes].some((attribute) => /^data-(?:[a-z0-9-]*-)?add(?:-|$)/i.test(attribute.name));
+}
+
 function primarySource(surface) {
-  const explicit = surface.querySelector('[data-v2-primary-action]');
-  if (explicit) return explicit;
-
-  const pageAction = surface.querySelector('.page-header-action button');
-  if (pageAction) return pageAction;
-
-  if (state.activeSection === 'people') return surface.querySelector('[data-add]');
-  if (state.activeSection === 'timetable') return surface.querySelector('[data-timetable-apply]');
-  if (state.activeSection === 'profile') return surface.querySelector('[data-save-profile]');
-
-  const submitButtons = [...surface.querySelectorAll('form button[type="submit"]')]
-    .filter((button) => !button.closest('[data-v2-layer], .modal-layer, .modal-backdrop'));
-  return submitButtons.length === 1 ? submitButtons[0] : null;
+  const candidates = [
+    ...surface.querySelectorAll('[data-v2-primary-action], .page-header-action button, [data-add], [data-add-workplace]'),
+  ];
+  return candidates.find(isAddPrimarySource) || null;
 }
 
 function primaryLabel(source) {
-  if (!source) return '';
-  if (source.dataset.v2PrimaryLabel) return source.dataset.v2PrimaryLabel;
-  if (source.matches('[data-add], [data-add-workplace]')) return 'Добавить';
-  if (source.matches('[data-timetable-apply]')) return 'Применить';
-  if (source.matches('[data-save-profile]')) return 'Сохранить';
-  return sourceText(source);
+  return source ? '+' : '';
 }
 
 function primaryVisible(source) {
@@ -431,11 +428,10 @@ function syncWorkspaceHeader(surface) {
     a: aSlot,
     b: title,
     c: cVisible ? {
-      kind: cSource.dataset.workspaceCKind || 'text',
+      kind: 'text',
       label: primaryLabel(cSource),
-      variant: cSource.dataset.v2PrimaryVariant || (cSource.classList.contains('ui-button--danger') ? 'danger' : ''),
       data: 'data-v2-workspace-primary',
-      aria: cSource.getAttribute('aria-label') || primaryLabel(cSource),
+      aria: cSource.getAttribute('aria-label') || 'Добавить',
       disabled: Boolean(cSource.disabled),
     } : null,
     d: sectionAllowed('chat') ? {
