@@ -1,4 +1,4 @@
-import { colorPicker, field, initColorPickers, openNotice, openTimeRangeAction, textareaField } from '../ui/ui.js';
+import { colorPicker, field, initColorPickers, initTimePickers, openNotice, textareaField, timePicker } from '../ui/ui.js';
 import { checkTimeAvailability, minutesToTime, timeToMinutes } from '../core/time/index.js';
 import { createEvent, removeEvent } from '../core/event/index.js';
 import { flushBusinessPersistence } from '../core/business-persistence.js';
@@ -14,6 +14,20 @@ function availabilityMessage(reason = '') {
   if (reason === 'occupied') return 'Это время уже занято.';
   if (reason === 'day-not-working' || reason === 'outside-working-time') return 'Время находится вне рабочего графика.';
   return 'Проверьте время события.';
+}
+
+function growDescription(form) {
+  const textarea = form?.elements?.namedItem?.('description');
+  if (!(textarea instanceof HTMLTextAreaElement)) return;
+  textarea.style.overflowY = 'hidden';
+  textarea.style.resize = 'none';
+  textarea.style.minHeight = '220px';
+  const resize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(220, textarea.scrollHeight)}px`;
+  };
+  textarea.addEventListener('input', resize);
+  resize();
 }
 
 export function createJournalEventFlow({ owner, date, workplaceId, timeHint = '', onCreated = () => {} } = {}) {
@@ -32,37 +46,35 @@ export function createJournalEventFlow({ owner, date, workplaceId, timeHint = ''
     const form = root?.querySelector('[data-event-create-form]');
     if (!form) return;
     const data = new FormData(form);
+    state.from = String(data.get('from') || state.from || '');
+    state.to = String(data.get('to') || state.to || '');
+    state.color = String(data.get('color') || state.color || '#777A7D');
     state.title = String(data.get('title') || '').trim();
     state.description = String(data.get('description') || '').trim();
-    state.color = String(data.get('color') || state.color || '#777A7D');
   };
 
   const render = () => {
     const view = owner.render({
       step: 'event',
-      title: 'Событие',
+      title: false,
       body: `<form class="form-grid" data-event-create-form>
-        ${field({ label: 'Название', name: 'title', value: state.title, required: true, placeholder: 'Перерыв, встреча, дорога…' })}
-        <button type="button" class="people-action-btn" data-event-time>С ${state.from || '—'} — До ${state.to || '—'}</button>
-        ${textareaField({ label: 'Описание', name: 'description', value: state.description, rows: 5, placeholder: 'Подробности события' })}
+        <div class="time-range-fields">
+          ${timePicker({ label: 'С', name: 'from', value: state.from || timeHint || '09:00' })}
+          ${timePicker({ label: 'До', name: 'to', value: state.to || initialTo(state.from || timeHint) })}
+        </div>
         ${colorPicker({ name: 'color', value: state.color })}
+        ${field({ label: 'Наименование', name: 'title', value: state.title, required: true, placeholder: 'Перерыв, встреча, дорога…' })}
+        ${textareaField({ label: 'Описание', name: 'description', value: state.description, rows: 12, placeholder: 'Подробности события' })}
       </form>`,
       action: { label: 'Создать', data: 'data-event-create' },
     });
     if (!view) return;
+    initTimePickers(view.body);
     initColorPickers(view.body);
     const form = view.body.querySelector('[data-event-create-form]');
+    growDescription(form);
     form?.addEventListener('input', () => capture(view.body));
     form?.addEventListener('change', () => capture(view.body));
-    view.body.querySelector('[data-event-time]')?.addEventListener('click', () => {
-      capture(view.body);
-      openTimeRangeAction({
-        from: state.from || timeHint || '09:00',
-        to: state.to || initialTo(state.from || timeHint),
-        title: 'Время события',
-        onSave: ({ from, to }) => { state.from = from; state.to = to; render(); },
-      });
-    });
     view.action?.addEventListener('click', async (domEvent) => {
       capture(view.body);
       if (!state.title) { openNotice({ title: 'Событие', message: 'Укажите название события.' }); return; }
