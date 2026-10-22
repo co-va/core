@@ -77,7 +77,6 @@ function normalizeOperational(value: unknown): OperationalBundle {
     : null;
   return {
     days: (Array.isArray(source.days) ? source.days : []).map((item) => clone(objectValue(item))),
-    breaks: (Array.isArray(source.breaks) ? source.breaks : []).map((item) => clone(objectValue(item))),
     procedures: (Array.isArray(source.procedures) ? source.procedures : []).map((item) => clone(objectValue(item))),
     procedureHistory: (Array.isArray(source.procedureHistory) ? source.procedureHistory : []).map((item) => clone(objectValue(item))),
     bookingSettings,
