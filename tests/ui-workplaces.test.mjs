@@ -149,12 +149,12 @@ const journalTimeUsageSource = readFileSync(new URL('../journal/time-usage-sourc
 assert.match(journalTimeUsageSource, /export function getJournalTimeUsages/);
 assert.match(journalTimeUsageSource, /type:\s*'record'/);
 assert.match(journalTimeUsageSource, /rigidity:\s*'hard'/);
-assert.match(journalTimeUsageSource, /type:\s*'break'/);
+assert.match(journalTimeUsageSource, /type:\s*'event'/);
 assert.match(journalTimeUsageSource, /rigidity:\s*'soft'/);
 assert.match(journalTimeUsageSource, /export function releaseJournalSoftTimeUsages/);
-assert.match(journalTimeUsageSource, /removeJournalBreaksForDay/);
+assert.match(journalTimeUsageSource, /removeEventsForDay/);
 assert.match(journalTimeUsageSource, /getRecordsForDay/);
-assert.match(journalTimeUsageSource, /getJournalBreaksForDay/);
+assert.match(journalTimeUsageSource, /getEventsForDay/);
 assert.doesNotMatch(journalTimeUsageSource, /containsRange|rangesOverlap|isValidRange/);
 
 const timeUsageSource = readFileSync(new URL('../core/time/usage.js', import.meta.url), 'utf8');
