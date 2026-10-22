@@ -101,8 +101,8 @@ export function renderJournalDay(root, {
         return;
       }
       if (minuteState.state !== 'free') return;
-      const { openRecords } = await import('../core/records/records.js');
-      openRecords({ context: 'journal', date, workplaceId, timeHint: from, professionalActions: true, onCreated: rerender });
+      const { openJournalCreation } = await import('./creation-flow.js');
+      openJournalCreation({ date, workplaceId, timeHint: from, onCreated: rerender });
     },
   });
 }

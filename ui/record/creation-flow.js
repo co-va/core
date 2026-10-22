@@ -82,6 +82,11 @@ export function openRecordCreationOwner({ onCancel = () => {} } = {}) {
   const titleHost = layer.querySelector('[data-record-creation-title]');
   const bodyHost = layer.querySelector('[data-record-creation-body]');
   const actionHost = layer.querySelector('[data-record-creation-action]');
+  if (headerHost) {
+    headerHost.innerHTML = '<div data-record-creation-shell-header></div><div data-record-creation-step-header></div>';
+  }
+  const shellHeaderHost = headerHost?.querySelector('[data-record-creation-shell-header]') || null;
+  const stepHeaderHost = headerHost?.querySelector('[data-record-creation-step-header]') || headerHost;
 
   const render = ({
     step = '',
@@ -93,7 +98,7 @@ export function openRecordCreationOwner({ onCancel = () => {} } = {}) {
   } = {}) => {
     if (!bodyHost || !actionHost || !titleHost) return null;
     layer.dataset.recordCreationStep = String(step || '');
-    if (headerHost) headerHost.innerHTML = String(header || '');
+    if (stepHeaderHost) stepHeaderHost.innerHTML = String(header || '');
     titleHost.textContent = resolveRecordCreationTitle(step, title);
     bodyHost.innerHTML = body;
     const secondary = (Array.isArray(secondaryActions) ? secondaryActions : [])
@@ -116,7 +121,7 @@ export function openRecordCreationOwner({ onCancel = () => {} } = {}) {
       : '';
     return {
       layer,
-      header: headerHost,
+      header: stepHeaderHost,
       body: bodyHost,
       action: action?.label ? actionHost.querySelector(`[${action.data || 'data-record-creation-primary'}]`) : null,
     };
@@ -125,6 +130,11 @@ export function openRecordCreationOwner({ onCancel = () => {} } = {}) {
   return {
     layer,
     render,
+    setShellHeader(content = '') {
+      if (!shellHeaderHost) return null;
+      shellHeaderHost.innerHTML = String(content || '');
+      return shellHeaderHost;
+    },
     commit() {
       committed = true;
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('va-tools:record-creation-committed'));

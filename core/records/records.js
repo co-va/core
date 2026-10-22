@@ -7,7 +7,6 @@ import {
   field,
   initCalendar,
   initMultiSelect,
-  initViewNavigation,
   modal,
   mountModal,
   openNotice,
@@ -18,10 +17,8 @@ import {
   recordProcedureList,
   recordWorkplaceCards,
   select,
-  viewNavigation,
 } from '../../ui/ui.js';
 import { createRecord, getRecord, updateRecord } from '../record/index.js';
-import { createJournalBreak } from '../../journal/break-service.js';
 import { getPeople } from '../people/data.js';
 import { openPersonCreate } from '../people/create.js';
 import { personDisplay } from '../people/presentation.js';
@@ -34,7 +31,6 @@ import {
   checkTimeAvailability,
   getAvailabilityGrid,
   getTimeAvailabilityAt,
-  listAvailableEndTimes,
   minutesToTime,
   timeToMinutes,
 } from '../time/index.js';
@@ -47,11 +43,6 @@ import {
   getRecordProcedurePaymentAdjustment,
   saveRecordProcedurePaymentAdjustment,
 } from '../payment/procedure-adjustment.js';
-
-const JOURNAL_MODES = [
-  { id: 'record', label: 'Создать запись' },
-  { id: 'break', label: 'Занять время' },
-];
 
 function dateKey(value) {
   const date = value instanceof Date ? value : new Date(value);
@@ -335,10 +326,10 @@ export function openRecords({
   date = '',
   timeHint = '',
   procedures = [],
-  allowBreak = false,
   professionalActions = context !== 'online',
   actionContext = null,
   provider = {},
+  creationOwner = null,
   onCreated = () => {},
   onSaved = null,
   onCancel = () => {},
@@ -360,12 +351,12 @@ export function openRecords({
     procedures: Array.isArray(initialProcedures) ? initialProcedures.map((entry) => ({ ...entry })) : [],
     person: initialPerson ? { ...initialPerson } : null,
     people: initialPeople.map((item) => ({ ...item })),
-    mode: 'record',
     correcting: false,
   };
 
-  const owner = openRecordCreationOwner({ onCancel });
+  const owner = creationOwner || openRecordCreationOwner({ onCancel });
   if (!owner) return null;
+  let currentRenderer = null;
 
   const renderFooter = (view, handlers = {}) => {
     for (const [selector, handler] of Object.entries(handlers)) {
@@ -409,6 +400,7 @@ export function openRecords({
   };
 
   const renderWorkplaces = () => {
+    currentRenderer = renderWorkplaces;
     const items = source.workplaceCards ? source.workplaceCards() : source.workplaces();
     const body = items.length
       ? recordWorkplaceCards(items, { data: 'data-records-workplace' })
@@ -477,6 +469,7 @@ export function openRecords({
   };
 
   const renderProcedures = () => {
+    currentRenderer = renderProcedures;
     const available = source.procedures(state.workplaceId);
     const selected = new Map(state.procedures.map((entry) => [String(entry.id || ''), entry]));
     let controller = null;
@@ -533,6 +526,7 @@ export function openRecords({
   };
 
   const renderDates = () => {
+    currentRenderer = renderDates;
     const dates = source.workingDates(state.workplaceId);
     const now = new Date();
     const selectedDate = state.date ? new Date(`${state.date}T00:00:00`) : now;
@@ -599,88 +593,24 @@ export function openRecords({
     mountCalendar();
   };
 
-  const renderBreakEnd = () => {
-    const values = listAvailableEndTimes({
-      date: state.date,
-      workplaceId: state.workplaceId,
-      from: state.from,
-      step: 5,
-    });
-    const view = owner.render({
-      step: 'break-end',
-      body: recordCreationTimeRows(values, { data: 'data-records-break-end', empty: 'Свободного времени нет.' }),
-    });
-    view?.body?.querySelectorAll('[data-records-break-end]:not(:disabled)').forEach((node) => node.addEventListener('click', () => {
-      state.to = String(node.dataset.recordsBreakEnd || '');
-      renderBreakConfirmation();
-    }));
-  };
-
-  const renderBreakConfirmation = () => {
-    const view = owner.render({
-      step: 'break-confirmation',
-      body: `<div class="record-screen record-screen--state-view">
-        <div class="mini-card record-break-mini-card">
-          <strong>Перерыв</strong><span>${formatDate(state.date)}</span><span>${state.from} - ${state.to}</span>
-        </div>
-      </div>`,
-      action: { label: 'Подтвердить', data: 'data-records-break-confirm' },
-    });
-    renderFooter(view, {
-      '[data-records-break-confirm]': () => {
-        const available = checkTimeAvailability({
-          date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to,
-        });
-        if (!available.ok) {
-          openNotice({ title: 'Перерыв', message: available.reason === 'occupied' ? 'Это время уже занято.' : 'Это время находится вне рабочего периода.' });
-          return;
-        }
-        const created = createJournalBreak({
-          workplaceId: state.workplaceId, date: state.date, from: state.from, to: state.to,
-        });
-        if (!created) return;
-        owner.commit();
-        onCreated(created);
-      },
-    });
-  };
-
   const renderTimes = () => {
+    currentRenderer = renderTimes;
     let rows;
     if (context === 'journal' && state.timeHint && !state.correcting) {
       rows = defaultJournalTimeRows({ date: state.date, workplaceId: state.workplaceId, hint: state.timeHint });
     } else {
       rows = source.timeRows({ workplaceId: state.workplaceId, date: state.date, procedures: state.procedures, state });
     }
-    const toggle = allowBreak && context === 'journal' && !state.correcting
-      ? viewNavigation({ views: JOURNAL_MODES, activeView: state.mode, className: 'segment-control--two', ariaLabel: 'Режим записи' })
-      : '';
     const view = owner.render({
       step: 'time',
-      body: `<div class="record-screen record-screen--time">${toggle}${rows.length
+      body: `<div class="record-screen record-screen--time">${rows.length
         ? recordCreationTimeRows(rows, { data: 'data-records-time', selected: state.from })
         : emptyState('Свободного времени нет', 'На эту дату нет доступного времени.')}</div>`,
     });
-    if (toggle) {
-      initViewNavigation(view?.body, {
-        views: JOURNAL_MODES,
-        activeView: state.mode,
-        onChange: (mode) => {
-          state.mode = mode;
-          state.from = '';
-          state.to = '';
-          renderTimes();
-        },
-      });
-    }
     view?.body?.querySelectorAll('[data-records-time]:not(:disabled)').forEach((node) => node.addEventListener('click', () => {
       const value = String(node.dataset.recordsTime || '');
       if (!value) return;
       state.from = value;
-      if (state.mode === 'break') {
-        renderBreakEnd();
-        return;
-      }
       const row = rows.find((item) => String(item.value ?? item.from ?? '') === value);
       state.to = String(row?.to || '');
       state.timeHint = '';
@@ -690,6 +620,7 @@ export function openRecords({
   };
 
   const renderPerson = () => {
+    currentRenderer = renderPerson;
     const all = getPeople();
     const capacity = groupCapacity(state.procedures);
     const groupMode = capacity > 1;
@@ -774,6 +705,7 @@ export function openRecords({
   };
 
   const renderCorrectionMenu = () => {
+    currentRenderer = renderCorrectionMenu;
     const actions = [
       ['Пространство', 'workplace'],
       ['Процедуры', 'procedures'],
@@ -824,6 +756,7 @@ export function openRecords({
     : personDisplay(confirmationPerson());
 
   const renderConfirmation = () => {
+    currentRenderer = renderConfirmation;
     const contact = confirmationPerson();
     const personInfo = confirmationDisplay();
     const settlement = source.settlement
@@ -963,6 +896,16 @@ export function openRecords({
     else if (!state.person && source.kind === 'professional') renderPerson();
     else renderConfirmation();
   };
+
+  owner.resumeRecord = () => {
+    currentRenderer?.();
+  };
+  owner.getRecordState = () => ({
+    ...state,
+    procedures: state.procedures.map((item) => ({ ...item })),
+    person: state.person ? { ...state.person } : null,
+    people: state.people.map((item) => ({ ...item })),
+  });
 
   start();
   return owner;
