@@ -84,7 +84,7 @@ function renderForm(invitation) {
     <div class="invite-meta">
       <strong data-name></strong>
       <span data-email></span>
-      <span>DEMO · 14 дней с первого входа в приложение</span>
+      <span>DEMO · 14 дней с первого открытия профиля</span>
     </div>
 
     <form class="invite-form" data-form>
