@@ -290,7 +290,7 @@ export function renderJournal(root, options = {}) {
     })}<div data-journal-view${viewClass}></div>`;
     const viewRoot = root.querySelector('[data-journal-view]');
     if (activeView === 'day') {
-      renderJournalDay(viewRoot, {
+      disposeActiveView = renderJournalDay(viewRoot, {
         date: selectedDate,
         workplaceId: selectedWorkplaceId,
         navigationRoot: periodNavigationRoot,
@@ -301,7 +301,7 @@ export function renderJournal(root, options = {}) {
           setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
           renderView();
         },
-      });
+      }) || (() => {});
       noteFocusTarget = null;
     } else if (activeView === 'month') {
       disposeActiveView = renderJournalMonth(viewRoot, {
