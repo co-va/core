@@ -308,7 +308,7 @@ export class TenantInvitationService {
     name: string;
     tenantName: string;
     tools?: string[];
-  }) {
+  }, emailDelivery: 'required' | 'best-effort' = 'required') {
     const { token, tokenHash, expiresAt } = this.createInvitationToken();
     const created = await this.createPendingInvitation(adminId, {
       ...input,
@@ -319,8 +319,10 @@ export class TenantInvitationService {
     try {
       await this.sendInvitationEmail({ email: input.email, name: input.name, token });
     } catch (error) {
-      await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
-      throw error;
+      if (emailDelivery === 'required') {
+        await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
+        throw error;
+      }
     }
 
     return { created, token, expiresAt };
@@ -443,7 +445,7 @@ export class TenantInvitationService {
       email,
       name: '',
       tenantName: 'Новый профиль',
-    });
+    }, 'best-effort');
 
     return {
       token,
