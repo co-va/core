@@ -1,4 +1,4 @@
-import { openNotice, recordCreationTimeRows } from '../ui/ui.js';
+import { emptyState, openNotice, recordCreationTimeRows } from '../ui/ui.js';
 import {
   checkTimeAvailability,
   getTimeAvailabilityAt,
@@ -63,7 +63,7 @@ export function createJournalBreakFlow({
       step: 'time',
       body: `<div class="record-screen record-screen--time">${rows.length
         ? recordCreationTimeRows(rows, { data: 'data-journal-break-start', selected: state.from })
-        : '<div class="muted">Свободного времени нет.</div>'}</div>`,
+        : emptyState('Свободного времени нет', 'На эту дату нет доступного времени.')}</div>`,
     });
     view?.body?.querySelectorAll('[data-journal-break-start]:not(:disabled)').forEach((node) => node.addEventListener('click', () => {
       const value = String(node.dataset.journalBreakStart || '');
