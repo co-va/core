@@ -13,7 +13,12 @@ import {
 import { createNote, NOTE_DEFAULT_COLOR, removeNote } from '../core/note/index.js';
 import { getProfile } from '../core/profile/data.js';
 import { flushBusinessPersistence } from '../core/business-persistence.js';
-import { noteTargetOptions, noteTargetValue, parseNoteTargetValue } from './note-target.js';
+import {
+  noteContextWithTarget,
+  noteTargetOptions,
+  noteTargetValue,
+  parseNoteTargetValue,
+} from './note-target.js';
 
 function normalizeTargetForDate(state) {
   const current = noteTargetValue(state);
@@ -120,7 +125,7 @@ export function createJournalNoteFlow({
       const created = createNote({
         ownerType: 'profile',
         ownerId,
-        context: { scope: 'professional' },
+        context: noteContextWithTarget({ scope: 'professional' }, state.targetType, state.targetId),
         date: state.date,
         from: state.from,
         to: state.to,
