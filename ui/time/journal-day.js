@@ -1,5 +1,9 @@
 import { timeToMinutes, minutesToTime } from '../../core/time/index.js';
 
+const DAY_MINUTES = 24 * 60;
+const BASE_DAY_START = 9 * 60;
+const BASE_DAY_END = 23 * 60;
+
 const escape = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const moneyText = (value) => `${Math.max(0, Number(value) || 0).toLocaleString('ru-RU')} ₽`;
 
@@ -18,27 +22,71 @@ function recordMarkup(usage, { interactive = true } = {}) {
     : `<div class="journal-record${statusClass}" aria-disabled="true">${content}</div>`;
 }
 
-function usageMarkup(usage, { interactive = true } = {}) {
+function defaultUsageMarkup(usage, { interactive = true } = {}) {
   if (usage?.type === 'record') return recordMarkup(usage, { interactive });
   return interactive
     ? `<button type="button" class="journal-record journal-record--break" data-journal-usage="${escape(usage.sourceId || usage.id)}"><strong>Перерыв</strong></button>`
     : '<div class="journal-record journal-record--break" aria-disabled="true"><strong>Перерыв</strong></div>';
 }
 
-function slotsMarkup(start, end, { interactive = true } = {}) {
+function dateOrdinal(value) {
+  const match = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const stamp = Date.UTC(year, month - 1, day);
+  return Number.isFinite(stamp) ? Math.floor(stamp / 86400000) : null;
+}
+
+function usageSegment(usage, day = '') {
+  const start = timeToMinutes(usage?.from);
+  const rawEnd = timeToMinutes(usage?.to);
+  if (start == null || rawEnd == null || rawEnd === start) return null;
+
+  let absoluteStart = start;
+  let absoluteEnd = rawEnd > start ? rawEnd : rawEnd + DAY_MINUTES;
+  const usageDay = dateOrdinal(usage?.date);
+  const visibleDay = dateOrdinal(day);
+  if (usageDay != null && visibleDay != null) {
+    const offset = usageDay - visibleDay;
+    absoluteStart += offset * DAY_MINUTES;
+    absoluteEnd += offset * DAY_MINUTES;
+  }
+
+  const clippedStart = Math.max(0, absoluteStart);
+  const clippedEnd = Math.min(DAY_MINUTES, absoluteEnd);
+  if (clippedEnd <= clippedStart) return null;
+  return { start: clippedStart, end: clippedEnd };
+}
+
+function renderUsage(usage, options, renderer) {
+  return String((typeof renderer === 'function' ? renderer : defaultUsageMarkup)(usage, options) ?? '');
+}
+
+function timelineRange({ workRanges = [], usages = [], day = '' } = {}) {
+  const segments = (Array.isArray(usages) ? usages : []).map((usage) => usageSegment(usage, day)).filter(Boolean);
+  const workStarts = workRanges.map((range) => timeToMinutes(range?.from)).filter((value) => value != null);
+  const workEnds = workRanges.map((range) => timeToMinutes(range?.to)).filter((value) => value != null);
+  const start = Math.max(0, Math.min(BASE_DAY_START, ...workStarts, ...segments.map((segment) => segment.start)));
+  const end = Math.min(DAY_MINUTES, Math.max(BASE_DAY_END, ...workEnds, ...segments.map((segment) => segment.end)));
+  return { start, end, segments };
+}
+
+function slotsMarkup(start, end, { interactive = true, workStart = start, workEnd = end } = {}) {
   const slots = [];
   for (let minutes = Math.ceil(start / 30) * 30; minutes < end; minutes += 30) {
     const next = Math.min(minutes + 30, end);
     const label = minutesToTime(minutes);
+    const nextLabel = minutesToTime(next);
     const inner = `<span class="time-timeline__hour">${label}</span><span class="time-timeline__line"></span>`;
-    slots.push(interactive
-      ? `<button type="button" class="time-timeline__slot" data-time-slot-from="${label}" data-time-slot-to="${minutesToTime(next)}" aria-label="${label}–${minutesToTime(next)}">${inner}</button>`
-      : `<div class="time-timeline__slot time-timeline__slot--readonly" aria-hidden="true">${inner}</div>`);
+    const insideWork = interactive && minutes >= workStart && minutes < workEnd;
+    slots.push(insideWork
+      ? `<button type="button" class="time-timeline__slot" data-time-slot-from="${label}" data-time-slot-to="${nextLabel}" aria-label="${label}–${nextLabel}">${inner}</button>`
+      : `<div class="time-timeline__slot time-timeline__slot--readonly${interactive ? ' time-timeline__slot--outside-work' : ''}" aria-hidden="true">${inner}</div>`);
   }
   return slots.join('');
 }
 
-function aggregateTimeline(columns = []) {
+function aggregateTimeline(columns = [], { day = '', usageRenderer = defaultUsageMarkup } = {}) {
   const prepared = (Array.isArray(columns) ? columns : []).map((column) => {
     const start = timeToMinutes(column?.from);
     const end = timeToMinutes(column?.to);
@@ -47,8 +95,12 @@ function aggregateTimeline(columns = []) {
   }).filter(Boolean);
   if (!prepared.length) return '';
 
-  const start = Math.min(...prepared.map((column) => column.start));
-  const end = Math.max(...prepared.map((column) => column.end));
+  const allUsages = prepared.flatMap((column) => column.usages);
+  const { start, end } = timelineRange({
+    workRanges: prepared.map((column) => ({ from: column.from, to: column.to })),
+    usages: allUsages,
+    day,
+  });
   const total = end - start;
   const minWidth = 56 + prepared.length * 104;
   const headings = prepared.map((column) => `<strong class="journal-day-columns__heading">${escape(column?.name || 'Рабочее место')}</strong>`).join('');
@@ -56,38 +108,45 @@ function aggregateTimeline(columns = []) {
   const fields = prepared.map((column) => {
     const top = ((column.start - start) / total) * 100;
     const height = ((column.end - column.start) / total) * 100;
-    const fieldDuration = column.end - column.start;
     const usages = column.usages.map((usage) => {
-      const usageStart = timeToMinutes(usage?.from);
-      const usageEnd = timeToMinutes(usage?.to);
-      if (usageStart == null || usageEnd == null || usageEnd <= usageStart || usageEnd <= column.start || usageStart >= column.end) return '';
-      const clippedStart = Math.max(column.start, usageStart);
-      const clippedEnd = Math.min(column.end, usageEnd);
-      const usageTop = ((clippedStart - column.start) / fieldDuration) * 100;
-      const usageHeight = ((clippedEnd - clippedStart) / fieldDuration) * 100;
-      return `<div class="journal-work-field__usage" style="top:${usageTop}%;height:${usageHeight}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${usageMarkup(usage, { interactive: false })}</div>`;
+      const segment = usageSegment(usage, day);
+      if (!segment) return '';
+      const usageTop = ((segment.start - start) / total) * 100;
+      const usageHeight = ((segment.end - segment.start) / total) * 100;
+      return `<div class="journal-work-field__usage" style="top:${usageTop}%;height:${usageHeight}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${renderUsage(usage, { interactive: false }, usageRenderer)}</div>`;
     }).join('');
-    return `<div class="journal-work-column"><div class="journal-work-field${column?.conflict ? ' is-conflict' : ''}" role="button" tabindex="0" aria-label="Изменить рабочее пространство ${escape(column?.name || '')}" style="top:${top}%;height:${height}%" data-journal-work-field="${escape(column?.workplaceId || '')}">${usages}</div></div>`;
+    return `<div class="journal-work-column"><div class="journal-work-field${column?.conflict ? ' is-conflict' : ''}" role="button" tabindex="0" aria-label="Изменить рабочее пространство ${escape(column?.name || '')}" style="top:${top}%;height:${height}%" data-journal-work-field="${escape(column?.workplaceId || '')}"></div>${usages}</div>`;
   }).join('');
 
   return `<div class="journal-day-columns" data-journal-day-columns><div class="journal-day-columns__inner" style="min-width:${minWidth}px;--journal-column-count:${prepared.length}"><div class="journal-day-columns__headings"><span aria-hidden="true"></span>${headings}</div><section class="time-timeline time-timeline--columns" data-time-timeline data-time-from="${escape(minutesToTime(start))}" data-time-to="${escape(minutesToTime(end))}" style="--time-total-minutes:${total}">${slotsMarkup(start, end, { interactive: false })}<div class="journal-work-columns">${fields}</div></section></div></div>`;
 }
 
-export function journalDayTimeline({ from = '09:00', to = '18:00', usages = [], columns = [] } = {}) {
-  if (Array.isArray(columns) && columns.length) return aggregateTimeline(columns);
-  const start = timeToMinutes(from), end = timeToMinutes(to);
-  if (start == null || end == null || end <= start) return '';
+export function journalDayTimeline({
+  from = '09:00',
+  to = '18:00',
+  usages = [],
+  columns = [],
+  day = '',
+  renderUsage: usageRenderer = defaultUsageMarkup,
+} = {}) {
+  if (Array.isArray(columns) && columns.length) return aggregateTimeline(columns, { day, usageRenderer });
+  const workStart = timeToMinutes(from), workEnd = timeToMinutes(to);
+  if (workStart == null || workEnd == null || workEnd <= workStart) return '';
+
+  const values = Array.isArray(usages) ? usages : [];
+  const { start, end } = timelineRange({ workRanges: [{ from, to }], usages: values, day });
   const total = end - start;
-  const overlays = (Array.isArray(usages) ? usages : []).map((usage) => {
-    const usageStart = timeToMinutes(usage?.from), usageEnd = timeToMinutes(usage?.to);
-    if (usageStart == null || usageEnd == null || usageEnd <= usageStart || usageEnd <= start || usageStart >= end) return '';
-    const clippedStart = Math.max(start, usageStart), clippedEnd = Math.min(end, usageEnd);
+  const overlays = values.map((usage) => {
+    const segment = usageSegment(usage, day);
+    if (!segment) return '';
+    const clippedStart = Math.max(start, segment.start), clippedEnd = Math.min(end, segment.end);
+    if (clippedEnd <= clippedStart) return '';
     const top = ((clippedStart - start) / total) * 100;
     const height = ((clippedEnd - clippedStart) / total) * 100;
-    return `<div class="time-timeline__usage" style="top:${top}%;height:${height}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${usageMarkup(usage)}</div>`;
+    return `<div class="time-timeline__usage" style="top:${top}%;height:${height}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${renderUsage(usage, { interactive: true }, usageRenderer)}</div>`;
   }).join('');
 
-  return `<section class="time-timeline" data-time-timeline data-time-from="${escape(from)}" data-time-to="${escape(to)}" style="--time-total-minutes:${total}">${slotsMarkup(start, end)}<div class="time-timeline__usages">${overlays}</div></section>`;
+  return `<section class="time-timeline" data-time-timeline data-time-from="${escape(minutesToTime(start))}" data-time-to="${escape(minutesToTime(end))}" style="--time-total-minutes:${total}">${slotsMarkup(start, end, { workStart, workEnd })}<div class="time-timeline__usages">${overlays}</div></section>`;
 }
 
 export function initJournalDayTimeline(root, {

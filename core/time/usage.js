@@ -1,6 +1,6 @@
 // Neutral occupancy contract between business owners and Core time mechanisms.
 // This module does not own WorkPlan, Record, Break, Availability, or UI state.
-import { containsRange, isValidRange } from './math.js';
+import { containsRange, isValidRange, timeToMinutes } from './math.js';
 
 let timeUsageSource = () => [];
 let softTimeUsageReleaseSource = () => 0;
@@ -16,7 +16,9 @@ export function configureSoftTimeUsageReleaseSource(source) {
 export function normalizeTimeUsage(usage = {}) {
   const from = String(usage?.from || '');
   const to = String(usage?.to || '');
-  if (!isValidRange(from, to)) return null;
+  const start = timeToMinutes(from);
+  const end = timeToMinutes(to);
+  if (start == null || end == null || start === end) return null;
   return {
     ...usage,
     type: String(usage?.type || 'usage'),

@@ -72,7 +72,7 @@ export function renderJournalDay(root, {
 
     if (!columns.length) { contentRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Не задано рабочее время</div>'; return; }
 
-    contentRoot.innerHTML = journalDayTimeline({ columns });
+    contentRoot.innerHTML = journalDayTimeline({ columns, day: dayDate });
     initJournalDayTimeline(contentRoot, {
       onWorkFieldClick: ({ workplaceId: nextWorkplaceId }) => {
         if (nextWorkplaceId) onWorkplaceFieldClick(nextWorkplaceId);
@@ -89,7 +89,7 @@ export function renderJournalDay(root, {
   const usageById = new Map(usages.map((usage) => [String(usage?.sourceId || usage?.id || ''), usage]));
   const rerender = () => renderJournalDay(root, { date, workplaceId, onChange, onWorkplaceFieldClick, navigationRoot });
 
-  contentRoot.innerHTML = journalDayTimeline({ from: time.from, to: time.to, usages });
+  contentRoot.innerHTML = journalDayTimeline({ from: time.from, to: time.to, usages, day: dayDate });
   initJournalDayTimeline(contentRoot, {
     onWorkFieldClick: () => onWorkplaceFieldClick(workplaceId),
     onUsageClick: ({ usageId }) => { void openUsage(usageById.get(String(usageId || '')), rerender); },
