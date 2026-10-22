@@ -62,6 +62,7 @@ const CAPABILITY_CATALOG: Array<{
   { key: 'workplaces.max', groupKey: 'system', name: 'Количество рабочих пространств', valueType: CapabilityValueType.LIMIT, position: 15, starterLimit: 1 },
   { key: 'timetable.access', groupKey: 'work', name: 'График', valueType: CapabilityValueType.BOOLEAN, position: 20, starterEnabled: false },
   { key: 'people.access', groupKey: 'people', name: 'Люди', valueType: CapabilityValueType.BOOLEAN, position: 30, starterEnabled: true },
+
   { key: 'finance.cash.access', groupKey: 'finance', name: 'Касса', valueType: CapabilityValueType.BOOLEAN, position: 40, starterEnabled: false },
   { key: 'finance.dds.access', groupKey: 'finance', name: 'ДДС', valueType: CapabilityValueType.BOOLEAN, position: 50, starterEnabled: false },
   { key: 'finance.income_expense.access', groupKey: 'finance', name: 'Доход / Расход', valueType: CapabilityValueType.BOOLEAN, position: 60, starterEnabled: false },
@@ -71,15 +72,18 @@ const CAPABILITY_CATALOG: Array<{
   { key: 'finance.investment.raise.access', groupKey: 'finance', name: 'Инвестиции · привлекать', valueType: CapabilityValueType.BOOLEAN, position: 84, starterEnabled: false },
   { key: 'finance.investment.external.access', groupKey: 'finance', name: 'Инвестиции · инвестировать', valueType: CapabilityValueType.BOOLEAN, position: 86, starterEnabled: false },
   { key: 'finance.z_report.access', groupKey: 'finance', name: 'Z-отчёт', valueType: CapabilityValueType.BOOLEAN, position: 90, starterEnabled: false },
+
   { key: 'journal.day.access', groupKey: 'journal', name: 'День', valueType: CapabilityValueType.BOOLEAN, position: 100, starterEnabled: false },
   { key: 'journal.month.access', groupKey: 'journal', name: 'Месяц', valueType: CapabilityValueType.BOOLEAN, position: 110, starterEnabled: false },
   { key: 'journal.list.access', groupKey: 'journal', name: 'Список', valueType: CapabilityValueType.BOOLEAN, position: 120, starterEnabled: false },
+
   { key: 'services.access', groupKey: 'settings', name: 'Услуги', valueType: CapabilityValueType.BOOLEAN, position: 130, starterEnabled: true },
   { key: 'online_booking.access', groupKey: 'settings', name: 'Онлайн-запись', valueType: CapabilityValueType.BOOLEAN, position: 140, starterEnabled: false },
   { key: 'notifications.access', groupKey: 'settings', name: 'Уведомления', valueType: CapabilityValueType.BOOLEAN, position: 150, starterEnabled: false },
   { key: 'integrations.access', groupKey: 'settings', name: 'Интеграции', valueType: CapabilityValueType.BOOLEAN, position: 160, starterEnabled: false },
   { key: 'documents.access', groupKey: 'settings', name: 'Документы', valueType: CapabilityValueType.BOOLEAN, position: 170, starterEnabled: false },
   { key: 'tags.access', groupKey: 'settings', name: 'Ярлыки', valueType: CapabilityValueType.BOOLEAN, position: 180, starterEnabled: false },
+
   { key: 'journal.access', groupKey: 'system', name: 'Журнал', valueType: CapabilityValueType.BOOLEAN, position: 900, starterEnabled: false },
   { key: 'finance.access', groupKey: 'system', name: 'Финансы', valueType: CapabilityValueType.BOOLEAN, position: 910, starterEnabled: false },
   { key: 'payments.access', groupKey: 'system', name: 'Оплаты', valueType: CapabilityValueType.BOOLEAN, position: 920, starterEnabled: false },
@@ -141,6 +145,7 @@ export class TenantInvitationService {
 
   async ensureStarterPlan() {
     const capabilityIds = new Map<string, string>();
+
     for (const item of CAPABILITY_CATALOG) {
       const capability = await this.prisma.capability.upsert({
         where: { key: item.key },
@@ -198,6 +203,7 @@ export class TenantInvitationService {
         },
       });
     }
+
     return plan;
   }
 
@@ -290,6 +296,7 @@ export class TenantInvitationService {
           });
         }
       }
+
       const invitation = await tx.tenantInvitation.create({
         data: {
           tenantId: tenant.id,
@@ -316,6 +323,7 @@ export class TenantInvitationService {
       tokenHash,
       expiresAt,
     });
+
     try {
       await this.sendInvitationEmail({ email: input.email, name: input.name, token });
     } catch (error) {
@@ -324,6 +332,7 @@ export class TenantInvitationService {
         throw error;
       }
     }
+
     return { created, token, expiresAt };
   }
 
@@ -342,7 +351,12 @@ export class TenantInvitationService {
   ) {
     const passwordHash = await hashPassword(password, 12);
     const result = await this.prisma.$transaction(async (tx) => {
-      const account = await tx.platformAccount.create({ data: { email, passwordHash } });
+      const account = await tx.platformAccount.create({
+        data: {
+          email,
+          passwordHash,
+        },
+      });
       const membership = await tx.membership.create({
         data: {
           tenantId: invitation.tenantId,
@@ -373,6 +387,7 @@ export class TenantInvitationService {
           acceptedAt,
         },
       });
+
       for (const document of registrationDocuments) {
         const eventId = randomBytes(18).toString('hex');
         const evidence = JSON.stringify({
@@ -398,9 +413,13 @@ export class TenantInvitationService {
       tenantId: invitation.tenantId,
       role: result.membership.role,
     });
+
     return {
       accessToken,
-      account: { id: result.account.id, email: result.account.email },
+      account: {
+        id: result.account.id,
+        email: result.account.email,
+      },
       tenant: { id: invitation.tenant.id, name: invitation.tenant.name },
       role: result.membership.role,
     };
@@ -412,6 +431,7 @@ export class TenantInvitationService {
     const tools = normalizeToolSelection(input?.tools);
     if (!tools.length) throw new BadRequestException('Перед приглашением выберите хотя бы один инструмент');
     if (!email || !email.includes('@')) throw new BadRequestException('Укажите корректный email');
+
     await this.ensureEmailAvailable(email);
     const { created } = await this.createEmailInvitation(adminId, {
       email,
@@ -419,6 +439,7 @@ export class TenantInvitationService {
       tenantName: name || email.split('@')[0] || 'Профиль',
       tools,
     });
+
     return this.invitationDto(created.invitation);
   }
 
@@ -455,6 +476,7 @@ export class TenantInvitationService {
       name: '',
       tenantName: 'Новый профиль',
     }, 'best-effort');
+
     return {
       token,
       invitationId: created.invitation.id,
@@ -468,6 +490,7 @@ export class TenantInvitationService {
     if (!tools.length) throw new BadRequestException('Перед формированием ссылки выберите хотя бы один инструмент');
     const { token, tokenHash, expiresAt } = this.createInvitationToken();
     const email = `${REGISTRATION_LINK_EMAIL_PREFIX}${tokenHash.slice(0, 24)}${REGISTRATION_LINK_EMAIL_SUFFIX}`;
+
     const created = await this.createPendingInvitation(adminId, {
       email,
       name: '',
@@ -475,7 +498,15 @@ export class TenantInvitationService {
       tokenHash,
       expiresAt,
     });
-    const url = this.registrationUrl(token);
+
+    let url: string;
+    try {
+      url = this.registrationUrl(token);
+    } catch (error) {
+      await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
+      throw error;
+    }
+
     return {
       id: created.invitation.id,
       tenantId: created.tenant.id,
@@ -489,13 +520,16 @@ export class TenantInvitationService {
     if (!invitation || invitation.createdByAdminId !== adminId) throw new NotFoundException('Приглашение не найдено');
     if (invitation.status !== TenantInvitationStatus.PENDING) throw new ConflictException('Это приглашение уже не активно');
     if (isRegistrationLinkEmail(invitation.email)) throw new ConflictException('Эта ссылка не отправляется по email');
+
     const oldTokenHash = invitation.tokenHash;
     const oldExpiresAt = invitation.expiresAt;
     const { token, tokenHash, expiresAt } = this.createInvitationToken();
+
     const updated = await this.prisma.tenantInvitation.update({
       where: { id: invitation.id },
       data: { tokenHash, expiresAt },
     });
+
     try {
       await this.sendInvitationEmail({ email: invitation.email, name: invitation.name, token });
     } catch (error) {
@@ -505,6 +539,7 @@ export class TenantInvitationService {
       }).catch(() => undefined);
       throw error;
     }
+
     return this.invitationDto(updated);
   }
 
@@ -520,14 +555,18 @@ export class TenantInvitationService {
         },
       },
     });
-    if (!invitation || invitation.createdByAdminId !== adminId) throw new NotFoundException('Приглашение не найдено');
+    if (!invitation || invitation.createdByAdminId !== adminId) {
+      throw new NotFoundException('Приглашение не найдено');
+    }
     if (invitation.status === TenantInvitationStatus.ACCEPTED) {
       throw new ConflictException('Зарегистрированного пользователя нельзя удалить этим действием');
     }
     if (invitation.tenant.memberships.length || invitation.tenant.profiles.length) {
       throw new ConflictException('У этого рабочего пространства уже есть зарегистрированные данные');
     }
+
     await this.prisma.tenant.delete({ where: { id: invitation.tenantId } });
+
     return { deleted: true, invitationId, tenantId: invitation.tenantId };
   }
 
@@ -539,7 +578,11 @@ export class TenantInvitationService {
       name: invitation.name,
       requiresEmail,
       expiresAt: invitation.expiresAt,
-      demo: { activatedAt: '', expiresAt: '', days: 14 },
+      demo: {
+        activatedAt: '',
+        expiresAt: '',
+        days: 14,
+      },
       documents: await this.registrationDocuments.documents(),
       tenant: { id: invitation.tenant.id, name: invitation.tenant.name },
     };
@@ -557,19 +600,24 @@ export class TenantInvitationService {
     const token = String(input?.token || '').trim();
     const password = String(input?.password || '');
     if (password.length < 10) throw new BadRequestException('Пароль должен содержать минимум 10 символов');
+
     const invitation = await this.findActiveInvitation(token);
     const email = isRegistrationLinkEmail(invitation.email)
       ? normalizeEmail(input?.email)
       : invitation.email;
     if (!email || !email.includes('@')) throw new BadRequestException('Укажите корректный email');
+
     const name = normalizeName(input?.name);
     const surname = normalizeName(input?.surname);
     const phone = normalizePhone(input?.phone);
     if (!name) throw new BadRequestException('Укажите имя');
     if (!phone || !validRegistrationPhone(phone)) throw new BadRequestException('Укажите корректный номер телефона');
+
     const registrationDocuments = await this.registrationDocuments.validate(input?.documents);
+
     const existingAccount = await this.prisma.platformAccount.findUnique({ where: { email } });
     if (existingAccount) throw new ConflictException('Учётная запись с таким email уже зарегистрирована');
+
     const existingInvitation = await this.prisma.tenantInvitation.findFirst({
       where: {
         email,
@@ -579,6 +627,7 @@ export class TenantInvitationService {
       select: { id: true },
     });
     if (existingInvitation) throw new ConflictException('На этот email уже создано другое активное приглашение');
+
     return this.acceptPendingInvitation(
       invitation,
       email,
@@ -616,6 +665,7 @@ export class TenantInvitationService {
     const url = this.registrationUrl(input.token);
     const safeName = escapeHtml(input.name || '');
     const greeting = safeName ? `Здравствуйте, ${safeName}.` : 'Здравствуйте.';
+
     return this.email.send({
       to: input.email,
       toName: input.name,
