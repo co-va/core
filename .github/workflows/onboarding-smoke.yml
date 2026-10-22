@@ -114,38 +114,34 @@ jobs:
             if(Math.abs(days-14)>0.01) throw new Error('DEMO is not exactly 14 days');
           " "$access_after"
 
-          docker compose -f docker-compose.staging.yml exec -T db \
-            psql -U book -d book_staging -v ON_ERROR_STOP=1 \
-            -v tenant_id="$tenant_id" -v account_id="$account_id" -v invitation_id="$invitation_id" -v email="$registration_email" <<'SQL'
-          DO $onboarding$
-          BEGIN
-            IF (SELECT COUNT(*) FROM "PlatformAdmin") <> 1 THEN
-              RAISE EXCEPTION 'OWNER bootstrap did not create exactly one PlatformAdmin';
-            END IF;
-            IF (SELECT COUNT(*) FROM "Tenant" WHERE "id" = :'tenant_id') <> 1 THEN
-              RAISE EXCEPTION 'Registration tenant missing or duplicated';
-            END IF;
-            IF (SELECT COUNT(*) FROM "TenantAccess" WHERE "tenantId" = :'tenant_id' AND "commercialMode" = 'DEMO') <> 1 THEN
-              RAISE EXCEPTION 'DEMO access missing or duplicated';
-            END IF;
-            IF (SELECT COUNT(*) FROM "TenantInvitation" WHERE "id" = :'invitation_id' AND "tenantId" = :'tenant_id' AND "status" = 'ACCEPTED') <> 1 THEN
-              RAISE EXCEPTION 'Invitation missing, duplicated or not accepted';
-            END IF;
-            IF (SELECT COUNT(*) FROM "PlatformAccount" WHERE "id" = :'account_id' AND "email" = :'email') <> 1 THEN
-              RAISE EXCEPTION 'PlatformAccount missing or duplicated';
-            END IF;
-            IF (SELECT COUNT(*) FROM "Membership" WHERE "tenantId" = :'tenant_id' AND "platformAccountId" = :'account_id' AND "role" = 'OWNER') <> 1 THEN
-              RAISE EXCEPTION 'OWNER Membership missing or duplicated';
-            END IF;
-            IF (SELECT COUNT(*) FROM "Profile" WHERE "tenantId" = :'tenant_id' AND "platformAccountId" = :'account_id') <> 1 THEN
-              RAISE EXCEPTION 'Profile missing or duplicated';
-            END IF;
-            IF (SELECT COUNT(*) FROM "PlatformConsentEvent" WHERE "tenantId" = :'tenant_id' AND "platformAccountId" = :'account_id') < 1 THEN
-              RAISE EXCEPTION 'Registration consent events missing';
-            END IF;
-          END
-          $onboarding$;
-          SQL
+          db_count() {
+            docker compose -f docker-compose.staging.yml exec -T db \
+              psql -U book -d book_staging -Atc "$1" | tr -d '\r\n'
+          }
+          assert_one() {
+            local label="$1"
+            local query="$2"
+            local actual
+            actual=$(db_count "$query")
+            if [ "$actual" != "1" ]; then
+              echo "$label: expected 1, got $actual"
+              exit 1
+            fi
+          }
+
+          assert_one "PlatformAdmin bootstrap" 'SELECT COUNT(*) FROM "PlatformAdmin";'
+          assert_one "Registration tenant" "SELECT COUNT(*) FROM \"Tenant\" WHERE \"id\" = '$tenant_id';"
+          assert_one "DEMO access" "SELECT COUNT(*) FROM \"TenantAccess\" WHERE \"tenantId\" = '$tenant_id' AND \"commercialMode\" = 'DEMO';"
+          assert_one "Accepted invitation" "SELECT COUNT(*) FROM \"TenantInvitation\" WHERE \"id\" = '$invitation_id' AND \"tenantId\" = '$tenant_id' AND \"status\" = 'ACCEPTED';"
+          assert_one "PlatformAccount" "SELECT COUNT(*) FROM \"PlatformAccount\" WHERE \"id\" = '$account_id' AND \"email\" = '$registration_email';"
+          assert_one "OWNER Membership" "SELECT COUNT(*) FROM \"Membership\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id' AND \"role\" = 'OWNER';"
+          assert_one "Profile" "SELECT COUNT(*) FROM \"Profile\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id';"
+
+          consent_count=$(db_count "SELECT COUNT(*) FROM \"PlatformConsentEvent\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id';")
+          if [ "$consent_count" -lt 1 ]; then
+            echo "Registration consent events missing"
+            exit 1
+          fi
 
       - name: Stop isolated onboarding environment
         if: always()
