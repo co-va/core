@@ -39,6 +39,11 @@ async function main() {
           commercialMode: 'LIVE',
         },
       });
+      await tx.platformAdmin.upsert({
+        where: { platformAccountId: existing.id },
+        create: { platformAccountId: existing.id },
+        update: {},
+      });
     });
     return;
   }
@@ -59,6 +64,7 @@ async function main() {
         commercialMode: 'LIVE',
       },
     });
+    await tx.platformAdmin.create({ data: { platformAccountId: account.id } });
   });
 }
 
