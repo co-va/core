@@ -79,7 +79,7 @@ export function headerToggle({ items = [], activeId = '', data = 'data-header-to
  * Canonical grouping for more than one header control block.
  */
 export function headerControlGroup(items = []) {
-  return `<div class="header-control-group">${(Array.isArray(items) ? items : [items]).filter(Boolean).join('')}</div>`;
+  return `<div class="header-control-group">${(Array.isArray(items) ? items : []).filter(Boolean).join('')}</div>`;
 }
 
 /**
