@@ -1,0 +1,23 @@
+name: Apply Event implementation
+on:
+  push:
+    branches: [staging]
+    paths: ['.tmp/event-apply.py']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - run: python .tmp/event-apply.py
+      - run: |
+          git rm .tmp/event-apply.py .github/workflows/event-apply.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Complete canonical Event runtime replacement"
+          git push origin HEAD:staging
