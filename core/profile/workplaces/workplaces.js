@@ -293,7 +293,7 @@ export function confirmDeleteWorkplace(root,key,onDeleted=()=>{}){
   m.querySelector('[data-cancel-delete-workplace]').onclick=()=>m.v2Close?.();
   m.querySelector('[data-confirm-delete-workplace]').onclick=async()=>{
     try{
-      if(await deleteWorkplaceData(key)){m.v2Close?.();onDone();}else m.v2Close?.();
+      if(await deleteWorkplaceData(key)){m.v2Close?.();onDeleted();}else m.v2Close?.();
     }catch(deleteError){
       const error=m.querySelector('[data-workplace-delete-error]');
       if(error)error.textContent=deleteError instanceof Error?deleteError.message:'Не удалось удалить рабочее пространство';
