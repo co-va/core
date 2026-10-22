@@ -53,9 +53,36 @@ jobs:
             -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1]}))" "$registration_email")" \
             http://localhost:3000/tenant-invitations/public)
 
-          token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.token) process.exit(1); process.stdout.write(p.token)" "$start_payload")
+          first_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.token) process.exit(1); process.stdout.write(p.token)" "$start_payload")
           tenant_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.tenantId) process.exit(1); process.stdout.write(p.tenantId)" "$start_payload")
           invitation_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.invitationId) process.exit(1); process.stdout.write(p.invitationId)" "$start_payload")
+
+          resume_payload=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1]}))" "$registration_email")" \
+            http://localhost:3000/tenant-invitations/public)
+
+          token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.token) process.exit(1); process.stdout.write(p.token)" "$resume_payload")
+          resume_tenant_id=$(node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.tenantId||''))" "$resume_payload")
+          resume_invitation_id=$(node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.invitationId||''))" "$resume_payload")
+          if [ "$resume_tenant_id" != "$tenant_id" ] || [ "$resume_invitation_id" != "$invitation_id" ]; then
+            echo "Repeated registration created a duplicate tenant or invitation"
+            exit 1
+          fi
+          if [ "$token" = "$first_token" ]; then
+            echo "Repeated registration did not rotate the invitation token"
+            exit 1
+          fi
+
+          old_token_status=$(curl -sS -o /tmp/old-token.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" "$first_token")" \
+            http://localhost:3000/tenant-invitations/inspect)
+          if [ "$old_token_status" -lt 400 ]; then
+            echo "Old registration token remained valid after resume"
+            cat /tmp/old-token.json
+            exit 1
+          fi
 
           inspect_payload=$(curl -fsS \
             -H 'Content-Type: application/json' \
@@ -93,6 +120,18 @@ jobs:
             if(p.tenant?.id!==process.argv[3]) throw new Error('/auth/me tenant mismatch');
           " "$auth_me" "$registration_email" "$tenant_id"
 
+          login_payload=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1],password:process.argv[2]}))" "$registration_email" "$registration_password")" \
+            http://localhost:3000/auth/login)
+          login_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$login_payload")
+          login_me=$(curl -fsS -H "Authorization: Bearer $login_token" http://localhost:3000/auth/me)
+          node -e "
+            const p=JSON.parse(process.argv[1]);
+            if(p.account?.email!==process.argv[2]) throw new Error('Registered user cannot log in again');
+            if(p.tenant?.id!==process.argv[3]) throw new Error('Repeated login opened the wrong tenant');
+          " "$login_me" "$registration_email" "$tenant_id"
+
           access_before=$(curl -fsS -H "Authorization: Bearer $access_token" http://localhost:3000/saas-access/me)
           node -e "
             const p=JSON.parse(process.argv[1]);
@@ -113,6 +152,12 @@ jobs:
             const days=(Date.parse(p.demoExpiresAt)-Date.parse(p.demoActivatedAt))/86400000;
             if(Math.abs(days-14)>0.01) throw new Error('DEMO is not exactly 14 days');
           " "$access_after"
+
+          reset_request=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1],surface:'app'}))" "$registration_email")" \
+            http://localhost:3000/auth/password-reset/request)
+          node -e "const p=JSON.parse(process.argv[1]); if(p.accepted!==true) throw new Error('Password reset request was not accepted')" "$reset_request"
 
           db_count() {
             docker compose -f docker-compose.staging.yml exec -T db \
@@ -136,6 +181,7 @@ jobs:
           assert_one "PlatformAccount" "SELECT COUNT(*) FROM \"PlatformAccount\" WHERE \"id\" = '$account_id' AND \"email\" = '$registration_email';"
           assert_one "OWNER Membership" "SELECT COUNT(*) FROM \"Membership\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id' AND \"role\" = 'OWNER';"
           assert_one "Profile" "SELECT COUNT(*) FROM \"Profile\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id';"
+          assert_one "Password reset ticket" "SELECT COUNT(*) FROM \"PasswordResetTicket\" WHERE \"subjectType\" = 'PLATFORM' AND \"subjectId\" = '$account_id' AND \"usedAt\" IS NULL;"
 
           consent_count=$(db_count "SELECT COUNT(*) FROM \"PlatformConsentEvent\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id';")
           if [ "$consent_count" -lt 1 ]; then
