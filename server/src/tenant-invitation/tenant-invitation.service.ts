@@ -21,6 +21,7 @@ const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const STARTER_PLAN_KEY = 'starter-people';
 const REGISTRATION_LINK_EMAIL_PREFIX = 'registration+';
 const REGISTRATION_LINK_EMAIL_SUFFIX = '@registration.invalid';
+const DEFAULT_FRONTEND_ORIGIN = 'https://app.va-tools.ru';
 
 export const TOOL_CAPABILITY_KEYS = [
   'workplaces.access',
@@ -216,8 +217,8 @@ export class TenantInvitationService {
   }
 
   private registrationUrl(token: string) {
-    const origin = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\/+$/, '');
-    if (!origin) throw new BadRequestException('FRONTEND_ORIGIN не настроен');
+    const configuredOrigin = String(process.env.FRONTEND_ORIGIN || '').trim();
+    const origin = (configuredOrigin || DEFAULT_FRONTEND_ORIGIN).replace(/\/+$/, '');
     return `${origin}/invite/?token=${encodeURIComponent(token)}`;
   }
 
