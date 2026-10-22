@@ -37,6 +37,7 @@ assert.match(serverMain, /host === USER_HOST/);
 assert.match(serverMain, /host === LANDING_HOST/);
 assert.match(serverMain, /host === LANDING_WWW_HOST/);
 assert.match(serverMain, /landing\/index\.html/);
+assert.match(serverMain, /'Cache-Control': 'no-store, no-cache, must-revalidate'/);
 assert.match(serverMain, /USER_PWA_ASSETS/);
 assert.match(serverMain, /pwa\/user\/manifest\.webmanifest/);
 assert.match(serverMain, /pwa\/user\/app-icon\.svg/);
