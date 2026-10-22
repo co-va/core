@@ -24,6 +24,7 @@ import {
 import { flushBusinessPersistence } from '../core/business-persistence.js';
 import { noteDetail } from '../ui/note/index.js';
 import {
+  noteContextWithTarget,
   noteTargetLabel,
   noteTargetOptions,
   noteTargetValue,
@@ -34,6 +35,11 @@ import {
 function normalizeTargetForDate(state) {
   const current = noteTargetValue(state);
   if (!current) return;
+
+  const target = resolveNoteTarget(state);
+  const targetDate = String(target?.entity?.date || '').slice(0, 10);
+  if (targetDate && targetDate === String(state.date || '').slice(0, 10)) return;
+
   const allowed = new Set(noteTargetOptions(state.date).map((option) => String(option.value || '')));
   if (allowed.has(current)) return;
   state.targetType = '';
@@ -82,11 +88,11 @@ export function openNoteView(noteOrId, {
     const root = host();
     if (!root || !current) return;
 
-    const target = resolveNoteTarget(current);
     const state = {
       ...current,
-      targetType: target ? current.targetType : '',
-      targetId: target ? current.targetId : '',
+      context: current.context && typeof current.context === 'object' && !Array.isArray(current.context)
+        ? { ...current.context }
+        : {},
     };
     normalizeTargetForDate(state);
     const before = { ...current };
@@ -103,7 +109,7 @@ export function openNoteView(noteOrId, {
           label: 'Прикрепить к',
           name: 'target',
           value: noteTargetValue(state),
-          options: noteTargetOptions(state.date),
+          options: noteTargetOptions(state.date, { includeNote: state }),
           aria: 'Прикрепить заметку',
         })}
         ${field({ label: 'Наименование', name: 'title', value: state.title })}
@@ -147,6 +153,7 @@ export function openNoteView(noteOrId, {
       form?.addEventListener('submit', async (event) => {
         event.preventDefault();
         capture();
+        normalizeTargetForDate(state);
         if (!state.date) {
           openNotice({ title: 'Заметка', message: 'Укажите дату заметки.' });
           return;
@@ -158,7 +165,9 @@ export function openNoteView(noteOrId, {
 
         const submit = form.querySelector('[type="submit"]');
         if (submit) submit.disabled = true;
+        const context = noteContextWithTarget(state.context, state.targetType, state.targetId);
         const updated = updateNote(noteId, {
+          context,
           date: state.date,
           from: state.from,
           to: state.to,
