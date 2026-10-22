@@ -7,6 +7,8 @@ import {
   saveBookingSettings,
 } from '../../core/booking-settings/index.js';
 import {
+  actionBlock,
+  button,
   copyIconButton,
   copyTextToClipboard,
   emptyState,
@@ -84,25 +86,21 @@ function welcomeDraft(form, baseSettings = getBookingSettings()) {
 
 function setWelcomeSaveVisible(host, visible) {
   const save = host?.querySelector('[data-online-booking-welcome-save]');
-  if (!save) return;
-  save.dataset.v2PrimaryVisible = visible ? 'true' : 'false';
-  window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
+  const actions = save?.closest('.modal-actions');
+  if (actions) actions.hidden = !visible;
 }
 
 function openWelcomeQ(root) {
   const saved = getBookingSettings();
-  const content = `${workspaceHeaderContext({
-    title: 'Приветствие',
-    hideD: true,
-    c: {
-      label: 'Сохранить',
-      data: 'data-online-booking-welcome-save data-v2-primary-visible="false"',
-      aria: 'Сохранить приветствие',
-    },
-  })}
+  const content = `${workspaceHeaderContext({ title: 'Приветствие' })}
     <form class="form-grid" data-online-booking-welcome>
       ${field({ label: 'Заголовок', name: 'welcomeTitle', value: saved.welcomeTitle, maxlength: 90 })}
       ${textareaField({ label: 'Текст', name: 'welcomeText', value: saved.welcomeText, rows: 6, maxlength: 500 })}
+      ${actionBlock(button('Сохранить', {
+        type: 'submit',
+        data: 'data-online-booking-welcome-save',
+        aria: 'Сохранить приветствие',
+      }))}
     </form>`;
 
   const layer = mountModal(root, modal(content, {
@@ -118,7 +116,8 @@ function openWelcomeQ(root) {
   };
   form?.addEventListener('input', updateDirty);
   form?.addEventListener('change', updateDirty);
-  layer.querySelector('[data-online-booking-welcome-save]')?.addEventListener('click', () => {
+  form?.addEventListener('submit', (event) => {
+    event.preventDefault();
     if (!form) return;
     saveBookingSettings(welcomeDraft(form, saved));
     layer.v2Close?.();
