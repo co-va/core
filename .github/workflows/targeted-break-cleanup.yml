@@ -1,0 +1,23 @@
+name: Targeted Break cleanup
+on:
+  push:
+    branches: [staging]
+    paths: ['.tmp/targeted-break-cleanup.py']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - run: python .tmp/targeted-break-cleanup.py
+      - run: |
+          git rm .tmp/targeted-break-cleanup.py .github/workflows/targeted-break-cleanup.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Remove final operational Break runtime field"
+          git push origin HEAD:staging
