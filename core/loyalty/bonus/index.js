@@ -1,4 +1,6 @@
 import {
+  actionBlock,
+  button,
   checkList,
   collectCheckList,
   datePicker,
@@ -267,9 +269,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
     : emptyState('Позиции Сервиса пока не созданы', 'Сначала добавьте позиции в Сервис.');
   const termMode = editingProgram?.termType || 'indefinite';
   const conditionValue = editingProgram?.conditionValue || '';
-  const layer = mountModal(root, modal(`${loyaltyHeader(title, {
-    c: { label: 'Сохранить', data: 'data-bonus-save', aria: 'Сохранить бонусную программу' },
-  })}
+  const layer = mountModal(root, modal(`${loyaltyHeader(title)}
     <form class="form-grid" data-bonus-form>
       ${field({ label: 'Название', name: 'name', value: editingProgram?.name || '', required: true })}
       ${optionalUeiField({ name: 'uei', value: editingProgram?.uei || '' })}
@@ -329,6 +329,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
         { value: 'completion', label: 'После завершения' }, { value: 'payment', label: 'После оплаты' }, { value: 'paid-and-completed', label: 'После завершения и оплаты' },
       ] })}
       <div class="form-error" data-bonus-error></div>
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-bonus-save', aria: 'Сохранить бонусную программу' }))}
     </form>`, { variant: 'q', surface: 'app', title }));
   if (!layer) return null;
   initBonusConstructor(layer, editingProgram);
