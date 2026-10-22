@@ -230,8 +230,8 @@ assert.match(contactDetailBlock, /button\('Удалить', \{ variant: 'danger'
 assert.match(contactDetailBlock, /button\('Отмена', \{ variant: 'secondary'/);
 assert.match(contactDetailBlock, /data-contact-delete-error/);
 assert.match(contactDetailBlock, /deleteGlobalAccountRelationship\(tenantId\)/);
-assert.match(contactDetailBlock, /label:\s*'Записаться'/);
-assert.match(contactDetailBlock, /label:\s*'Повторить'/);
+assert.match(contactDetailBlock, /actionBlock\(button\('Записаться', \{[\s\S]*?data: 'data-global-contact-booking'/);
+assert.match(contactDetailBlock, /actionBlock\(button\('Повторить', \{[\s\S]*?data: 'data-global-contact-booking'/);
 
 assert.match(profileService, /async accountRelationshipProfile\(tenantId: string\)[\s\S]*?phone: row\.phone/);
 assert.doesNotMatch(profileService.slice(profileService.indexOf('async publicBookingBundle')), /profile:\s*\{[\s\S]*?phone: row\.phone/, 'Public booking profile must not expose the professional phone just for Contacts');
@@ -277,7 +277,7 @@ assert.match(accountShell, /openAccountConsentSettings/);
 assert.match(accountShell, /mountModal\(document\.body, modal/);
 assert.doesNotMatch(accountShell, /mountV2Layer\(|v2Layer\(/);
 assert.match(accountShell, /async function renderGlobalHistoryDetail/);
-assert.match(accountShell, /label: 'Записаться', data: 'data-global-history-repeat'/);
+assert.match(accountShell, /actionBlock\(button\('Записаться', \{[\s\S]*?data: 'data-global-history-repeat'/);
 assert.match(accountShell, /state\.accountSelectedChatTenantId/);
 const rootChatBlock = accountShell.slice(
   accountShell.indexOf('function bindGlobalChatButton'),
