@@ -150,6 +150,15 @@ export class NoteService {
       throw new BadRequestException('Некорректный владелец заметки');
     }
 
+    const existingById = await this.prisma.note.findUnique({ where: { id: noteId } });
+    if (existingById && (
+      existingById.tenantId !== tenantId
+      || existingById.ownerType !== 'profile'
+      || existingById.ownerId !== ownerId
+    )) {
+      throw new NotFoundException('Заметка не найдена');
+    }
+
     const date = dateValue(input.date);
     const from = optionalTime(input.from);
     const to = optionalTime(input.to);
@@ -161,15 +170,12 @@ export class NoteService {
       throw new BadRequestException('Укажите наименование или текст заметки');
     }
 
-    await this.validateTarget(tenantId, date, targetType, targetId);
-
-    const existingById = await this.prisma.note.findUnique({ where: { id: noteId } });
-    if (existingById && (
-      existingById.tenantId !== tenantId
-      || existingById.ownerType !== 'profile'
-      || existingById.ownerId !== ownerId
-    )) {
-      throw new NotFoundException('Заметка не найдена');
+    const preservesExistingTarget = Boolean(existingById
+      && existingById.date === date
+      && existingById.targetType === targetType
+      && existingById.targetId === targetId);
+    if (!preservesExistingTarget) {
+      await this.validateTarget(tenantId, date, targetType, targetId);
     }
 
     const contextValue = input.context && typeof input.context === 'object' && !Array.isArray(input.context)
