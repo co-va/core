@@ -22,7 +22,7 @@ function recordMarkup(usage, { interactive = true } = {}) {
     : `<div class="journal-record${statusClass}" aria-disabled="true">${content}</div>`;
 }
 
-function defaultUsageMarkup(usage, { interactive = true } = {}) {
+function usageMarkup(usage, { interactive = true } = {}) {
   if (usage?.type === 'record') return recordMarkup(usage, { interactive });
   return interactive
     ? `<button type="button" class="journal-record journal-record--break" data-journal-usage="${escape(usage.sourceId || usage.id)}"><strong>Перерыв</strong></button>`
@@ -59,7 +59,7 @@ function usageSegment(usage, day = '') {
 }
 
 function renderUsage(usage, options, renderer) {
-  return String((typeof renderer === 'function' ? renderer : defaultUsageMarkup)(usage, options) ?? '');
+  return String((typeof renderer === 'function' ? renderer : usageMarkup)(usage, options) ?? '');
 }
 
 function timelineRange({ workRanges = [], usages = [], day = '' } = {}) {
@@ -86,7 +86,7 @@ function slotsMarkup(start, end, { interactive = true, workStart = start, workEn
   return slots.join('');
 }
 
-function aggregateTimeline(columns = [], { day = '', usageRenderer = defaultUsageMarkup } = {}) {
+function aggregateTimeline(columns = [], { day = '', usageRenderer = usageMarkup } = {}) {
   const prepared = (Array.isArray(columns) ? columns : []).map((column) => {
     const start = timeToMinutes(column?.from);
     const end = timeToMinutes(column?.to);
@@ -113,7 +113,10 @@ function aggregateTimeline(columns = [], { day = '', usageRenderer = defaultUsag
       if (!segment) return '';
       const usageTop = ((segment.start - start) / total) * 100;
       const usageHeight = ((segment.end - segment.start) / total) * 100;
-      return `<div class="journal-work-field__usage" style="top:${usageTop}%;height:${usageHeight}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${renderUsage(usage, { interactive: false }, usageRenderer)}</div>`;
+      const markup = usageRenderer === usageMarkup
+        ? usageMarkup(usage, { interactive: false })
+        : renderUsage(usage, { interactive: false }, usageRenderer);
+      return `<div class="journal-work-field__usage" style="top:${usageTop}%;height:${usageHeight}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${markup}</div>`;
     }).join('');
     return `<div class="journal-work-column"><div class="journal-work-field${column?.conflict ? ' is-conflict' : ''}" role="button" tabindex="0" aria-label="Изменить рабочее пространство ${escape(column?.name || '')}" style="top:${top}%;height:${height}%" data-journal-work-field="${escape(column?.workplaceId || '')}"></div>${usages}</div>`;
   }).join('');
@@ -127,7 +130,7 @@ export function journalDayTimeline({
   usages = [],
   columns = [],
   day = '',
-  renderUsage: usageRenderer = defaultUsageMarkup,
+  renderUsage: usageRenderer = usageMarkup,
 } = {}) {
   if (Array.isArray(columns) && columns.length) return aggregateTimeline(columns, { day, usageRenderer });
   const workStart = timeToMinutes(from), workEnd = timeToMinutes(to);
