@@ -1,4 +1,4 @@
-import { actionBlock, button, collectRepeatedField, entityVisualCard, escapeHtml, field, initPhotoField, initRepeatedFields, modal, mountModal, mountV2ZLayer, openEntityCardAppearanceQ, openSharedProfileSettingsMenu, openSharedPasswordAction, page, photoField, repeatedField, searchableSelect, select, setSharedProfilePrimary, textareaField, v2HorizontalRail, v2Section, workspaceHeaderContext, v2ZLayer, workplaceAddButton } from '../../ui/ui.js';
+import { actionBlock, button, collectRepeatedField, entityVisualCard, escapeHtml, field, initPhotoField, initRepeatedFields, modal, mountModal, mountV2ZLayer, openEntityCardAppearanceQ, openSharedProfileSettingsMenu, openSharedPasswordAction, page, photoField, repeatedField, searchableSelect, select, textareaField, v2HorizontalRail, v2Section, workspaceHeaderContext, v2ZLayer, workplaceAddButton } from '../../ui/ui.js';
 import { canUseBookCapability, getBookAccess, getBookLimit, loadBookAccess, requestLiveMode } from '../../core/access.js';
 import { changePassword, logout } from '../../core/auth.js';
 import { getProfessionCatalog, getProfile, saveProfile as saveProfileData } from './data.js';
@@ -81,17 +81,10 @@ function profileDataFields(p,emails,includePhoto=false){
 
 function profileDataForm(p,options={}, {embedded=false}={}){
   const emails=p.emails?.length?p.emails:(options.accountEmail?[options.accountEmail]:[]);
-  const bodySave=embedded?actionBlock(button('Сохранить',{type:'submit',data:'data-save-profile'})):'';
-  const primary=embedded?'':button('Сохранить',{
-    className:'v2-primary-source-only',
-    data:'data-save-profile data-v2-primary-action data-v2-primary-label="Сохранить" data-v2-primary-visible="false"',
-    aria:'Сохранить',
-  });
   return `<form class="v2-profile-data-form" data-profile-data-form>
     ${profileDataFields(p,emails,embedded)}
     <div class="form-error" data-profile-error></div>
-    ${primary}
-    ${bodySave}
+    ${actionBlock(button('Сохранить',{type:'submit',data:`data-save-profile${embedded?' data-profile-save-always':''}`}))}
   </form>`;
 }
 
@@ -142,12 +135,14 @@ function bindProfileData(layer,p,options,onSaved){
   if(layer.querySelector('[data-photo-field]'))initPhotoField(layer);
   initRepeatedFields(layer);
   const form=layer.querySelector('[data-profile-data-form]');
-  const primary=layer.querySelector('[data-save-profile][data-v2-primary-action]');
+  const saveButton=layer.querySelector('[data-save-profile]');
+  const saveActions=saveButton?.closest('.modal-actions');
+  const alwaysVisible=saveButton?.hasAttribute('data-profile-save-always');
   const initial=formSnapshot(form);
 
   const syncDirty=()=>{
-    if(!primary||!form)return;
-    setSharedProfilePrimary(primary,{visible:formSnapshot(form)!==initial,label:'Сохранить'});
+    if(!form||!saveActions||alwaysVisible)return;
+    saveActions.hidden=formSnapshot(form)===initial;
   };
 
   form?.addEventListener('input',syncDirty);
@@ -160,14 +155,13 @@ function bindProfileData(layer,p,options,onSaved){
       if(target)target.textContent='Имя, телефон и профессия обязательны.';
       return false;
     }
+    if(saveButton)saveButton.disabled=true;
     try{
-      setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:true});
       await saveProfileData(data);
-      setSharedProfilePrimary(primary,{visible:false,label:'Сохранить',disabled:false});
       onSaved?.();
       return true;
     }catch(error){
-      setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:false});
+      if(saveButton)saveButton.disabled=false;
       const target=layer.querySelector('[data-profile-error]');
       if(target)target.textContent=error instanceof Error?error.message:'Не удалось сохранить профиль';
       else showProfileError(error instanceof Error?error.message:'Не удалось сохранить профиль');
@@ -176,7 +170,6 @@ function bindProfileData(layer,p,options,onSaved){
   };
 
   form?.addEventListener('submit',async e=>{e.preventDefault();await save()});
-  primary?.addEventListener('click',save);
   syncDirty();
 }
 
