@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   collectLinks,
   details,
@@ -257,7 +258,7 @@ function personHistoryMarkup(items = [], query = '') {
   })));
 }
 
-function personQContext(person, { c = null } = {}) {
+function personQContext(person) {
   return workspaceHeaderContext({
     title: name(person),
     a: {
@@ -268,7 +269,6 @@ function personQContext(person, { c = null } = {}) {
       data: 'data-person-settings',
       aria: `Настройки ${name(person)}`,
     },
-    c,
     d: {
       kind: 'chat',
       data: 'data-person-direct-chat',
@@ -958,12 +958,11 @@ function openPersonEdit(parentLayer, baseRoot, key, options = {}, callbacks = {}
   const person = getAllPeople().find((item) => item.key === key);
   if (!person) return null;
   const all = getAllPeople();
-  const layer = mountModal(baseRoot, modal(`${personQContext(person, {
-    c: { label: 'Сохранить', data: 'data-person-q-save', aria: 'Сохранить изменения' },
-  })}<form data-person-edit-form>
+  const layer = mountModal(baseRoot, modal(`${personQContext(person)}<form data-person-edit-form>
     ${personDataFields(person, all)}
     ${button('Удалить клиента', { type: 'button', variant: 'danger', data: 'data-person-delete' })}
     <div class="form-error" data-person-edit-error></div>
+    ${actionBlock(button('Сохранить', { type: 'button', data: 'data-person-q-save', aria: 'Сохранить изменения' }))}
   </form>`, {
     title: name(person),
     variant: 'q',
@@ -980,11 +979,14 @@ function openPersonEdit(parentLayer, baseRoot, key, options = {}, callbacks = {}
 
   const form = layer.querySelector('[data-person-edit-form]');
   const action = layer.querySelector('[data-person-q-save]');
+  const actions = action?.closest('.modal-actions');
   const initialState = formSnapshot(form);
   const isDirty = () => formSnapshot(form) !== initialState;
   const syncAction = () => {
     if (!action) return;
-    action.hidden = !isDirty();
+    const visible = isDirty();
+    action.hidden = !visible;
+    if (actions) actions.hidden = !visible;
     notifyContext();
   };
   const save = () => {

@@ -1,4 +1,6 @@
 import {
+  actionBlock,
+  button,
   checkList,
   collectCheckList,
   details,
@@ -230,7 +232,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
   const services = serviceItems();
   const chosenServices = new Set((editingProgram?.eventServiceIds || []).map(String));
   const termMode = editingProgram?.termType || 'indefinite';
-  const layer = mountModal(root, modal(`${loyaltyHeader(title, { c: { label: 'Сохранить', data: 'data-referral-save', aria: 'Сохранить реферальную программу' } })}
+  const layer = mountModal(root, modal(`${loyaltyHeader(title)}
     <form class="form-grid" data-referral-form>
       ${field({ label: 'Название', name: 'name', value: editingProgram?.name || '', required: true })}
       ${optionalUeiField({ name: 'uei', value: editingProgram?.uei || '' })}
@@ -262,6 +264,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       <div data-referral-recurrence-panel="until-cap" hidden>${field({ label: 'Общий лимит начислений', name: 'recurrenceCap', type: 'number', min: '0', step: '0.01', inputmode: 'decimal', value: editingProgram?.recurrenceCap || editingProgram?.recurrenceValue || '' })}</div>
       ${select({ label: 'Кому доступна', name: 'assignment', value: editingProgram?.assignment || 'all', options: [{ value: 'all', label: 'Всем контактам' }, { value: 'selected', label: 'Выбранным контактам' }] })}
       <div class="form-error" data-referral-error></div>
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-referral-save', aria: 'Сохранить реферальную программу' }))}
     </form>`, { variant: 'q', surface: 'app', title }));
   if (!layer) return null;
   initReferralConstructor(layer, editingProgram);

@@ -876,14 +876,7 @@ function renderInvestmentTermsLayer(root, entityLayer, layer, sourceEntity, draf
   };
 
   layer.innerHTML = page([
-    workspaceHeaderContext({
-      title: 'Условия инвестиции',
-      c: {
-        label: 'Сохранить',
-        data: 'data-investment-terms-save',
-        aria: 'Сохранить условия инвестиции',
-      },
-    }),
+    workspaceHeaderContext({ title: 'Условия инвестиции' }),
     `<form class="compact-form" data-investment-terms-form novalidate>
       ${field({ label: 'Наименование', name: 'investmentName', value: current.name, required: true, placeholder: 'Наименование' })}
       ${creating && roles.length > 1
@@ -965,6 +958,7 @@ function renderInvestmentTermsLayer(root, entityLayer, layer, sourceEntity, draf
           { value: 'years', label: 'Лет' },
         ],
       })}` : ''}
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-investment-terms-save', aria: 'Сохранить условия инвестиции' }))}
     </form>`,
     creating ? '' : v2Section('Расчёт', investmentSummaryRows(previewEntity)),
   ]);
@@ -1180,14 +1174,7 @@ function renderLoanTermsLayer(root, entityLayer, layer, sourceEntity, draft = nu
   const schedule = loanScheduleRows(previewEntity);
 
   layer.innerHTML = page([
-    workspaceHeaderContext({
-      title: 'Условия займа',
-      c: {
-        label: 'Сохранить',
-        data: 'data-loan-terms-save',
-        aria: 'Сохранить условия займа',
-      },
-    }),
+    workspaceHeaderContext({ title: 'Условия займа' }),
     `<form class="compact-form" data-loan-terms-form novalidate>
       ${field({ label: 'Наименование', name: 'loanName', value: current.name, required: true })}
       ${field({ label: 'У кого заняли', name: 'lenderName', value: terms.lenderName || '', placeholder: 'Необязательно' })}
@@ -1240,6 +1227,7 @@ function renderLoanTermsLayer(root, entityLayer, layer, sourceEntity, draft = nu
         required: false,
         allowClear: true,
       }) : ''}
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-loan-terms-save', aria: 'Сохранить условия займа' }))}
     </form>`,
     v2Section('Расчёт', calculation.html),
     schedule ? v2Section('График', schedule) : '',

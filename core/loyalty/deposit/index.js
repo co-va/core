@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   datePicker,
   details,
@@ -384,10 +385,7 @@ async function openCreateProgramQ(root, onSaved = () => {}, sourceProgram = null
   const copying = Boolean(sourceProgram?.id);
   const title = copying ? 'Создать копию' : 'Новая депозитная программа';
   const currentCode = '';
-  const layer = mountModal(root, modal(`${depositHeaderContext({
-    title,
-    c: { label: 'Сохранить', data: 'data-deposit-program-save', aria: 'Сохранить депозитную программу' },
-  })}
+  const layer = mountModal(root, modal(`${depositHeaderContext({ title })}
     <form class="form-grid" data-deposit-program-form>
       ${field({ label: 'Название', name: 'name', value: sourceProgram?.name || '', required: true })}
       ${ueiField({ name: 'programUei', value: '', required: false })}
@@ -413,6 +411,7 @@ async function openCreateProgramQ(root, onSaved = () => {}, sourceProgram = null
       <div data-deposit-benefit-value hidden>${field({ label: 'Размер, %', name: 'benefitValue', type: 'number', min: '0.01', step: '0.01', inputmode: 'decimal', value: sourceProgram?.benefitValue || '' })}</div>
       ${textareaField({ label: 'Условия', name: 'description', value: sourceProgram?.description || '' })}
       <div class="form-error" data-deposit-program-error></div>
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-deposit-program-save', aria: 'Сохранить депозитную программу' }))}
     </form>`, { variant: 'q', surface: 'app', title }));
   if (!layer) return null;
   bindUeiInput(layer, 'programUei');
@@ -506,10 +505,7 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
         value: '',
         options: [{ value: '', label: 'Выберите контакт' }, ...people.map(contactOption).filter((item) => item.value)],
       });
-  const layer = mountModal(root, modal(`${depositHeaderContext({
-    title: 'Оформить депозит',
-    c: { label: 'Оформить', data: 'data-deposit-fund-save', aria: 'Оформить депозит' },
-  })}
+  const layer = mountModal(root, modal(`${depositHeaderContext({ title: 'Оформить депозит' })}
     <form class="form-grid" data-deposit-fund-form>
       ${contactField}
       ${ueiField({ name: 'depositUei' })}
@@ -518,6 +514,7 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
       ${select({ label: 'Кошелёк приёма денег', name: 'walletId', value: '', options: [{ value: '', label: 'Выберите кошелёк' }, ...wallets.map((wallet) => ({ value: wallet.id, label: wallet.name }))] })}
       ${datePicker({ label: 'Дата внесения', name: 'occurredAt', value: new Date().toISOString().slice(0, 10), showYear: true, modalVariant: 'q', modalSurface: 'app', allowClear: false })}
       <div class="form-error" data-deposit-fund-error></div>
+      ${actionBlock(button('Оформить', { type: 'button', data: 'data-deposit-fund-save', aria: 'Оформить депозит' }))}
     </form>`, { variant: 'q', surface: 'app', title: 'Оформить депозит' }));
   if (!layer) return null;
   initDatePickers(layer);
@@ -662,10 +659,10 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
         title: deposit.programName || 'Депозит',
         settingsData: 'data-deposit-instance-settings',
         settingsAria: 'Настройки депозита',
-        c: deposit?.canRefund ? { label: 'Возврат', data: 'data-deposit-withdraw', aria: 'Вернуть остаток депозита' } : null,
       }),
       depositInfo(deposit),
       v2Section('История', historyMarkup(deposit)),
+      deposit?.canRefund ? actionBlock(button('Возврат', { type: 'button', data: 'data-deposit-withdraw', aria: 'Вернуть остаток депозита' })) : '',
     ]);
     layer.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
       openSharedProfileSettingsMenu({
@@ -721,9 +718,9 @@ async function openProgramLayer(root, programId, { person = null, onChanged = ()
         title: program.name || 'Депозит',
         settingsData: 'data-deposit-program-settings',
         settingsAria: 'Настройки депозитной программы',
-        c: program.status === 'active' ? { label: 'Оформить', data: 'data-deposit-program-fund', aria: 'Оформить депозит' } : null,
       }),
       v2Section('Оформленные депозиты', issuedList(issued)),
+      program.status === 'active' ? actionBlock(button('Оформить', { type: 'button', data: 'data-deposit-program-fund', aria: 'Оформить депозит' })) : '',
     ]);
     setV2ZHeaderRows(layer, [smallActionButton({ icon: 'info', data: 'data-deposit-info', aria: 'Условия депозитной программы' })]);
     layer.querySelector('[data-deposit-info]')?.addEventListener('click', () => openProgramConditions(program, issued.length));

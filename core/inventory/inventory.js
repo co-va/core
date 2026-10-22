@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   emptyState,
   entityVisualCard,
@@ -212,7 +213,6 @@ function openItemEditor(root, itemId = '', defaults = {}) {
   const markup = `
     ${context(creating ? 'Новая позиция' : item.name, {
       a: { kind: 'settings', data: 'data-inventory-item-advanced', aria: 'Дополнительные настройки позиции' },
-      c: { label: 'Сохранить', data: 'data-inventory-item-save', aria: 'Сохранить позицию' },
     })}
     <form data-inventory-item-form>
       ${field({ label: 'Производитель', name: 'manufacturer', value: item?.manufacturer || defaults.manufacturer || '', autocomplete: 'off' })}
@@ -226,6 +226,7 @@ function openItemEditor(root, itemId = '', defaults = {}) {
       )}
       ${field({ label: 'Цена закупки', name: 'purchasePrice', value: item?.lastPurchasePrice ?? '', type: 'number', min: '0', step: '0.01', inputmode: 'decimal' })}
       ${item ? itemSummary(item) : ''}
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-inventory-item-save', aria: 'Сохранить позицию' }))}
     </form>`;
   const layer = mountV2ZLayer(root, v2ZLayer(markup, { className: 'inventory-item-z' }), { stack: true });
   if (!layer) return;
@@ -339,12 +340,13 @@ function openMovementEditor(root, movementId = '', kind = 'CONSUMPTION') {
     : [{ itemId: '', quantity: '' }];
   const title = correcting ? movementTitle(movement) : movementTitle({ kind });
   const markup = `
-    ${context(title, { c: { label: correcting ? 'Исправить' : 'Сохранить', data: 'data-inventory-movement-save' } })}
+    ${context(title)}
     <form data-inventory-movement-form>
       ${correcting && movement.personUei ? `<div class="entity-details"><div><span>UEI</span><strong>${escapeHtml(movement.personUei)}</strong></div></div>` : ''}
       <div data-inventory-movement-rows>${initialRows.map(movementEditorRow).join('')}</div>
       ${button('+ Добавить позицию', { type: 'button', variant: 'secondary', data: 'data-inventory-add-movement-row' })}
       ${field({ label: 'Примечание', name: 'note', value: movement?.note || '' })}
+      ${actionBlock(button(correcting ? 'Исправить' : 'Сохранить', { type: 'button', data: 'data-inventory-movement-save' }))}
     </form>`;
   const layer = mountV2ZLayer(root, v2ZLayer(markup, { className: 'inventory-movement-z' }), { stack: true });
   if (!layer) return;
@@ -620,9 +622,7 @@ function renderOrders(root) {
 }
 
 function renderInventoryCount(root) {
-  root.innerHTML = `${context('Инвентаризация', {
-    c: { label: 'Завершить', data: 'data-inventory-count-save', aria: 'Завершить инвентаризацию' },
-  })}${inventoryCountMarkup()}`;
+  root.innerHTML = `${context('Инвентаризация')}${inventoryCountMarkup()}${actionBlock(button('Завершить', { type: 'button', data: 'data-inventory-count-save', aria: 'Завершить инвентаризацию' }))}`;
   root.querySelector('[data-inventory-count-save]')?.addEventListener('click', async () => {
     const form = root.querySelector('[data-inventory-count-form]');
     if (!form) return;
