@@ -12,6 +12,7 @@
     <div id="owner-host"></div>
     <div id="y-host"></div>
     <div id="day-host"></div>
+    <div id="live-y-host"></div>
   </main>
   <pre id="result">pending</pre>
   <script type="module">
@@ -34,7 +35,11 @@
         hydrateNotesFromServer,
       } = await import('/core/note/index.js');
       const { hydrateProfileFromServer } = await import('/core/profile/data.js');
-      const { hydrateRecordStateFromServer } = await import('/core/record/index.js');
+      const {
+        cancelRecord,
+        deleteRecord,
+        hydrateRecordStateFromServer,
+      } = await import('/core/record/index.js');
       const {
         hydrateEventsFromServer,
         removeEvent,
@@ -67,7 +72,7 @@
         workplaceId: 'w1',
         from: '10:00',
         to: '11:00',
-        person: { id: 'person-browser', name: 'Анна', surname: 'Тест' },
+        person: { id: 'person-browser', uei: 'UEI-BROWSER', name: 'Анна', surname: 'Тест' },
         procedures: [],
         products: [],
       };
@@ -92,7 +97,6 @@
         phones: [],
         telegrams: [],
         emails: [],
-        customProfessions: [],
       });
       hydrateRecordStateFromServer({ records: [record], recordEvents: [] });
       hydrateEventsFromServer([event]);
@@ -134,11 +138,15 @@
       assert(createdNote.ownerType === 'profile', 'Note ownerType is not profile');
       assert(createdNote.ownerId === 'profile-browser', 'Note ownerId is not Profile.id');
       assert(createdNote.targetType === 'record' && createdNote.targetId === record.id, 'Record attachment was not saved');
+      assert(createdNote.context?.targetSnapshot?.id === record.id, 'Record historical snapshot was not stored');
       assert(createdNote.color === NOTE_DEFAULT_COLOR, 'Default Note color changed');
       assert(committed === 1, 'Journal creation owner did not commit Note flow');
 
       const yHost = document.querySelector('#y-host');
-      yHost.innerHTML = noteReels([createdNote], {
+      yHost.innerHTML = noteReels([
+        { id: 'day-first', date: day, title: 'Дневная', from: '', to: '', color: NOTE_DEFAULT_COLOR },
+        createdNote,
+      ], {
         activeTime: '10:00',
         relatedIds: [createdNote.id],
         targetLabel: noteTargetLabel,
@@ -147,6 +155,7 @@
       initNoteReels(yHost, { onOpen: ({ noteId }) => { openedId = noteId; } });
       const reel = yHost.querySelector(`[data-note-reel="${createdNote.id}"]`);
       assert(reel, 'Created Note is absent from Y');
+      assert(yHost.querySelector('[data-note-reel]') === reel, 'Active Note did not move to first Y position');
       assert(reel.classList.contains('is-time-active'), 'Y did not highlight Note at its time point');
       assert(reel.classList.contains('is-related'), 'Y did not visually mark related Note');
       reel.click();
@@ -154,13 +163,13 @@
       focusNoteReels(yHost, [createdNote.id]);
       assert(reel.classList.contains('is-related'), 'Y focus lost related state');
 
-      const noteLayer = openNoteView(createdNote.id);
+      let noteLayer = openNoteView(createdNote.id);
       assert(noteLayer?.querySelector('[data-note-view-host]'), 'Shared Q Note read view did not open');
       assert(noteLayer.querySelector('[data-note-view-edit]'), 'Read Q has no Edit action');
       assert(!noteLayer.querySelector('[data-note-edit-delete]'), 'Delete leaked into Note read mode');
       noteLayer.querySelector('[data-note-view-edit]').click();
       await wait();
-      const editForm = noteLayer.querySelector('[data-note-edit-form]');
+      let editForm = noteLayer.querySelector('[data-note-edit-form]');
       assert(editForm, 'Note edit Q did not open');
       editForm.querySelector('[name="text"]').value = 'Изменено в браузере';
       editForm.dispatchEvent(new Event('input', { bubbles: true }));
@@ -169,6 +178,42 @@
       assert(getNote(createdNote.id)?.id === createdNote.id, 'Edit changed Note id');
       assert(getNote(createdNote.id)?.text === 'Изменено в браузере', 'Edit did not save Note text');
       assert(noteLayer.querySelector('[data-note-view-edit]'), 'Save did not return to Note read view');
+      noteLayer.v2Close?.();
+      await wait();
+
+      const cancelled = cancelRecord(record.id);
+      assert(cancelled?.status === 'cancelled', 'Record cancellation fixture failed');
+      assert(getNote(createdNote.id)?.targetType === 'record' && getNote(createdNote.id)?.targetId === record.id,
+        'Record cancellation cleared Note target');
+      noteLayer = openNoteView(createdNote.id);
+      assert(noteLayer?.textContent.includes('Запись отменена'), 'Cancelled Record marker is missing in Note read Q');
+      noteLayer.v2Close?.();
+      await wait();
+
+      assert(deleteRecord(record.id) === true, 'Record deletion fixture failed');
+      const afterDelete = getNote(createdNote.id);
+      assert(afterDelete?.targetType === 'record' && afterDelete?.targetId === record.id,
+        'Record deletion cleared Note historical target');
+      assert(noteTargetLabel(afterDelete).includes('Запись удалена'), 'Deleted Record historical label is missing');
+      assert(noteVisibleForWorkplace(afterDelete, 'w1') === true, 'Deleted Record Note lost original workplace context');
+      assert(noteVisibleForWorkplace(afterDelete, 'other-workplace') === false, 'Deleted Record Note became globally unattached');
+
+      noteLayer = openNoteView(createdNote.id);
+      assert(noteLayer?.textContent.includes('Запись удалена'), 'Deleted Record marker is missing in Note read Q');
+      noteLayer.querySelector('[data-note-view-edit]').click();
+      await wait();
+      editForm = noteLayer.querySelector('[data-note-edit-form]');
+      assert(editForm?.querySelector('[name="target"]')?.value === `record:${record.id}`,
+        'Edit Q dropped deleted Record target value');
+      assert(editForm?.textContent.includes('Запись удалена'), 'Edit selector does not identify deleted Record');
+      editForm.querySelector('[name="text"]').value = 'Изменено после удаления записи';
+      editForm.dispatchEvent(new Event('input', { bubbles: true }));
+      editForm.requestSubmit();
+      await wait(20);
+      assert(getNote(createdNote.id)?.targetType === 'record' && getNote(createdNote.id)?.targetId === record.id,
+        'Saving Note after Record deletion cleared historical target');
+      assert(getNote(createdNote.id)?.text === 'Изменено после удаления записи',
+        'Saving Note after Record deletion did not preserve ordinary edits');
       noteLayer.querySelector('[data-note-view-edit]').click();
       await wait();
       assert(noteLayer.querySelector('[data-note-edit-delete]'), 'Delete is absent from Note edit mode');
@@ -202,8 +247,6 @@
       hydrateEventsFromServer([event]);
       removeEvent(event.id);
       assert(getNote(eventNote.id)?.id === eventNote.id, 'Deleting Event deleted Note');
-      assert(noteVisibleForWorkplace(getNote(eventNote.id), 'other-workplace') === true,
-        'Missing target did not become an unattached Note');
 
       hydrateNotesFromServer([{
         id: 'day-off-note',
@@ -221,13 +264,14 @@
       hydrateDaysFromServer([]);
       configureTimeUsageSource(() => []);
       const dayHost = document.querySelector('#day-host');
-      renderJournalDay(dayHost, {
+      const disposeDayOff = renderJournalDay(dayHost, {
         date: new Date(`${day}T12:00:00`),
         workplaceId: 'w1',
       });
       assert(dayHost.querySelector('[data-note-reel="day-off-note"]'), 'Y did not render Note on a day without working time');
       assert(dayHost.textContent.includes('Выходной день'), 'Day-off Timeline state disappeared when Y is present');
       assert(!dayHost.querySelector('[data-time-usage="day-off-note"]'), 'Note leaked into Timeline time usage');
+      disposeDayOff?.();
 
       hydrateEventsFromServer([event]);
       hydrateNotesFromServer([{
@@ -249,7 +293,7 @@
           ? [{ ...event, type: 'event', rigidity: 'soft', sourceId: event.id }]
           : []
       ));
-      renderJournalDay(dayHost, {
+      const disposeTimeContext = renderJournalDay(dayHost, {
         date: new Date(`${day}T12:00:00`),
         workplaceId: 'w1',
       });
@@ -260,6 +304,66 @@
       await wait(20);
       assert(dayHost.querySelector('[data-note-reel="time-note-browser"]')?.classList.contains('is-time-active'),
         'Y did not highlight Note from selected Journal time context');
+      disposeTimeContext?.();
+
+      const OriginalDate = window.Date;
+      const originalSetTimeout = window.setTimeout.bind(window);
+      const originalClearTimeout = window.clearTimeout.bind(window);
+      let fakeNow = new OriginalDate(2026, 9, 23, 10, 0, 30).getTime();
+      let liveTickIntercepted = false;
+      class FakeDate extends OriginalDate {
+        constructor(...args) {
+          super(...(args.length ? args : [fakeNow]));
+        }
+        static now() { return fakeNow; }
+      }
+      window.Date = FakeDate;
+      window.setTimeout = (callback, delay = 0, ...args) => {
+        if (!liveTickIntercepted && Number(delay) > 1000) {
+          liveTickIntercepted = true;
+          return originalSetTimeout(() => {
+            fakeNow += 60000;
+            callback(...args);
+          }, 20);
+        }
+        return originalSetTimeout(callback, delay, ...args);
+      };
+      window.clearTimeout = (timer) => originalClearTimeout(timer);
+
+      try {
+        hydrateNotesFromServer([
+          {
+            id: 'live-old', ownerType: 'profile', ownerId: 'profile-browser', date: day,
+            title: 'Сейчас', text: '', from: '10:00', to: '10:00', targetType: '', targetId: '', color: NOTE_DEFAULT_COLOR,
+          },
+          {
+            id: 'live-next', ownerType: 'profile', ownerId: 'profile-browser', date: day,
+            title: 'Следующая', text: '', from: '10:01', to: '10:01', targetType: '', targetId: '', color: NOTE_DEFAULT_COLOR,
+          },
+        ]);
+        hydrateDaysFromServer([{ date: day, workplaceId: 'w1', from: '09:00', to: '18:00' }]);
+        configureTimeUsageSource(() => []);
+        const liveHost = document.querySelector('#live-y-host');
+        const disposeLive = renderJournalDay(liveHost, {
+          date: new FakeDate(`${day}T12:00:00`),
+          workplaceId: 'w1',
+        });
+        const firstBefore = liveHost.querySelector('[data-note-reel]');
+        assert(firstBefore?.dataset.noteReel === 'live-old' && firstBefore.classList.contains('is-time-active'),
+          'Live Y did not start with the currently active Note first');
+        await wait(80);
+        const firstAfter = liveHost.querySelector('[data-note-reel]');
+        assert(liveTickIntercepted, 'Journal live-time refresh was not scheduled');
+        assert(firstAfter?.dataset.noteReel === 'live-next', 'Y did not reorder automatically at the next Note time');
+        assert(firstAfter.classList.contains('is-time-active'), 'Newly current Note was not highlighted automatically');
+        assert(!liveHost.querySelector('[data-note-reel="live-old"]')?.classList.contains('is-time-active'),
+          'Expired Note remained highlighted after live time advanced');
+        disposeLive?.();
+      } finally {
+        window.Date = OriginalDate;
+        window.setTimeout = originalSetTimeout;
+        window.clearTimeout = originalClearTimeout;
+      }
 
       result.textContent = 'Note Y browser runtime passed';
       document.documentElement.dataset.noteYRuntime = 'pass';
