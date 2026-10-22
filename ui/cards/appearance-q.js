@@ -1,3 +1,5 @@
+import { actionBlock } from '../page/page.js';
+import { button } from '../buttons/index.js';
 import { workspaceHeaderContext } from '../header/index.js';
 import { modal, mountModal } from '../modals/index.js';
 import { select } from '../selectors/index.js';
@@ -57,16 +59,13 @@ export function openEntityCardAppearanceQ(root, {
     const selectors = `${typeSelector}${targetSelector}`;
 
     if (previewHost) previewHost.replaceChildren();
-    host.innerHTML = `${workspaceHeaderContext({
-      title,
-      c: {
-        label: 'Сохранить',
-        data: 'data-card-q-save data-v2-primary-visible="false"',
-        aria: 'Сохранить вид карты',
-      },
-    })}
+    host.innerHTML = `${workspaceHeaderContext({ title })}
       ${selectors ? `<div class="form-grid entity-card-appearance-q__selectors">${selectors}</div>` : ''}
-      <div data-entity-card-appearance-constructor></div>`;
+      <div data-entity-card-appearance-constructor></div>
+      ${actionBlock(button('Сохранить', {
+        data: 'data-card-q-save',
+        aria: 'Сохранить вид карты',
+      }))}`;
 
     host.querySelector('[name="entityCardAppearanceType"]')?.addEventListener('change', (event) => {
       type = String(event.target.value || '');
@@ -79,7 +78,8 @@ export function openEntityCardAppearanceQ(root, {
     });
 
     const constructor = host.querySelector('[data-entity-card-appearance-constructor]');
-    const saveSource = host.querySelector('[data-card-q-save]');
+    const saveButton = host.querySelector('[data-card-q-save]');
+    const saveActions = saveButton?.closest('.modal-actions');
     let controller = null;
     const syncHeaderPreview = () => {
       if (!previewHost || !constructor) return;
@@ -88,13 +88,11 @@ export function openEntityCardAppearanceQ(root, {
       previewHost.innerHTML = preview.innerHTML;
       preview.hidden = true;
     };
-    const syncSaveSource = ({ dirty = false, saving = false } = {}) => {
+    const syncSaveButton = ({ dirty = false, saving = false } = {}) => {
       syncHeaderPreview();
-      if (!saveSource) return;
-      saveSource.dataset.v2PrimaryVisible = dirty ? 'true' : 'false';
-      saveSource.dataset.v2PrimaryLabel = 'Сохранить';
-      saveSource.disabled = Boolean(saving);
-      window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
+      if (!saveButton) return;
+      saveButton.disabled = Boolean(saving);
+      if (saveActions) saveActions.hidden = !dirty;
     };
     controller = mountEntityCardConstructor(constructor, {
       appearance: editor.appearance || {},
@@ -107,17 +105,16 @@ export function openEntityCardAppearanceQ(root, {
         layer.v2Close?.();
         onSaved({ type, target });
       },
-      onStateChange: syncSaveSource,
+      onStateChange: syncSaveButton,
     });
     syncHeaderPreview();
-    saveSource?.addEventListener('click', () => {
+    saveButton?.addEventListener('click', () => {
       void controller?.save?.();
     });
-    syncSaveSource({
+    syncSaveButton({
       dirty: controller?.isDirty?.() || false,
       saving: controller?.isSaving?.() || false,
     });
-    window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
   };
 
   render();
