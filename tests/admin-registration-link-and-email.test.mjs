@@ -9,6 +9,9 @@ const adminController = fs.readFileSync('server/src/saas-admin/saas-admin.contro
 const adminService = fs.readFileSync('server/src/saas-admin/saas-admin.service.ts', 'utf8');
 const adminModule = fs.readFileSync('server/src/saas-admin/saas-admin.module.ts', 'utf8');
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
+const specialistCore = fs.readFileSync('core.js', 'utf8');
+const authUi = fs.readFileSync('core/auth.js', 'utf8');
+const resetPage = fs.readFileSync('core/password-reset-page.js', 'utf8');
 const inviteUi = fs.readFileSync('invite/invite.js', 'utf8');
 const ownerSeed = fs.readFileSync('server/prisma/seed-owner.ts', 'utf8');
 const prelaunchHardDeleteMigration = fs.readFileSync('server/prisma/migrations/20260922075500_prelaunch_hard_delete_clean_start/migration.sql', 'utf8');
@@ -17,6 +20,11 @@ assert.match(invitation, /async createRegistrationLink\(/);
 assert.match(invitation, /async startPublicRegistration\(/);
 assert.match(invitation, /private async createPendingInvitation\(/);
 assert.match(invitation, /private async createEmailInvitation\(/);
+assert.match(invitation, /private async findReusablePublicInvitation\(/);
+assert.match(invitation, /where: \{ email, status: TenantInvitationStatus\.PENDING \}/);
+assert.match(invitation, /data: \{ tokenHash, expiresAt \}/);
+assert.match(invitation, /invitationId: reusable\.id/);
+assert.match(invitation, /tenantId: reusable\.tenantId/);
 assert.match(invitation, /emailDelivery: 'required' \| 'best-effort' = 'required'/);
 assert.match(invitation, /if \(emailDelivery === 'required'\)/);
 assert.match(invitation, /\}, 'best-effort'\);/);
@@ -79,6 +87,15 @@ assert.match(adminUi, /data-technical-email-form/);
 assert.match(adminUi, /\/technical-email/);
 assert.doesNotMatch(adminUi, /data-section="communications"/);
 
+assert.match(specialistCore, /renderPasswordResetRequest/);
+assert.match(specialistCore, /data-specialist-forgot/);
+assert.match(specialistCore, /addEventListener\('click', renderPasswordResetRequest\)/);
+assert.doesNotMatch(specialistCore, /Восстановление пароля пока недоступно/);
+assert.match(authUi, /export async function requestPasswordReset/);
+assert.match(authUi, /\/auth\/password-reset\/request/);
+assert.match(resetPage, /\/auth\/password-reset\/confirm/);
+assert.match(resetPage, /Пароль изменён/);
+
 assert.match(inviteUi, /renderPublicStart/);
 assert.match(inviteUi, /\/tenant-invitations\/public/);
 assert.match(inviteUi, /location\.replace\(`\.\/\?token=/);
@@ -127,4 +144,4 @@ assert.doesNotMatch(adminUi, /data-delete-invitation/);
 assert.match(adminController, /request\.platformAdminId!/);
 assert.match(adminService, /setCommercialMode\(tenantId: string, mode: unknown, platformAdminId: string\)/);
 
-console.log('Canonical admin/public registration and technical email tests passed');
+console.log('Canonical onboarding, registration resume, password recovery and technical email tests passed');
