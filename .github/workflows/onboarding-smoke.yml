@@ -1,0 +1,152 @@
+name: Onboarding Smoke
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onboarding-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  onboarding-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and start isolated backend
+        run: |
+          docker compose -f docker-compose.staging.yml build backend
+          docker compose -f docker-compose.staging.yml up -d db backend
+
+      - name: Wait for backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.staging.yml logs db backend
+          exit 1
+
+      - name: Verify public registration through authenticated DEMO
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          registration_email="onboarding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+          registration_password="Onboarding-${GITHUB_RUN_ID}-Pass!"
+
+          start_payload=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1]}))" "$registration_email")" \
+            http://localhost:3000/tenant-invitations/public)
+
+          token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.token) process.exit(1); process.stdout.write(p.token)" "$start_payload")
+          tenant_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.tenantId) process.exit(1); process.stdout.write(p.tenantId)" "$start_payload")
+          invitation_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.invitationId) process.exit(1); process.stdout.write(p.invitationId)" "$start_payload")
+
+          inspect_payload=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" "$token")" \
+            http://localhost:3000/tenant-invitations/inspect)
+
+          node -e "
+            const p=JSON.parse(process.argv[1]);
+            const expectedEmail=process.argv[2];
+            const expectedTenant=process.argv[3];
+            if(p.email!==expectedEmail) throw new Error('Public registration email was not preserved');
+            if(p.tenant?.id!==expectedTenant) throw new Error('Public registration tenant mismatch');
+            if(p.requiresEmail) throw new Error('Public email registration unexpectedly requires email again');
+            if(!Array.isArray(p.documents) || !p.documents.some((d)=>d.required)) throw new Error('Required registration documents missing');
+            if(p.demo?.activatedAt || p.demo?.expiresAt) throw new Error('DEMO started before Profile opening');
+          " "$inspect_payload" "$registration_email" "$tenant_id"
+
+          document_facts=$(node -e "
+            const p=JSON.parse(process.argv[1]);
+            process.stdout.write(JSON.stringify((p.documents||[]).map((d)=>({key:d.key,version:d.version,accepted:Boolean(d.required)}))));
+          " "$inspect_payload")
+
+          accept_payload=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1],password:process.argv[2],name:'Onboarding',surname:'Smoke',phone:'+79990007777',documents:JSON.parse(process.argv[3])}))" "$token" "$registration_password" "$document_facts")" \
+            http://localhost:3000/tenant-invitations/accept)
+
+          access_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$accept_payload")
+          account_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.account?.id) process.exit(1); process.stdout.write(p.account.id)" "$accept_payload")
+
+          auth_me=$(curl -fsS -H "Authorization: Bearer $access_token" http://localhost:3000/auth/me)
+          node -e "
+            const p=JSON.parse(process.argv[1]);
+            if(p.account?.email!==process.argv[2]) throw new Error('Registered account cannot be resolved by /auth/me');
+            if(p.tenant?.id!==process.argv[3]) throw new Error('/auth/me tenant mismatch');
+          " "$auth_me" "$registration_email" "$tenant_id"
+
+          access_before=$(curl -fsS -H "Authorization: Bearer $access_token" http://localhost:3000/saas-access/me)
+          node -e "
+            const p=JSON.parse(process.argv[1]);
+            if(p.commercialMode!=='DEMO') throw new Error('New profile is not DEMO');
+            if(p.demoActivatedAt || p.demoExpiresAt) throw new Error('DEMO activated before Profile open');
+          " "$access_before"
+
+          access_after=$(curl -fsS \
+            -X POST \
+            -H "Authorization: Bearer $access_token" \
+            -H 'Content-Type: application/json' \
+            -d '{}' \
+            http://localhost:3000/saas-access/demo/activate)
+
+          node -e "
+            const p=JSON.parse(process.argv[1]);
+            if(!p.demoActivatedAt || !p.demoExpiresAt) throw new Error('DEMO did not activate on Profile open');
+            const days=(Date.parse(p.demoExpiresAt)-Date.parse(p.demoActivatedAt))/86400000;
+            if(Math.abs(days-14)>0.01) throw new Error('DEMO is not exactly 14 days');
+          " "$access_after"
+
+          docker compose -f docker-compose.staging.yml exec -T db \
+            psql -U book -d book_staging -v ON_ERROR_STOP=1 \
+            -v tenant_id="$tenant_id" -v account_id="$account_id" -v invitation_id="$invitation_id" -v email="$registration_email" <<'SQL'
+          DO $onboarding$
+          BEGIN
+            IF (SELECT COUNT(*) FROM "PlatformAdmin") <> 1 THEN
+              RAISE EXCEPTION 'OWNER bootstrap did not create exactly one PlatformAdmin';
+            END IF;
+            IF (SELECT COUNT(*) FROM "Tenant" WHERE "id" = :'tenant_id') <> 1 THEN
+              RAISE EXCEPTION 'Registration tenant missing or duplicated';
+            END IF;
+            IF (SELECT COUNT(*) FROM "TenantAccess" WHERE "tenantId" = :'tenant_id' AND "commercialMode" = 'DEMO') <> 1 THEN
+              RAISE EXCEPTION 'DEMO access missing or duplicated';
+            END IF;
+            IF (SELECT COUNT(*) FROM "TenantInvitation" WHERE "id" = :'invitation_id' AND "tenantId" = :'tenant_id' AND "status" = 'ACCEPTED') <> 1 THEN
+              RAISE EXCEPTION 'Invitation missing, duplicated or not accepted';
+            END IF;
+            IF (SELECT COUNT(*) FROM "PlatformAccount" WHERE "id" = :'account_id' AND "email" = :'email') <> 1 THEN
+              RAISE EXCEPTION 'PlatformAccount missing or duplicated';
+            END IF;
+            IF (SELECT COUNT(*) FROM "Membership" WHERE "tenantId" = :'tenant_id' AND "platformAccountId" = :'account_id' AND "role" = 'OWNER') <> 1 THEN
+              RAISE EXCEPTION 'OWNER Membership missing or duplicated';
+            END IF;
+            IF (SELECT COUNT(*) FROM "Profile" WHERE "tenantId" = :'tenant_id' AND "platformAccountId" = :'account_id') <> 1 THEN
+              RAISE EXCEPTION 'Profile missing or duplicated';
+            END IF;
+            IF (SELECT COUNT(*) FROM "PlatformConsentEvent" WHERE "tenantId" = :'tenant_id' AND "platformAccountId" = :'account_id') < 1 THEN
+              RAISE EXCEPTION 'Registration consent events missing';
+            END IF;
+          END
+          $onboarding$;
+          SQL
+
+      - name: Stop isolated onboarding environment
+        if: always()
+        run: docker compose -f docker-compose.staging.yml down -v
