@@ -222,23 +222,11 @@ export class TenantInvitationService {
   }
 
   private async ensurePlatformAdminId() {
-    const configuredEmail = String(process.env.PLATFORM_ADMIN_EMAIL || process.env.OWNER_EMAIL || '')
-      .trim()
-      .toLowerCase();
-    if (!configuredEmail) throw new BadRequestException('Публичная регистрация временно недоступна');
-
-    const account = await this.prisma.platformAccount.findUnique({
-      where: { email: configuredEmail },
+    const admin = await this.prisma.platformAdmin.findFirst({
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: { id: true },
     });
-    if (!account) throw new BadRequestException('Публичная регистрация временно недоступна');
-
-    const admin = await this.prisma.platformAdmin.upsert({
-      where: { platformAccountId: account.id },
-      create: { platformAccountId: account.id },
-      update: {},
-      select: { id: true },
-    });
+    if (!admin) throw new BadRequestException('Публичная регистрация временно недоступна');
     return admin.id;
   }
 
@@ -650,7 +638,12 @@ export class TenantInvitationService {
       toName: input.name,
       subject: 'Приглашение в систему',
       tag: 'tenant-invitation',
-      text: `${input.name ? `Здравствуйте, ${input.name}.` : 'Здравствуйте.'}\n\nВам открыто персональное рабочее пространство. Создайте пароль и начните настройку:\n${url}\n\nСсылка действует 7 дней.`,
+      text: `${input.name ? `Здравствуйте, ${input.name}.` : 'Здравствуйте.'}\
+\
+Вам открыто персональное рабочее пространство. Создайте пароль и начните настройку:\
+${url}\
+\
+Ссылка действует 7 дней.`,
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#292522"><h2>Рабочее пространство</h2><p>${greeting}</p><p>Вам открыто персональное рабочее пространство. Создайте пароль и начните настройку.</p><p style="margin:28px 0"><a href="${url}" style="background:#292522;color:#fff;text-decoration:none;padding:14px 20px;border-radius:12px;display:inline-block">Создать пароль и войти</a></p><p style="color:#817a74;font-size:14px">Ссылка действует 7 дней.</p></div>`,
     });
   }
