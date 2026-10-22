@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const invitation = fs.readFileSync('server/src/tenant-invitation/tenant-invitation.service.ts', 'utf8');
+const publicRegistration = fs.readFileSync('server/src/tenant-invitation/tenant-public-registration.service.ts', 'utf8');
 const invitationController = fs.readFileSync('server/src/tenant-invitation/tenant-invitation.controller.ts', 'utf8');
+const invitationModule = fs.readFileSync('server/src/tenant-invitation/tenant-invitation.module.ts', 'utf8');
 const adminController = fs.readFileSync('server/src/saas-admin/saas-admin.controller.ts', 'utf8');
 const adminService = fs.readFileSync('server/src/saas-admin/saas-admin.service.ts', 'utf8');
 const adminModule = fs.readFileSync('server/src/saas-admin/saas-admin.module.ts', 'utf8');
@@ -21,6 +23,18 @@ assert.match(invitation, /Укажите корректный номер тел�
 assert.doesNotMatch(invitation, /assignPreparedFromInvitation|prepareInvitationAssignment/);
 assert.doesNotMatch(invitation, /manual-invitation|@book\.invalid/i);
 
+assert.match(publicRegistration, /TenantInvitationService/);
+assert.match(publicRegistration, /this\.invitations\.ensureStarterPlan\(\)/);
+assert.match(publicRegistration, /tx\.tenantInvitation\.create/);
+assert.match(publicRegistration, /tx\.tenantAccess\.create/);
+assert.match(publicRegistration, /commercialMode: 'DEMO'/);
+assert.match(publicRegistration, /PLATFORM_ADMIN_EMAIL \|\| process\.env\.OWNER_EMAIL/);
+assert.match(publicRegistration, /Учётная запись с таким email уже зарегистрирована/);
+assert.match(publicRegistration, /На этот email уже создана активная регистрация/);
+assert.doesNotMatch(publicRegistration, /platformAccount\.create|membership\.create|profile\.create/);
+assert.match(invitationModule, /TenantPublicRegistrationService/);
+
+assert.match(invitationController, /@Post\('public'\)/);
 assert.match(invitationController, /email\?: unknown/);
 assert.match(invitationController, /name\?: unknown/);
 assert.match(invitationController, /surname\?: unknown/);
@@ -48,6 +62,9 @@ assert.match(adminUi, /data-technical-email-form/);
 assert.match(adminUi, /\/technical-email/);
 assert.doesNotMatch(adminUi, /data-section="communications"/);
 
+assert.match(inviteUi, /renderPublicStart/);
+assert.match(inviteUi, /\/tenant-invitations\/public/);
+assert.match(inviteUi, /location\.replace\(`\.\/\?token=/);
 assert.match(inviteUi, /invitation\.requiresEmail/);
 assert.match(inviteUi, /name="name"/);
 assert.match(inviteUi, /name="surname"/);
@@ -93,4 +110,4 @@ assert.doesNotMatch(adminUi, /data-delete-invitation/);
 assert.match(adminController, /request\.platformAdminId!/);
 assert.match(adminService, /setCommercialMode\(tenantId: string, mode: unknown, platformAdminId: string\)/);
 
-console.log('Admin registration link and technical email tests passed');
+console.log('Admin/public registration entry and technical email tests passed');
