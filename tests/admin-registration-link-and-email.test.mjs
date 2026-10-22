@@ -86,7 +86,7 @@ assert.match(inviteUi, /invitation\.requiresEmail/);
 assert.match(inviteUi, /name="name"/);
 assert.match(inviteUi, /name="surname"/);
 assert.match(inviteUi, /name="phone"/);
-assert.match(inviteUi, /14 дней с первого входа в приложение/);
+assert.match(inviteUi, /14 дней с первого открытия профиля/);
 assert.match(inviteUi, /name: data\.get\('name'\)/);
 assert.match(inviteUi, /phone: data\.get\('phone'\)/);
 assert.match(inviteUi, /\/tenant-invitations\/accept/);
