@@ -80,17 +80,19 @@ export class EventService {
     const eventId = text(id);
     if (!eventId || (text(input.id) && text(input.id) !== eventId)) throw new BadRequestException('Некорректный id события');
     const title = text(input.title);
-    const workplaceId = text(input.workplaceId);
     if (!title) throw new BadRequestException('Укажите название события');
-    if (!workplaceId) throw new BadRequestException('Укажите рабочее пространство события');
+
+    const contextValue = input.context && typeof input.context === 'object' && !Array.isArray(input.context)
+      ? objectValue(input.context)
+      : { scope: 'professional' };
+    const workplaceId = text(input.workplaceId);
+    if (text(contextValue.scope) === 'professional' && !workplaceId) throw new BadRequestException('Укажите рабочее пространство события');
 
     const existing = await this.prisma.event.findFirst({ where: { id: eventId, tenantId } });
     const createdAtCandidate = text(input.createdAt);
     const createdAt = existing?.createdAt
       || (createdAtCandidate && !Number.isNaN(new Date(createdAtCandidate).getTime()) ? new Date(createdAtCandidate) : new Date());
-    const context = input.context && typeof input.context === 'object' && !Array.isArray(input.context)
-      ? input.context as Prisma.InputJsonValue
-      : { scope: 'professional' } as Prisma.InputJsonValue;
+    const context = contextValue as Prisma.InputJsonValue;
 
     const data = {
       tenantId,
