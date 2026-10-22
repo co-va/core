@@ -24,7 +24,7 @@ assert.match(daySource, /journalDayTimeline\(\{ columns, day: dayDate \}\)/, 'Ag
 assert.match(daySource, /journalDayTimeline\(\{ from: time\.from, to: time\.to, usages, day: dayDate \}\)/, 'Professional Journal Day must pass its Work Schedule without a neutral baseline');
 assert.match(daySource, /if \(!workingDay\) \{ contentRoot\.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день<\/div>'; return; \}/, 'Professional day off must keep the existing Выходной день state');
 assert.match(daySource, /if \(usage\?\.type === 'record'\)[\s\S]*openExistingRecord\(usage, rerender\)/, 'Record usage must still open the existing Record View');
-assert.match(daySource, /if \(usage\?\.type === 'break'\)[\s\S]*openBreakView\(usage, \{ onClose: rerender \}\)/, 'Break usage must still open the existing Break View');
+assert.match(daySource, /if \(usage\?\.type === 'event'\)[\s\S]*openEventView\(usage, \{ onClose: rerender \}\)/, 'Event usage must open the Event View');
 assert.match(daySource, /onUsageClick: \(\{ usageId \}\) => \{ void openUsage\(usageById\.get\(String\(usageId \|\| ''\)\), rerender\); \}/, 'Professional usage click must keep using the existing openUsage path');
 assert.match(timeUsageSource, /getRecordsForDay\(previousDay, workplace\)\.filter\(crossesMidnight\)/, 'Journal occupancy must expose the previous-day overnight tail without creating another business object');
 
@@ -56,11 +56,11 @@ const professionalUsages = journalDayTimeline({
   day: '2026-10-22',
   usages: [
     { id: 'record-1', sourceId: 'record-1', date: '2026-10-22', type: 'record', from: '11:00', to: '12:00', person: { name: 'Тест' }, procedures: [] },
-    { id: 'break-1', sourceId: 'break-1', date: '2026-10-22', type: 'break', from: '13:00', to: '13:30' },
+    { id: 'event-1', sourceId: 'event-1', date: '2026-10-22', type: 'event', from: '13:00', to: '13:30', title: 'Событие' },
   ],
 });
 assert.match(professionalUsages, /data-journal-usage="record-1"/, 'Existing Record must still render inside professional Work Schedule');
-assert.match(professionalUsages, /data-journal-usage="break-1"/, 'Existing Break must still render inside professional Work Schedule');
+assert.match(professionalUsages, /data-journal-usage="event-1"/, 'Existing Event must render inside professional Work Schedule');
 
 const early = journalDayTimeline({
   from: '10:00',
