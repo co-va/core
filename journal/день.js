@@ -91,7 +91,14 @@ export function renderJournalDay(root, {
       }
       if (minuteState.state !== 'free') return;
       const { openJournalCreation } = await import('./creation-flow.js');
-      openJournalCreation({ date, workplaceId, timeHint: from, onCreated: rerender });
+      openJournalCreation({
+        date: dayDate,
+        workplaceId,
+        timeHint: from,
+        surfaceRoot: root.closest('[data-v2-z],[data-v2-z-layer]'),
+        bodyRoot: root,
+        onCreated: rerender,
+      });
     },
   });
 }

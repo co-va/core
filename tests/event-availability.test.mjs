@@ -25,6 +25,13 @@ assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', 
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '17:30', to: '18:30' }).reason, 'outside-working-time', 'Work Schedule must constrain Event');
 
 hydrateDaysFromServer([
+  { date: '2026-10-22', workplaceId: 'studio', from: '12:00', to: '20:00' },
+]);
+configureTimeUsageSource(() => []);
+assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '19:30', to: '20:00' }).ok, true, 'Event ending exactly at Work Schedule end must be allowed');
+assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '19:30', to: '20:15' }).reason, 'outside-working-time', 'Event beyond Work Schedule end must still be rejected');
+
+hydrateDaysFromServer([
   { date: '2026-10-22', workplaceId: 'studio', from: '22:00', to: '23:59' },
   { date: '2026-10-23', workplaceId: 'studio', from: '00:00', to: '03:00' },
 ]);

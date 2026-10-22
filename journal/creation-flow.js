@@ -11,10 +11,12 @@ export function openJournalCreation({
   date = '',
   workplaceId = '',
   timeHint = '',
+  surfaceRoot = null,
+  bodyRoot = null,
   onCreated = () => {},
   onCancel = () => {},
 } = {}) {
-  const owner = openRecordCreationOwner({ onCancel });
+  const owner = openRecordCreationOwner({ onCancel, surfaceRoot, bodyRoot });
   if (!owner) return null;
 
   const context = { date, workplaceId, timeHint };

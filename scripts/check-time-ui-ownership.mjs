@@ -26,7 +26,8 @@ if (/from ['"]\.\.\/day\.js['"]|isTimeRangeAvailable|getTimeUsages|getJournalBre
 if (/break-service|createJournalBreak|createEvent|removeEvent|updateEvent/.test(recordFlow)) fail('core/records/records.js', 'Records must not own Event/Break commands.');
 
 if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must ask Core Availability.');
-if (!/checkTimeAvailability/.test(eventCreation) || !/openTimeRangeAction/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must use canonical Availability and shared Time UI.');
+if (!/checkTimeAvailability/.test(eventCreation) || !/timePicker\(\{ label: 'С'/.test(eventCreation) || !/timePicker\(\{ label: 'До'/.test(eventCreation) || !/initTimePickers/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must use canonical Availability and shared Time UI.');
+if (/openTimeRangeAction/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must render the two canonical shared timePicker fields directly in Z.');
 if (!/checkTimeAvailability/.test(eventView) || !/excludeId: eventId/.test(eventView)) fail('journal/event-view.js', 'Event View edits must use canonical Availability with excludeId.');
 if (!/queueEventUpsert/.test(eventData) || !/queueEventDelete/.test(eventData)) fail('core/event/data.js', 'Event data must use server-backed persistence.');
 if (!/getEventsForDay/.test(eventRead)) fail('core/event/read.js', 'Event read model must own day projection.');
