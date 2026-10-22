@@ -1,9 +1,9 @@
-import { workspaceHeaderContext } from '../ui/header/index.js';
-import { mountV2ZLayer, v2ZLayer } from '../ui/v2/index.js';
+import { mountV2ZLayer, setV2ZHeaderRows, v2ZLayer } from '../ui/v2/index.js';
 import { actionBlock } from '../ui/page/page.js';
 import { button, colorPicker, field, initColorPickers, modal, mountModal, openNotice, openTimeRangeAction, textareaField } from '../ui/ui.js';
 import { checkTimeAvailability } from '../core/time/index.js';
-import { readEvent, removeEvent, updateEvent } from '../core/event/index.js';
+import { createEvent, readEvent, removeEvent, updateEvent } from '../core/event/index.js';
+import { flushBusinessPersistence } from '../core/business-persistence.js';
 
 function esc(value = '') { return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char])); }
 function surface() { return document.querySelector('[data-v2-workspace-surface]') || document.querySelector('[data-v2-app]') || document.body; }
@@ -14,9 +14,9 @@ export function openEventView(eventOrId, { onClose = () => {} } = {}) {
   const eventId = String(typeof eventOrId === 'object' ? eventOrId?.id : eventOrId || '');
   let current = readEvent(eventId);
   if (!current) return null;
-  const header = workspaceHeaderContext({ title: 'Событие', hideD: true, a: { kind: 'avatar', label: 'Событие', disabled: true, aria: 'Событие' } });
-  const layer = mountV2ZLayer(surface(), v2ZLayer(`${header}<div data-event-view-host></div>`, { className: 'event-view-z' }), { stack: true, onClose });
+  const layer = mountV2ZLayer(surface(), v2ZLayer('<div data-event-view-host></div>', { className: 'event-view-z' }), { stack: true, onClose });
   if (!layer) return null;
+  setV2ZHeaderRows(layer, ['<div class="record-creation-step-title">Событие</div>']);
 
   const renderRead = () => {
     current = readEvent(eventId);
@@ -26,7 +26,21 @@ export function openEventView(eventOrId, { onClose = () => {} } = {}) {
     root.querySelector('[data-event-edit]')?.addEventListener('click', renderEdit);
     root.querySelector('[data-event-delete]')?.addEventListener('click', () => {
       const confirm = mountModal(document.body, modal(button('Удалить', { data: 'data-event-delete-confirm', variant: 'danger' }), { variant: 'x', title: 'Удалить событие' }));
-      confirm?.querySelector('[data-event-delete-confirm]')?.addEventListener('click', () => { removeEvent(eventId); confirm.v2Close?.(); layer.v2Close?.(); });
+      confirm?.querySelector('[data-event-delete-confirm]')?.addEventListener('click', async (domEvent) => {
+        const submit = domEvent.currentTarget;
+        submit.disabled = true;
+        const snapshot = { ...current };
+        removeEvent(eventId);
+        try {
+          await flushBusinessPersistence();
+          confirm.v2Close?.();
+          layer.v2Close?.();
+        } catch (error) {
+          createEvent(snapshot);
+          openNotice({ title: 'Не удалось удалить событие', message: String(error?.message || 'Сервер не подтвердил удаление.') });
+          if (submit.isConnected) submit.disabled = false;
+        }
+      });
     });
   };
 
@@ -34,6 +48,7 @@ export function openEventView(eventOrId, { onClose = () => {} } = {}) {
     current = readEvent(eventId);
     const root = host(layer);
     if (!root || !current) return;
+    const before = { ...current };
     const state = { ...current };
     root.innerHTML = `<form class="form-grid" data-event-edit-form>${field({ label: 'Название', name: 'title', value: state.title, required: true })}<button type="button" class="people-action-btn" data-event-edit-time>С ${esc(state.from)} — До ${esc(state.to)}</button>${textareaField({ label: 'Описание', name: 'description', value: state.description, rows: 5 })}${colorPicker({ name: 'color', value: state.color })}${actionBlock(`${button('Сохранить', { type: 'submit' })}${button('Отмена', { data: 'data-event-edit-cancel', variant: 'secondary' })}`)}</form>`;
     initColorPickers(root);
@@ -43,13 +58,22 @@ export function openEventView(eventOrId, { onClose = () => {} } = {}) {
     form?.addEventListener('change', capture);
     root.querySelector('[data-event-edit-time]')?.addEventListener('click', () => { capture(); openTimeRangeAction({ from: state.from, to: state.to, title: 'Время события', onSave: ({ from, to }) => { state.from = from; state.to = to; renderEdit(); } }); });
     root.querySelector('[data-event-edit-cancel]')?.addEventListener('click', renderRead);
-    form?.addEventListener('submit', (domEvent) => {
+    form?.addEventListener('submit', async (domEvent) => {
       domEvent.preventDefault(); capture();
-      if (!state.title) { openNotice('Событие', 'Укажите название события.'); return; }
+      if (!state.title) { openNotice({ title: 'Событие', message: 'Укажите название события.' }); return; }
       const availability = checkTimeAvailability({ date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to, excludeId: eventId });
-      if (!availability.ok) { openNotice('Событие', unavailable(availability.reason)); return; }
+      if (!availability.ok) { openNotice({ title: 'Событие', message: unavailable(availability.reason) }); return; }
+      const submit = form.querySelector('[type="submit"]');
+      if (submit) submit.disabled = true;
       updateEvent(eventId, { title: state.title, description: state.description, color: state.color, from: state.from, to: state.to });
-      renderRead();
+      try {
+        await flushBusinessPersistence();
+        renderRead();
+      } catch (error) {
+        updateEvent(eventId, before);
+        openNotice({ title: 'Не удалось сохранить событие', message: String(error?.message || 'Сервер не подтвердил изменения.') });
+        if (submit?.isConnected) submit.disabled = false;
+      }
     });
   };
 
