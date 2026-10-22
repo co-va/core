@@ -19,9 +19,12 @@ assert.doesNotMatch(recordFlow, /listAvailableEndTimes|createEvent|break-service
 assert.doesNotMatch(recordFlow, /isTimeRangeAvailable|getTimeUsages|getJournalBreaks|getRecords\(|getDayTime|getDay\(/);
 assert.doesNotMatch(recordFlow, /from ['"]\.\.\/day\.js['"]/);
 
-// Event creation uses the same canonical Availability and shared Time UI.
+// Event creation uses canonical Availability with the two shared Time picker fields directly in Z.
 assert.match(eventCreation, /checkTimeAvailability/);
-assert.match(eventCreation, /openTimeRangeAction/);
+assert.match(eventCreation, /timePicker\(\{ label: 'С'/);
+assert.match(eventCreation, /timePicker\(\{ label: 'До'/);
+assert.match(eventCreation, /initTimePickers/);
+assert.doesNotMatch(eventCreation, /openTimeRangeAction/);
 assert.match(eventCreation, /createEvent/);
 assert.doesNotMatch(eventCreation, /isTimeRangeAvailable|getTimeUsages|getRecordsForDay|getJournalBreaks|listAvailableEndTimes/);
 
