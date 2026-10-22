@@ -39,7 +39,7 @@ configureTimeUsageSource(({ date, workplaceId } = {}) => {
   return [];
 });
 
-assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '22:00', to: '00:15' }).ok, true, 'one Event may cross midnight when both Work Schedule segments are free');
+assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '23:30', to: '00:15' }).ok, true, 'one Event may cross midnight when both Work Schedule segments are free');
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '22:30', to: '00:15' }).reason, 'occupied', 'cross-midnight Event must detect a Record before midnight');
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '23:30', to: '00:45' }).reason, 'occupied', 'cross-midnight Event must detect another Event after midnight');
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '23:30', to: '03:30' }).reason, 'outside-working-time', 'cross-midnight Event must obey next-day Work Schedule');
