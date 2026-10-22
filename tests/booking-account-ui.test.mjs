@@ -381,7 +381,7 @@ assert.match(onlineBookingService, /links,/);
 // Online booking settings stay inside the single Shared workspace Z; return navigation is gesture-owned.
 assert.match(bookingSettingsUi, /workspaceHeaderContext\(\{/);
 assert.doesNotMatch(bookingSettingsUi, /data-online-booking-back/);
-assert.match(bookingSettingsUi, /data-v2-primary-visible="false"/);
+assert.match(bookingSettingsUi, /actionBlock\(button\('Сохранить'/);
 assert.match(bookingSettingsUi, /data-online-booking-welcome-save/);
 assert.doesNotMatch(bookingSettingsUi, /\bappShell\s*\(/);
 assert.doesNotMatch(bookingSettingsUi, /\bappHeader\s*\(/);
