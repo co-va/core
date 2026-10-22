@@ -6,6 +6,7 @@ const serverMain = readFileSync(new URL('../server/src/main.ts', import.meta.url
 const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
 const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const userHtml = readFileSync(new URL('../user.html', import.meta.url), 'utf8');
+const landingHtml = readFileSync(new URL('../landing/index.html', import.meta.url), 'utf8');
 const buildPages = readFileSync(new URL('../scripts/build-pages.mjs', import.meta.url), 'utf8');
 const iconRenderer = readFileSync(new URL('../scripts/render-pwa-icons.mjs', import.meta.url), 'utf8');
 const appIconSvg = readFileSync(new URL('../app-icon.svg', import.meta.url), 'utf8');
@@ -25,17 +26,26 @@ assert.match(serverMain, /api\.va-tools\.ru/);
 assert.match(serverMain, /admin\.va-tools\.ru/);
 assert.match(serverMain, /app\.va-tools\.ru/);
 assert.match(serverMain, /user\.va-tools\.ru/);
+assert.match(serverMain, /const LANDING_HOST = 'va-tools\.ru'/);
+assert.match(serverMain, /const LANDING_WWW_HOST = 'www\.va-tools\.ru'/);
 assert.doesNotMatch(serverMain, /book\.va-tools\.ru/);
 assert.doesNotMatch(serverMain, /client\.va-tools\.ru/);
 assert.match(serverMain, /host === ADMIN_HOST/);
 assert.match(serverMain, /host === API_HOST/);
 assert.match(serverMain, /host === APP_HOST/);
 assert.match(serverMain, /host === USER_HOST/);
+assert.match(serverMain, /host === LANDING_HOST/);
+assert.match(serverMain, /host === LANDING_WWW_HOST/);
+assert.match(serverMain, /landing\/index\.html/);
 assert.match(serverMain, /USER_PWA_ASSETS/);
 assert.match(serverMain, /pwa\/user\/manifest\.webmanifest/);
 assert.match(serverMain, /pwa\/user\/app-icon\.svg/);
 assert.match(serverMain, /publicBookingPath/);
 assert.match(serverMain, /sendFile\(resolve\(siteRoot, 'user\.html'\)\)/);
+
+assert.doesNotMatch(landingHtml, /book\.va-tools\.ru/);
+assert.match(landingHtml, /https:\/\/app\.va-tools\.ru\/invite\//);
+assert.match(landingHtml, /https:\/\/app\.va-tools\.ru\//);
 
 assert.match(indexHtml, /<base href="\/">/);
 assert.match(indexHtml, /theme-color" content="#2F3338"/);

@@ -22,6 +22,39 @@ function renderError(message) {
   state.querySelector('[data-error]').textContent = message || 'Не удалось открыть регистрационную ссылку.';
 }
 
+function renderPublicStart() {
+  state.innerHTML = `
+    <h1>Создайте профиль</h1>
+    <p>Укажите email. После этого откроются документы и основные данные для регистрации.</p>
+    <form class="invite-form" data-public-form>
+      <label class="invite-field"><span>Email</span><input name="email" type="email" autocomplete="email" required autofocus></label>
+      <p class="invite-error" data-public-error role="alert"></p>
+      <button class="invite-button" type="submit">Продолжить</button>
+    </form>
+    <p>Уже зарегистрированы? <a href="../">Войти</a></p>`;
+
+  const form = state.querySelector('[data-public-form]');
+  const error = state.querySelector('[data-public-error]');
+  const button = form.querySelector('button[type="submit"]');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    const data = new FormData(form);
+    const email = String(data.get('email') || '').trim();
+    button.disabled = true;
+    button.textContent = 'Открываем регистрацию…';
+    try {
+      const registration = await post('/tenant-invitations/public', { email });
+      location.replace(`./?token=${encodeURIComponent(registration.token)}`);
+    } catch (startError) {
+      error.textContent = startError instanceof Error ? startError.message : 'Не удалось открыть регистрацию';
+      button.disabled = false;
+      button.textContent = 'Продолжить';
+    }
+  });
+}
+
 function registrationDocuments(documents = []) {
   return documentTiles(documents.map((item) => documentTile({
     title: item.title || 'Документ',
@@ -159,7 +192,7 @@ function renderForm(invitation) {
 }
 
 if (!token) {
-  renderError('В ссылке отсутствует код приглашения.');
+  renderPublicStart();
 } else {
   try {
     const invitation = await post('/tenant-invitations/inspect', { token });

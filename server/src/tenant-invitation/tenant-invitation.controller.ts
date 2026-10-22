@@ -1,9 +1,18 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { TenantInvitationService } from './tenant-invitation.service';
+import { TenantPublicRegistrationService } from './tenant-public-registration.service';
 
 @Controller('tenant-invitations')
 export class TenantInvitationController {
-  constructor(private readonly invitations: TenantInvitationService) {}
+  constructor(
+    private readonly invitations: TenantInvitationService,
+    private readonly publicRegistration: TenantPublicRegistrationService,
+  ) {}
+
+  @Post('public')
+  startPublicRegistration(@Body() body: { email?: unknown }) {
+    return this.publicRegistration.start(body || {});
+  }
 
   @Post('inspect')
   inspect(@Body() body: { token?: unknown }) {
