@@ -25,6 +25,7 @@ import {
 } from '../core/account/index.js';
 import { normalizeBookingSettings } from '../core/booking-settings/index.js';
 import {
+  actionBlock,
   button,
   documentTile,
   documentTiles,
@@ -132,7 +133,6 @@ async function saveTenantConsents(state) {
   const consentState = await submitAccountConsents(state.tenantId, consents);
   seedTenantConsents(state, consentState?.consents || consents);
 }
-
 
 function currentAccountTermsFact(state) {
   const document = state.accountTerms || {};
@@ -297,6 +297,16 @@ function subtitleBlock(value = '') {
   return valueText ? `<div class="v2-flow-subtitle">${escapeHtml(valueText).replaceAll('\n', '<br>')}</div>` : '';
 }
 
+function actionMarkup(action = null) {
+  if (!action?.label) return '';
+  return actionBlock(button(action.label, {
+    data: action.data || '',
+    aria: action.aria || action.label || '',
+    disabled: Boolean(action.disabled),
+    variant: action.variant || '',
+  }));
+}
+
 function renderFlowPage(root, state, {
   title = '',
   subtitle = '',
@@ -309,13 +319,7 @@ function renderFlowPage(root, state, {
   const bookingScreen = ['workplaces', 'procedures', 'dates', 'times', 'confirmation'].includes(step);
   const registration = step === 'registration';
   const header = v2Header({
-    a: registration ? {
-      kind: 'avatar',
-      label: representativeName(state),
-      image: representativePhoto(state),
-      disabled: true,
-      aria: `Профиль ${representativeName(state)}`,
-    } : {
+    a: {
       kind: 'avatar',
       label: representativeName(state),
       image: representativePhoto(state),
@@ -323,13 +327,12 @@ function renderFlowPage(root, state, {
       aria: `Профиль ${representativeName(state)}`,
     },
     b: registration ? 'Регистрация' : bookingScreen ? 'Запись' : (title || representativeName(state)),
-    c: action ? { kind: 'text', label: action.label || '', data: action.data || '', aria: action.aria || action.label || '', disabled: Boolean(action.disabled) } : null,
     d: bookingScreen ? null : (state.account ? { kind: 'chat', data: 'data-booking-flow-chat', aria: 'Чат' } : null),
   });
   const localTitle = title ? `<h2 class="v2-flow-title">${escapeHtml(title)}</h2>` : '';
   const shell = v2Shell({
     header,
-    body: `${localTitle}${subtitleBlock(subtitle)}${body}`,
+    body: `${localTitle}${subtitleBlock(subtitle)}${body}${actionMarkup(action)}`,
     className: center ? 'v2-app--flow-center' : 'v2-app--booking-flow',
   });
   root.innerHTML = `<section class="${flowThemeClasses()}">${shell}</section>`;
@@ -338,7 +341,7 @@ function renderFlowPage(root, state, {
   });
 }
 
-function bookingHeaderMarkup(state, action = null) {
+function bookingHeaderMarkup(state) {
   return v2Header({
     a: {
       kind: 'avatar',
@@ -348,13 +351,6 @@ function bookingHeaderMarkup(state, action = null) {
       aria: `Профиль ${representativeName(state)}`,
     },
     b: 'Запись',
-    c: action ? {
-      kind: 'text',
-      label: action.label || '',
-      data: action.data || '',
-      aria: action.aria || action.label || '',
-      disabled: Boolean(action.disabled),
-    } : null,
     d: null,
   });
 }
@@ -373,11 +369,15 @@ function bookingActionForStep(state, step) {
   return null;
 }
 
-function syncBookingHeader(root, state, step = state.bookingStep) {
+function bookingStepBody(state, step, body = '') {
+  return `${body}${actionMarkup(bookingActionForStep(state, step))}`;
+}
+
+function syncBookingHeader(root, state) {
   const app = root.querySelector('[data-v2-app]');
   const header = app?.querySelector(':scope > [data-v2-header]');
   if (!header) return;
-  header.outerHTML = bookingHeaderMarkup(state, bookingActionForStep(state, step));
+  header.outerHTML = bookingHeaderMarkup(state);
 }
 
 function currentBookingStepNode(root) {
@@ -398,10 +398,11 @@ function renderBookingStep(root, state, {
   body = '',
   onFirstBack = null,
 } = {}) {
+  const content = bookingStepBody(state, step, body);
   let app = root.querySelector('[data-v2-app]');
   if (!app || !app.classList.contains('v2-app--booking-flow')) {
     root.innerHTML = `<section class="${flowThemeClasses()}">${v2Shell({
-      header: bookingHeaderMarkup(state, bookingActionForStep(state, step)),
+      header: bookingHeaderMarkup(state),
       body: '<div data-booking-base-step></div>',
       className: 'v2-app--booking-flow',
     })}</section>`;
@@ -409,7 +410,7 @@ function renderBookingStep(root, state, {
     const base = app?.querySelector('[data-booking-base-step]');
     if (!base) return null;
     base.dataset.bookingStep = step;
-    base.innerHTML = body;
+    base.innerHTML = content;
     state.bookingStep = step;
     initV2Swipe(app.querySelector('[data-v2-z]'), {
       onRight: () => onFirstBack?.(),
@@ -420,25 +421,25 @@ function renderBookingStep(root, state, {
 
   const active = currentBookingStepNode(root);
   if (active && String(active.dataset.bookingStep || '') === String(step)) {
-    active.innerHTML = body;
+    active.innerHTML = content;
     state.bookingStep = step;
-    syncBookingHeader(root, state, step);
+    syncBookingHeader(root, state);
     return active;
   }
 
-  const layer = mountV2ZLayer(root, v2ZLayer(body, { className: 'booking-step-z' }), {
+  const layer = mountV2ZLayer(root, v2ZLayer(content, { className: 'booking-step-z' }), {
     stack: true,
     onClose: () => {
       const previous = previousBookingStep(root);
       state.bookingStep = previous;
-      syncBookingHeader(root, state, previous);
+      syncBookingHeader(root, state);
     },
   });
   if (!layer) return null;
   layer.dataset.bookingStep = step;
   layer.dataset.bookingStepLayer = '';
   state.bookingStep = step;
-  syncBookingHeader(root, state, step);
+  syncBookingHeader(root, state);
   return layer;
 }
 
@@ -855,7 +856,7 @@ function renderProcedures(root, state) {
     state.from = '';
     renderProcedures(root, state);
   }));
-  root.querySelector('[data-v2-header] [data-booking-procedures-next]')?.addEventListener('click', () => {
+  layer?.querySelector('[data-booking-procedures-next]')?.addEventListener('click', () => {
     if (!state.procedureIds.length) return;
     state.date = '';
     state.from = '';
@@ -944,12 +945,12 @@ function confirmationCard(state) {
 }
 
 function renderConfirmation(root, state) {
-  renderBookingStep(root, state, {
+  const layer = renderBookingStep(root, state, {
     step: 'confirmation',
     body: `${confirmationCard(state)}${formError(state.error)}`,
     onFirstBack: () => backFromFirstBookingStep(root, state),
   });
-  root.querySelector('[data-v2-header] [data-booking-confirm]')?.addEventListener('click', async (event) => {
+  layer?.querySelector('[data-booking-confirm]')?.addEventListener('click', async (event) => {
     event.currentTarget.disabled = true;
     state.identityDestination = 'booking';
     state.error = '';
@@ -1003,12 +1004,10 @@ async function finalizeBookingRequest(root, state) {
   }
 }
 
-
 async function refreshContext(state) {
   state.context = await getBookingContext(state.tenantId, state.lockedWorkplaceKey);
   state.settings = normalizeBookingSettings(state.context.settings);
 }
-
 
 function globalAccountState(initial = {}) {
   return {
