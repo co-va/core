@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   documentTile,
   documentTiles,
@@ -451,21 +452,21 @@ function openTemplatesLayer(root) {
 
 function setPrimaryVisible(source, visible) {
   if (!source) return;
-  source.dataset.v2PrimaryVisible = visible ? 'true' : 'false';
-  window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
+  const actions = source.closest('.modal-actions');
+  if (actions) actions.hidden = !visible;
 }
 
 function renderTemplateEditor(layer, root, item) {
   layer.innerHTML = page([
-    headerContext(item.title || 'Шаблон', {
-      label: 'Сохранить',
-      data: 'data-template-save data-v2-primary-visible="false"',
-      aria: 'Сохранить шаблон',
-    }),
+    headerContext(item.title || 'Шаблон'),
     `<form class="form-grid" data-template-form>
       ${field({ label: 'Название', name: 'documentTitle', value: item.title || '', required: true })}
       ${textareaField({ label: 'Текст документа', name: 'documentText', value: item.text || '', rows: 16, placeholder: 'Текст документа' })}
     </form>`,
+    actionBlock(button('Сохранить', {
+      data: 'data-template-save',
+      aria: 'Сохранить шаблон',
+    })),
   ]);
 
   const form = layer.querySelector('[data-template-form]');
@@ -530,11 +531,7 @@ function renderNewDocumentEditor(layer, root, draft = {}) {
   let signable = Boolean(draft.signable);
   const attachment = draft.attachment || null;
   layer.innerHTML = page([
-    headerContext('Новый документ', {
-      label: 'Сохранить',
-      data: 'data-new-document-save data-v2-primary-visible="false"',
-      aria: 'Сохранить документ',
-    }),
+    headerContext('Новый документ'),
     attachment ? documentTiles([
       documentTile({
         title: draft.title || attachment.fileName || 'PDF',
@@ -548,6 +545,10 @@ function renderNewDocumentEditor(layer, root, draft = {}) {
       ${attachment ? '' : textareaField({ label: 'Текст документа', name: 'documentText', value: draft.text || '', rows: 16, placeholder: 'Текст документа' })}
       ${signableSetting(signable)}
     </form>`,
+    actionBlock(button('Сохранить', {
+      data: 'data-new-document-save',
+      aria: 'Сохранить документ',
+    })),
   ]);
 
   const form = layer.querySelector('[data-new-document-form]');
