@@ -44,6 +44,8 @@ jobs:
 
       - name: Apply Note/Y patch
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           output="$(python3 scripts/apply-note-y.py 2>&1)"
@@ -51,6 +53,8 @@ jobs:
           printf '%s\n' "$output"
           if [ "$code" -ne 0 ]; then
             description="$(printf '%s\n' "$output" | tail -n 1 | tr '\n\r' '  ' | cut -c1-135)"
+            printf '### Note/Y apply failure\n```text\n%s\n```\n' "$output" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Note/Y apply::$description"
             payload="$(jq -nc --arg state error --arg context note-y-apply --arg description "$description" '{state:$state,context:$context,description:$description}')"
             curl -fsS -X POST \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
