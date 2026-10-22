@@ -25,6 +25,11 @@ function currentTimeForDay(day) {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
+function nextMinuteDelay() {
+  const now = new Date();
+  return Math.max(25, 60000 - ((now.getSeconds() * 1000) + now.getMilliseconds()) + 25);
+}
+
 function withFinancialState(usages = []) {
   return (Array.isArray(usages) ? usages : []).map((usage) => usage?.type === 'record' ? {
     ...usage,
@@ -71,6 +76,7 @@ export function renderJournalDay(root, {
   const dayDate = dateKey(date);
   const allMode = workplaceId === ALL_WORKPLACES_ID;
   let activeTime = currentTimeForDay(dayDate);
+  let clockTimer = null;
 
   const dayNotes = getNotesForDay(dayDate);
   const visibleNotes = dayNotes.filter((note) => noteVisibleForWorkplace(note, workplaceId, { allMode }));
@@ -118,13 +124,33 @@ export function renderJournalDay(root, {
     }
   };
 
+  const scheduleLiveTimeRefresh = () => {
+    if (!currentTimeForDay(dayDate)) return;
+    if (clockTimer) clearTimeout(clockTimer);
+    clockTimer = window.setTimeout(() => {
+      clockTimer = null;
+      if (!root.isConnected) return;
+      const nextActiveTime = currentTimeForDay(dayDate);
+      if (!nextActiveTime) return;
+      activeTime = nextActiveTime;
+      renderY();
+      scheduleLiveTimeRefresh();
+    }, nextMinuteDelay());
+  };
+
+  const dispose = () => {
+    if (clockTimer) clearTimeout(clockTimer);
+    clockTimer = null;
+  };
+
   renderY();
+  scheduleLiveTimeRefresh();
 
   if (allMode) {
     const days = getDaysForDate(getDays(), dayDate);
     if (!days.length) {
       timelineRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день</div>';
-      return;
+      return dispose;
     }
 
     const columns = days.map((day) => {
@@ -149,7 +175,7 @@ export function renderJournalDay(root, {
 
     if (!columns.length) {
       timelineRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Не задано рабочее время</div>';
-      return;
+      return dispose;
     }
 
     timelineRoot.innerHTML = journalDayTimeline({ columns, day: dayDate });
@@ -158,19 +184,19 @@ export function renderJournalDay(root, {
         if (nextWorkplaceId) onWorkplaceFieldClick(nextWorkplaceId);
       },
     });
-    return;
+    return dispose;
   }
 
   const workingDay = getDay(getDays(), workplaceId, dayDate);
   if (!workingDay) {
     timelineRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день</div>';
-    return;
+    return dispose;
   }
 
   const time = getDayTime(workingDay, workplaces);
   if (!time) {
     timelineRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Не задано рабочее время</div>';
-    return;
+    return dispose;
   }
 
   const usages = withFinancialState(getTimeUsagesForScope({ date: dayDate, workplaceId }));
@@ -211,4 +237,6 @@ export function renderJournalDay(root, {
       });
     },
   });
+
+  return dispose;
 }
