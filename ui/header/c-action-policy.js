@@ -225,8 +225,8 @@ function convertDirectC(header, button) {
   const wrapper = directActionWrapper(body);
   button.dataset[LOWER_MARKER] = 'true';
   normalizeBottomButton(button);
-  wrapper.append(button);
   stripHeaderC(header, button);
+  wrapper.append(button);
 }
 
 function scanHeaders() {
