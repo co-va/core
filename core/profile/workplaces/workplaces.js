@@ -1,4 +1,4 @@
-import { actionBlock, button, collectLinks, colorPicker, escapeHtml, field, initColorPickers, initLinks, initPhotoField, initTimePickers, links, mountModal, mountV2ZLayer, modal, openColorPickerAction, openSharedProfileSettingsMenu, openTimeRangeAction, page, phoneField, photoField, select, setSharedProfilePrimary, textareaField, timePicker, v2ZLayer, workspaceHeaderContext } from '../../../ui/ui.js';
+import { actionBlock, button, collectLinks, colorPicker, escapeHtml, field, initColorPickers, initLinks, initPhotoField, initTimePickers, links, mountModal, mountV2ZLayer, modal, openColorPickerAction, openSharedProfileSettingsMenu, openTimeRangeAction, page, phoneField, photoField, select, textareaField, timePicker, v2ZLayer, workspaceHeaderContext } from '../../../ui/ui.js';
 import { getProfile } from '../data.js';
 import { deleteWorkplace as deleteWorkplaceData, getWorkplaceReferenceData, getWorkplaces, upsertWorkplace } from './data.js';
 
@@ -29,7 +29,7 @@ export function workplaceForm(existing=null,{sourceOnly=false,bodyActions=false}
   const primary=sourceOnly
     ? actionBlock(button('Сохранить',{
         type:'submit',
-        data:`data-workplace-primary data-v2-primary-label="Сохранить" data-v2-primary-visible="${existing?'false':'true'}"`,
+        data:'data-workplace-primary',
         aria:'Сохранить',
       }))
     : '';
@@ -144,7 +144,7 @@ export function bindWorkplaceForm(root,existing=null,{onSaved=()=>{},onDeleted=(
 
   const syncPrimary=()=>{
     if(!primary)return;
-    setSharedProfilePrimary(primary,{visible:dirty,label:'Сохранить'});
+    primary.disabled=false;
     if(primaryActions)primaryActions.hidden=!dirty;
   };
   const syncDirty=()=>{
@@ -156,9 +156,9 @@ export function bindWorkplaceForm(root,existing=null,{onSaved=()=>{},onDeleted=(
   form.addEventListener('change',syncDirty);
   form.addEventListener('submit',async(event)=>{
     event.preventDefault();
-    if(primary)setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:true});
+    if(primary)primary.disabled=true;
     const saved=await saveWorkplace(root,existing,onSaved);
-    if(!saved&&primary)setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:false});
+    if(!saved&&primary)primary.disabled=false;
   });
 
   root.querySelector('[data-delete-workplace-form]')?.addEventListener('click',(event)=>{
