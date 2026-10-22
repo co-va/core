@@ -1,5 +1,7 @@
 import { accountErrorMessage, updateAccount, updateGlobalAccount } from '../core/account/index.js';
 import {
+  actionBlock,
+  button,
   collectLinks,
   collectRepeatedField,
   datePicker,
@@ -56,6 +58,7 @@ function editorMarkup(account = {}) {
   return formView(`
     ${v2Section('Личные данные', fields)}
     ${formError('', { data: 'data-account-personal-error', keepEmpty: true })}
+    ${actionBlock(button('Сохранить', { type: 'submit', data: 'data-account-personal-save' }))}
   `, { className: 'account-personal-data-form', data: 'data-account-personal-form' });
 }
 
@@ -78,8 +81,14 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
 
   const form = layer.querySelector('[data-account-personal-form]');
   const errorNode = layer.querySelector('[data-account-personal-error]');
+  const saveButton = layer.querySelector('[data-account-personal-save]');
+  const saveActions = saveButton?.closest('.modal-actions');
   const initialSignature = form ? formSignature(form) : '';
-  const syncDirty = () => onDirtyChange?.(Boolean(form && formSignature(form) !== initialSignature));
+  const syncDirty = () => {
+    const dirty = Boolean(form && formSignature(form) !== initialSignature);
+    if (saveActions) saveActions.hidden = !dirty;
+    onDirtyChange?.(dirty);
+  };
   form?.addEventListener('input', syncDirty);
   form?.addEventListener('change', syncDirty);
   form?.addEventListener('submit', async (event) => {
@@ -91,6 +100,7 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
     }
     const data = new FormData(form);
     if (errorNode) errorNode.textContent = '';
+    if (saveButton) saveButton.disabled = true;
     try {
       const currentProfile = profileData(state.account || {});
       const payload = {
@@ -115,6 +125,7 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
       layer.v2Close?.();
       await onSaved?.(account);
     } catch (error) {
+      if (saveButton) saveButton.disabled = false;
       openNotice({
         title: 'Данные не сохранены',
         message: accountErrorMessage(error, 'Не удалось сохранить данные'),
@@ -123,6 +134,6 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
       });
     }
   });
-  layer.v2Submit = () => form?.requestSubmit();
+  if (saveActions) saveActions.hidden = true;
   return layer;
 }

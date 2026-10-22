@@ -16,6 +16,7 @@ import { formatPhone } from '../core/phone/index.js';
 import { projectRecordStatuses } from '../core/record/index.js';
 import { disableWebPush, enableWebPush, getWebPushState } from '../core/notifications/web-push.js';
 import {
+  actionBlock,
   button,
   details,
   emptyState,
@@ -469,11 +470,6 @@ function bindGlobalProfileSettingsEntry(root, state, handlers) {
 function syncGlobalProfileHeader(root, state, handlers) {
   const current = root.querySelector('[data-v2-header]');
   if (!current) return;
-  const layers = [...root.querySelectorAll('[data-v2-z-layer]')];
-  const top = layers.at(-1) || null;
-  const editor = top?.matches?.('.account-personal-data-z') ? top : null;
-  const dirty = editor?.dataset.accountDirty === 'true';
-
   current.outerHTML = v2Header({
     a: {
       kind: 'avatar',
@@ -484,17 +480,10 @@ function syncGlobalProfileHeader(root, state, handlers) {
       aria: 'Настройки профиля',
     },
     b: accountName(state),
-    c: dirty ? {
-      kind: 'text',
-      label: 'Сохранить',
-      data: 'data-account-profile-save',
-      aria: 'Сохранить изменения',
-    } : null,
     d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
   });
   bindGlobalProfileSettingsEntry(root, state, handlers);
   bindGlobalChatButton(root, state, handlers);
-  root.querySelector('[data-account-profile-save]')?.addEventListener('click', () => editor?.v2Submit?.());
 }
 
 function accountProfileData(state) {
@@ -1186,7 +1175,6 @@ function contactHeaderMarkup(relationship) {
   return v2Header({
     a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-contact-settings', settingsTag: true, aria: 'Настройки' },
     b: title,
-    c: { kind: 'text', label: 'Записаться', data: 'data-global-contact-booking', aria: 'Записаться' },
     d: { kind: 'chat', data: 'data-global-contact-chat', aria: 'Чат' },
   });
 }
@@ -1407,12 +1395,16 @@ function contactHistoryRail(state, records = [], dataName = 'data-global-contact
     : '';
 }
 
-function bindContactHeaderActions(root, state, handlers, relationship, { workplaceKey = '', repeatRequest = null } = {}) {
+function bindContactHeaderActions(root, state, handlers, relationship, {
+  workplaceKey = '',
+  repeatRequest = null,
+  actionRoot = root,
+} = {}) {
   const tenantId = String(relationship?.tenantId || '');
   root.querySelector('[data-global-contact-settings]')?.addEventListener('click', () => {
     openGlobalContactSettings(state, handlers, relationship);
   });
-  root.querySelector('[data-global-contact-booking]')?.addEventListener('click', () => {
+  actionRoot?.querySelector('[data-global-contact-booking]')?.addEventListener('click', () => {
     handlers.onStartBooking?.(tenantId, {
       workplaceKey: String(workplaceKey || ''),
       repeatRequest,
@@ -1431,7 +1423,11 @@ function openGlobalContactHistoryLayer(root, state, handlers, relationship, requ
   const profile = relationship?.context?.profile || {};
   const title = relationshipTitle(relationship);
   const canRepeat = requestProcedures(request).length > 0;
-  const layer = mountV2ZLayer(root, v2ZLayer(historyDetailBody(state, request), { className: 'account-contact-history-z' }), {
+  const body = `${historyDetailBody(state, request)}${canRepeat ? actionBlock(button('Повторить', {
+    data: 'data-global-contact-booking',
+    aria: 'Повторить процедуру',
+  })) : ''}`;
+  const layer = mountV2ZLayer(root, v2ZLayer(body, { className: 'account-contact-history-z' }), {
     stack: true,
     onClose: () => restoreHeader?.(),
   });
@@ -1440,10 +1436,9 @@ function openGlobalContactHistoryLayer(root, state, handlers, relationship, requ
   setGlobalAccountHeader(root, v2Header({
     a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-contact-settings', settingsTag: true, aria: 'Настройки' },
     b: workplaceName(state, request),
-    c: canRepeat ? { kind: 'text', label: 'Повторить', data: 'data-global-contact-booking', aria: 'Повторить процедуру' } : null,
     d: { kind: 'chat', data: 'data-global-contact-chat', aria: 'Чат' },
   }));
-  bindContactHeaderActions(root, state, handlers, relationship, { repeatRequest: request });
+  bindContactHeaderActions(root, state, handlers, relationship, { repeatRequest: request, actionRoot: layer });
   return layer;
 }
 
@@ -1453,9 +1448,13 @@ function openGlobalContactWorkplaceLayer(root, state, handlers, relationship, wo
   const rows = (Array.isArray(records) ? records : [])
     .filter((request) => String(request?.workplaceId || request?.workplaceKey || '') === key)
     .sort((a, b) => requestMoment(b).localeCompare(requestMoment(a)));
-  const body = rows.length
+  const history = rows.length
     ? v2Section('История', miniCardRail(rows.map((request, index) => contactHistoryMiniCard(state, request, index, 'data-global-workplace-history'))))
     : emptyState('История пока пустая', 'Записи этого пространства появятся здесь.');
+  const body = `${history}${actionBlock(button('Записаться', {
+    data: 'data-global-contact-booking',
+    aria: 'Записаться',
+  }))}`;
   const layer = mountV2ZLayer(root, v2ZLayer(body, { className: 'account-contact-workplace-z' }), {
     stack: true,
     onClose: () => restoreHeader?.(),
@@ -1468,10 +1467,9 @@ function openGlobalContactWorkplaceLayer(root, state, handlers, relationship, wo
     setGlobalAccountHeader(root, v2Header({
       a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-contact-settings', settingsTag: true, aria: 'Настройки' },
       b: String(workplace.name || title),
-      c: { kind: 'text', label: 'Записаться', data: 'data-global-contact-booking', aria: 'Записаться' },
       d: { kind: 'chat', data: 'data-global-contact-chat', aria: 'Чат' },
     }));
-    bindContactHeaderActions(root, state, handlers, relationship, { workplaceKey: key });
+    bindContactHeaderActions(root, state, handlers, relationship, { workplaceKey: key, actionRoot: layer });
   };
   showHeader();
 
@@ -1515,18 +1513,23 @@ async function renderGlobalContactDetail(root, state, handlers) {
     ...pendingInvestments.map(accountInvestmentProposalCard),
   ];
   const finance = financeCards.length ? entityCardRail(financeCards) : '';
-  const body = [
+  const content = [
     workplaces ? v2Section('Пространства', workplaces) : '',
     programs ? v2Section('Программы', programs) : '',
     finance ? v2Section('Инвестиции / займы', finance) : '',
   ].filter(Boolean).join('') || emptyState('Профиль пока пустой', 'Данные взаимодействия появятся здесь.');
+  const body = `${content}${actionBlock(button('Записаться', {
+    data: 'data-global-contact-booking',
+    aria: 'Записаться',
+  }))}`;
 
+  let layer = null;
   const showContactHeader = () => {
     setGlobalAccountHeader(root, contactHeaderMarkup(relationship));
-    bindContactHeaderActions(root, state, handlers, relationship);
+    bindContactHeaderActions(root, state, handlers, relationship, { actionRoot: layer });
   };
 
-  const layer = mountV2ZLayer(root, v2ZLayer(body, { className: 'account-contact-detail-z' }), {
+  layer = mountV2ZLayer(root, v2ZLayer(body, { className: 'account-contact-detail-z' }), {
     stack: true,
     onClose: () => {
       state.accountTab = 'contacts';
@@ -1604,11 +1607,14 @@ async function renderGlobalHistoryDetail(root, state, handlers) {
   const header = v2Header({
     a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-history-contact-settings', settingsTag: true, aria: 'Настройки' },
     b: workplaceName(state, request),
-    c: canRepeat ? { kind: 'text', label: 'Записаться', data: 'data-global-history-repeat', aria: 'Записаться снова' } : null,
     d: { kind: 'chat', data: 'data-global-history-chat', aria: 'Чат' },
   });
+  const body = `${historyDetailBody(state, request)}${canRepeat ? actionBlock(button('Записаться', {
+    data: 'data-global-history-repeat',
+    aria: 'Записаться снова',
+  })) : ''}`;
 
-  renderV2Shell(root, state, { header, body: historyDetailBody(state, request) });
+  renderV2Shell(root, state, { header, body });
 
   bindWorkspaceInteraction(root, state, handlers, {
     onZRight: () => {

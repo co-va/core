@@ -1,4 +1,4 @@
-import { actionBlock, button, collectLinks, colorPicker, escapeHtml, field, initColorPickers, initLinks, initPhotoField, initTimePickers, links, mountModal, mountV2ZLayer, modal, openColorPickerAction, openSharedProfileSettingsMenu, openTimeRangeAction, page, phoneField, photoField, select, setSharedProfilePrimary, textareaField, timePicker, v2ZLayer, workspaceHeaderContext } from '../../../ui/ui.js';
+import { actionBlock, button, collectLinks, colorPicker, escapeHtml, field, initColorPickers, initLinks, initPhotoField, initTimePickers, links, mountModal, mountV2ZLayer, modal, openColorPickerAction, openSharedProfileSettingsMenu, openTimeRangeAction, page, phoneField, photoField, select, textareaField, timePicker, v2ZLayer, workspaceHeaderContext } from '../../../ui/ui.js';
 import { getProfile } from '../data.js';
 import { deleteWorkplace as deleteWorkplaceData, getWorkplaceReferenceData, getWorkplaces, upsertWorkplace } from './data.js';
 
@@ -27,11 +27,11 @@ export function workplaceForm(existing=null,{sourceOnly=false,bodyActions=false}
     ? reference.currencies
     : (w.currency?[{value:w.currency,label:w.currency}]:[]);
   const primary=sourceOnly
-    ? button('Сохранить',{
-        className:'v2-primary-source-only',
-        data:`data-workplace-primary data-v2-primary-action data-v2-primary-label="Сохранить" data-v2-primary-visible="${existing?'false':'true'}"`,
+    ? actionBlock(button('Сохранить',{
+        type:'submit',
+        data:'data-workplace-primary',
         aria:'Сохранить',
-      })
+      }))
     : '';
   const body=bodyActions
     ? actionBlock(`${button('Сохранить',{type:'submit'})}${existing?button('Удалить',{variant:'danger',data:'data-delete-workplace-form'}):''}`)
@@ -138,12 +138,14 @@ export function bindWorkplaceForm(root,existing=null,{onSaved=()=>{},onDeleted=(
   initLinks(root);
 
   const primary=root.querySelector('[data-workplace-primary]');
+  const primaryActions=primary?.closest('.modal-actions');
   const initial=formSnapshot(form);
   let dirty=!existing;
 
   const syncPrimary=()=>{
     if(!primary)return;
-    setSharedProfilePrimary(primary,{visible:dirty,label:'Сохранить'});
+    primary.disabled=false;
+    if(primaryActions)primaryActions.hidden=!dirty;
   };
   const syncDirty=()=>{
     dirty=!existing||formSnapshot(form)!==initial;
@@ -154,12 +156,10 @@ export function bindWorkplaceForm(root,existing=null,{onSaved=()=>{},onDeleted=(
   form.addEventListener('change',syncDirty);
   form.addEventListener('submit',async(event)=>{
     event.preventDefault();
-    if(primary)setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:true});
+    if(primary)primary.disabled=true;
     const saved=await saveWorkplace(root,existing,onSaved);
-    if(!saved&&primary)setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:false});
+    if(!saved&&primary)primary.disabled=false;
   });
-
-  primary?.addEventListener('click',()=>form.requestSubmit());
 
   root.querySelector('[data-delete-workplace-form]')?.addEventListener('click',(event)=>{
     event.preventDefault();

@@ -490,10 +490,9 @@ let cashOperationLayer = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || 
 ok(Boolean(cashOperationLayer), 'Cash selected operation did not open Z2');
 ok(cashOperationLayer?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Перевод между кошельками',
   'Cash operation Z2 B title is wrong');
-ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Сохранить',
-  'Cash operation Z2 C must be Save');
+ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'Cash operation Z2 must not expose completion action in C');
 ok(Boolean(cashOperationLayer?.querySelector('[data-finance-special-form]')), 'Cash operation Z2 form missing');
-ok(!cashOperationLayer?.querySelector('button[type="submit"]'), 'Cash operation form must not duplicate Save inside Z2');
+ok(Boolean(cashOperationLayer?.querySelector('[data-finance-special-save]')?.closest('.modal-actions')), 'Cash operation Z2 must expose one bottom Save action');
 ok(!document.querySelector('[data-modal][data-v2-layer-kind="bottom"]'),
   'Cash operation picker remained open behind Z2');
 cashOperationLayer?.v2Close?.();
@@ -829,8 +828,8 @@ let correctionZ = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at
 ok(Boolean(correctionZ?.querySelector('[data-finance-manual-form]')), 'DDS correction must reopen the existing manual operation editor');
 ok(correctionZ?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Корректировка · Доход',
   'DDS correction B title is wrong');
-ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Сохранить',
-  'DDS correction C must be Save');
+ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS correction must not expose completion action in C');
+ok(Boolean(correctionZ?.querySelector('[data-finance-manual-save]')?.closest('.modal-actions')), 'DDS correction must expose one bottom Save action');
 const correctionNames = [...(correctionZ?.querySelectorAll('input[name="lineName"]') || [])]
   .map((input) => input.value);
 ok(correctionNames.includes('глажка') && correctionNames.includes('стирка'),
@@ -960,8 +959,8 @@ let ddsLayer = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at(-1
 ok(Boolean(ddsLayer), 'DDS Excel did not open Z2');
 ok(ddsLayer?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Выгрузка ДДС',
   'DDS Excel Z2 B title is wrong');
-ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Выгрузить',
-  'DDS Excel Z2 C must be Export');
+ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS Excel Z2 must not expose completion action in C');
+ok(Boolean(ddsLayer?.querySelector('[data-finance-dds-export-submit]')?.closest('.modal-actions')), 'DDS Excel Z2 must expose one bottom Export action');
 ok(Boolean(ddsLayer?.querySelector('[data-finance-dds-export-form]')), 'DDS Excel filters form missing');
 ok(Boolean(ddsLayer?.querySelector('[name="from"]')), 'DDS Excel from filter missing');
 ok(Boolean(ddsLayer?.querySelector('[name="to"]')), 'DDS Excel to filter missing');
@@ -998,10 +997,9 @@ let articleEdit = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at
 ok(Boolean(articleEdit), 'DDS Article Add did not open next Z layer');
 ok(articleEdit?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Новая статья',
   'DDS Article editor B title is wrong');
-ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Сохранить',
-  'DDS Article editor C must be Save');
+ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS Article editor must not expose completion action in C');
 ok(Boolean(articleEdit?.querySelector('[data-finance-article-form]')), 'DDS Article editor form missing');
-ok(!articleEdit?.querySelector('button[type="submit"]'), 'DDS Article editor must not duplicate Save inside Z');
+ok(Boolean(articleEdit?.querySelector('[data-finance-article-save]')?.closest('.modal-actions')), 'DDS Article editor must expose one bottom Save action');
 await closeTopDdsZ(123, 'article-edit');
 ok([...((shell()?.querySelectorAll('[data-v2-z-layer]')) || [])].length === 1,
   'DDS Article editor did not return to Articles Z2');
@@ -1221,19 +1219,20 @@ serviceA1?.querySelector('[data-shared-profile-action="appearance"]')?.dispatchE
 await wait(80);
 let serviceViewQ = document.querySelector('[data-v2-q="true"]');
 ok(Boolean(serviceViewQ), 'Service View Q did not open');
-ok(!serviceViewQ?.querySelector('[data-card-save]'), 'Service View Q must not contain local Save button/source');
-ok(Boolean(serviceViewQ?.querySelector('[data-card-q-save]')), 'Service View Q missing Header C save source');
+const serviceViewSave = serviceViewQ?.querySelector('[data-card-q-save]');
+const serviceViewSaveActions = serviceViewSave?.closest('.modal-actions');
+ok(Boolean(serviceViewSave) && Boolean(serviceViewSaveActions), 'Service View Q missing bottom Save action');
+ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'Service View Q must not expose completion action in C');
 const boldTool = serviceViewQ?.querySelector('[data-card-tool="bold"]');
 ok(Boolean(boldTool), 'Service View Q card editor missing Bold tool');
 boldTool?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(60);
-const headerSave = shell()?.querySelector('[data-v2-workspace-primary]');
-ok(Boolean(headerSave), 'Service View dirty state did not expose shared Header C');
-ok(headerSave?.textContent?.trim() === 'Сохранить', 'Service View Header C label must be Save');
-headerSave?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+ok(serviceViewSaveActions?.hidden === false, 'Service View dirty state did not reveal bottom Save action');
+ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'Service View dirty state must keep C empty');
+serviceViewSave?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(120);
 serviceViewQ = document.querySelector('[data-v2-q="true"]');
-ok(!serviceViewQ, 'Service View Q did not close after Header C save');
+ok(!serviceViewQ, 'Service View Q did not close after bottom Save');
 
 mark('integrations-telegram-state-machine');
 await openF(6,'integrations');

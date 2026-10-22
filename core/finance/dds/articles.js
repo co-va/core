@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   emptyState,
   escapeHtml,
@@ -100,11 +101,6 @@ function openForm(root, existing = null) {
 
   layer.innerHTML = `${workspaceHeaderContext({
     title: existing ? 'Редактирование статьи' : 'Новая статья',
-    c: {
-      label: 'Сохранить',
-      data: 'data-finance-article-save',
-      aria: 'Сохранить статью',
-    },
   })}
     <form class="compact-form" data-finance-article-form novalidate>
       ${field({ label: 'Название', name: 'articleName', value: existing?.name || '', required: true, placeholder: 'Например, Краска' })}
@@ -112,7 +108,11 @@ function openForm(root, existing = null) {
       ${select({ label: 'Тип', name: 'direction', value: direction, options: DIRECTION_OPTIONS })}
       ${select({ label: 'Экономический характер', name: 'economicType', value: economicType, options: ECONOMIC_OPTIONS })}
       ${existing && !isSystem ? button('Удалить', { type: 'button', variant: 'danger', data: 'data-delete-finance-article' }) : ''}
-    </form>`;
+    </form>
+    ${actionBlock(button('Сохранить', {
+      data: 'data-finance-article-save',
+      aria: 'Сохранить статью',
+    }))}`;
 
   layer.querySelector('[data-finance-article-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault();

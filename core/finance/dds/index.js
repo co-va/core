@@ -385,16 +385,15 @@ function renderPaymentCorrection(root, operation, { onSaved = null } = {}) {
 
   root.innerHTML = `${workspaceHeaderContext({
     title: 'Корректировка · Оплата услуги',
-    c: {
-      label: 'Сохранить',
-      data: 'data-finance-payment-correction-save',
-      aria: 'Сохранить корректировку оплаты',
-    },
   })}
     <form class="compact-form" data-finance-payment-correction-form novalidate>
       <div class="payment-total"><span>Сумма услуг</span><strong>${formatMoney(serviceAmount)}</strong></div>
       ${rows}
-    </form>`;
+    </form>
+    ${actionBlock(button('Сохранить', {
+      data: 'data-finance-payment-correction-save',
+      aria: 'Сохранить корректировку оплаты',
+    }))}`;
   root.querySelector('[data-finance-payment-correction-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -439,11 +438,6 @@ function renderRefundCorrection(root, operation, { onSaved = null } = {}) {
   const wallets = correctionWalletOptions();
   root.innerHTML = `${workspaceHeaderContext({
     title: 'Корректировка · Возврат',
-    c: {
-      label: 'Сохранить',
-      data: 'data-finance-refund-correction-save',
-      aria: 'Сохранить корректировку возврата',
-    },
   })}
     <form class="compact-form" data-finance-refund-correction-form novalidate>
       ${field({
@@ -475,7 +469,11 @@ function renderRefundCorrection(root, operation, { onSaved = null } = {}) {
         required: true,
         allowClear: false,
       })}
-    </form>`;
+    </form>
+    ${actionBlock(button('Сохранить', {
+      data: 'data-finance-refund-correction-save',
+      aria: 'Сохранить корректировку возврата',
+    }))}`;
   initDatePickers(root);
 
   root.querySelector('[data-finance-refund-correction-form]')?.addEventListener('submit', async (event) => {
@@ -643,7 +641,6 @@ function openDDSExport(root, movements) {
   if (!layer) return;
   layer.innerHTML = `${workspaceHeaderContext({
     title: 'Выгрузка ДДС',
-    c: { label: 'Выгрузить', data: 'data-finance-dds-export-submit', aria: 'Выгрузить ДДС' },
   })}
     <form class="compact-form" data-finance-dds-export-form novalidate>
       ${datePicker({ label: 'С', name: 'from' })}
@@ -677,7 +674,11 @@ function openDDSExport(root, movements) {
           { value: 'cancelled', label: 'Отменённые' },
         ],
       })}
-    </form>`;
+    </form>
+    ${actionBlock(button('Выгрузить', {
+      data: 'data-finance-dds-export-submit',
+      aria: 'Выгрузить ДДС',
+    }))}`;
   initDatePickers(layer);
   layer.querySelector('[data-finance-dds-export-submit]')?.addEventListener('click', () => {
     const form = layer.querySelector('[data-finance-dds-export-form]');

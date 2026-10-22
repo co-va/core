@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   datePicker,
   field,
@@ -170,11 +171,6 @@ export function renderIncomeExpenseOperation(root, direction, { onSaved = null, 
 
   root.innerHTML = `${workspaceHeaderContext({
     title: operation ? `Корректировка · ${isIncome ? 'Доход' : 'Расход'}` : (isIncome ? 'Доход' : 'Расход'),
-    c: {
-      label: 'Сохранить',
-      data: 'data-finance-manual-save',
-      aria: isIncome ? 'Сохранить доход' : 'Сохранить расход',
-    },
   })}
     <form class="compact-form" data-finance-manual-form novalidate>
       ${select({ label: 'Статья', name: 'articleId', value: articleId, options: articles, searchable: true })}
@@ -183,7 +179,11 @@ export function renderIncomeExpenseOperation(root, direction, { onSaved = null, 
       ${datePicker({ label: 'Фактическая дата', name: 'occurredDate', value: financeLocalDateValue(operation?.occurredAt || new Date()), required: true, allowClear: false })}
       <div data-finance-manual-mode>${modeMarkup(mode, { amount: simpleAmount, lines, direction })}</div>
       ${textareaField({ label: 'Примечание', name: 'note', value: existing.note || '', rows: 3, placeholder: 'Необязательно' })}
-    </form>`;
+    </form>
+    ${actionBlock(button('Сохранить', {
+      data: 'data-finance-manual-save',
+      aria: isIncome ? 'Сохранить доход' : 'Сохранить расход',
+    }))}`;
 
   initDatePickers(root);
 

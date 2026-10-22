@@ -67,7 +67,7 @@ expect(!booking.includes('data-booking-workplaces-next') && !booking.includes('d
 expect(booking.includes("state.workplaceKey = node.dataset.bookingWorkplace || '';") && booking.includes('renderProcedures(root, state);'), 'Choosing a workplace must immediately open services.');
 expect(booking.includes('onDateSelect: (date) => {') && booking.includes('state.date = date;') && booking.includes('renderTimes(root, state);'), 'Choosing a date must immediately open time.');
 expect(booking.includes('state.from = slot.from;') && booking.includes('state.to = slot.to;') && booking.includes('renderConfirmation(root, state);'), 'Choosing a time slot must immediately open confirmation.');
-expect(booking.includes("root.querySelector('[data-v2-header] [data-booking-confirm]')") && booking.includes('await continueAfterIdentity(root, state);'), 'C «Подтвердить» must revalidate identity/legal state before the final server write.');
+expect(booking.includes("layer?.querySelector('[data-booking-confirm]')") && booking.includes('await continueAfterIdentity(root, state);'), 'Bottom «Подтвердить» must revalidate identity/legal state before the final server write.');
 expect(booking.includes('async function finalizeBookingRequest') && booking.includes('createBookingRequest(state.tenantId'), 'Only the post-identity/legal finalizer may create the booking request.');
 expect(booking.includes('slotStillAvailable') && booking.includes('await refreshContext(state);'), 'Final booking write must recheck the selected slot against refreshed availability.');
 expect(booking.includes('d: null'), 'Online booking Header D must stay absent; booking must not create a parallel chat entry.');
@@ -97,7 +97,7 @@ expect(settings.includes("title: 'Онлайн-запись'") && settings.inclu
 expect(settings.includes("openSharedProfileSettingsMenu({") && settings.includes("label: 'Приветствие'") && !settings.includes("label: 'Настройки уведомлений'"), 'Online booking A must own only Welcome; notification delivery settings belong to Notifications.');
 expect(!settings.includes('Внешний вид') && !settings.includes('renderAppearance') && !settings.includes('BOOKING_SHAPES') && !settings.includes('BOOKING_CHOICE_STYLES'), 'Legacy online-booking appearance customization must stay removed.');
 expect(!fs.existsSync('ui/booking/index.js') && !fs.existsSync('ui/booking/account-theme.css'), 'Legacy online-booking appearance code and stylesheet must stay physically removed.');
-expect(settings.includes('data-v2-primary-visible="false"') && settings.includes('setWelcomeSaveVisible') && settings.includes("label: 'Сохранить'"), 'Welcome Q Header C Save must appear only after a draft change.');
+expect(settings.includes("actionBlock(button('Сохранить'") && settings.includes('setWelcomeSaveVisible') && settings.includes("save?.closest('.modal-actions')"), 'Welcome Q bottom Save must appear only after a draft change.');
 expect(!settings.includes('BOOKING_SLOT_STEPS.map') && !settings.includes('<span>Шаг записи</span>') && !settings.includes('data-online-booking-slot-step'), 'Online booking Z1 must not expose a slot-step control while step configuration is inactive; time candidates stay natural until the feature is explicitly configured.');
 expect(notificationSettings.includes("data: 'data-notification-delivery-settings-open'")
   && notificationSettings.includes("label: 'Порядок отправки'")
@@ -135,7 +135,7 @@ expect(!accountShell.includes('accountThemeClasses'), 'Authenticated end-user su
 expect(accountShell.includes('if (!canReuseScene) {') && accountShell.includes('root.innerHTML = v2Shell({') && accountShell.includes('if (z) z.innerHTML = body;'), 'Authenticated end-user surfaces must mount the canonical Shared V2 shell once and then reuse its persistent FEZ scene without a local visual wrapper.');
 expect(chatRuntime.includes("messageComposer({ attachments: true, attachmentTrigger: 'external' })") && chatRuntime.includes("kind: 'attachment'"), 'Core Chat runtime must own the shared composer and Header D attachment control.');
 expect(!accountShell.includes('messageComposer(') && !accountShell.includes('messageThread(') && !accountShell.includes('bindMessageAttachments('), 'End-user account shell must not duplicate Chat runtime behavior.');
-expect(accountShell.includes('async function renderGlobalHistoryDetail') && accountShell.includes("label: 'Записаться', data: 'data-global-history-repeat'"), 'Global History must own record detail and repeat booking in Header C.');
+expect(accountShell.includes('async function renderGlobalHistoryDetail') && accountShell.includes("actionBlock(button('Записаться'") && accountShell.includes("data: 'data-global-history-repeat'"), 'Global History must own record detail and repeat booking as the bottom Z action.');
 expect(accountShell.includes('async function renderGlobalContactDetail') && accountShell.includes("state.accountTab = 'contact-detail'"), 'Global Contacts F must own contact Z3 instead of navigating to a second account contour.');
 expect(!accountShell.includes('export async function renderAccount(')
   && !accountShell.includes('async function renderHome(')

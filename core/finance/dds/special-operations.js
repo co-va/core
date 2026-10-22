@@ -1,4 +1,6 @@
 import {
+  actionBlock,
+  button,
   datePicker,
   field,
   formValidationMessage,
@@ -131,11 +133,6 @@ function renderOperationForm(root, action, {
 
   root.innerHTML = `${workspaceHeaderContext({
     title: operation ? `Корректировка · ${action.title}` : (actionChoices.length > 1 ? 'Финансовая операция' : action.title),
-    c: {
-      label: 'Сохранить',
-      data: 'data-finance-special-save',
-      aria: `Сохранить операцию ${action.title}`,
-    },
   })}
     <form class="compact-form" data-finance-special-form novalidate>
       ${actionSelect}
@@ -143,7 +140,11 @@ function renderOperationForm(root, action, {
       ${field({ label: 'Сумма', name: 'amount', type: 'number', inputmode: 'decimal', value: existing.total || '', required: true, placeholder: '0', data: 'min="0" step="0.01"' })}
       ${datePicker({ label: 'Фактическая дата', name: 'occurredDate', value: occurredDate, required: true, allowClear: false })}
       ${textareaField({ label: 'Примечание', name: 'note', value: existing.note || '', rows: 3, placeholder: 'Необязательно' })}
-    </form>`;
+    </form>
+    ${actionBlock(button('Сохранить', {
+      data: 'data-finance-special-save',
+      aria: `Сохранить операцию ${action.title}`,
+    }))}`;
 
   initDatePickers(root);
 

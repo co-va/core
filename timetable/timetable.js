@@ -1,4 +1,4 @@
-import { button, entityCard, initCalendar, initMultiSelect, modal, mountModal, timePicker, initTimePickers, twoColumnLayout, escapeHtml, mountV2ZLayer, v2HorizontalRail, v2ZLayer, workspaceHeaderContext, ALL_WORKPLACES_ID, getWorkplaceContext, setWorkplaceContext } from '../ui/ui.js';
+import { actionBlock, button, entityCard, initCalendar, initMultiSelect, modal, mountModal, timePicker, initTimePickers, twoColumnLayout, escapeHtml, mountV2ZLayer, v2HorizontalRail, v2ZLayer, workspaceHeaderContext, ALL_WORKPLACES_ID, getWorkplaceContext, setWorkplaceContext } from '../ui/ui.js';
 import { getWorkplaces, resolveWorkplaceTime, getWorkingDayIndicators, getWorkingDayTotalMinutes, getWorkplaceMonthStats, getAllWorkplacesMonthStats, getWorkplaceMonthStatsMap } from '../core/workplace-time.js';
 import { getDays, saveDays, getDay, getDayTime, createDay, updateDayTime, removeDay, getDayRemovalConflicts, getScheduleConflicts, findSuggestedInterval } from '../core/day/index.js';
 import { getWorkingTimeUsageConflicts, isValidRange } from '../core/time/index.js';
@@ -92,13 +92,14 @@ export function renderTimetable(root) {
     });
   };
 
-  root.innerHTML = `<div class="calendar-workspace">${headerContextMarkup(initialMonth)}<div data-timetable-calendar data-calendar-workspace-host></div>${button('Применить', {
-    className: 'v2-primary-source-only',
-    data: 'data-timetable-apply data-v2-primary-action data-v2-primary-label="Применить" data-v2-primary-visible="false" disabled',
+  root.innerHTML = `<div class="calendar-workspace">${headerContextMarkup(initialMonth)}<div data-timetable-calendar data-calendar-workspace-host></div>${actionBlock(button('Применить', {
+    data: 'data-timetable-apply',
     aria: 'Применить',
-  })}</div>`;
+    disabled: true,
+  }))}</div>`;
   const calendarRoot = root.querySelector('[data-timetable-calendar]');
   const applyButton = root.querySelector('[data-timetable-apply]');
+  const applyActions = applyButton?.closest('.modal-actions');
   let calendar; let selection; let selectionMode = null;
 
   const bindHeaderContext = () => {
@@ -119,10 +120,10 @@ export function renderTimetable(root) {
     if (!dates.length) {
       selectionMode = null;
       applyButton.disabled = true;
-      applyButton.dataset.v2PrimaryVisible = 'false';
-      applyButton.dataset.v2PrimaryLabel = 'Применить';
-      applyButton.dataset.v2PrimaryVariant = '';
+      applyButton.textContent = 'Применить';
+      applyButton.classList.remove('ui-button--danger');
       applyButton.setAttribute('aria-label', 'Применить');
+      if (applyActions) applyActions.hidden = true;
       notifyContext();
       return;
     }
@@ -130,19 +131,19 @@ export function renderTimetable(root) {
     if (allMode) {
       setWorkplaceContext({ date: selectedDate });
       selectionMode = 'add-workplace';
-      applyButton.dataset.v2PrimaryLabel = 'Применить';
-      applyButton.dataset.v2PrimaryVariant = '';
+      applyButton.textContent = 'Применить';
+      applyButton.classList.remove('ui-button--danger');
       applyButton.setAttribute('aria-label', 'Применить');
     } else {
       setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate });
       selectionMode = isWorkingDate(dates[0]) ? 'make-off' : 'make-working';
       const makeOff = selectionMode === 'make-off';
-      applyButton.dataset.v2PrimaryLabel = makeOff ? 'Выходной' : 'Рабочий';
-      applyButton.dataset.v2PrimaryVariant = makeOff ? 'danger' : '';
+      applyButton.textContent = makeOff ? 'Выходной' : 'Рабочий';
+      applyButton.classList.toggle('ui-button--danger', makeOff);
       applyButton.setAttribute('aria-label', makeOff ? 'Сделать выходным' : 'Сделать рабочим');
     }
     applyButton.disabled = false;
-    applyButton.dataset.v2PrimaryVisible = 'true';
+    if (applyActions) applyActions.hidden = false;
     notifyContext();
   };
   const guard = (event) => {

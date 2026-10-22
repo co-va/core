@@ -168,7 +168,7 @@ assert.match(accountShell, /openSharedProfileSettingsMenu\(\{/);
 assert.match(sharedProfile, /variant: 'x'/);
 assert.doesNotMatch(accountShell, /openGlobalProfileSettingsZ|data-account-profile-settings-z/);
 assert.match(accountShell, /openAccountPersonalDataZ\(root, state/);
-assert.match(accountShell, /data-account-profile-save/);
+assert.doesNotMatch(accountShell, /data-account-profile-save/);
 assert.match(accountShell, /openSharedPhotoAction\(\{/);
 assert.match(sharedProfile, /selectPhotoFile\(\)/);
 assert.doesNotMatch(accountShell, /document\.createElement\('input'\)|new FileReader\(/);
@@ -230,8 +230,8 @@ assert.match(contactDetailBlock, /button\('Удалить', \{ variant: 'danger'
 assert.match(contactDetailBlock, /button\('Отмена', \{ variant: 'secondary'/);
 assert.match(contactDetailBlock, /data-contact-delete-error/);
 assert.match(contactDetailBlock, /deleteGlobalAccountRelationship\(tenantId\)/);
-assert.match(contactDetailBlock, /label:\s*'Записаться'/);
-assert.match(contactDetailBlock, /label:\s*'Повторить'/);
+assert.match(contactDetailBlock, /actionBlock\(button\('Записаться', \{[\s\S]*?data: 'data-global-contact-booking'/);
+assert.match(contactDetailBlock, /actionBlock\(button\('Повторить', \{[\s\S]*?data: 'data-global-contact-booking'/);
 
 assert.match(profileService, /async accountRelationshipProfile\(tenantId: string\)[\s\S]*?phone: row\.phone/);
 assert.doesNotMatch(profileService.slice(profileService.indexOf('async publicBookingBundle')), /profile:\s*\{[\s\S]*?phone: row\.phone/, 'Public booking profile must not expose the professional phone just for Contacts');
@@ -277,7 +277,7 @@ assert.match(accountShell, /openAccountConsentSettings/);
 assert.match(accountShell, /mountModal\(document\.body, modal/);
 assert.doesNotMatch(accountShell, /mountV2Layer\(|v2Layer\(/);
 assert.match(accountShell, /async function renderGlobalHistoryDetail/);
-assert.match(accountShell, /label: 'Записаться', data: 'data-global-history-repeat'/);
+assert.match(accountShell, /actionBlock\(button\('Записаться', \{[\s\S]*?data: 'data-global-history-repeat'/);
 assert.match(accountShell, /state\.accountSelectedChatTenantId/);
 const rootChatBlock = accountShell.slice(
   accountShell.indexOf('function bindGlobalChatButton'),
@@ -323,7 +323,7 @@ assert.match(calendarUi, /mountModal\(document\.body, modal/);
 assert.match(personalData, /links\(\{ label:'Ссылки'/);
 assert.doesNotMatch(personalData, /<div class="array-group"><span class="array-label">Ссылки/);
 assert.doesNotMatch(personalData, /button\('Сохранить', \{ type: 'submit' \}\)/);
-assert.match(personalData, /layer\.v2Submit = \(\) => form\?\.requestSubmit\(\)/);
+assert.match(personalData, /actionBlock\(button\('Сохранить', \{ type: 'submit', data: 'data-account-personal-save' \}\)\)/);
 assert.match(personalData, /formSignature\(form\)!==|formSignature\(form\) !== initialSignature/);
 assert.match(personalData, /updateAccount\(state\.tenantId/);
 assert.match(personalData, /profileData:/);
@@ -381,7 +381,7 @@ assert.match(onlineBookingService, /links,/);
 // Online booking settings stay inside the single Shared workspace Z; return navigation is gesture-owned.
 assert.match(bookingSettingsUi, /workspaceHeaderContext\(\{/);
 assert.doesNotMatch(bookingSettingsUi, /data-online-booking-back/);
-assert.match(bookingSettingsUi, /data-v2-primary-visible="false"/);
+assert.match(bookingSettingsUi, /actionBlock\(button\('Сохранить'/);
 assert.match(bookingSettingsUi, /data-online-booking-welcome-save/);
 assert.doesNotMatch(bookingSettingsUi, /\bappShell\s*\(/);
 assert.doesNotMatch(bookingSettingsUi, /\bappHeader\s*\(/);
