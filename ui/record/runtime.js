@@ -8,6 +8,8 @@ import { miniCard } from '../cards/mini-card.js';
 import { v2ListEntry, v2ListEntries } from '../lists/list-entry.js';
 import { v2HorizontalRail } from '../v2/index.js';
 import { timeSlots } from '../time/index.js';
+import { button } from '../buttons/index.js';
+import { actionBlock } from '../page/page.js';
 
 function recordSurface() {
   return document.querySelector('[data-v2-workspace-surface]')
@@ -383,24 +385,18 @@ export function setRecordPrimaryAction(layerRoot, {
   variant = '',
   onClick = null,
 } = {}) {
-  const context = layerRoot?.querySelector('[data-workspace-header-context]');
-  if (!context) return;
-  context.querySelector('[data-record-owner-primary]')?.remove();
-  if (!label || typeof onClick !== 'function') {
-    window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
-    return;
-  }
-  const source = document.createElement('button');
-  source.type = 'button';
-  source.className = 'record-owner-primary';
-  source.dataset.recordOwnerPrimary = '';
-  source.dataset.v2PrimaryAction = '';
-  source.dataset.v2PrimaryLabel = label;
-  if (variant) source.dataset.v2PrimaryVariant = variant;
-  source.setAttribute('aria-label', label);
-  source.addEventListener('click', onClick);
-  context.appendChild(source);
-  window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
+  const host = recordZHost(layerRoot);
+  if (!host) return;
+  host.querySelector('[data-record-owner-primary-actions]')?.remove();
+  if (!label || typeof onClick !== 'function') return;
+  host.insertAdjacentHTML('beforeend', actionBlock(button(label, {
+    data: 'data-record-owner-primary',
+    aria: label,
+    variant,
+  })));
+  const actions = host.querySelector('.modal-actions:last-of-type');
+  if (actions) actions.dataset.recordOwnerPrimaryActions = '';
+  host.querySelector('[data-record-owner-primary]')?.addEventListener('click', onClick);
 }
 
 export function bindRecordSettings(layerRoot, onOpen) {
