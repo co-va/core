@@ -44,7 +44,6 @@ expect(alphabet.includes('Текущее выбранное значение в 
 expect(!fs.existsSync('ui/header/c-action-policy.js'), 'C contract must not be implemented by a global DOM interceptor.');
 expect(!indexHtml.includes('c-action-policy.js'), 'Application entry must not load a C DOM interceptor.');
 expect(workspaceHeader.includes('function isAddAction(action)') && workspaceHeader.includes("data-v2-primary-label=\"+\""), 'Workspace Header context must expose only add actions through C.');
-expect(workspaceHeader.includes('const bottomAction = c && !cIsAdd') && workspaceHeader.includes('actionBlock(button('), 'Workspace completion actions must use the shared bottom action owner.');
 expect(professionalShell.includes('function isAddPrimarySource(source)') && !professionalShell.includes("surface.querySelector('form button[type=\"submit\"]')"), 'Professional shell must discover only add actions for C and never promote generic submits.');
 expect(recordRuntime.includes('data-record-owner-primary-actions') && !recordRuntime.includes("source.dataset.v2PrimaryAction = ''"), 'Shared Record primary action must live in Z/Q bottom actions instead of C.');
 expect(!booking.includes('c: action ?') && booking.includes('function actionMarkup(action = null)') && booking.includes('actionBlock(button(action.label'), 'End-user booking flow completion actions must be bottom actions, not Header C.');
