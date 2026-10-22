@@ -843,7 +843,7 @@ function investmentSummaryRows(entity) {
       v2ListEntry({ title: 'Годовая доходность', rightTop: formatPercent(state.annualizedReturn) }),
       v2ListEntry({ title: 'Окуплено', rightTop: formatPercent(state.paybackRatio) }),
     );
-    if (state.paybackDate) rows.push(v2ListEntry({ title: 'Точка окупаемости', rightTop: formatMoney(state.currentValue) }));
+    if (state.paybackDate) rows.push(v2ListEntry({ title: 'Точка окупаемости', rightTop: shortDate(state.paybackDate, '') }));
   }
   if (state.endDate) rows.push(v2ListEntry({ title: 'Срок', rightTop: shortDate(state.endDate, '') }));
   return v2ListEntries(rows);
@@ -1055,7 +1055,7 @@ function investmentEventTitle(event = {}) {
 }
 
 function investmentEventRows(entity = {}) {
-  return (Array.isArray(entity?.investmentEvents) ? entity.investmentEvents : [])
+  return (Array.isArray(entity.investmentEvents) ? entity.investmentEvents : [])
     .filter((event) => event && !event.deletedAt)
     .map((event) => ({
       ...event,
