@@ -7,6 +7,7 @@ import {
   NOTE_DEFAULT_COLOR,
   noteIsActiveAt,
   noteReels,
+  orderNoteReels,
 } from '../ui/note/index.js';
 import { timePicker } from '../ui/time/index.js';
 import {
@@ -16,7 +17,17 @@ import {
   removeNote,
   updateNote,
 } from '../core/note/index.js';
-import { noteVisibleForWorkplace } from '../journal/note-target.js';
+import {
+  cancelRecord,
+  deleteRecord,
+  hydrateRecordStateFromServer,
+} from '../core/record/index.js';
+import {
+  noteContextWithTarget,
+  noteTargetLabel,
+  noteVisibleForWorkplace,
+  resolveNoteTarget,
+} from '../journal/note-target.js';
 
 const read = (filePath) => fs.readFileSync(filePath, 'utf8');
 
@@ -28,6 +39,19 @@ assert.equal(noteIsActiveAt({ from: '', to: '11:00' }, '11:00'), true);
 assert.equal(noteIsActiveAt({ from: '', to: '11:00' }, '10:59'), false);
 assert.equal(noteIsActiveAt({ from: '10:00', to: '11:00' }, '10:30'), true);
 assert.equal(noteIsActiveAt({ from: '10:00', to: '11:00' }, '11:01'), false);
+
+const timedOrder = [
+  { id: 'early', from: '10:00', to: '10:00' },
+  { id: 'next', from: '10:01', to: '10:01' },
+  { id: 'day', from: '', to: '' },
+];
+assert.equal(orderNoteReels(timedOrder, '10:00')[0].id, 'early');
+assert.equal(orderNoteReels(timedOrder, '10:01')[0].id, 'next');
+const overlappingOrder = [
+  { id: 'long', from: '10:00', to: '11:00' },
+  { id: 'newer', from: '10:30', to: '10:45' },
+];
+assert.equal(orderNoteReels(overlappingOrder, '10:30')[0].id, 'newer', 'newly active Note must lead Y');
 
 const optionalTime = timePicker({ label: 'С', name: 'from', value: '', allowEmpty: true });
 assert.match(optionalTime, /name="from" value=""/);
@@ -41,6 +65,7 @@ assert.match(reels, /data-ui-y="note-reels"/);
 assert.match(reels, /data-journal-y/);
 assert.match(reels, /data-note-reel="n1"/);
 assert.match(reels, /data-note-reel="n2"/);
+assert.ok(reels.indexOf('data-note-reel="n2"') < reels.indexOf('data-note-reel="n1"'), 'active Note must move to first Y position');
 assert.match(reels, /is-time-active/);
 assert.match(reels, /is-related/);
 assert.doesNotMatch(reels, /v2-sticker/);
@@ -90,25 +115,65 @@ assert.equal(noteVisibleForWorkplace(attachedEvent, 'w2', {
 }), false);
 assert.equal(noteVisibleForWorkplace(attachedEvent, 'w2', {
   resolveTarget: () => null,
-}), true, 'missing target must behave as unattached');
+}), true, 'missing target without historical snapshot behaves as unattached');
 assert.equal(noteVisibleForWorkplace(attachedEvent, 'w2', {
   allMode: true,
   resolveTarget: () => ({ type: 'event', entity: { workplaceId: 'w1' } }),
 }), true);
 
-assert.equal(removeNote(dayOnly.id), true);
-assert.equal(getNote(dayOnly.id), null);
+hydrateRecordStateFromServer({
+  records: [{
+    id: 'history-record',
+    date: '2026-10-22',
+    workplaceId: 'w-history',
+    from: '14:00',
+    to: '15:00',
+    person: { id: 'p-history', uei: 'UEI-HISTORY', name: 'Анна', surname: 'История' },
+    procedures: [],
+    products: [],
+  }],
+  recordEvents: [],
+});
+hydrateNotesFromServer([]);
+const historyNote = createNote({
+  id: 'history-note',
+  ownerType: 'profile',
+  ownerId: 'profile-1',
+  context: noteContextWithTarget({ scope: 'professional' }, 'record', 'history-record'),
+  date: '2026-10-22',
+  targetType: 'record',
+  targetId: 'history-record',
+  title: 'Историческая связь',
+});
+assert.match(noteTargetLabel(historyNote), /^Запись · 14:00 · Анна История$/);
+assert.equal(cancelRecord('history-record')?.status, 'cancelled');
+assert.equal(getNote(historyNote.id)?.targetType, 'record');
+assert.equal(getNote(historyNote.id)?.targetId, 'history-record');
+assert.match(noteTargetLabel(getNote(historyNote.id)), /^Запись отменена · 14:00 · Анна История$/);
+assert.equal(deleteRecord('history-record'), true);
+const afterRecordDelete = getNote(historyNote.id);
+assert.equal(afterRecordDelete.targetType, 'record');
+assert.equal(afterRecordDelete.targetId, 'history-record');
+assert.equal(resolveNoteTarget(afterRecordDelete)?.deleted, true);
+assert.match(noteTargetLabel(afterRecordDelete), /^Запись удалена · 14:00 · Анна История$/);
+assert.equal(noteVisibleForWorkplace(afterRecordDelete, 'w-history'), true);
+assert.equal(noteVisibleForWorkplace(afterRecordDelete, 'w-other'), false, 'deleted Record Note must keep its historical workplace context');
+
+assert.equal(removeNote(historyNote.id), true);
+assert.equal(removeNote(dayOnly.id), false, 'hydration reset must not restore old Note rows');
 
 const alphabet = read('UI_ALPHABET.md');
 const schema = read('server/prisma/schema.prisma');
 const migration = read('server/prisma/migrations/20261022210000_note_y_reels/migration.sql');
 const noteService = read('core/note/service.js');
+const serverNoteService = read('server/src/note/note.service.ts');
 const persistence = read('core/business-persistence.js');
 const runtime = read('core/runtime/business-state.js');
 const day = read('journal/день.js');
 const creation = read('journal/creation-flow.js');
 const noteCreate = read('journal/note-create.js');
 const noteView = read('journal/note-view.js');
+const noteTarget = read('journal/note-target.js');
 const timeSource = read('journal/time-usage-source.js');
 const month = read('journal/месяц.js');
 const list = read('journal/список.js');
@@ -147,9 +212,12 @@ assert.match(noteCreate, /label: 'Наименование'/);
 assert.match(noteCreate, /label: 'Текст'/);
 assert.match(noteCreate, /colorPicker/);
 assert.match(noteCreate, /ownerType: 'profile'/);
+assert.match(noteCreate, /noteContextWithTarget/);
 
 assert.match(day, /data-journal-y-host/);
 assert.match(day, /noteReels/);
+assert.match(day, /scheduleLiveTimeRefresh/);
+assert.match(day, /nextMinuteDelay/);
 assert.ok(day.indexOf('renderY();') < day.indexOf('if (allMode)'), 'Y must render before work-schedule early returns');
 assert.match(day, /journalDayTimeline/);
 assert.doesNotMatch(timeSource, /\bnote\b|type: 'note'/i);
@@ -161,10 +229,15 @@ assert.match(recordView, /hasNotesForTarget\('record'/);
 assert.match(eventView, /Заметки/);
 assert.match(eventView, /hasNotesForTarget\('event'/);
 
+assert.match(noteTarget, /Запись отменена/);
+assert.match(noteTarget, /Запись удалена/);
+assert.match(noteTarget, /targetSnapshot/);
 assert.match(noteView, /variant: 'q'/);
 assert.match(noteView, /button\('Изменить'/);
 assert.match(noteView, /button\('Сохранить'/);
 assert.match(noteView, /button\('Удалить'/);
+assert.match(noteView, /noteContextWithTarget/);
+assert.match(serverNoteService, /preservesExistingTarget/);
 const readPart = noteView.slice(noteView.indexOf('const renderRead'), noteView.indexOf('const renderEdit'));
 assert.doesNotMatch(readPart, /Удалить/);
 
