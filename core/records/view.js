@@ -32,6 +32,7 @@ import {
   setRecordConfirmed,
 } from '../record/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
+import { getNotesForTarget, hasNotesForTarget } from '../note/index.js';
 import { openProcedureAdjustment, openRecords } from './records.js';
 import { setRecordLoyaltyProgram } from './program-selection.js';
 
@@ -446,6 +447,9 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       ${card}
       ${actionBlock([
         payment.hasPayments ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
+        hasNotesForTarget('record', source.id)
+          ? button('Заметки', { variant: 'secondary', data: 'data-record-view-notes' })
+          : '',
         payment.fullyPaid
           ? button('Оплачено', { disabled: true })
           : button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' }),
@@ -513,6 +517,22 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       openRecordZReport(syncCurrent());
+    });
+    root.querySelector('[data-record-view-notes]')?.addEventListener('click', () => {
+      const notes = getNotesForTarget('record', source.id);
+      if (!notes.length) return;
+      const noteDate = String(notes[0]?.date || source.date || '').slice(0, 10);
+      layer.v2Close?.();
+      queueMicrotask(() => {
+        window.dispatchEvent(new CustomEvent('book:journal-note-focus-request', {
+          detail: {
+            targetType: 'record',
+            targetId: String(source.id || ''),
+            date: noteDate,
+            workplaceId: String(source.workplaceId || ''),
+          },
+        }));
+      });
     });
     root.querySelector('[data-record-view-sale]')?.addEventListener('click', () => {
       openRecordSale(syncCurrent(), {

@@ -81,6 +81,7 @@ export function renderJournal(root, options = {}) {
   let selectedWorkplaceId = context.workplaceId;
   let selectedDate = context.date;
   let disposeActiveView = () => {};
+  let noteFocusTarget = null;
 
   const activeDayWorkplaces = () => getActiveDayWorkplaces(selectedDate, workplaces);
 
@@ -293,6 +294,7 @@ export function renderJournal(root, options = {}) {
         date: selectedDate,
         workplaceId: selectedWorkplaceId,
         navigationRoot: periodNavigationRoot,
+        focusTarget: noteFocusTarget,
         onWorkplaceFieldClick: openDayTime,
         onChange: (nextDate) => {
           selectedDate = nextDate;
@@ -300,6 +302,7 @@ export function renderJournal(root, options = {}) {
           renderView();
         },
       });
+      noteFocusTarget = null;
     } else if (activeView === 'month') {
       disposeActiveView = renderJournalMonth(viewRoot, {
         month: selectedDate,
@@ -342,6 +345,28 @@ export function renderJournal(root, options = {}) {
     }
   };
 
+  const focusJournalNotes = (event) => {
+    const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+    const targetType = detail.targetType === 'record' || detail.targetType === 'event' ? detail.targetType : '';
+    const targetId = String(detail.targetId || '');
+    const date = String(detail.date || '').slice(0, 10);
+    if (!targetType || !targetId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+
+    const nextDate = new Date(`${date}T12:00:00`);
+    if (!Number.isNaN(nextDate.getTime())) selectedDate = nextDate;
+    const targetWorkplaceId = String(detail.workplaceId || '');
+    if (selectedWorkplaceId !== ALL_WORKPLACES_ID && targetWorkplaceId) {
+      selectedWorkplaceId = targetWorkplaceId;
+    }
+    activeView = 'day';
+    noteFocusTarget = { targetType, targetId };
+    setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+    options.onViewChange?.(activeView);
+    renderView();
+  };
+
+  window.addEventListener('book:journal-note-focus-request', focusJournalNotes);
+
   let refreshQueued = false;
   const scheduleRefresh = () => {
     if (refreshQueued) return;
@@ -366,6 +391,7 @@ export function renderJournal(root, options = {}) {
   return () => {
     disposeActiveView();
     refreshEvents.forEach((eventName) => window.removeEventListener(eventName, scheduleRefresh));
+    window.removeEventListener('book:journal-note-focus-request', focusJournalNotes);
     clearV2ZHeaderRows(root);
   };
 }

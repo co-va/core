@@ -63,6 +63,7 @@ model Tenant {
   records                  Record[]
   recordEvents             RecordEvent[]
   events                   Event[]
+  notes                    Note[]
   businessOperationalState BusinessOperationalState?
   documentArchive          TenantDocumentArchive?
   businessAuxiliaryState   BusinessAuxiliaryState?
@@ -392,6 +393,30 @@ model Event {
 
   @@index([tenantId, workplaceId, date])
   @@index([ownerType, ownerId, date])
+}
+
+model Note {
+  id         String   @id
+  ownerType  String
+  ownerId    String
+  tenantId   String?
+  context    Json     @default("{}")
+  date       String
+  from       String   @default("")
+  to         String   @default("")
+  targetType String   @default("")
+  targetId   String   @default("")
+  title      String   @default("")
+  text       String   @default("")
+  color      String   @default("#CFC3FF")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([ownerType, ownerId, date])
+  @@index([tenantId, date])
+  @@index([targetType, targetId])
 }
 
 model BusinessOperationalState {

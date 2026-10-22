@@ -16,6 +16,7 @@
 | F | горизонтальная родительская навигация | `ui/v2` |
 | E | вертикальная вложенная навигация | `ui/v2` |
 | Z | рабочая поверхность | `ui/v2` |
+| Y | лента заметок / Note Reels внутри Journal Day | `ui/note` |
 | Z2/Z3… | рабочие слои поверх Z | `ui/v2` |
 | Q | большой рабочий modal поверх Z-стека | `ui/modals` + `ui/v2` |
 | X | нижний рабочий modal / action / select | `ui/modals` |
@@ -77,6 +78,7 @@
 | Layout / columns | `ui/layout` |
 | Links | `ui/links` |
 | List / v2ListEntry / v2ListEntries / reorder | `ui/lists` |
+| Note / Note Reels / Y | `ui/note` |
 | Modal Q/X/S / Notice | `ui/modals` |
 | Page / details / actionBlock | `ui/page` |
 | Payment UI | `ui/payment` |
@@ -97,6 +99,16 @@
 | UI facade only | `ui/ui.js` |
 | UI utilities only | `ui/utils` |
 | Visual reference only, never runtime owner | `ui/reference` |
+
+## Y / Note Reels
+
+- Y — единственная лента заметок / Note Reels в `Journal Day`; её runtime-владелец — `ui/note`.
+- Y не является Z и всегда живёт как отдельная горизонтальная зона внутри `Journal Day` Z Body.
+- Y не является Timeline и не входит в его временную геометрию, диапазон, occupancy, availability или conflicts.
+- Y не является Q/X: просмотр и редактирование Note используют существующий Shared Q, а picker/action UI — существующие Shared X.
+- Y не является Record/Event и не меняет их геометрию, длительность, hit-area или Work Schedule.
+- Все Note выбранного календарного дня живут только в Y. Горизонтальная прокрутка Y независима и использует Shared `HorizontalRail`.
+- Единственный reusable visual Note принадлежит `ui/note`; `v2Sticker` не является DOM Note.
 
 ## Calendar
 
