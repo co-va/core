@@ -78,6 +78,11 @@ export function renderJournalDay(root, {
   let activeTime = currentTimeForDay(dayDate);
   let clockTimer = null;
 
+  const dispose = () => {
+    if (clockTimer) clearTimeout(clockTimer);
+    clockTimer = null;
+  };
+
   const dayNotes = getNotesForDay(dayDate);
   const visibleNotes = dayNotes.filter((note) => noteVisibleForWorkplace(note, workplaceId, { allMode }));
   const relatedIds = focusTarget?.targetType && focusTarget?.targetId
@@ -92,14 +97,17 @@ export function renderJournalDay(root, {
     if (target?.entity?.from) activeTime = String(target.entity.from);
   }
 
-  const rerender = () => renderJournalDay(root, {
-    date,
-    workplaceId,
-    onChange,
-    onWorkplaceFieldClick,
-    navigationRoot,
-    focusTarget,
-  });
+  const rerender = () => {
+    dispose();
+    return renderJournalDay(root, {
+      date,
+      workplaceId,
+      onChange,
+      onWorkplaceFieldClick,
+      navigationRoot,
+      focusTarget,
+    });
+  };
 
   const renderY = () => {
     if (!yRoot) return;
@@ -136,11 +144,6 @@ export function renderJournalDay(root, {
       renderY();
       scheduleLiveTimeRefresh();
     }, nextMinuteDelay());
-  };
-
-  const dispose = () => {
-    if (clockTimer) clearTimeout(clockTimer);
-    clockTimer = null;
   };
 
   renderY();
