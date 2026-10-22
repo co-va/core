@@ -5,7 +5,7 @@ const EXCLUDED_DIRS = new Set([
   '.git', '.github', 'node_modules', 'server', 'tests', 'scripts', 'dist', 'build', 'coverage',
 ]);
 
-const COMPLETION_LABEL = /^(?:Сохранить|Изменить|Создать|Применить|Подтвердить|Отправить|Далее|Записаться|Рабочий|Выходной|Выгрузить|Проверить|Перенести|Готово|Завершить|Оплатить|Повторить)(?:\b|\s|$)/i;
+const COMPLETION_LABEL = /^(?:Сохранить|Изменить|Исправить|Создать|Применить|Подтвердить|Отправить|Далее|Записаться|Рабочий|Выходной|Выгрузить|Проверить|Перенести|Готово|Завершить|Оплатить|Повторить)(?:\b|\s|$)/i;
 
 function jsFilesUnder(directory) {
   if (!fs.existsSync(directory)) return [];
@@ -35,6 +35,13 @@ function buttonLabels(source) {
   const regex = /\bbutton\(\s*(['"`])([^'"`]+)\1/g;
   for (const match of source.matchAll(regex)) labels.push(match[2].trim());
   return labels;
+}
+
+function stringLiterals(source) {
+  const values = [];
+  const regex = /(['"`])([^'"`\n]+)\1/g;
+  for (const match of source.matchAll(regex)) values.push(match[2].trim());
+  return values;
 }
 
 function readExpression(source, start) {
@@ -77,8 +84,9 @@ function readExpression(source, start) {
   return source.slice(begin, index);
 }
 
-function completionLabels(source) {
-  return [...new Set([...quotedLabels(source), ...buttonLabels(source)].filter((label) => COMPLETION_LABEL.test(label)))];
+function completionLabels(source, { includeAllStrings = false } = {}) {
+  const candidates = [...quotedLabels(source), ...buttonLabels(source), ...(includeAllStrings ? stringLiterals(source) : [])];
+  return [...new Set(candidates.filter((label) => COMPLETION_LABEL.test(label)))];
 }
 
 const files = [
@@ -96,7 +104,7 @@ for (const file of files) {
   const cSource = /\bc\s*:/g;
   for (const match of source.matchAll(cSource)) {
     const expression = readExpression(source, match.index + match[0].length);
-    const labels = completionLabels(expression);
+    const labels = completionLabels(expression, { includeAllStrings: true });
     for (const label of labels) {
       failures.push(`${file}:${lineNumber(source, match.index)} Header C completion-action «${label}»`);
     }
