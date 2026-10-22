@@ -23,11 +23,11 @@ function lineNumber(source, index) {
   return source.slice(0, index).split('\n').length;
 }
 
-function quotedLabels(source) {
-  const labels = [];
-  const regex = /\blabel\s*:\s*(['"`])([^'"`]+)\1/g;
-  for (const match of source.matchAll(regex)) labels.push(match[2].trim());
-  return labels;
+function stringLiterals(source) {
+  const values = [];
+  const regex = /(['"`])([^'"`\n]+)\1/g;
+  for (const match of source.matchAll(regex)) values.push(match[2].trim());
+  return values;
 }
 
 function buttonLabels(source) {
@@ -35,13 +35,6 @@ function buttonLabels(source) {
   const regex = /\bbutton\(\s*(['"`])([^'"`]+)\1/g;
   for (const match of source.matchAll(regex)) labels.push(match[2].trim());
   return labels;
-}
-
-function stringLiterals(source) {
-  const values = [];
-  const regex = /(['"`])([^'"`\n]+)\1/g;
-  for (const match of source.matchAll(regex)) values.push(match[2].trim());
-  return values;
 }
 
 function readExpression(source, start) {
@@ -84,9 +77,18 @@ function readExpression(source, start) {
   return source.slice(begin, index);
 }
 
-function completionLabels(source, { includeAllStrings = false } = {}) {
-  const candidates = [...quotedLabels(source), ...buttonLabels(source), ...(includeAllStrings ? stringLiterals(source) : [])];
-  return [...new Set(candidates.filter((label) => COMPLETION_LABEL.test(label)))];
+function cCompletionLabels(expression) {
+  const labels = [];
+  const property = /\blabel\s*:/g;
+  for (const match of expression.matchAll(property)) {
+    const labelExpression = readExpression(expression, match.index + match[0].length);
+    labels.push(...stringLiterals(labelExpression));
+  }
+  return [...new Set(labels.filter((label) => COMPLETION_LABEL.test(label)))];
+}
+
+function markerCompletionLabels(source) {
+  return [...new Set(buttonLabels(source).filter((label) => COMPLETION_LABEL.test(label)))];
 }
 
 const files = [
@@ -104,8 +106,7 @@ for (const file of files) {
   const cSource = /\bc\s*:/g;
   for (const match of source.matchAll(cSource)) {
     const expression = readExpression(source, match.index + match[0].length);
-    const labels = completionLabels(expression, { includeAllStrings: true });
-    for (const label of labels) {
+    for (const label of cCompletionLabels(expression)) {
       failures.push(`${file}:${lineNumber(source, match.index)} Header C completion-action «${label}»`);
     }
   }
@@ -116,8 +117,7 @@ for (const file of files) {
       const index = source.indexOf(marker, offset);
       if (index < 0) break;
       const snippet = source.slice(Math.max(0, index - 360), Math.min(source.length, index + marker.length + 360));
-      const labels = completionLabels(snippet);
-      for (const label of labels) {
+      for (const label of markerCompletionLabels(snippet)) {
         failures.push(`${file}:${lineNumber(source, index)} ${marker} completion-action «${label}»`);
       }
       offset = index + marker.length;
