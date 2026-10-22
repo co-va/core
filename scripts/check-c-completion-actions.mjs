@@ -5,8 +5,6 @@ const EXCLUDED_DIRS = new Set([
   '.git', '.github', 'node_modules', 'server', 'tests', 'scripts', 'dist', 'build', 'coverage',
 ]);
 
-const COMPLETION_LABEL = /^(?:Сохранить|Изменить|Исправить|Создать|Применить|Подтвердить|Отправить|Далее|Записаться|Рабочий|Выходной|Выгрузить|Проверить|Перенести|Готово|Завершить|Оплатить|Повторить)(?:\b|\s|$)/i;
-
 function jsFilesUnder(directory) {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -77,18 +75,14 @@ function readExpression(source, start) {
   return source.slice(begin, index);
 }
 
-function cCompletionLabels(expression) {
+function cLabels(expression) {
   const labels = [];
   const property = /\blabel\s*:/g;
   for (const match of expression.matchAll(property)) {
     const labelExpression = readExpression(expression, match.index + match[0].length);
     labels.push(...stringLiterals(labelExpression));
   }
-  return [...new Set(labels.filter((label) => COMPLETION_LABEL.test(label)))];
-}
-
-function markerCompletionLabels(source) {
-  return [...new Set(buttonLabels(source).filter((label) => COMPLETION_LABEL.test(label)))];
+  return [...new Set(labels)];
 }
 
 const files = [
@@ -106,8 +100,8 @@ for (const file of files) {
   const cSource = /\bc\s*:/g;
   for (const match of source.matchAll(cSource)) {
     const expression = readExpression(source, match.index + match[0].length);
-    for (const label of cCompletionLabels(expression)) {
-      failures.push(`${file}:${lineNumber(source, match.index)} Header C completion-action «${label}»`);
+    for (const label of cLabels(expression)) {
+      if (label !== '+') failures.push(`${file}:${lineNumber(source, match.index)} Header C action «${label}» is not add-only`);
     }
   }
 
@@ -117,8 +111,10 @@ for (const file of files) {
       const index = source.indexOf(marker, offset);
       if (index < 0) break;
       const snippet = source.slice(Math.max(0, index - 360), Math.min(source.length, index + marker.length + 360));
-      for (const label of markerCompletionLabels(snippet)) {
-        failures.push(`${file}:${lineNumber(source, index)} ${marker} completion-action «${label}»`);
+      for (const label of buttonLabels(snippet)) {
+        if (label !== '+' && !label.startsWith('+ ')) {
+          failures.push(`${file}:${lineNumber(source, index)} ${marker} action «${label}» is not add-only`);
+        }
       }
       offset = index + marker.length;
     }
@@ -127,8 +123,8 @@ for (const file of files) {
 
 const uniqueFailures = [...new Set(failures)];
 if (uniqueFailures.length) {
-  uniqueFailures.forEach((failure) => console.error(`C completion guard: ${failure}`));
+  uniqueFailures.forEach((failure) => console.error(`C add-only guard: ${failure}`));
   process.exit(1);
 }
 
-console.log('C completion action guard: OK');
+console.log('C add-only action guard: OK');
