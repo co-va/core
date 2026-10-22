@@ -74,7 +74,13 @@ async function bootstrap() {
 
     if (host === LANDING_HOST) {
       if (request.path === '/') {
-        return response.sendFile(resolve(siteRoot, 'landing/index.html'));
+        return response.sendFile(resolve(siteRoot, 'landing/index.html'), {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0',
+          },
+        });
       }
       if (request.path === '/landing' || request.path === '/landing/') {
         return response.redirect(302, '/');
