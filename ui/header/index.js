@@ -1,6 +1,4 @@
-import { button } from '../buttons/index.js';
 import { modal, mountModal } from '../modals/index.js';
-import { actionBlock } from '../page/page.js';
 import { escapeHtml } from '../utils/escape-html.js';
 
 /**
@@ -25,8 +23,7 @@ function isAddAction(action) {
 /**
  * Canonical workspace Header context.
  * It supplies A/B/D metadata to the shared workspace shell without drawing a
- * second visible header inside Z. C displays add actions only; other supplied
- * actions use the shared fixed bottom action inside the current Z/Q.
+ * second visible header inside Z. C accepts add actions only.
  */
 export function workspaceHeaderContext({ title = '', a = null, c = null, d = null } = {}) {
   const actionData = a?.data ? ` ${String(a.data).trim()}` : '';
@@ -35,18 +32,9 @@ export function workspaceHeaderContext({ title = '', a = null, c = null, d = nul
   const actionDisabled = a?.disabled ? ' disabled' : '';
   const cDisabled = c?.disabled ? ' disabled' : '';
   const action = a ? `<button type="button" class="workspace-header-context__action" data-workspace-context-action${actionData} data-workspace-a-kind="${escapeHtml(a.kind || 'settings')}" data-workspace-a-label="${escapeHtml(a.label || '')}" data-workspace-a-image="${escapeHtml(a.image || '')}" data-workspace-a-image-position="${escapeHtml(a.imagePosition || '')}" data-workspace-a-initials="${escapeHtml(a.initials || '')}" data-workspace-a-settings-tag="${a.settingsTag ? 'true' : 'false'}" aria-label="${escapeHtml(a.aria || 'Настройки контекста')}"${actionDisabled}></button>` : '';
-  const cIsAdd = isAddAction(c);
-  const cAction = cIsAdd ? `<button type="button" class="workspace-header-context__c-action" data-v2-primary-action data-v2-primary-label="+" data-workspace-c-kind="add"${cData} aria-label="${escapeHtml(c?.aria || c?.label || 'Добавить')}"${cDisabled}></button>` : '';
+  const cAction = isAddAction(c) ? `<button type="button" class="workspace-header-context__c-action" data-v2-primary-action data-v2-primary-label="+" data-workspace-c-kind="add"${cData} aria-label="${escapeHtml(c?.aria || c?.label || 'Добавить')}"${cDisabled}></button>` : '';
   const dAction = d ? `<button type="button" class="workspace-header-context__d-action" data-workspace-d-action${dData} data-workspace-d-kind="${escapeHtml(d.kind || 'chat')}" aria-label="${escapeHtml(d.aria || 'Действие справа')}"></button>` : '';
-  const bottomAction = c && !cIsAdd
-    ? actionBlock(button(c.label || '', {
-        data: String(c.data || ''),
-        aria: c.aria || c.label || 'Действие',
-        variant: c.variant || '',
-        disabled: Boolean(c.disabled),
-      }))
-    : '';
-  return `<div class="workspace-header-context" data-workspace-header-context data-workspace-title="${escapeHtml(title)}">${action}${cAction}${dAction}</div>${bottomAction}`;
+  return `<div class="workspace-header-context" data-workspace-header-context data-workspace-title="${escapeHtml(title)}">${action}${cAction}${dAction}</div>`;
 }
 
 /**
