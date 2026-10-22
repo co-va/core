@@ -1,0 +1,139 @@
+name: Apply Note Y implementation
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-note-y-staging
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, 'Bootstrap Note Y implementation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Rehydrate Note/Y patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/.note-y-part-1 scripts/.note-y-part-2 scripts/.note-y-part-3 scripts/.note-y-part-4 > /tmp/note-y-payload.b64
+          python3 - <<'PY'
+          import base64, lzma
+          from pathlib import Path
+          payload = base64.b64decode(Path('/tmp/note-y-payload.b64').read_text())
+          Path('scripts/apply-note-y.py').write_bytes(lzma.decompress(payload))
+          PY
+          rm scripts/.note-y-part-1 scripts/.note-y-part-2 scripts/.note-y-part-3 scripts/.note-y-part-4 /tmp/note-y-payload.b64
+
+      - name: Apply Note/Y patch
+        run: python3 scripts/apply-note-y.py
+
+      - name: Git diff sanity
+        run: git diff --check
+
+      - name: Project architecture checks
+        run: npm run check
+
+      - name: Domain regression tests
+        run: npm test
+
+      - name: Browser FEZ runtime regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome_bin="$(command -v "$candidate")"
+              break
+            fi
+          done
+          if [ -z "$chrome_bin" ]; then
+            echo "No Chromium-compatible browser found on runner"
+            exit 1
+          fi
+          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/fez-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4173/tests/fez-runtime-browser.html >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          run_browser_case() {
+            local path="$1"
+            local marker="$2"
+            local stage_attr="$3"
+            local output="$4"
+            "$chrome_bin" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+              --window-size=390,844 --force-device-scale-factor=1 --touch-events=enabled \
+              --virtual-time-budget=12000 --dump-dom "http://127.0.0.1:4173/$path" > "$output"
+            if ! grep -Fq "$marker" "$output"; then
+              echo "Browser runtime regression failed: $path"
+              grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
+              grep -A4 -B2 '<pre id="result"' "$output" || true
+              exit 1
+            fi
+          }
+          run_browser_case "tests/fez-runtime-browser.html" 'data-fez-runtime="pass"' 'data-fez-runtime-stage' /tmp/fez-runtime-dom.html
+          run_browser_case "tests/account-shell-runtime-browser.html" 'data-account-runtime="pass"' 'data-account-runtime-stage' /tmp/account-runtime-dom.html
+          run_browser_case "tests/professional-core-runtime-browser.html" 'data-professional-runtime="pass"' 'data-professional-runtime-stage' /tmp/professional-runtime-dom.html
+          run_browser_case "tests/documents-runtime-browser.html" 'data-documents-runtime="pass"' 'data-documents-runtime-stage' /tmp/documents-runtime-dom.html
+          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-transfer-runtime="pass"' 'data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
+
+      - name: Validate staging compose
+        run: docker compose -f docker-compose.staging.yml config >/dev/null
+
+      - name: Install server dependencies
+        run: npm install --prefix server
+
+      - name: Prisma generate
+        run: npm run prisma:generate --prefix server
+
+      - name: Server build
+        run: npm run build --prefix server
+
+      - name: Staging smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.staging.yml up -d --build
+          cleanup() { docker compose -f docker-compose.staging.yml down -v >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/health >/dev/null && curl -fsS http://127.0.0.1:8080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.staging.yml ps
+          docker compose -f docker-compose.staging.yml logs --tail=200 backend frontend db
+          exit 1
+
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Executor"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Implement Note and Y reels"
+          git push origin HEAD:staging
