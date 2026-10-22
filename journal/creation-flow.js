@@ -1,10 +1,10 @@
 import { initViewNavigation, openRecordCreationOwner, viewNavigation } from '../ui/ui.js';
 import { openRecords } from '../core/records/records.js';
-import { createJournalBreakFlow } from './break-create.js';
+import { createJournalEventFlow } from './event-create.js';
 
 const JOURNAL_CREATE_MODES = [
   { id: 'record', label: 'Запись' },
-  { id: 'break', label: 'Занять время' },
+  { id: 'event', label: 'Событие' },
 ];
 
 export function openJournalCreation({
@@ -20,7 +20,7 @@ export function openJournalCreation({
   const context = { date, workplaceId, timeHint };
   let activeMode = 'record';
   let recordFlow = null;
-  let breakFlow = null;
+  let eventFlow = null;
 
   const renderModeSwitch = () => {
     const host = owner.setShellHeader(viewNavigation({
@@ -36,12 +36,9 @@ export function openJournalCreation({
         if (mode === activeMode) return;
         activeMode = mode;
         renderModeSwitch();
-        if (activeMode === 'break') {
-          if (!breakFlow) {
-            breakFlow = createJournalBreakFlow({ owner, ...context, onCreated });
-          } else {
-            breakFlow.resume();
-          }
+        if (activeMode === 'event') {
+          if (!eventFlow) eventFlow = createJournalEventFlow({ owner, ...context, onCreated });
+          else eventFlow.resume();
           return;
         }
         recordFlow?.resumeRecord?.();
