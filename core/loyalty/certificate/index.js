@@ -1,4 +1,6 @@
 import {
+  actionBlock,
+  button,
   checkList,
   collectCheckList,
   datePicker,
@@ -197,9 +199,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
   const selectedIds = Array.isArray(editingProgram?.serviceIds) ? editingProgram.serviceIds : [];
   const singleServiceId = editingProgram?.type === 'service' ? String(selectedIds[0] || '') : '';
   const termMode = editingProgram?.termType || 'indefinite';
-  const layer = mountModal(root, modal(`${loyaltyHeader(title, {
-    c: { label: 'Сохранить', data: 'data-certificate-save', aria: 'Сохранить вид сертификата' },
-  })}
+  const layer = mountModal(root, modal(`${loyaltyHeader(title)}
     <form class="form-grid" data-certificate-form>
       ${field({ label: 'Название', name: 'name', value: editingProgram?.name || '', required: true })}
       ${optionalUeiField({ name: 'uei', value: editingProgram?.uei || '' })}
@@ -225,6 +225,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       ${select({ label: 'Частичное использование', name: 'partial', value: editingProgram?.partial === false ? 'no' : 'yes', options: [{ value: 'yes', label: 'Разрешено' }, { value: 'no', label: 'Нет' }] })}
       ${textareaField({ label: 'Условия', name: 'description', value: editingProgram?.description || '' })}
       <div class="form-error" data-certificate-error></div>
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-certificate-save', aria: 'Сохранить вид сертификата' }))}
     </form>`, { variant: 'q', surface: 'app', title }));
   if (!layer) return null;
   initLoyaltyTermFields(layer);
@@ -281,9 +282,7 @@ async function openIssueQ(root, program, rerender) {
   const people = availablePeople(fallbackPeople);
   const options = [{ value: '', label: 'Выберите контакт' }, ...people.map(personOption).filter((item) => item.value)];
   const today = new Date().toISOString().slice(0, 10);
-  const layer = mountModal(root, modal(`${loyaltyHeader('Оформить сертификат', {
-    c: { label: 'Оформить', data: 'data-certificate-issue-save', aria: 'Оформить сертификат' },
-  })}
+  const layer = mountModal(root, modal(`${loyaltyHeader('Оформить сертификат')}
     <form class="form-grid" data-certificate-issue-form>
       ${select({ label: 'Покупатель', name: 'buyerKey', value: '', options })}
       ${select({ label: 'Владелец / получатель', name: 'ownerKey', value: '', options })}
@@ -291,6 +290,7 @@ async function openIssueQ(root, program, rerender) {
       ${datePicker({ label: 'Дата оформления', name: 'issuedAt', value: today, showYear: true, modalVariant: 'q', modalSurface: 'app', allowClear: false })}
       ${field({ label: 'Срок', name: 'termPreview', value: program.term || 'Бессрочно', disabled: true })}
       <div class="form-error" data-certificate-issue-error></div>
+      ${actionBlock(button('Оформить', { type: 'button', data: 'data-certificate-issue-save', aria: 'Оформить сертификат' }))}
     </form>`, { variant: 'q', surface: 'app', title: 'Оформить сертификат' }));
   if (!layer) return null;
   initDatePickers(layer);
@@ -350,9 +350,9 @@ async function openProgramLayer(root, programId, onChanged) {
       loyaltyHeader(program.name || 'Сертификат', {
         settings: true,
         settingsData: 'data-certificate-program-settings',
-        c: program.status === 'active' ? { label: 'Оформить', data: 'data-certificate-issue', aria: 'Оформить сертификат' } : null,
       }),
       issuedList(issued),
+      program.status === 'active' ? actionBlock(button('Оформить', { type: 'button', data: 'data-certificate-issue', aria: 'Оформить сертификат' })) : '',
     ]);
     setV2ZHeaderRows(layer, [smallActionButton({ icon: 'info', data: 'data-certificate-info', aria: 'Условия сертификата' })]);
     layer.querySelector('[data-certificate-info]')?.addEventListener('click', () => openConditions(program));
