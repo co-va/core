@@ -10,12 +10,16 @@ const adminService = fs.readFileSync('server/src/saas-admin/saas-admin.service.t
 const adminModule = fs.readFileSync('server/src/saas-admin/saas-admin.module.ts', 'utf8');
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const inviteUi = fs.readFileSync('invite/invite.js', 'utf8');
+const ownerSeed = fs.readFileSync('server/prisma/seed-owner.ts', 'utf8');
 const prelaunchHardDeleteMigration = fs.readFileSync('server/prisma/migrations/20260922075500_prelaunch_hard_delete_clean_start/migration.sql', 'utf8');
 
 assert.match(invitation, /async createRegistrationLink\(/);
 assert.match(invitation, /async startPublicRegistration\(/);
 assert.match(invitation, /private async createPendingInvitation\(/);
 assert.match(invitation, /private async createEmailInvitation\(/);
+assert.match(invitation, /emailDelivery: 'required' \| 'best-effort' = 'required'/);
+assert.match(invitation, /if \(emailDelivery === 'required'\)/);
+assert.match(invitation, /\}, 'best-effort'\);/);
 assert.match(invitation, /private createInvitationToken\(/);
 assert.match(invitation, /private registrationUrl\(/);
 assert.match(invitation, /DEFAULT_FRONTEND_ORIGIN = 'https:\/\/app\.va-tools\.ru'/);
@@ -25,6 +29,8 @@ assert.doesNotMatch(invitation, /FRONTEND_ORIGIN не настроен/);
 assert.match(invitation, /this\.prisma\.platformAdmin\.findFirst/);
 assert.match(invitation, /orderBy: \[\{ createdAt: 'asc' \}, \{ id: 'asc' \}\]/);
 assert.doesNotMatch(invitation, /PLATFORM_ADMIN_EMAIL|OWNER_EMAIL|platformAdmin\.upsert/);
+assert.match(ownerSeed, /platformAdmin\.upsert/);
+assert.match(ownerSeed, /platformAdmin\.create/);
 assert.match(invitation, /await this\.ensureEmailAvailable\(email\)/);
 assert.match(invitation, /await this\.createEmailInvitation\(adminId/);
 assert.equal((invitation.match(/tx\.tenant\.create/g) || []).length, 1);
