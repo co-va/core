@@ -134,6 +134,6 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
       });
     }
   });
-  syncDirty();
+  if (saveActions) saveActions.hidden = true;
   return layer;
 }
