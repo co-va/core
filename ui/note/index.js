@@ -29,6 +29,18 @@ function minutes(value = '') {
   return hour * 60 + minute;
 }
 
+function noteActivationMinute(note = {}, activeTime = '') {
+  const active = minutes(activeTime);
+  const from = minutes(note?.from);
+  const to = minutes(note?.to);
+  if (active == null) return -1;
+  if (from != null && to == null) return from;
+  if (from == null && to != null) return to;
+  if (from == null || to == null) return -1;
+  if (from <= to) return from;
+  return active >= from ? from : from - (24 * 60);
+}
+
 export function noteIsActiveAt(note = {}, activeTime = '') {
   const active = minutes(activeTime);
   if (active == null) return false;
@@ -39,6 +51,22 @@ export function noteIsActiveAt(note = {}, activeTime = '') {
   if (from == null && to != null) return active === to;
   if (from <= to) return active >= from && active <= to;
   return active >= from || active <= to;
+}
+
+export function orderNoteReels(notes = [], activeTime = '') {
+  return (Array.isArray(notes) ? notes : [])
+    .map((note, index) => ({
+      note,
+      index,
+      active: noteIsActiveAt(note, activeTime),
+      activation: noteActivationMinute(note, activeTime),
+    }))
+    .sort((left, right) => {
+      if (left.active !== right.active) return left.active ? -1 : 1;
+      if (left.active && left.activation !== right.activation) return right.activation - left.activation;
+      return left.index - right.index;
+    })
+    .map((item) => item.note);
 }
 
 export function noteCard(note = {}, {
@@ -73,7 +101,7 @@ export function noteReels(notes = [], {
   relatedIds = [],
   targetLabel = () => '',
 } = {}) {
-  const values = Array.isArray(notes) ? notes : [];
+  const values = orderNoteReels(notes, activeTime);
   if (!values.length) return '';
   const related = new Set((Array.isArray(relatedIds) ? relatedIds : []).map((id) => String(id || '')));
   const cards = values.map((note) => noteCard(note, {
