@@ -18,13 +18,12 @@ type BusinessBundle = {
 
 type OperationalBundle = {
   days: JsonObject[];
-  breaks: JsonObject[];
   procedures: JsonObject[];
   procedureHistory: JsonObject[];
   bookingSettings: JsonObject | null;
 };
 
-const OPERATIONAL_DATASETS = new Set(['days', 'breaks', 'procedures', 'procedureHistory', 'bookingSettings']);
+const OPERATIONAL_DATASETS = new Set(['days', 'procedures', 'procedureHistory', 'bookingSettings']);
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -78,7 +77,6 @@ function normalizeOperational(value: unknown): OperationalBundle {
     : null;
   return {
     days: (Array.isArray(source.days) ? source.days : []).map((item) => clone(objectValue(item))),
-    breaks: (Array.isArray(source.breaks) ? source.breaks : []).map((item) => clone(objectValue(item))),
     procedures: (Array.isArray(source.procedures) ? source.procedures : []).map((item) => clone(objectValue(item))),
     procedureHistory: (Array.isArray(source.procedureHistory) ? source.procedureHistory : []).map((item) => clone(objectValue(item))),
     bookingSettings,

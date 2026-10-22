@@ -24,9 +24,9 @@ async function openUsage(usage, rerender = () => {}) {
     await openExistingRecord(usage, rerender);
     return;
   }
-  if (usage?.type === 'break') {
-    const { openBreakView } = await import('./break-view.js');
-    openBreakView(usage, { onClose: rerender });
+  if (usage?.type === 'event') {
+    const { openEventView } = await import('./event-view.js');
+    openEventView(usage, { onClose: rerender });
   }
 }
 
@@ -61,23 +61,12 @@ export function renderJournalDay(root, {
         from: time.from,
         to: time.to,
         usages: withFinancialState(getTimeUsagesForScope({ date: dayDate, workplaceId: currentId })),
-        conflict: getScheduleConflicts(days, {
-          workplaceId: currentId,
-          date: dayDate,
-          from: time.from,
-          to: time.to,
-        }).length > 0,
+        conflict: getScheduleConflicts(days, { workplaceId: currentId, date: dayDate, from: time.from, to: time.to }).length > 0,
       };
     }).filter(Boolean);
-
     if (!columns.length) { contentRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Не задано рабочее время</div>'; return; }
-
     contentRoot.innerHTML = journalDayTimeline({ columns, day: dayDate });
-    initJournalDayTimeline(contentRoot, {
-      onWorkFieldClick: ({ workplaceId: nextWorkplaceId }) => {
-        if (nextWorkplaceId) onWorkplaceFieldClick(nextWorkplaceId);
-      },
-    });
+    initJournalDayTimeline(contentRoot, { onWorkFieldClick: ({ workplaceId: nextWorkplaceId }) => { if (nextWorkplaceId) onWorkplaceFieldClick(nextWorkplaceId); } });
     return;
   }
 

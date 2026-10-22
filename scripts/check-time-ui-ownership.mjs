@@ -5,11 +5,11 @@ const errors = [];
 const fail = (path, message) => errors.push(`${path}: ${message}`);
 
 const recordFlow = read('core/records/records.js');
-const breakCreation = read('journal/break-create.js');
-const breakView = read('journal/break-view.js');
-const breakData = read('journal/break-data.js');
-const breakRead = read('journal/break-read.js');
-const breakService = read('journal/break-service.js');
+const eventCreation = read('journal/event-create.js');
+const eventView = read('journal/event-view.js');
+const eventData = read('core/event/data.js');
+const eventRead = read('core/event/read.js');
+const eventService = read('core/event/service.js');
 const journalDay = read('journal/день.js');
 const timeline = read('ui/time/journal-day.js');
 const timeUsage = read('core/time/usage.js');
@@ -23,19 +23,14 @@ if (!/from ['"]\.\.\/time\/index\.js['"]/.test(recordFlow)) fail('core/records/r
 if (!/checkTimeAvailability/.test(recordFlow) || !/getTimeAvailabilityAt/.test(recordFlow)) fail('core/records/records.js', 'Records must use canonical Availability queries.');
 if (!/getWorkplaceWorkingDates/.test(recordFlow)) fail('core/records/records.js', 'Records must use the canonical WorkPlan date query.');
 if (/from ['"]\.\.\/day\.js['"]|isTimeRangeAvailable|getTimeUsages|getJournalBreaks|getRecords\(|getDayTime|getDay\(/.test(recordFlow)) fail('core/records/records.js', 'Records must not rebuild occupancy or WorkPlan availability.');
-if (/break-service|createJournalBreak|listAvailableEndTimes/.test(recordFlow)) fail('core/records/records.js', 'Records must not own Break availability or commands.');
+if (/break-service|createJournalBreak|createEvent|removeEvent|updateEvent/.test(recordFlow)) fail('core/records/records.js', 'Records must not own Event/Break commands.');
 
-if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(breakCreation)) fail('journal/break-create.js', 'Break creation must ask Core Availability.');
-if (!/checkTimeAvailability/.test(breakCreation) || !/getTimeAvailabilityAt/.test(breakCreation) || !/listAvailableEndTimes/.test(breakCreation)) fail('journal/break-create.js', 'Break creation must use canonical Availability queries.');
-if (/from ['"]\.\/break-data\.js['"]|getRecordsForDay|getJournalBreaks|isTimeRangeAvailable|getTimeUsages/.test(breakCreation)) fail('journal/break-create.js', 'Break creation must not calculate occupancy or use persistence directly.');
-
-if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(breakView)) fail('journal/break-view.js', 'Break view must ask Core Availability');
-if (!/listAvailableStartTimes/.test(breakView) || !/listAvailableEndTimes/.test(breakView)) fail('journal/break-view.js', 'Break view must use canonical Availability choices');
-if (/from ['"]\.\.\/core\/(?:day|time)\/(?!index\.js)[^'"]+['"]|from ['"]\.\/break-data\.js['"]|getRecordsForDay|getJournalBreaks|isTimeRangeAvailable|getTimeUsages/.test(breakView)) fail('journal/break-view.js', 'Break view must not calculate occupancy or use persistence directly');
-
-if (/^import /m.test(breakData) || /notifyTimeUsageChanged|checkTimeAvailability|isValidRange|normalizeTime/.test(breakData)) fail('journal/break-data.js', 'Break data must remain persistence-only');
-if (!/from ['"]\.\/break-data\.js['"]/.test(breakRead) || /checkTimeAvailability|notifyTimeUsageChanged/.test(breakRead)) fail('journal/break-read.js', 'Break read model must only compose persisted facts');
-if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(breakService) || !/from ['"]\.\/break-data\.js['"]/.test(breakService)) fail('journal/break-service.js', 'Break service must own commands and validate through Availability');
+if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must ask Core Availability.');
+if (!/checkTimeAvailability/.test(eventCreation) || !/openTimeRangeAction/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must use canonical Availability and shared Time UI.');
+if (!/checkTimeAvailability/.test(eventView) || !/excludeId: eventId/.test(eventView)) fail('journal/event-view.js', 'Event View edits must use canonical Availability with excludeId.');
+if (!/queueEventUpsert/.test(eventData) || !/queueEventDelete/.test(eventData)) fail('core/event/data.js', 'Event data must use server-backed persistence.');
+if (!/getEventsForDay/.test(eventRead)) fail('core/event/read.js', 'Event read model must own day projection.');
+if (!/createEvent/.test(eventService) || !/updateEvent/.test(eventService) || !/removeEvent/.test(eventService)) fail('core/event/service.js', 'Event service must own Event commands.');
 
 if (!/getTimeUsagesForScope/.test(journalDay) || !/getTimeAvailabilityAt/.test(journalDay)) fail('journal/день.js', 'Journal Day must consume Core occupancy and minute state');
 if (/getRecordsForDay|getJournalBreaks|getTimeUsages\(|rangesOverlap|time-grid/.test(journalDay)) fail('journal/день.js', 'Journal Day must not assemble or calculate time ownership locally');

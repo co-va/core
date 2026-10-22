@@ -434,8 +434,12 @@ export class OnlineBookingService {
       return assignments.some((item) => allowedKeys.has(text(item?.workplaceId ?? item?.key ?? item?.id)));
     });
     const days = arrayValue(data.days).filter((day) => allowedKeys.has(text(day?.workplaceId)));
-    const [recordOccupancy, pending] = await Promise.all([
+    const [recordOccupancy, eventOccupancy, pending] = await Promise.all([
       this.records.publicOccupancy(tenantId),
+      this.prisma.event.findMany({
+        where: { tenantId },
+        select: { id: true, workplaceId: true, date: true, from: true, to: true },
+      }),
       this.prisma.bookingRequest.findMany({
         where: {
           tenantId,
@@ -445,10 +449,10 @@ export class OnlineBookingService {
         select: { id: true, workplaceKey: true, date: true, from: true, to: true },
       }),
     ]);
-    const breaks = arrayValue(data.breaks).map((item) => ({
-      id: text(item?.id), type: 'break', workplaceId: text(item?.workplaceId), date: dateValue(item?.date), from: text(item?.from), to: text(item?.to),
+    const events = eventOccupancy.map((item) => ({
+      id: item.id, type: 'event', workplaceId: item.workplaceId, date: item.date, from: item.from, to: item.to,
     }));
-    const occupancy = [...recordOccupancy, ...breaks].filter((item) => allowedKeys.has(text(item?.workplaceId)));
+    const occupancy = [...recordOccupancy, ...events].filter((item) => allowedKeys.has(text(item?.workplaceId)));
 
     return {
       tenantId,

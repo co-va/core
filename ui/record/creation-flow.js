@@ -10,9 +10,6 @@ const STEP_TITLES = {
   time: 'Выбор времени',
   person: 'Выбор клиента',
   confirmation: 'Подтверждение записи',
-  'break-start': 'Выбор времени С',
-  'break-end': 'Выбор времени До',
-  'break-confirmation': 'Подтверждение перерыва',
 };
 
 const TITLE_ALIASES = new Map([

@@ -16,3 +16,7 @@
 .time-slots--hour-rows .time-slot.is-emphasized{font-weight:800}
 
 .work-time-row{display:grid;gap:6px}.work-time-row__label{color:var(--text-secondary);font-size:13px}.work-time-row__fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.work-time-row__fields .field{grid-template-columns:auto 1fr;align-items:center;gap:7px}.work-time-row__fields .field>span{font-size:13px}@media(max-width:360px){.work-time-row__fields{gap:6px}}
+
+.journal-record--event{border-left:4px solid var(--journal-event-color,#777A7D);background:color-mix(in srgb,var(--journal-event-color,#777A7D) 16%,#fff);display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.journal-event__time{font-size:.78em;opacity:.75}
+.journal-event__title{font-weight:700}

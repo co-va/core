@@ -22,9 +22,13 @@ function recordMarkup(usage, { interactive = true } = {}) {
 
 function usageMarkup(usage, { interactive = true } = {}) {
   if (usage?.type === 'record') return recordMarkup(usage, { interactive });
+  const title = escape(usage?.title || 'Событие');
+  const period = `${escape(usage?.from || '')}–${escape(usage?.to || '')}`;
+  const color = /^#[0-9A-Fa-f]{6}$/.test(String(usage?.color || '')) ? String(usage.color) : '#777A7D';
+  const content = `<span class="journal-event__time">${period}</span><strong class="journal-event__title">${title}</strong>`;
   return interactive
-    ? `<button type="button" class="journal-record journal-record--break" data-journal-usage="${escape(usage.sourceId || usage.id)}"><strong>Перерыв</strong></button>`
-    : '<div class="journal-record journal-record--break" aria-disabled="true"><strong>Перерыв</strong></div>';
+    ? `<button type="button" class="journal-record journal-record--event" style="--journal-event-color:${escape(color)}" data-journal-usage="${escape(usage.sourceId || usage.id)}">${content}</button>`
+    : `<div class="journal-record journal-record--event" style="--journal-event-color:${escape(color)}" aria-disabled="true">${content}</div>`;
 }
 
 function dateOrdinal(value) {
