@@ -1,0 +1,75 @@
+name: Apply Event online booking occupancy
+
+on:
+  push:
+    branches: [staging]
+    paths: ['.github/workflows/event-online-booking-patch.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Replace legacy Break occupancy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('server/src/online-booking/online-booking.service.ts')
+          source = path.read_text()
+          old = '''    const [recordOccupancy, pending] = await Promise.all([
+                this.records.publicOccupancy(tenantId),
+                this.prisma.bookingRequest.findMany({
+                  where: {
+                    tenantId,
+                    status: BookingRequestStatus.PENDING,
+                    ...(selected ? { workplaceKey: requestedWorkplace } : {}),
+                  },
+                  select: { id: true, workplaceKey: true, date: true, from: true, to: true },
+                }),
+              ]);
+              const breaks = arrayValue(data.breaks).map((item) => ({
+                id: text(item?.id), type: 'break', workplaceId: text(item?.workplaceId), date: dateValue(item?.date), from: text(item?.from), to: text(item?.to),
+              }));
+              const occupancy = [...recordOccupancy, ...breaks].filter((item) => allowedKeys.has(text(item?.workplaceId)));
+          '''
+          new = '''    const [recordOccupancy, eventOccupancy, pending] = await Promise.all([
+                this.records.publicOccupancy(tenantId),
+                this.prisma.event.findMany({
+                  where: { tenantId },
+                  select: { id: true, workplaceId: true, date: true, from: true, to: true },
+                }),
+                this.prisma.bookingRequest.findMany({
+                  where: {
+                    tenantId,
+                    status: BookingRequestStatus.PENDING,
+                    ...(selected ? { workplaceKey: requestedWorkplace } : {}),
+                  },
+                  select: { id: true, workplaceKey: true, date: true, from: true, to: true },
+                }),
+              ]);
+              const events = eventOccupancy.map((item) => ({
+                id: item.id, type: 'event', workplaceId: item.workplaceId, date: item.date, from: item.from, to: item.to,
+              }));
+              const occupancy = [...recordOccupancy, ...events].filter((item) => allowedKeys.has(text(item?.workplaceId)));
+          '''
+          if old not in source:
+              raise SystemExit('expected legacy online-booking Break occupancy block not found')
+          path.write_text(source.replace(old, new))
+          PY
+      - name: Commit targeted replacement and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/event-online-booking-patch.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add server/src/online-booking/online-booking.service.ts
+          git commit -m "Use Event for online booking occupancy"
+          git push origin HEAD:staging
