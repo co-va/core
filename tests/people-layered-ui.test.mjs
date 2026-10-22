@@ -154,7 +154,7 @@ assert.match(people, /people-edit-q/);
 assert.doesNotMatch(people, /people-edit-layer/);
 assert.doesNotMatch(people, /data-person-z3-action/);
 
-// Client Q editor stays unchanged: Save when dirty; Delete remains in the Q body.
+// Client Q editor keeps one bottom Save when dirty; Delete remains in the Q body.
 const dataFieldsStart = people.indexOf('function personDataFields');
 const dataFieldsEnd = people.indexOf('function formSnapshot', dataFieldsStart);
 const dataFields = people.slice(dataFieldsStart, dataFieldsEnd);
@@ -163,8 +163,11 @@ assert.match(dataFields, /uei\(ueiData\(person, all\)\)/);
 assert.match(dataFields, /v2Section\('Персональные данные'/);
 assert.match(dataFields, /v2Section\('Контактные данные'/);
 assert.doesNotMatch(dataFields, /photoField\(/);
-assert.match(people, /data-person-q-save/);
-assert.match(people, /action\.hidden = !isDirty\(\)/);
+assert.match(people, /actionBlock\(button\('Сохранить', \{ type: 'button', data: 'data-person-q-save'/);
+assert.doesNotMatch(people, /personQContext\(person, \{[\s\S]*?c:\s*\{\s*label:\s*'Сохранить'/);
+assert.match(people, /const actions = action\?\.closest\('\.modal-actions'\)/);
+assert.match(people, /action\.hidden = !visible/);
+assert.match(people, /if \(actions\) actions\.hidden = !visible/);
 assert.match(people, /button\('Удалить клиента', \{ type: 'button', variant: 'danger'/);
 assert.doesNotMatch(people, /dirty \? 'Сохранить' : 'Удалить'/);
 assert.match(people, /layer\.v2Close\?\.\(\);[\s\S]*callbacks\.onSaved/);
