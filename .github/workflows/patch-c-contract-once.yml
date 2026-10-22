@@ -1,0 +1,77 @@
+name: Patch C Contract Once
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - '.github/workflows/patch-c-contract-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Remove legacy completion-action C expectations
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'missing expected block in {path}: {old[:120]!r}')
+              p.write_text(text.replace(old, new))
+
+          check = 'scripts/check-ui-v2-architecture.mjs'
+          replace(check,
+          '''expect(css.includes('.v2-primary-source-only{display:none!important}'), 'Header C may proxy a single hidden source without duplicating the visible action in Z body.');\n''',
+          '''''')
+          replace(check,
+          '''expect(onlineBookingSettings.includes('workspaceHeaderContext({') && !onlineBookingSettings.includes('data-online-booking-back') && onlineBookingSettings.includes('data-online-booking-welcome-save') && onlineBookingSettings.includes("variant: 'q'"), 'Online booking settings must feed Welcome Save through Shared Q Header C while return navigation remains gesture-owned.');''',
+          '''expect(onlineBookingSettings.includes('workspaceHeaderContext({') && !onlineBookingSettings.includes('data-online-booking-back') && onlineBookingSettings.includes("actionBlock(button('Сохранить'") && onlineBookingSettings.includes('data-online-booking-welcome-save') && onlineBookingSettings.includes("variant: 'q'"), 'Online booking settings must keep Welcome Save as the Shared bottom Q action while return navigation remains gesture-owned.');''')
+          replace(check,
+          '''expect(modals.includes("MODAL_VARIANTS = new Set(['q', 'x', 's', 'technical'])") && modals.includes('data-v2-q="true"') && ui.includes("const qLayer = node.dataset.v2Q === 'true'") && ui.includes("kind === 'standard' && !qLayer") && core.includes("document.querySelectorAll('[data-v2-q=\\"true\\"] .v2-layer')") && appearanceQ.includes('workspaceHeaderContext({') && !appearanceQ.includes('hideD') && appearanceQ.includes('data-card-q-save') && appearanceQ.includes('controller?.save?.()'), 'Q must reuse Shared standard-modal geometry, cover active Z, keep global D available and keep Header C as the direct Save owner instead of becoming a Z2/Z3 layer.');''',
+          '''expect(modals.includes("MODAL_VARIANTS = new Set(['q', 'x', 's', 'technical'])") && modals.includes('data-v2-q="true"') && ui.includes("const qLayer = node.dataset.v2Q === 'true'") && ui.includes("kind === 'standard' && !qLayer") && core.includes("document.querySelectorAll('[data-v2-q=\\"true\\"] .v2-layer')") && appearanceQ.includes('workspaceHeaderContext({') && !appearanceQ.includes('hideD') && appearanceQ.includes("actionBlock(button('Сохранить'") && appearanceQ.includes('data-card-q-save') && appearanceQ.includes('controller?.save?.()'), 'Q must reuse Shared standard-modal geometry, cover active Z, keep global D available and keep Save as the direct Shared bottom action.');''')
+          replace(check,
+          '''expect(workplacesUi.includes("data-v2-primary-label=\\"Сохранить\\"") && !workplacesUi.includes("existing&&!dirty?'Удалить':'Сохранить'"), 'Workplace Z2 C must be Save-only; deletion belongs to A settings.');''',
+          '''expect(workplacesUi.includes("actionBlock(button('Сохранить'") && workplacesUi.includes("data:'data-workplace-primary'") && !workplacesUi.includes('data-v2-primary-label') && !workplacesUi.includes('setSharedProfilePrimary(primary'), 'Workplace Z2 Save must use one Shared bottom action and must not return to Header C.');''')
+          replace(check,
+          '''expect(workplacesUi.includes('openSharedProfileSettingsMenu({') && workplacesUi.includes('openColorPickerAction({') && workplacesUi.includes('openTimeRangeAction({') && workplacesUi.includes('setSharedProfilePrimary(primary') && !workplacesUi.includes('openWorkplaceAppearance('), 'Workplace must consume the Shared A-menu and contextual C owners without a local appearance editor.');''',
+          '''expect(workplacesUi.includes('openSharedProfileSettingsMenu({') && workplacesUi.includes('openColorPickerAction({') && workplacesUi.includes('openTimeRangeAction({') && !workplacesUi.includes('setSharedProfilePrimary(primary') && !workplacesUi.includes('openWorkplaceAppearance('), 'Workplace must consume the Shared A-menu while Save remains a direct bottom action.');''')
+          replace(check,
+          '''expect(sharedProfile.includes('export function openSharedProfileSettingsMenu') && sharedProfile.includes('export async function openSharedPhotoAction') && sharedProfile.includes('export function openSharedPasswordAction') && sharedProfile.includes('export function setSharedProfilePrimary') && !sharedProfile.includes('openSharedConsentDocument'), 'Professional and end-user profiles must share one Profile UI owner for A menu, photo, password and C; document rendering belongs only to ui/documents.');''',
+          '''expect(sharedProfile.includes('export function openSharedProfileSettingsMenu') && sharedProfile.includes('export async function openSharedPhotoAction') && sharedProfile.includes('export function openSharedPasswordAction') && !sharedProfile.includes('openSharedConsentDocument'), 'Professional and end-user profiles must share one Profile UI owner for A menu, photo and password; document rendering belongs only to ui/documents.');''')
+
+          runtime = 'tests/professional-core-runtime-browser.html'
+          replace(runtime,
+          '''ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Сохранить',\n  'Cash operation Z2 C must be Save');\nok(Boolean(cashOperationLayer?.querySelector('[data-finance-special-form]')), 'Cash operation Z2 form missing');\nok(!cashOperationLayer?.querySelector('button[type="submit"]'), 'Cash operation form must not duplicate Save inside Z2');''',
+          '''ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'Cash operation Z2 must not expose completion action in C');\nok(Boolean(cashOperationLayer?.querySelector('[data-finance-special-form]')), 'Cash operation Z2 form missing');\nok(Boolean(cashOperationLayer?.querySelector('[data-finance-special-save]')?.closest('.modal-actions')), 'Cash operation Z2 must expose one bottom Save action');''')
+          replace(runtime,
+          '''ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Сохранить',\n  'DDS correction C must be Save');''',
+          '''ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS correction must not expose completion action in C');\nok(Boolean(correctionZ?.querySelector('[data-finance-manual-save]')?.closest('.modal-actions')), 'DDS correction must expose one bottom Save action');''')
+          replace(runtime,
+          '''ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Выгрузить',\n  'DDS Excel Z2 C must be Export');''',
+          '''ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS Excel Z2 must not expose completion action in C');\nok(Boolean(ddsLayer?.querySelector('[data-finance-dds-export-submit]')?.closest('.modal-actions')), 'DDS Excel Z2 must expose one bottom Export action');''')
+          replace(runtime,
+          '''ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === 'Сохранить',\n  'DDS Article editor C must be Save');\nok(Boolean(articleEdit?.querySelector('[data-finance-article-form]')), 'DDS Article editor form missing');\nok(!articleEdit?.querySelector('button[type="submit"]'), 'DDS Article editor must not duplicate Save inside Z');''',
+          '''ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS Article editor must not expose completion action in C');\nok(Boolean(articleEdit?.querySelector('[data-finance-article-form]')), 'DDS Article editor form missing');\nok(Boolean(articleEdit?.querySelector('[data-finance-article-save]')?.closest('.modal-actions')), 'DDS Article editor must expose one bottom Save action');''')
+          replace(runtime,
+          '''ok(!serviceViewQ?.querySelector('[data-card-save]'), 'Service View Q must not contain local Save button/source');\nok(Boolean(serviceViewQ?.querySelector('[data-card-q-save]')), 'Service View Q missing Header C save source');\nconst boldTool = serviceViewQ?.querySelector('[data-card-tool="bold"]');\nok(Boolean(boldTool), 'Service View Q card editor missing Bold tool');\nboldTool?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));\nawait wait(60);\nconst headerSave = shell()?.querySelector('[data-v2-workspace-primary]');\nok(Boolean(headerSave), 'Service View dirty state did not expose shared Header C');\nok(headerSave?.textContent?.trim() === 'Сохранить', 'Service View Header C label must be Save');\nheaderSave?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));\nawait wait(120);\nserviceViewQ = document.querySelector('[data-v2-q="true"]');\nok(!serviceViewQ, 'Service View Q did not close after Header C save');''',
+          '''const serviceViewSave = serviceViewQ?.querySelector('[data-card-q-save]');\nconst serviceViewSaveActions = serviceViewSave?.closest('.modal-actions');\nok(Boolean(serviceViewSave) && Boolean(serviceViewSaveActions), 'Service View Q missing bottom Save action');\nok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'Service View Q must not expose completion action in C');\nconst boldTool = serviceViewQ?.querySelector('[data-card-tool="bold"]');\nok(Boolean(boldTool), 'Service View Q card editor missing Bold tool');\nboldTool?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));\nawait wait(60);\nok(serviceViewSaveActions?.hidden === false, 'Service View dirty state did not reveal bottom Save action');\nok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'Service View dirty state must keep C empty');\nserviceViewSave?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));\nawait wait(120);\nserviceViewQ = document.querySelector('[data-v2-q="true"]');\nok(!serviceViewQ, 'Service View Q did not close after bottom Save');''')
+          PY
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name '3001vaf-maker'
+          git config user.email '30.01vaf@gmail.com'
+          git add scripts/check-ui-v2-architecture.mjs tests/professional-core-runtime-browser.html
+          git commit -m 'Remove legacy completion-action C guards'
+          git push origin HEAD:staging
