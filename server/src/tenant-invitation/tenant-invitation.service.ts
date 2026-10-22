@@ -206,6 +206,60 @@ export class TenantInvitationService {
     return plan;
   }
 
+  private createInvitationToken() {
+    const token = createToken();
+    return {
+      token,
+      tokenHash: invitationHash(token),
+      expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
+    };
+  }
+
+  private registrationUrl(token: string) {
+    const origin = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\/+$/, '');
+    if (!origin) throw new BadRequestException('FRONTEND_ORIGIN не настроен');
+    return `${origin}/invite/?token=${encodeURIComponent(token)}`;
+  }
+
+  private async ensurePlatformAdminId() {
+    const configuredEmail = String(process.env.PLATFORM_ADMIN_EMAIL || process.env.OWNER_EMAIL || '')
+      .trim()
+      .toLowerCase();
+    if (!configuredEmail) throw new BadRequestException('Публичная регистрация временно недоступна');
+
+    const account = await this.prisma.platformAccount.findUnique({
+      where: { email: configuredEmail },
+      select: { id: true },
+    });
+    if (!account) throw new BadRequestException('Публичная регистрация временно недоступна');
+
+    const admin = await this.prisma.platformAdmin.upsert({
+      where: { platformAccountId: account.id },
+      create: { platformAccountId: account.id },
+      update: {},
+      select: { id: true },
+    });
+    return admin.id;
+  }
+
+  private async ensureEmailAvailable(email: string) {
+    const existingAccount = await this.prisma.platformAccount.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (existingAccount) throw new ConflictException('Учётная запись с таким email уже зарегистрирована');
+
+    const existingInvitation = await this.prisma.tenantInvitation.findFirst({
+      where: {
+        email,
+        status: TenantInvitationStatus.PENDING,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    if (existingInvitation) throw new ConflictException('На этот email уже создано активное приглашение');
+  }
+
   private async createPendingInvitation(adminId: string, input: {
     email: string;
     name: string;
@@ -258,6 +312,29 @@ export class TenantInvitationService {
       });
       return { tenant, invitation };
     });
+  }
+
+  private async createEmailInvitation(adminId: string, input: {
+    email: string;
+    name: string;
+    tenantName: string;
+    tools?: string[];
+  }) {
+    const { token, tokenHash, expiresAt } = this.createInvitationToken();
+    const created = await this.createPendingInvitation(adminId, {
+      ...input,
+      tokenHash,
+      expiresAt,
+    });
+
+    try {
+      await this.sendInvitationEmail({ email: input.email, name: input.name, token });
+    } catch (error) {
+      await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
+      throw error;
+    }
+
+    return { created, token, expiresAt };
   }
 
   private async acceptPendingInvitation(
@@ -356,45 +433,41 @@ export class TenantInvitationService {
     if (!tools.length) throw new BadRequestException('Перед приглашением выберите хотя бы один инструмент');
     if (!email || !email.includes('@')) throw new BadRequestException('Укажите корректный email');
 
-    const existingAccount = await this.prisma.platformAccount.findUnique({ where: { email } });
-    if (existingAccount) throw new ConflictException('Учётная запись с таким email уже зарегистрирована');
-
-    const existingInvitation = await this.prisma.tenantInvitation.findFirst({
-      where: { email, status: TenantInvitationStatus.PENDING },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (existingInvitation) throw new ConflictException('На этот email уже отправлено активное приглашение');
-
-    const token = createToken();
-    const tokenHash = invitationHash(token);
-    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
-    const tenantName = name || email.split('@')[0] || 'Профиль';
-
-    const created = await this.createPendingInvitation(adminId, {
+    await this.ensureEmailAvailable(email);
+    const { created } = await this.createEmailInvitation(adminId, {
       email,
       name,
-      tenantName,
-      tokenHash,
-      expiresAt,
+      tenantName: name || email.split('@')[0] || 'Профиль',
       tools,
     });
 
-    try {
-      await this.sendInvitationEmail({ email, name, token });
-    } catch (error) {
-      await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
-      throw error;
-    }
-
     return this.invitationDto(created.invitation);
+  }
+
+  async startPublicRegistration(input: { email?: unknown } = {}) {
+    const email = normalizeEmail(input?.email);
+    if (!email || !email.includes('@')) throw new BadRequestException('Укажите корректный email');
+
+    await this.ensureEmailAvailable(email);
+    const adminId = await this.ensurePlatformAdminId();
+    const { created, token, expiresAt } = await this.createEmailInvitation(adminId, {
+      email,
+      name: '',
+      tenantName: 'Новый профиль',
+    });
+
+    return {
+      token,
+      invitationId: created.invitation.id,
+      tenantId: created.tenant.id,
+      expiresAt,
+    };
   }
 
   async createRegistrationLink(adminId: string, input: { tools?: unknown } = {}) {
     const tools = normalizeToolSelection(input?.tools);
     if (!tools.length) throw new BadRequestException('Перед формированием ссылки выберите хотя бы один инструмент');
-    const token = createToken();
-    const tokenHash = invitationHash(token);
-    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+    const { token, tokenHash, expiresAt } = this.createInvitationToken();
     const email = `${REGISTRATION_LINK_EMAIL_PREFIX}${tokenHash.slice(0, 24)}${REGISTRATION_LINK_EMAIL_SUFFIX}`;
 
     const created = await this.createPendingInvitation(adminId, {
@@ -405,16 +478,18 @@ export class TenantInvitationService {
       expiresAt,
     });
 
-    const origin = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\/+$/, '');
-    if (!origin) {
+    let url: string;
+    try {
+      url = this.registrationUrl(token);
+    } catch (error) {
       await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
-      throw new BadRequestException('FRONTEND_ORIGIN не настроен');
+      throw error;
     }
 
     return {
       id: created.invitation.id,
       tenantId: created.tenant.id,
-      url: `${origin}/invite/?token=${encodeURIComponent(token)}`,
+      url,
       expiresAt,
     };
   }
@@ -427,9 +502,7 @@ export class TenantInvitationService {
 
     const oldTokenHash = invitation.tokenHash;
     const oldExpiresAt = invitation.expiresAt;
-    const token = createToken();
-    const tokenHash = invitationHash(token);
-    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+    const { token, tokenHash, expiresAt } = this.createInvitationToken();
 
     const updated = await this.prisma.tenantInvitation.update({
       where: { id: invitation.id },
@@ -568,9 +641,7 @@ export class TenantInvitationService {
   }
 
   private async sendInvitationEmail(input: { email: string; name: string; token: string }) {
-    const origin = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\/+$/, '');
-    if (!origin) throw new BadRequestException('FRONTEND_ORIGIN не настроен');
-    const url = `${origin}/invite/?token=${encodeURIComponent(input.token)}`;
+    const url = this.registrationUrl(input.token);
     const safeName = escapeHtml(input.name || '');
     const greeting = safeName ? `Здравствуйте, ${safeName}.` : 'Здравствуйте.';
 
