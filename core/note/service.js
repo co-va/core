@@ -1,5 +1,5 @@
 import { apiRequest } from '../auth.js';
-import { deleteNoteRow, hydrateNotesFromServer, insertNote, NOTE_DEFAULT_COLOR, patchNote } from './data.js';
+import { deleteNoteRow, getNotes, hydrateNotesFromServer, insertNote, NOTE_DEFAULT_COLOR, patchNote } from './data.js';
 import { getNote } from './data.js';
 
 function noteId() {
@@ -46,6 +46,41 @@ function notify(detail = {}) {
   }
 }
 
+function targetSnapshot(targetType = '', entity = {}) {
+  const type = targetType === 'record' || targetType === 'event' ? String(targetType) : '';
+  const id = String(entity?.id || '');
+  if (!type || !id) return null;
+  if (type === 'record') {
+    const person = entity?.person && typeof entity.person === 'object' ? entity.person : {};
+    return {
+      type,
+      id,
+      date: String(entity?.date || '').slice(0, 10),
+      from: String(entity?.from || '').slice(0, 5),
+      to: String(entity?.to || '').slice(0, 5),
+      workplaceId: String(entity?.workplaceId || ''),
+      status: String(entity?.status || ''),
+      person: {
+        id: String(person?.id || ''),
+        key: String(person?.key || ''),
+        uei: String(person?.uei || ''),
+        name: String(person?.name || ''),
+        surname: String(person?.surname || ''),
+      },
+    };
+  }
+  return {
+    type,
+    id,
+    date: String(entity?.date || '').slice(0, 10),
+    from: String(entity?.from || '').slice(0, 5),
+    to: String(entity?.to || '').slice(0, 5),
+    workplaceId: String(entity?.workplaceId || ''),
+    title: String(entity?.title || 'Событие'),
+    color: String(entity?.color || ''),
+  };
+}
+
 export function createNote(input = {}) {
   const normalized = normalizedInput(input);
   if (!valid(normalized)) return null;
@@ -67,6 +102,22 @@ export function updateNote(id, patch = {}) {
   if (!valid(next)) return null;
   const updated = patchNote(id, next);
   if (updated) notify({ action: 'update', noteId: updated.id });
+  return updated;
+}
+
+export function preserveNotesForTarget(targetType = '', entity = {}) {
+  const snapshot = targetSnapshot(targetType, entity);
+  if (!snapshot) return [];
+  const targetId = String(snapshot.id || '');
+  const updated = [];
+  for (const note of getNotes()) {
+    if (note?.targetType !== targetType || String(note?.targetId || '') !== targetId) continue;
+    const context = note?.context && typeof note.context === 'object' && !Array.isArray(note.context)
+      ? { ...note.context, targetSnapshot: snapshot }
+      : { targetSnapshot: snapshot };
+    const next = updateNote(note.id, { context });
+    if (next) updated.push(next);
+  }
   return updated;
 }
 
