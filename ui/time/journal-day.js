@@ -1,8 +1,6 @@
 import { timeToMinutes, minutesToTime } from '../../core/time/index.js';
 
 const DAY_MINUTES = 24 * 60;
-const BASE_DAY_START = 9 * 60;
-const BASE_DAY_END = 23 * 60;
 
 const escape = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const moneyText = (value) => `${Math.max(0, Number(value) || 0).toLocaleString('ru-RU')} ₽`;
@@ -62,12 +60,21 @@ function renderUsage(usage, options, renderer) {
   return String((typeof renderer === 'function' ? renderer : usageMarkup)(usage, options) ?? '');
 }
 
-function timelineRange({ workRanges = [], usages = [], day = '' } = {}) {
+function timelineRange({ workRanges = [], usages = [], day = '', neutralBaseline = null } = {}) {
   const segments = (Array.isArray(usages) ? usages : []).map((usage) => usageSegment(usage, day)).filter(Boolean);
-  const workStarts = workRanges.map((range) => timeToMinutes(range?.from)).filter((value) => value != null);
-  const workEnds = workRanges.map((range) => timeToMinutes(range?.to)).filter((value) => value != null);
-  const start = Math.max(0, Math.min(BASE_DAY_START, ...workStarts, ...segments.map((segment) => segment.start)));
-  const end = Math.min(DAY_MINUTES, Math.max(BASE_DAY_END, ...workEnds, ...segments.map((segment) => segment.end)));
+  const starts = workRanges.map((range) => timeToMinutes(range?.from)).filter((value) => value != null);
+  const ends = workRanges.map((range) => timeToMinutes(range?.to)).filter((value) => value != null);
+  const baselineStart = timeToMinutes(neutralBaseline?.from);
+  const baselineEnd = timeToMinutes(neutralBaseline?.to);
+  if (baselineStart != null && baselineEnd != null && baselineEnd > baselineStart) {
+    starts.push(baselineStart);
+    ends.push(baselineEnd);
+  }
+  starts.push(...segments.map((segment) => segment.start));
+  ends.push(...segments.map((segment) => segment.end));
+  if (!starts.length || !ends.length) return { start: 0, end: 0, segments };
+  const start = Math.max(0, Math.min(...starts));
+  const end = Math.min(DAY_MINUTES, Math.max(...ends));
   return { start, end, segments };
 }
 
@@ -86,7 +93,7 @@ function slotsMarkup(start, end, { interactive = true, workStart = start, workEn
   return slots.join('');
 }
 
-function aggregateTimeline(columns = [], { day = '', usageRenderer = usageMarkup } = {}) {
+function aggregateTimeline(columns = [], { day = '', usageRenderer = usageMarkup, neutralBaseline = null } = {}) {
   const prepared = (Array.isArray(columns) ? columns : []).map((column) => {
     const start = timeToMinutes(column?.from);
     const end = timeToMinutes(column?.to);
@@ -100,6 +107,7 @@ function aggregateTimeline(columns = [], { day = '', usageRenderer = usageMarkup
     workRanges: prepared.map((column) => ({ from: column.from, to: column.to })),
     usages: allUsages,
     day,
+    neutralBaseline,
   });
   const total = end - start;
   const minWidth = 56 + prepared.length * 104;
@@ -131,13 +139,14 @@ export function journalDayTimeline({
   columns = [],
   day = '',
   renderUsage: usageRenderer = usageMarkup,
+  neutralBaseline = null,
 } = {}) {
-  if (Array.isArray(columns) && columns.length) return aggregateTimeline(columns, { day, usageRenderer });
+  if (Array.isArray(columns) && columns.length) return aggregateTimeline(columns, { day, usageRenderer, neutralBaseline });
   const workStart = timeToMinutes(from), workEnd = timeToMinutes(to);
   if (workStart == null || workEnd == null || workEnd <= workStart) return '';
 
   const values = Array.isArray(usages) ? usages : [];
-  const { start, end } = timelineRange({ workRanges: [{ from, to }], usages: values, day });
+  const { start, end } = timelineRange({ workRanges: [{ from, to }], usages: values, day, neutralBaseline });
   const total = end - start;
   const overlays = values.map((usage) => {
     const segment = usageSegment(usage, day);
