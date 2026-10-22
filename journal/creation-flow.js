@@ -1,10 +1,12 @@
 import { initViewNavigation, openRecordCreationOwner, viewNavigation } from '../ui/ui.js';
 import { openRecords } from '../core/records/records.js';
 import { createJournalEventFlow } from './event-create.js';
+import { createJournalNoteFlow } from './note-create.js';
 
 const JOURNAL_CREATE_MODES = [
   { id: 'record', label: 'Запись' },
   { id: 'event', label: 'Событие' },
+  { id: 'note', label: 'Заметка' },
 ];
 
 export function openJournalCreation({
@@ -23,6 +25,7 @@ export function openJournalCreation({
   let activeMode = 'record';
   let recordFlow = null;
   let eventFlow = null;
+  let noteFlow = null;
 
   const renderModeSwitch = () => {
     const host = owner.setShellHeader(viewNavigation({
@@ -38,11 +41,19 @@ export function openJournalCreation({
         if (mode === activeMode) return;
         activeMode = mode;
         renderModeSwitch();
+
         if (activeMode === 'event') {
           if (!eventFlow) eventFlow = createJournalEventFlow({ owner, ...context, onCreated });
           else eventFlow.resume();
           return;
         }
+
+        if (activeMode === 'note') {
+          if (!noteFlow) noteFlow = createJournalNoteFlow({ owner, ...context, onCreated });
+          else noteFlow.resume();
+          return;
+        }
+
         recordFlow?.resumeRecord?.();
       },
     });

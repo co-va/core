@@ -23,6 +23,7 @@ import { PlatformNoticeModule } from './platform-notice/platform-notice.module';
 import { PasswordResetModule } from './password-reset/password-reset.module';
 import { AccountUnreadModule } from './account-unread/account-unread.module';
 import { EventModule } from './event/event.module';
+import { NoteModule } from './note/note.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { EventModule } from './event/event.module';
     PasswordResetModule,
     AccountUnreadModule,
     EventModule,
+    NoteModule,
   ],
   controllers: [HealthController],
   providers: [PrismaService],

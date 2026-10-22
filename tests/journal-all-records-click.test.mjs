@@ -22,10 +22,10 @@ assert.doesNotMatch(journalSource, /activeView === 'list' \|\| activeView === 'm
 assert.match(daySource, /openRecordView\(record, \{ onClose: rerender \}\)/, 'Day must rerender after Record View closes so cancelled records disappear from the timeline');
 assert.match(daySource, /journalDayTimeline\(\{ columns, day: dayDate \}\)/, 'Aggregate Journal Day must give Shared Timeline the visible date without a neutral baseline');
 assert.match(daySource, /journalDayTimeline\(\{ from: time\.from, to: time\.to, usages, day: dayDate \}\)/, 'Professional Journal Day must pass its Work Schedule without a neutral baseline');
-assert.match(daySource, /if \(!workingDay\) \{ contentRoot\.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день<\/div>'; return; \}/, 'Professional day off must keep the existing Выходной день state');
+assert.match(daySource, /if \(!workingDay\) \{[\s\S]*?timelineRoot\.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день<\/div>';[\s\S]*?return;[\s\S]*?\}/, 'Professional day off must keep the existing Timeline Выходной день state while Y remains mounted');
 assert.match(daySource, /if \(usage\?\.type === 'record'\)[\s\S]*openExistingRecord\(usage, rerender\)/, 'Record usage must still open the existing Record View');
 assert.match(daySource, /if \(usage\?\.type === 'event'\)[\s\S]*openEventView\(usage, \{ onClose: rerender \}\)/, 'Event usage must open the Event View');
-assert.match(daySource, /onUsageClick: \(\{ usageId \}\) => \{ void openUsage\(usageById\.get\(String\(usageId \|\| ''\)\), rerender\); \}/, 'Professional usage click must keep using the existing openUsage path');
+assert.match(daySource, /onUsageClick: \(\{ usageId \}\) => \{[\s\S]*?const usage = usageById\.get\(String\(usageId \|\| ''\)\);[\s\S]*?void openUsage\(usage, rerender\);[\s\S]*?\}/, 'Professional usage click must keep using the existing openUsage path while allowing Y time highlighting');
 assert.match(timeUsageSource, /getRecordsForDay\(previousDay, workplace\)\.filter\(crossesMidnight\)/, 'Journal occupancy must expose the previous-day overnight tail without creating another business object');
 
 const professional = journalDayTimeline({ from: '10:30', to: '18:00', day: '2026-10-22' });

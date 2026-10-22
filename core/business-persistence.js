@@ -33,6 +33,7 @@ function reportError(error) {
 function mutationScope(path = '') {
   const value = String(path || '');
   if (value.startsWith('/events')) return 'business';
+  if (value.startsWith('/notes')) return 'business';
   if (value.startsWith('/business-state/operational')) return 'operational';
   if (value.startsWith('/business-state/')) return 'business';
   if (value.startsWith('/tenant-document-archive/')) return 'documents';
@@ -202,6 +203,21 @@ export function queueEventDelete(id) {
   const eventId = String(id || '').trim();
   if (!eventId) return Promise.resolve();
   return enqueue(`/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }, 'Не удалось удалить событие на сервере');
+}
+
+export function queueNoteUpsert(note) {
+  const id = String(note?.id || '').trim();
+  if (!id) return Promise.resolve();
+  return enqueue(`/notes/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ note }),
+  }, 'Не удалось сохранить заметку на сервере');
+}
+
+export function queueNoteDelete(id) {
+  const noteId = String(id || '').trim();
+  if (!noteId) return Promise.resolve();
+  return enqueue(`/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }, 'Не удалось удалить заметку на сервере');
 }
 
 export function queueRecordEventUpsert(event, position = 0) {
