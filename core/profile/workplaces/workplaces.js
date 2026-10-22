@@ -27,11 +27,11 @@ export function workplaceForm(existing=null,{sourceOnly=false,bodyActions=false}
     ? reference.currencies
     : (w.currency?[{value:w.currency,label:w.currency}]:[]);
   const primary=sourceOnly
-    ? button('Сохранить',{
-        className:'v2-primary-source-only',
-        data:`data-workplace-primary data-v2-primary-action data-v2-primary-label="Сохранить" data-v2-primary-visible="${existing?'false':'true'}"`,
+    ? actionBlock(button('Сохранить',{
+        type:'submit',
+        data:`data-workplace-primary data-v2-primary-label="Сохранить" data-v2-primary-visible="${existing?'false':'true'}"`,
         aria:'Сохранить',
-      })
+      }))
     : '';
   const body=bodyActions
     ? actionBlock(`${button('Сохранить',{type:'submit'})}${existing?button('Удалить',{variant:'danger',data:'data-delete-workplace-form'}):''}`)
@@ -138,12 +138,14 @@ export function bindWorkplaceForm(root,existing=null,{onSaved=()=>{},onDeleted=(
   initLinks(root);
 
   const primary=root.querySelector('[data-workplace-primary]');
+  const primaryActions=primary?.closest('.modal-actions');
   const initial=formSnapshot(form);
   let dirty=!existing;
 
   const syncPrimary=()=>{
     if(!primary)return;
     setSharedProfilePrimary(primary,{visible:dirty,label:'Сохранить'});
+    if(primaryActions)primaryActions.hidden=!dirty;
   };
   const syncDirty=()=>{
     dirty=!existing||formSnapshot(form)!==initial;
@@ -158,8 +160,6 @@ export function bindWorkplaceForm(root,existing=null,{onSaved=()=>{},onDeleted=(
     const saved=await saveWorkplace(root,existing,onSaved);
     if(!saved&&primary)setSharedProfilePrimary(primary,{visible:true,label:'Сохранить',disabled:false});
   });
-
-  primary?.addEventListener('click',()=>form.requestSubmit());
 
   root.querySelector('[data-delete-workplace-form]')?.addEventListener('click',(event)=>{
     event.preventDefault();
@@ -293,7 +293,7 @@ export function confirmDeleteWorkplace(root,key,onDeleted=()=>{}){
   m.querySelector('[data-cancel-delete-workplace]').onclick=()=>m.v2Close?.();
   m.querySelector('[data-confirm-delete-workplace]').onclick=async()=>{
     try{
-      if(await deleteWorkplaceData(key)){m.v2Close?.();onDeleted();}else m.v2Close?.();
+      if(await deleteWorkplaceData(key)){m.v2Close?.();onDone();}else m.v2Close?.();
     }catch(deleteError){
       const error=m.querySelector('[data-workplace-delete-error]');
       if(error)error.textContent=deleteError instanceof Error?deleteError.message:'Не удалось удалить рабочее пространство';
