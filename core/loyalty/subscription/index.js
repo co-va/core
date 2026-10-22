@@ -1,4 +1,6 @@
 import {
+  actionBlock,
+  button,
   checkList,
   collectCheckList,
   datePicker,
@@ -280,9 +282,7 @@ function instanceDates(program = {}, issuedAt = '') {
 async function openCreateProgramQ(root, rerender, editingProgram = null) {
   const editing = Boolean(editingProgram?.id);
   const title = editing ? 'Корректировать абонемент' : 'Новый абонемент';
-  const layer = mountModal(root, modal(`${loyaltyHeader(title, {
-    c: { label: 'Сохранить', data: 'data-subscription-save', aria: 'Сохранить программу абонемента' },
-  })}
+  const layer = mountModal(root, modal(`${loyaltyHeader(title)}
     <form class="form-grid" data-subscription-form>
       ${field({ label: 'Название', name: 'name', value: editingProgram?.name || '', required: true })}
       ${optionalUeiField({ name: 'uei', value: editingProgram?.uei || '' })}
@@ -323,6 +323,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       <div data-subscription-frequency-limit hidden>${field({ label: 'N использований', name: 'frequencyLimit', type: 'number', min: '1', step: '1', inputmode: 'numeric', value: editingProgram?.frequencyLimit || 1 })}</div>
       ${select({ label: 'Несколько единиц за одно событие', name: 'multiplePerEvent', value: editingProgram?.multiplePerEvent ? 'yes' : 'no', options: [{ value: 'no', label: 'Нет' }, { value: 'yes', label: 'Да' }] })}
       <div class="form-error" data-subscription-error></div>
+      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-subscription-save', aria: 'Сохранить программу абонемента' }))}
     </form>`, { variant: 'q', surface: 'app', title }));
   if (!layer) return null;
   initSubscriptionConstructor(layer, editingProgram);
@@ -386,9 +387,7 @@ async function openIssueQ(root, program, rerender) {
   const options = [{ value: '', label: 'Выберите контакт' }, ...people.map(personOption).filter((item) => item.value)];
   const today = new Date().toISOString().slice(0, 10);
   const dates = instanceDates(program, today);
-  const layer = mountModal(root, modal(`${loyaltyHeader('Оформить абонемент', {
-    c: { label: 'Оформить', data: 'data-subscription-issue-save', aria: 'Оформить абонемент' },
-  })}
+  const layer = mountModal(root, modal(`${loyaltyHeader('Оформить абонемент')}
     <form class="form-grid" data-subscription-issue-form>
       ${select({ label: 'Контакт', name: 'personKey', value: '', options })}
       ${field({ label: 'Цена', name: 'price', type: 'number', min: '0', step: '0.01', inputmode: 'decimal', value: program.price || 0 })}
@@ -396,6 +395,7 @@ async function openIssueQ(root, program, rerender) {
       ${field({ label: 'Начало', name: 'startPreview', value: dates.startsAt || startLabel(program.startRule), disabled: true })}
       ${field({ label: 'Срок', name: 'termPreview', value: dates.expiresAt ? `До ${dates.expiresAt}` : (program.termValue || termLabel(program)), disabled: true })}
       <div class="form-error" data-subscription-issue-error></div>
+      ${actionBlock(button('Оформить', { type: 'button', data: 'data-subscription-issue-save', aria: 'Оформить абонемент' }))}
     </form>`, { variant: 'q', surface: 'app', title: 'Оформить абонемент' }));
   if (!layer) return null;
   initDatePickers(layer);
@@ -464,9 +464,9 @@ async function openProgramLayer(root, programId, onChanged) {
       loyaltyHeader(program.name || 'Абонемент', {
         settings: true,
         settingsData: 'data-subscription-program-settings',
-        c: program.status === 'active' ? { label: 'Оформить', data: 'data-subscription-issue', aria: 'Оформить абонемент' } : null,
       }),
       v2Section('Участники', issuedList(issued, program)),
+      program.status === 'active' ? actionBlock(button('Оформить', { type: 'button', data: 'data-subscription-issue', aria: 'Оформить абонемент' })) : '',
     ]);
     setV2ZHeaderRows(layer, [smallActionButton({ icon: 'info', data: 'data-subscription-info', aria: 'Условия абонемента' })]);
     layer.querySelector('[data-subscription-info]')?.addEventListener('click', () => openConditions(program));

@@ -1,4 +1,5 @@
 import {
+  actionBlock,
   button,
   collectCost,
   costField,
@@ -208,13 +209,9 @@ function renderProductEditor(layer, baseRoot, existing = null, { onChanged = () 
       title: existing?.name || 'Новый товар',
       settingsData: 'data-product-editor-settings',
       settingsAria: 'Настройки товара',
-      c: {
-        label: 'Сохранить',
-        data: 'data-product-editor-primary',
-        aria: 'Сохранить товар',
-      },
     }),
     productEditorForm(existing),
+    actionBlock(button('Сохранить', { type: 'button', data: 'data-product-editor-primary', aria: 'Сохранить товар' })),
   ]);
   initCostFields(layer);
   layer.querySelector('[data-product-editor-settings]')?.addEventListener('click', () => editorDraftSettings(draft));

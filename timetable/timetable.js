@@ -582,15 +582,8 @@ export function renderTimetable(root) {
         aria: `Рабочих дней: ${activeSummary.days}`,
         disabled: true,
       },
-      c: (!isAllMode() && (selection?.getSelectedDates?.() || []).some((date) => getDay(workingDays, selectedWorkplaceId, date)))
-        ? {
-            label: 'Время',
-            data: 'data-timetable-correct-selected-time',
-            aria: 'Изменить время выбранных рабочих дней',
-          }
-        : null,
       hideD: true,
-    })}${v2HorizontalRail(cards.join(''), { className: 'timetable-settings-card-rail' })}`, { className: 'timetable-settings-layer' }), { stack: true });
+    })}${v2HorizontalRail(cards.join(''), { className: 'timetable-settings-card-rail' })}${(!isAllMode() && (selection?.getSelectedDates?.() || []).some((date) => getDay(workingDays, selectedWorkplaceId, date))) ? actionBlock(button('Время', { type: 'button', data: 'data-timetable-correct-selected-time', aria: 'Изменить время выбранных рабочих дней' })) : ''}`, { className: 'timetable-settings-layer' }), { stack: true });
     if (!layer) return;
     layer.querySelector('[data-timetable-correct-selected-time]')?.addEventListener('click', () => {
       const dates = selection?.getSelectedDates?.() || [];
