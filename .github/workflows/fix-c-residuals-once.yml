@@ -1,0 +1,95 @@
+name: Fix remaining C actions once
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - '.github/workflows/fix-c-residuals-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Patch only remaining non-add C sources
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'pattern not found: {path}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          one('core/loyalty/referral/index.js',
+              "import {\n  checkList,",
+              "import {\n  actionBlock,\n  button,\n  checkList,")
+          one('core/loyalty/referral/index.js',
+              "const layer = mountModal(root, modal(`${loyaltyHeader(title, { c: { label: 'Сохранить', data: 'data-referral-save', aria: 'Сохранить реферальную программу' } })}",
+              "const layer = mountModal(root, modal(`${loyaltyHeader(title)}")
+          one('core/loyalty/referral/index.js',
+              "      <div class=\"form-error\" data-referral-error></div>\n    </form>`",
+              "      <div class=\"form-error\" data-referral-error></div>\n      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-referral-save', aria: 'Сохранить реферальную программу' }))}\n    </form>`")
+
+          one('core/loyalty/subscription/index.js',
+              "import {\n  checkList,",
+              "import {\n  actionBlock,\n  button,\n  checkList,")
+          one('core/loyalty/subscription/index.js',
+              "const layer = mountModal(root, modal(`${loyaltyHeader(title, {\n    c: { label: 'Сохранить', data: 'data-subscription-save', aria: 'Сохранить программу абонемента' },\n  })}",
+              "const layer = mountModal(root, modal(`${loyaltyHeader(title)}")
+          one('core/loyalty/subscription/index.js',
+              "      <div class=\"form-error\" data-subscription-error></div>\n    </form>`",
+              "      <div class=\"form-error\" data-subscription-error></div>\n      ${actionBlock(button('Сохранить', { type: 'button', data: 'data-subscription-save', aria: 'Сохранить программу абонемента' }))}\n    </form>`")
+          one('core/loyalty/subscription/index.js',
+              "const layer = mountModal(root, modal(`${loyaltyHeader('Оформить абонемент', {\n    c: { label: 'Оформить', data: 'data-subscription-issue-save', aria: 'Оформить абонемент' },\n  })}",
+              "const layer = mountModal(root, modal(`${loyaltyHeader('Оформить абонемент')}")
+          one('core/loyalty/subscription/index.js',
+              "      <div class=\"form-error\" data-subscription-issue-error></div>\n    </form>`",
+              "      <div class=\"form-error\" data-subscription-issue-error></div>\n      ${actionBlock(button('Оформить', { type: 'button', data: 'data-subscription-issue-save', aria: 'Оформить абонемент' }))}\n    </form>`")
+          one('core/loyalty/subscription/index.js',
+              "        settingsData: 'data-subscription-program-settings',\n        c: program.status === 'active' ? { label: 'Оформить', data: 'data-subscription-issue', aria: 'Оформить абонемент' } : null,\n      }),\n      v2Section('Участники', issuedList(issued, program)),",
+              "        settingsData: 'data-subscription-program-settings',\n      }),\n      v2Section('Участники', issuedList(issued, program)),\n      program.status === 'active' ? actionBlock(button('Оформить', { type: 'button', data: 'data-subscription-issue', aria: 'Оформить абонемент' })) : '',")
+
+          one('core/service/procedures/procedures.js',
+              "import {\n  button,",
+              "import {\n  actionBlock,\n  button,")
+          one('core/service/procedures/procedures.js',
+              "      settingsData: 'data-procedure-editor-settings',\n      settingsAria: 'Настройки процедуры',\n      c: {\n        label: 'Сохранить',\n        data: 'data-procedure-editor-primary',\n        aria: 'Сохранить процедуру',\n      },\n    }),\n    procedureEditorForm(existing),",
+              "      settingsData: 'data-procedure-editor-settings',\n      settingsAria: 'Настройки процедуры',\n    }),\n    procedureEditorForm(existing),\n    actionBlock(button('Сохранить', { type: 'button', data: 'data-procedure-editor-primary', aria: 'Сохранить процедуру' })),")
+
+          one('core/service/products/products.js',
+              "import {\n  button,",
+              "import {\n  actionBlock,\n  button,")
+          one('core/service/products/products.js',
+              "      settingsData: 'data-product-editor-settings',\n      settingsAria: 'Настройки товара',\n      c: {\n        label: 'Сохранить',\n        data: 'data-product-editor-primary',\n        aria: 'Сохранить товар',\n      },\n    }),\n    productEditorForm(existing),",
+              "      settingsData: 'data-product-editor-settings',\n      settingsAria: 'Настройки товара',\n    }),\n    productEditorForm(existing),\n    actionBlock(button('Сохранить', { type: 'button', data: 'data-product-editor-primary', aria: 'Сохранить товар' })),")
+
+          one('timetable/timetable.js',
+              "      c: (!isAllMode() && (selection?.getSelectedDates?.() || []).some((date) => getDay(workingDays, selectedWorkplaceId, date)))\n        ? {\n            label: 'Время',\n            data: 'data-timetable-correct-selected-time',\n            aria: 'Изменить время выбранных рабочих дней',\n          }\n        : null,\n      hideD: true,\n    })}${v2HorizontalRail(cards.join(''), { className: 'timetable-settings-card-rail' })}`",
+              "      hideD: true,\n    })}${v2HorizontalRail(cards.join(''), { className: 'timetable-settings-card-rail' })}${(!isAllMode() && (selection?.getSelectedDates?.() || []).some((date) => getDay(workingDays, selectedWorkplaceId, date))) ? actionBlock(button('Время', { type: 'button', data: 'data-timetable-correct-selected-time', aria: 'Изменить время выбранных рабочих дней' })) : ''}`")
+          PY
+      - name: Verify guard and tests
+        run: |
+          npm run check
+          npm test
+      - name: Commit direct source fixes and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-c-residuals-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add core/loyalty/referral/index.js core/loyalty/subscription/index.js core/service/procedures/procedures.js core/service/products/products.js timetable/timetable.js .github/workflows/fix-c-residuals-once.yml
+          git commit -m 'Move remaining C actions below Z and Q'
+          git push origin HEAD:staging
