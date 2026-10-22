@@ -1,4 +1,5 @@
 import { checkTimeAvailability } from '../time/index.js';
+import { preserveNotesForTarget } from '../note/index.js';
 import { deleteRecordRow, hydrateRecordStateFromServer, insertRecordRow, patchRecordRow } from './data.js';
 import { appendRecordEvent, deleteRecordEvents, RECORD_EVENT_TYPES } from './events.js';
 import { getRecord } from './read.js';
@@ -304,6 +305,7 @@ export function cancelRecord(id, { actionContext = null } = {}) {
 export function deleteRecord(id) {
   const current = getRecord(id);
   if (!current) return false;
+  preserveNotesForTarget('record', current);
   if (!deleteRecordRow(id)) return false;
   deleteRecordEvents(id);
   notify('book:records-changed', { action: 'delete', recordId: id });
