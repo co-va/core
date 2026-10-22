@@ -21,6 +21,10 @@ const selectors = read('ui/selectors/selectors.css');
 const info = read('ui/info/info.css');
 const time = read('ui/time/index.js');
 const accountShell = read('online-booking/account-shell.js');
+const booking = read('online-booking/booking.js');
+const professionalShell = read('core.js');
+const recordRuntime = read('ui/record/runtime.js');
+const indexHtml = read('index.html');
 const chatRuntime = read('core/chat/runtime.js');
 const messengerMode = read('core/chat/messenger-mode.js');
 
@@ -29,13 +33,23 @@ const expect = (condition, message) => { if (!condition) failures.push(message);
 
 expect(alphabet.includes('Контракт одинаков для профессионального интерфейса и интерфейса конечного пользователя'), 'UI alphabet must state one global contract for both application interfaces.');
 expect(alphabet.includes('B показывает только присвоенный текущему контексту заголовок'), 'UI alphabet must keep B contextual and allow an unassigned title to stay empty.');
-expect(alphabet.includes('C существует только когда прямо сейчас существует реальное контекстное действие'), 'UI alphabet must forbid placeholder C.');
+expect(alphabet.includes('C') && alphabet.includes('`+`'), 'UI alphabet must document the add-only C contract.');
 expect(alphabet.includes('В APP-состоянии D с иконкой чата всегда означает `включить Messenger`'), 'UI alphabet must make APP D the Messenger entry.');
 expect(alphabet.includes('В корне Messenger Z1 D меняется на явный control `вернуться в приложение`'), 'UI alphabet must make Messenger Z1 D the only exit.');
 expect(alphabet.includes('Для обычного диалога D — скрепка/вложения'), 'UI alphabet must reserve dialog D for attachment.');
 expect(alphabet.includes('Информационный control `I`') && alphabet.includes('всегда находится в правой зоне `Z Header`'), 'UI alphabet must keep I on the right side of the surface header.');
 expect(alphabet.includes('S — только информационное/техническое сообщение'), 'UI alphabet must keep S informational only.');
 expect(alphabet.includes('Текущее выбранное значение в закрытом select всегда визуально центрировано'), 'UI alphabet must keep selector values centered.');
+
+expect(!fs.existsSync('ui/header/c-action-policy.js'), 'C contract must not be implemented by a global DOM interceptor.');
+expect(!indexHtml.includes('c-action-policy.js'), 'Application entry must not load a C DOM interceptor.');
+expect(workspaceHeader.includes('function isAddAction(action)') && workspaceHeader.includes("data-v2-primary-label=\"+\""), 'Workspace Header context must expose only add actions through C.');
+expect(workspaceHeader.includes('const bottomAction = c && !cIsAdd') && workspaceHeader.includes('actionBlock(button('), 'Workspace completion actions must use the shared bottom action owner.');
+expect(professionalShell.includes('function isAddPrimarySource(source)') && !professionalShell.includes("surface.querySelector('form button[type=\"submit\"]')"), 'Professional shell must discover only add actions for C and never promote generic submits.');
+expect(recordRuntime.includes('data-record-owner-primary-actions') && !recordRuntime.includes("source.dataset.v2PrimaryAction = ''"), 'Shared Record primary action must live in Z/Q bottom actions instead of C.');
+expect(!booking.includes('c: action ?') && booking.includes('function actionMarkup(action = null)') && booking.includes('actionBlock(button(action.label'), 'End-user booking flow completion actions must be bottom actions, not Header C.');
+expect(!accountShell.includes("label: 'Сохранить',\n      data: 'data-account-profile-save'") && !accountShell.includes("c: { kind: 'text', label: 'Записаться'") && !accountShell.includes("c: canRepeat ? { kind: 'text'"), 'End-user account shell must not place save/book/repeat actions in C.');
+expect(accountShell.includes("actionBlock(button('Записаться'") && accountShell.includes("actionBlock(button('Повторить'"), 'End-user account booking/repeat actions must use the shared bottom action owner.');
 
 expect(shell.includes('data-v2-app style="--v2-base:#000000"'), 'Shared H owner must keep the application background black.');
 expect(shell.includes('data-v2-horizontal-rail'), 'Shared horizontal rail must expose one canonical marker.');
