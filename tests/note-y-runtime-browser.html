@@ -8,13 +8,23 @@
   <link rel="stylesheet" href="/ui/note/note.css">
 </head>
 <body>
-  <main id="fixture">
-    <div id="owner-host"></div>
-    <div id="y-host"></div>
-    <div id="day-host"></div>
-    <div id="live-y-host"></div>
-  </main>
+  <div class="v2-app" data-v2-app>
+    <div class="v2-app__stage">
+      <div class="v2-front" data-v2-front>
+        <section class="v2-z" data-v2-z>
+          <main id="fixture">
+            <div id="owner-host"></div>
+            <div id="y-host"></div>
+            <div id="compact-y-host" style="width:338px;overflow:hidden"></div>
+            <div id="day-host"></div>
+            <div id="live-y-host"></div>
+          </main>
+        </section>
+      </div>
+    </div>
+  </div>
   <pre id="result">pending</pre>
+
   <script type="module">
     const result = document.querySelector('#result');
     const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,6 +113,35 @@
       hydrateNotesFromServer([]);
       configureWorkplaceSource(() => [workplace]);
       configureTimeUsageSource(() => []);
+
+      const compactHost = document.querySelector('#compact-y-host');
+      compactHost.innerHTML = noteReels(Array.from({ length: 5 }, (_, index) => ({
+        id: `compact-${index}`,
+        ownerType: 'profile',
+        ownerId: 'profile-browser',
+        date: day,
+        title: `N${index + 1}`,
+        text: 'Коротко',
+        from: '',
+        to: '',
+        targetType: '',
+        targetId: '',
+        color: index === 4 ? '#AADDCC' : NOTE_DEFAULT_COLOR,
+      })));
+      const compactCards = [...compactHost.querySelectorAll('[data-note-reel]')];
+      assert(compactCards.length === 5, 'Compact Y did not render five Notes');
+      const hostRect = compactHost.getBoundingClientRect();
+      compactCards.slice(0, 4).forEach((card, index) => {
+        const rect = card.getBoundingClientRect();
+        assert(rect.width >= 70 && rect.width <= 80, `Note ${index + 1} width is outside 70-80px`);
+        assert(rect.height >= 70 && rect.height <= 80, `Note ${index + 1} height is outside 70-80px`);
+        assert(rect.right <= hostRect.right + 0.5, `Note ${index + 1} is not fully visible`);
+      });
+      const fifthRect = compactCards[4].getBoundingClientRect();
+      assert(fifthRect.left < hostRect.right && fifthRect.right > hostRect.right,
+        'Fifth Note is not partially visible at the right edge');
+      assert(compactCards[4].style.getPropertyValue('--note-color') === '#AADDCC',
+        'Custom Note color is not applied to compact card');
 
       let createdNote = null;
       let committed = 0;
@@ -194,6 +233,8 @@
       const afterDelete = getNote(createdNote.id);
       assert(afterDelete?.targetType === 'record' && afterDelete?.targetId === record.id,
         'Record deletion cleared Note historical target');
+      assert(afterDelete?.context?.targetSnapshot?.id === record.id,
+        'Record deletion did not retain Note target snapshot');
       assert(noteTargetLabel(afterDelete).includes('Запись удалена'), 'Deleted Record historical label is missing');
       assert(noteVisibleForWorkplace(afterDelete, 'w1') === true, 'Deleted Record Note lost original workplace context');
       assert(noteVisibleForWorkplace(afterDelete, 'other-workplace') === false, 'Deleted Record Note became globally unattached');
@@ -243,6 +284,7 @@
       await wait();
       assert(focusRequest?.targetType === 'event' && focusRequest?.targetId === event.id,
         'Event Notes action did not request Y focus');
+      eventLayer?.v2Close?.();
 
       hydrateEventsFromServer([event]);
       removeEvent(event.id);
