@@ -18,7 +18,7 @@ import { loadAuxiliaryState } from './core/runtime/auxiliary-state.js';
 import { getJournalTimeUsages, releaseJournalSoftTimeUsages } from './journal/time-usage-source.js';
 import { configureWorkplaceSource } from './core/workplace-time.js';
 import { configureTimeUsageSource, configureSoftTimeUsageReleaseSource } from './core/time/index.js';
-import { getCurrentAccount, login } from './core/auth.js';
+import { getCurrentAccount, login, requestPasswordReset } from './core/auth.js';
 import { resolveBookingPublicRoute } from './core/account/index.js';
 import { activateBookDemo, canUseBookCapability, getBookAccess, loadBookAccess } from './core/access.js';
 import { startServerBookingSync } from './online-booking/server-sync.js';
@@ -700,6 +700,53 @@ async function renderAuthenticated(account = authenticatedAccount) {
   startRegularPlatformNotices();
 }
 
+function renderPasswordResetRequest() {
+  setThemeColor('#F5F5F3');
+  app.classList.remove('app-shell--booking');
+  workspaceReady = false;
+  disposeView();
+  disposeView = () => {};
+
+  app.innerHTML = v2Sticker({
+    title: 'Восстановление пароля',
+    body: `<form class="auth-form" id="password-reset-request-form">
+      ${field({ label: 'Email', name: 'email', type: 'email', required: true, autocomplete: 'email' })}
+      <p>Укажите email профиля. Если учётная запись существует, на него придёт ссылка для изменения пароля.</p>
+      <p class="auth-error" data-password-reset-request-error role="alert"></p>
+    </form>`,
+    action: '<button class="ui-button" type="submit" form="password-reset-request-form">Отправить ссылку</button>',
+    className: 'v2-sticker-screen--auth',
+    closeData: 'data-password-reset-request-close',
+  });
+
+  app.querySelector('[data-password-reset-request-close]')?.addEventListener('click', () => renderLogin());
+  const form = app.querySelector('#password-reset-request-form');
+  const error = app.querySelector('[data-password-reset-request-error]');
+  const button = app.querySelector('button[type="submit"][form="password-reset-request-form"]');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    button.disabled = true;
+    button.textContent = 'Отправляем…';
+    const data = new FormData(form);
+    try {
+      await requestPasswordReset(data.get('email'));
+      app.innerHTML = v2Sticker({
+        title: 'Проверьте почту',
+        body: '<p>Если профиль с таким email существует, ссылка для изменения пароля отправлена. Ссылка действует 30 минут.</p>',
+        action: '<button class="ui-button" type="button" data-password-reset-return>Вернуться ко входу</button>',
+        className: 'v2-sticker-screen--auth',
+      });
+      app.querySelector('[data-password-reset-return]')?.addEventListener('click', () => renderLogin());
+    } catch (requestError) {
+      error.textContent = requestError instanceof Error ? requestError.message : 'Не удалось отправить ссылку восстановления';
+      button.disabled = false;
+      button.textContent = 'Отправить ссылку';
+    }
+  });
+  syncViewport();
+}
+
 function renderLogin(message = '') {
   setThemeColor('#F5F5F3');
   app.classList.remove('app-shell--booking');
@@ -727,14 +774,7 @@ function renderLogin(message = '') {
   app.querySelector('[data-specialist-u-close]')?.addEventListener('click', () => {
     if (window.history.length > 1) window.history.back();
   });
-  app.querySelector('[data-specialist-forgot]')?.addEventListener('click', () => {
-    openNotice({
-      title: 'Восстановление пароля',
-      message: 'Восстановление пароля пока недоступно.',
-      action: 'Закрыть',
-      variant: 'technical',
-    });
-  });
+  app.querySelector('[data-specialist-forgot]')?.addEventListener('click', renderPasswordResetRequest);
 
   const form = app.querySelector('#auth-form');
   const error = app.querySelector('#auth-error');
