@@ -2,11 +2,11 @@ import { apiRequest } from '../core/auth.js';
 import { flushBusinessPersistence } from '../core/business-persistence.js';
 import { hydrateBookingSettingsFromServer } from '../core/booking-settings/index.js';
 import { hydrateDaysFromServer } from '../core/day/index.js';
+import { hydrateEventsFromServer } from '../core/event/index.js';
 import { hydrateFinanceFromServer, hydrateWalletsFromServer } from '../core/finance/index.js';
 import { hydrateRecordStateFromServer } from '../core/record/index.js';
 import { hydrateUEIFromServer } from '../core/uei.js';
 import { hydratePeopleFromServer } from '../core/people/data.js';
-import { hydrateBreaksFromServer } from '../journal/break-data.js';
 import { hydrateConsentsFromServer } from '../settings/documents/consents.js';
 import { hydrateDocumentsFromServer } from '../settings/documents/data.js';
 import { hydrateDocumentHistoryFromServer } from '../settings/documents/history.js';
@@ -54,7 +54,10 @@ function requestedScopes(scopes) {
 
 async function fetchScopes(scopes) {
   const requests = new Map();
-  if (scopes.includes('business')) requests.set('business', apiRequest('/business-state'));
+  if (scopes.includes('business')) {
+    requests.set('business', apiRequest('/business-state'));
+    requests.set('events', apiRequest('/events'));
+  }
   if (scopes.includes('operational')) requests.set('operational', apiRequest('/business-state/operational'));
   if (scopes.includes('documents')) requests.set('documents', apiRequest('/tenant-document-archive'));
   if (scopes.includes('profile')) requests.set('profile', apiRequest('/profile'));
@@ -98,25 +101,34 @@ async function pull(scopes = ALL_SCOPES) {
 
     }
 
+    if (responses.has('events')) {
+      const events = await responseJson(responses.get('events'), 'Не удалось обновить события');
+      const rows = Array.isArray(events) ? events : [];
+      if (hasChanged('business.events', rows)) {
+        hydrateEventsFromServer(rows);
+        notify('book:events-changed', { action: 'server-refresh' });
+        notify('book:time-usage-changed', { action: 'server-refresh' });
+      }
+    }
+
     if (responses.has('operational')) {
       const operational = await responseJson(responses.get('operational'), 'Не удалось обновить График, процедуры и онлайн-запись');
         const daysChanged = hasChanged('operational.days', operational.days || []);
-        const breaksChanged = hasChanged('operational.breaks', operational.breaks || []);
         const proceduresChanged = hasChanged('operational.procedures', {
           procedures: operational.procedures || [],
           procedureHistory: operational.procedureHistory || [],
         });
         const bookingSettingsChanged = hasChanged('operational.bookingSettings', operational.bookingSettings || null);
         if (daysChanged) hydrateDaysFromServer(operational.days || []);
-        if (breaksChanged) hydrateBreaksFromServer(operational.breaks || []);
         if (proceduresChanged) hydrateProceduresFromServer({
           procedures: operational.procedures || [],
           procedureHistory: operational.procedureHistory || [],
         });
         if (bookingSettingsChanged) hydrateBookingSettingsFromServer(operational.bookingSettings || null);
-        if (daysChanged) notify('book:days-changed', { action: 'server-refresh' });
-        if (breaksChanged) notify('book:breaks-changed', { action: 'server-refresh' });
-        if (daysChanged || breaksChanged) notify('book:time-usage-changed', { action: 'server-refresh' });
+        if (daysChanged) {
+          notify('book:days-changed', { action: 'server-refresh' });
+          notify('book:time-usage-changed', { action: 'server-refresh' });
+        }
         if (proceduresChanged) notify('book:procedures-changed', { action: 'server-refresh' });
         if (bookingSettingsChanged) notify('book:booking-settings-changed', { action: 'server-refresh' });
 
