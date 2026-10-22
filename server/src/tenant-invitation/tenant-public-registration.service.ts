@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { TenantAccessStatus, TenantInvitationStatus } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
 import { TenantInvitationService } from './tenant-invitation.service';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -23,6 +24,7 @@ export class TenantPublicRegistrationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invitations: TenantInvitationService,
+    private readonly email: TransactionalEmailService,
   ) {}
 
   private async ensurePlatformAdminId() {
@@ -46,6 +48,23 @@ export class TenantPublicRegistrationService {
     return admin.id;
   }
 
+  private registrationUrl(token: string) {
+    const origin = String(process.env.FRONTEND_ORIGIN || '').trim().replace(/\/+$/, '');
+    if (!origin) throw new BadRequestException('Публичная регистрация временно недоступна');
+    return `${origin}/invite/?token=${encodeURIComponent(token)}`;
+  }
+
+  private async sendRegistrationEmail(email: string, token: string) {
+    const url = this.registrationUrl(token);
+    return this.email.send({
+      to: email,
+      subject: 'Продолжить регистрацию',
+      tag: 'public-registration',
+      text: `Продолжите создание профиля по ссылке:\n${url}\n\nСсылка действует 7 дней.`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#292522"><h2>Создание профиля</h2><p>Продолжите регистрацию и настройте своё рабочее пространство.</p><p style="margin:28px 0"><a href="${url}" style="background:#292522;color:#fff;text-decoration:none;padding:14px 20px;border-radius:12px;display:inline-block">Продолжить регистрацию</a></p><p style="color:#817a74;font-size:14px">Ссылка действует 7 дней.</p></div>`,
+    });
+  }
+
   async start(input: { email?: unknown } = {}) {
     const email = normalizeEmail(input?.email);
     if (!email || !email.includes('@')) throw new BadRequestException('Укажите корректный email');
@@ -64,7 +83,7 @@ export class TenantPublicRegistrationService {
       },
       select: { id: true },
     });
-    if (existingInvitation) throw new ConflictException('На этот email уже создана активная регистрация');
+    if (existingInvitation) throw new ConflictException('Регистрация уже начата. Ссылка для продолжения отправлена на этот email');
 
     const adminId = await this.ensurePlatformAdminId();
     const plan = await this.invitations.ensureStarterPlan();
@@ -95,6 +114,13 @@ export class TenantPublicRegistrationService {
       });
       return { tenant, invitation };
     });
+
+    try {
+      await this.sendRegistrationEmail(email, token);
+    } catch (error) {
+      await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
+      throw error;
+    }
 
     return {
       token,
