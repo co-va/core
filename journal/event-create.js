@@ -1,6 +1,7 @@
 import { colorPicker, field, initColorPickers, openNotice, openTimeRangeAction, textareaField } from '../ui/ui.js';
 import { checkTimeAvailability, minutesToTime, timeToMinutes } from '../core/time/index.js';
-import { createEvent } from '../core/event/index.js';
+import { createEvent, removeEvent } from '../core/event/index.js';
+import { flushBusinessPersistence } from '../core/business-persistence.js';
 
 function initialTo(from) {
   const minute = timeToMinutes(from);
@@ -62,14 +63,23 @@ export function createJournalEventFlow({ owner, date, workplaceId, timeHint = ''
         onSave: ({ from, to }) => { state.from = from; state.to = to; render(); },
       });
     });
-    view.action?.addEventListener('click', () => {
+    view.action?.addEventListener('click', async (domEvent) => {
       capture(view.body);
-      if (!state.title) { openNotice('Событие', 'Укажите название события.'); return; }
+      if (!state.title) { openNotice({ title: 'Событие', message: 'Укажите название события.' }); return; }
       const availability = checkTimeAvailability({ date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to });
-      if (!availability.ok) { openNotice('Событие', availabilityMessage(availability.reason)); return; }
+      if (!availability.ok) { openNotice({ title: 'Событие', message: availabilityMessage(availability.reason) }); return; }
+      const submit = domEvent.currentTarget;
+      submit.disabled = true;
       const created = createEvent({ ownerType: 'tenant', context: { scope: 'professional' }, date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to, title: state.title, description: state.description, color: state.color });
-      owner.commit?.();
-      onCreated?.(created);
+      try {
+        await flushBusinessPersistence();
+        owner.commit?.();
+        onCreated?.(created);
+      } catch (error) {
+        removeEvent(created.id);
+        openNotice({ title: 'Не удалось создать событие', message: String(error?.message || 'Сервер не подтвердил сохранение.') });
+        if (submit.isConnected) submit.disabled = false;
+      }
     });
   };
 
