@@ -24,15 +24,22 @@ assert.doesNotMatch(invitation, /assignPreparedFromInvitation|prepareInvitationA
 assert.doesNotMatch(invitation, /manual-invitation|@book\.invalid/i);
 
 assert.match(publicRegistration, /TenantInvitationService/);
+assert.match(publicRegistration, /TransactionalEmailService/);
 assert.match(publicRegistration, /this\.invitations\.ensureStarterPlan\(\)/);
 assert.match(publicRegistration, /tx\.tenantInvitation\.create/);
 assert.match(publicRegistration, /tx\.tenantAccess\.create/);
 assert.match(publicRegistration, /commercialMode: 'DEMO'/);
 assert.match(publicRegistration, /PLATFORM_ADMIN_EMAIL \|\| process\.env\.OWNER_EMAIL/);
+assert.match(publicRegistration, /process\.env\.FRONTEND_ORIGIN/);
+assert.match(publicRegistration, /tag: 'public-registration'/);
+assert.match(publicRegistration, /Продолжить регистрацию/);
+assert.match(publicRegistration, /Ссылка действует 7 дней/);
 assert.match(publicRegistration, /Учётная запись с таким email уже зарегистрирована/);
-assert.match(publicRegistration, /На этот email уже создана активная регистрация/);
+assert.match(publicRegistration, /Регистрация уже начата\. Ссылка для продолжения отправлена на этот email/);
+assert.match(publicRegistration, /this\.prisma\.tenant\.delete/);
 assert.doesNotMatch(publicRegistration, /platformAccount\.create|membership\.create|profile\.create/);
 assert.match(invitationModule, /TenantPublicRegistrationService/);
+assert.match(invitationModule, /TransactionalEmailModule/);
 
 assert.match(invitationController, /@Post\('public'\)/);
 assert.match(invitationController, /email\?: unknown/);
