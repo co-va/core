@@ -677,7 +677,7 @@ async function renderAuthenticated(account = authenticatedAccount) {
     loadOperationalState(),
     profileReady.then(() => loadTenantDocumentArchive()),
     loadAuxiliaryState(),
-    activateBookDemo(),
+    loadBookAccess(),
   ]);
   if (getBookAccess().status === 'SUSPENDED') {
     renderSuspended();
@@ -688,7 +688,11 @@ async function renderAuthenticated(account = authenticatedAccount) {
   disposePlatformNotices();
   disposePlatformNotices = () => {};
 
-  state.activeSection = sectionAllowed('journal') ? 'journal' : defaultSection();
+  const freshDemo = getBookAccess().commercialMode === 'DEMO' && !getBookAccess().demoActivatedAt;
+  state.activeSection = freshDemo && sectionAllowed('profile')
+    ? 'profile'
+    : sectionAllowed('journal') ? 'journal' : defaultSection();
+  if (freshDemo && state.activeSection === 'profile') await activateBookDemo();
   if (state.activeSection !== 'chat') state.lastRootSection = state.activeSection;
   history.replaceState({}, '', `#${state.activeSection}`);
   renderWorkspace();
