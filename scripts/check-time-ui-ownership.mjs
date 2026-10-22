@@ -5,6 +5,7 @@ const errors = [];
 const fail = (path, message) => errors.push(`${path}: ${message}`);
 
 const recordFlow = read('core/records/records.js');
+const breakCreation = read('journal/break-create.js');
 const breakView = read('journal/break-view.js');
 const breakData = read('journal/break-data.js');
 const breakRead = read('journal/break-read.js');
@@ -19,10 +20,14 @@ const sharedTime = read('ui/time/index.js');
 const sharedTimeCss = read('ui/time/time.css');
 
 if (!/from ['"]\.\.\/time\/index\.js['"]/.test(recordFlow)) fail('core/records/records.js', 'Records must ask Core Time/Availability.');
-if (!/checkTimeAvailability/.test(recordFlow) || !/getTimeAvailabilityAt/.test(recordFlow) || !/listAvailableEndTimes/.test(recordFlow)) fail('core/records/records.js', 'Records must use canonical Availability queries.');
+if (!/checkTimeAvailability/.test(recordFlow) || !/getTimeAvailabilityAt/.test(recordFlow)) fail('core/records/records.js', 'Records must use canonical Availability queries.');
 if (!/getWorkplaceWorkingDates/.test(recordFlow)) fail('core/records/records.js', 'Records must use the canonical WorkPlan date query.');
 if (/from ['"]\.\.\/day\.js['"]|isTimeRangeAvailable|getTimeUsages|getJournalBreaks|getRecords\(|getDayTime|getDay\(/.test(recordFlow)) fail('core/records/records.js', 'Records must not rebuild occupancy or WorkPlan availability.');
-if (/from ['"]\.\.\/\.\.\/journal\/break-data\.js['"]/.test(recordFlow)) fail('core/records/records.js', 'Records must command Break through break-service.js.');
+if (/break-service|createJournalBreak|listAvailableEndTimes/.test(recordFlow)) fail('core/records/records.js', 'Records must not own Break availability or commands.');
+
+if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(breakCreation)) fail('journal/break-create.js', 'Break creation must ask Core Availability.');
+if (!/checkTimeAvailability/.test(breakCreation) || !/getTimeAvailabilityAt/.test(breakCreation) || !/listAvailableEndTimes/.test(breakCreation)) fail('journal/break-create.js', 'Break creation must use canonical Availability queries.');
+if (/from ['"]\.\/break-data\.js['"]|getRecordsForDay|getJournalBreaks|isTimeRangeAvailable|getTimeUsages/.test(breakCreation)) fail('journal/break-create.js', 'Break creation must not calculate occupancy or use persistence directly.');
 
 if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(breakView)) fail('journal/break-view.js', 'Break view must ask Core Availability');
 if (!/listAvailableStartTimes/.test(breakView) || !/listAvailableEndTimes/.test(breakView)) fail('journal/break-view.js', 'Break view must use canonical Availability choices');
