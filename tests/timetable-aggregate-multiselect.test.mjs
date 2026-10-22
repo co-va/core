@@ -17,31 +17,36 @@ assert.match(
 
 assert.match(
   source,
-  /className:\s*['"]v2-primary-source-only['"]/,
-  'Graph Apply must exist only as a hidden source for Shared Header C',
+  /actionBlock\(button\(['"]Применить['"],\s*\{[\s\S]*?data:\s*['"]data-timetable-apply['"]/,
+  'Graph Apply must use the Shared bottom action owner inside Z',
 );
 assert.doesNotMatch(
   source,
-  /calendar-workspace__actions|data-timetable-actions|actionBlock\(/,
-  'Graph must never render a second Apply button in the calendar body',
+  /className:\s*['"]v2-primary-source-only['"]/,
+  'Graph Apply must not keep a hidden source for Header C',
+);
+assert.match(
+  source,
+  /const\s+applyActions\s*=\s*applyButton\?\.closest\(['"]\.modal-actions['"]\)/,
+  'Graph Apply visibility must be owned by its existing bottom action block',
 );
 
 assert.match(
   source,
-  /if\s*\(allMode\)\s*\{[\s\S]*?selectionMode\s*=\s*['"]add-workplace['"][\s\S]*?applyButton\.disabled\s*=\s*false[\s\S]*?applyButton\.dataset\.v2PrimaryVisible\s*=\s*['"]true['"]/,
-  'selected aggregate dates must enable and reveal Apply without changing the calendar mode',
+  /if\s*\(allMode\)\s*\{[\s\S]*?selectionMode\s*=\s*['"]add-workplace['"][\s\S]*?applyButton\.disabled\s*=\s*false[\s\S]*?applyActions\)\s*applyActions\.hidden\s*=\s*false/,
+  'selected aggregate dates must enable and reveal the bottom Apply action without changing the calendar mode',
 );
 
 assert.match(
   source,
-  /if\s*\(!dates\.length\)\s*\{[\s\S]*?applyButton\.dataset\.v2PrimaryVisible\s*=\s*['"]false['"]/,
+  /if\s*\(!dates\.length\)\s*\{[\s\S]*?applyButton\.disabled\s*=\s*true[\s\S]*?applyActions\)\s*applyActions\.hidden\s*=\s*true/,
   'Apply must be absent when no dates are selected',
 );
 
 assert.match(
   source,
-  /selectionMode\s*=\s*isWorkingDate\(dates\[0\]\)\s*\?\s*['"]make-off['"]\s*:\s*['"]make-working['"][\s\S]*?v2PrimaryLabel\s*=\s*makeOff\s*\?\s*['"]Выходной['"]\s*:\s*['"]Рабочий['"][\s\S]*?v2PrimaryVariant\s*=\s*makeOff\s*\?\s*['"]danger['"]\s*:\s*['"]['"]/,
-  'workplace Graph must show Рабочий in default C and Выходной in red danger C according to the selected action',
+  /selectionMode\s*=\s*isWorkingDate\(dates\[0\]\)\s*\?\s*['"]make-off['"]\s*:\s*['"]make-working['"][\s\S]*?applyButton\.textContent\s*=\s*makeOff\s*\?\s*['"]Выходной['"]\s*:\s*['"]Рабочий['"][\s\S]*?applyButton\.classList\.toggle\(['"]ui-button--danger['"],\s*makeOff\)/,
+  'workplace Graph must show Рабочий by default and Выходной as the danger bottom action according to the selected action',
 );
 
 assert.doesNotMatch(
