@@ -55,6 +55,17 @@ export async function login(email, password) {
   return payload;
 }
 
+export async function requestPasswordReset(email) {
+  const response = await fetch(`${API_BASE}/auth/password-reset/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, surface: 'app' }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || 'Не удалось отправить ссылку восстановления');
+  return payload;
+}
+
 export async function getCurrentAccount() {
   const token = getAuthToken();
   if (!token) return null;
