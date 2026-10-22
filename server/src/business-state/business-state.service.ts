@@ -18,13 +18,12 @@ type BusinessBundle = {
 
 type OperationalBundle = {
   days: JsonObject[];
-  breaks: JsonObject[];
   procedures: JsonObject[];
   procedureHistory: JsonObject[];
   bookingSettings: JsonObject | null;
 };
 
-const OPERATIONAL_DATASETS = new Set(['days', 'breaks', 'procedures', 'procedureHistory', 'bookingSettings']);
+const OPERATIONAL_DATASETS = new Set(['days', 'procedures', 'procedureHistory', 'bookingSettings']);
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};

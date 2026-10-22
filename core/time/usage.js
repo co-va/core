@@ -1,5 +1,5 @@
 // Neutral occupancy contract between business owners and Core time mechanisms.
-// This module does not own WorkPlan, Record, Break, Availability, or UI state.
+// This module does not own WorkPlan, Record, Event, Availability, or UI state.
 import { containsRange, isValidRange, timeToMinutes } from './math.js';
 
 let timeUsageSource = () => [];

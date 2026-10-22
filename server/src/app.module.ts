@@ -22,6 +22,7 @@ import { SaasAdminModule } from './saas-admin/saas-admin.module';
 import { PlatformNoticeModule } from './platform-notice/platform-notice.module';
 import { PasswordResetModule } from './password-reset/password-reset.module';
 import { AccountUnreadModule } from './account-unread/account-unread.module';
+import { EventModule } from './event/event.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AccountUnreadModule } from './account-unread/account-unread.module';
     PlatformNoticeModule,
     PasswordResetModule,
     AccountUnreadModule,
+    EventModule,
   ],
   controllers: [HealthController],
   providers: [PrismaService],
