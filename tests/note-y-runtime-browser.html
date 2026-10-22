@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+  <link rel="stylesheet" href="/ui/note/note.css">
+</head>
+<body>
+  <main id="fixture">
+    <div id="owner-host"></div>
+    <div id="y-host"></div>
+    <div id="day-host"></div>
+  </main>
+  <pre id="result">pending</pre>
+  <script type="module">
+    const result = document.querySelector('#result');
+    const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+    const assert = (condition, message) => {
+      if (!condition) throw new Error(message);
+    };
+
+    try {
+      const {
+        NOTE_DEFAULT_COLOR,
+        focusNoteReels,
+        initNoteReels,
+        noteReels,
+      } = await import('/ui/note/index.js');
+      const {
+        createNote,
+        getNote,
+        hydrateNotesFromServer,
+      } = await import('/core/note/index.js');
+      const { hydrateProfileFromServer } = await import('/core/profile/data.js');
+      const { hydrateRecordStateFromServer } = await import('/core/record/index.js');
+      const {
+        hydrateEventsFromServer,
+        removeEvent,
+      } = await import('/core/event/index.js');
+      const { hydrateDaysFromServer } = await import('/core/day/index.js');
+      const { configureWorkplaceSource } = await import('/core/workplace-time.js');
+      const { configureTimeUsageSource } = await import('/core/time/index.js');
+      const { createJournalNoteFlow } = await import('/journal/note-create.js');
+      const {
+        noteTargetLabel,
+        noteVisibleForWorkplace,
+      } = await import('/journal/note-target.js');
+      const { openNoteView } = await import('/journal/note-view.js');
+      const { openEventView } = await import('/journal/event-view.js');
+      const { renderJournalDay } = await import('/journal/день.js');
+
+      const day = '2026-10-23';
+      const workplace = {
+        id: 'workplace-db',
+        key: 'w1',
+        name: 'Тестовое пространство',
+        from: '09:00',
+        to: '18:00',
+        color: '#9AAE85',
+        indicatorColor: '#9AAE85',
+      };
+      const record = {
+        id: 'record-browser',
+        date: day,
+        workplaceId: 'w1',
+        from: '10:00',
+        to: '11:00',
+        person: { id: 'person-browser', name: 'Анна', surname: 'Тест' },
+        procedures: [],
+        products: [],
+      };
+      const event = {
+        id: 'event-browser',
+        date: day,
+        workplaceId: 'w1',
+        from: '12:00',
+        to: '12:30',
+        title: 'Событие браузера',
+        description: '',
+        color: '#777A7D',
+        ownerType: 'tenant',
+        ownerId: 'tenant-browser',
+        context: { scope: 'professional' },
+      };
+
+      hydrateProfileFromServer({
+        id: 'profile-browser',
+        key: 'profile',
+        name: 'Профиль',
+        phones: [],
+        telegrams: [],
+        emails: [],
+        customProfessions: [],
+      });
+      hydrateRecordStateFromServer({ records: [record], recordEvents: [] });
+      hydrateEventsFromServer([event]);
+      hydrateNotesFromServer([]);
+      configureWorkplaceSource(() => [workplace]);
+      configureTimeUsageSource(() => []);
+
+      let createdNote = null;
+      let committed = 0;
+      const ownerHost = document.querySelector('#owner-host');
+      const fakeOwner = {
+        render({ body = '', action = null } = {}) {
+          ownerHost.innerHTML = `<section data-browser-note-owner-body>${body}</section>${action
+            ? `<button type="button" ${action.data || ''}>${action.label || ''}</button>`
+            : ''}`;
+          return {
+            body: ownerHost.querySelector('[data-browser-note-owner-body]'),
+            action: action?.data ? ownerHost.querySelector(`[${action.data}]`) : null,
+          };
+        },
+        commit() { committed += 1; },
+      };
+
+      createJournalNoteFlow({
+        owner: fakeOwner,
+        date: day,
+        onCreated: (note) => { createdNote = note; },
+      });
+      const createForm = ownerHost.querySelector('[data-note-create-form]');
+      assert(createForm, 'Note create form was not rendered');
+      createForm.querySelector('[name="title"]').value = 'Browser Note';
+      createForm.querySelector('[name="text"]').value = 'Создано в браузере';
+      createForm.querySelector('[name="from"]').value = '10:00';
+      createForm.querySelector('[name="target"]').value = 'record:record-browser';
+      ownerHost.querySelector('[data-note-create]').click();
+      await wait(20);
+
+      assert(createdNote?.id, 'Note was not created from Journal Note flow');
+      assert(createdNote.ownerType === 'profile', 'Note ownerType is not profile');
+      assert(createdNote.ownerId === 'profile-browser', 'Note ownerId is not Profile.id');
+      assert(createdNote.targetType === 'record' && createdNote.targetId === record.id, 'Record attachment was not saved');
+      assert(createdNote.color === NOTE_DEFAULT_COLOR, 'Default Note color changed');
+      assert(committed === 1, 'Journal creation owner did not commit Note flow');
+
+      const yHost = document.querySelector('#y-host');
+      yHost.innerHTML = noteReels([createdNote], {
+        activeTime: '10:00',
+        relatedIds: [createdNote.id],
+        targetLabel: noteTargetLabel,
+      });
+      let openedId = '';
+      initNoteReels(yHost, { onOpen: ({ noteId }) => { openedId = noteId; } });
+      const reel = yHost.querySelector(`[data-note-reel="${createdNote.id}"]`);
+      assert(reel, 'Created Note is absent from Y');
+      assert(reel.classList.contains('is-time-active'), 'Y did not highlight Note at its time point');
+      assert(reel.classList.contains('is-related'), 'Y did not visually mark related Note');
+      reel.click();
+      assert(openedId === createdNote.id, 'Y Note click did not resolve the Note id');
+      focusNoteReels(yHost, [createdNote.id]);
+      assert(reel.classList.contains('is-related'), 'Y focus lost related state');
+
+      const noteLayer = openNoteView(createdNote.id);
+      assert(noteLayer?.querySelector('[data-note-view-host]'), 'Shared Q Note read view did not open');
+      assert(noteLayer.querySelector('[data-note-view-edit]'), 'Read Q has no Edit action');
+      assert(!noteLayer.querySelector('[data-note-edit-delete]'), 'Delete leaked into Note read mode');
+      noteLayer.querySelector('[data-note-view-edit]').click();
+      await wait();
+      const editForm = noteLayer.querySelector('[data-note-edit-form]');
+      assert(editForm, 'Note edit Q did not open');
+      editForm.querySelector('[name="text"]').value = 'Изменено в браузере';
+      editForm.dispatchEvent(new Event('input', { bubbles: true }));
+      editForm.requestSubmit();
+      await wait(20);
+      assert(getNote(createdNote.id)?.id === createdNote.id, 'Edit changed Note id');
+      assert(getNote(createdNote.id)?.text === 'Изменено в браузере', 'Edit did not save Note text');
+      assert(noteLayer.querySelector('[data-note-view-edit]'), 'Save did not return to Note read view');
+      noteLayer.querySelector('[data-note-view-edit]').click();
+      await wait();
+      assert(noteLayer.querySelector('[data-note-edit-delete]'), 'Delete is absent from Note edit mode');
+      noteLayer.querySelector('[data-note-edit-delete]').click();
+      await wait(20);
+      assert(getNote(createdNote.id) === null, 'Delete did not remove Note');
+
+      hydrateEventsFromServer([event]);
+      const eventNote = createNote({
+        id: 'event-note-browser',
+        ownerType: 'profile',
+        ownerId: 'profile-browser',
+        date: day,
+        targetType: 'event',
+        targetId: event.id,
+        title: 'Связь с событием',
+      });
+      assert(eventNote, 'Event Note fixture was not created');
+      let focusRequest = null;
+      window.addEventListener('book:journal-note-focus-request', (domEvent) => {
+        focusRequest = domEvent.detail;
+      }, { once: true });
+      const eventLayer = openEventView(event.id);
+      const eventNotesAction = eventLayer?.querySelector('[data-event-notes]');
+      assert(eventNotesAction, 'Event read view did not expose Notes action');
+      eventNotesAction.click();
+      await wait();
+      assert(focusRequest?.targetType === 'event' && focusRequest?.targetId === event.id,
+        'Event Notes action did not request Y focus');
+
+      hydrateEventsFromServer([event]);
+      removeEvent(event.id);
+      assert(getNote(eventNote.id)?.id === eventNote.id, 'Deleting Event deleted Note');
+      assert(noteVisibleForWorkplace(getNote(eventNote.id), 'other-workplace') === true,
+        'Missing target did not become an unattached Note');
+
+      hydrateNotesFromServer([{
+        id: 'day-off-note',
+        ownerType: 'profile',
+        ownerId: 'profile-browser',
+        date: day,
+        title: 'Заметка выходного дня',
+        text: '',
+        from: '',
+        to: '',
+        targetType: '',
+        targetId: '',
+        color: NOTE_DEFAULT_COLOR,
+      }]);
+      hydrateDaysFromServer([]);
+      configureTimeUsageSource(() => []);
+      const dayHost = document.querySelector('#day-host');
+      renderJournalDay(dayHost, {
+        date: new Date(`${day}T12:00:00`),
+        workplaceId: 'w1',
+      });
+      assert(dayHost.querySelector('[data-note-reel="day-off-note"]'), 'Y did not render Note on a day without working time');
+      assert(dayHost.textContent.includes('Выходной день'), 'Day-off Timeline state disappeared when Y is present');
+      assert(!dayHost.querySelector('[data-time-usage="day-off-note"]'), 'Note leaked into Timeline time usage');
+
+      hydrateEventsFromServer([event]);
+      hydrateNotesFromServer([{
+        id: 'time-note-browser',
+        ownerType: 'profile',
+        ownerId: 'profile-browser',
+        date: day,
+        title: 'Временная заметка',
+        text: '',
+        from: '12:00',
+        to: '',
+        targetType: '',
+        targetId: '',
+        color: NOTE_DEFAULT_COLOR,
+      }]);
+      hydrateDaysFromServer([{ date: day, workplaceId: 'w1', from: '09:00', to: '18:00' }]);
+      configureTimeUsageSource(({ date, workplaceId }) => (
+        date === day && workplaceId === 'w1'
+          ? [{ ...event, type: 'event', rigidity: 'soft', sourceId: event.id }]
+          : []
+      ));
+      renderJournalDay(dayHost, {
+        date: new Date(`${day}T12:00:00`),
+        workplaceId: 'w1',
+      });
+      assert(dayHost.querySelectorAll('[data-time-usage]').length === 1, 'Note changed Timeline usage count');
+      const eventUsage = dayHost.querySelector(`[data-journal-usage="${event.id}"]`);
+      assert(eventUsage, 'Browser Event usage is absent from Timeline');
+      eventUsage.click();
+      await wait(20);
+      assert(dayHost.querySelector('[data-note-reel="time-note-browser"]')?.classList.contains('is-time-active'),
+        'Y did not highlight Note from selected Journal time context');
+
+      result.textContent = 'Note Y browser runtime passed';
+      document.documentElement.dataset.noteYRuntime = 'pass';
+    } catch (error) {
+      result.textContent = String(error?.stack || error?.message || error);
+      document.documentElement.dataset.noteYRuntime = 'fail';
+    }
+  </script>
+</body>
+</html>
