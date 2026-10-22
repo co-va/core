@@ -8,6 +8,8 @@ const API_HOST = 'api.va-tools.ru';
 const ADMIN_HOST = 'admin.va-tools.ru';
 const APP_HOST = 'app.va-tools.ru';
 const USER_HOST = 'user.va-tools.ru';
+const LANDING_HOST = 'va-tools.ru';
+const LANDING_WWW_HOST = 'www.va-tools.ru';
 const TEMP_APP_HOST = 'va-app-temp-volokovykh.msk1.amvera.tech';
 
 const USER_PWA_ASSETS: Record<string, string> = {
@@ -65,6 +67,24 @@ async function bootstrap() {
     if (!['GET', 'HEAD'].includes(request.method)) return next();
 
     const host = requestHost(request);
+
+    if (host === LANDING_WWW_HOST) {
+      return response.redirect(301, `https://${LANDING_HOST}${request.originalUrl || '/'}`);
+    }
+
+    if (host === LANDING_HOST) {
+      if (request.path === '/') {
+        return response.sendFile(resolve(siteRoot, 'landing/index.html'));
+      }
+      if (request.path === '/landing' || request.path === '/landing/') {
+        return response.redirect(302, '/');
+      }
+      if (request.path.startsWith('/css/') || request.path.startsWith('/ui/')) {
+        return staticSite(request, response, () => response.status(404).send('Not Found'));
+      }
+      return response.status(404).send('Not Found');
+    }
+
     const landingPreviewPath = request.path === '/landing'
       || request.path === '/landing/'
       || request.path.startsWith('/landing/');
