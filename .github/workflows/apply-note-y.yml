@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  statuses: write
 
 concurrency:
   group: apply-note-y-staging
@@ -42,7 +43,23 @@ jobs:
           rm scripts/.note-y-part-1 scripts/.note-y-part-2 scripts/.note-y-part-3 scripts/.note-y-part-4 /tmp/note-y-payload.b64
 
       - name: Apply Note/Y patch
-        run: python3 scripts/apply-note-y.py
+        shell: bash
+        run: |
+          set +e
+          output="$(python3 scripts/apply-note-y.py 2>&1)"
+          code=$?
+          printf '%s\n' "$output"
+          if [ "$code" -ne 0 ]; then
+            description="$(printf '%s\n' "$output" | tail -n 1 | tr '\n\r' '  ' | cut -c1-135)"
+            payload="$(jq -nc --arg state error --arg context note-y-apply --arg description "$description" '{state:$state,context:$context,description:$description}')"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              -d "$payload" >/dev/null
+            exit "$code"
+          fi
 
       - name: Git diff sanity
         run: git diff --check
