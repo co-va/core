@@ -53,8 +53,10 @@ export function recordCreationTimeRows(items = [], {
 
 function flowMarkup() {
   return `<div class="record-creation-flow" data-record-creation-flow>
-    <div data-record-creation-step-header></div>
-    <div class="modal-title record-creation-flow__title"><h2 data-record-creation-title>Запись</h2></div>
+    <div class="modal-title record-creation-flow__title">
+      <div data-record-creation-step-header></div>
+      <h2 data-record-creation-title>Запись</h2>
+    </div>
     <div class="record-creation-flow__body" data-record-creation-body></div>
     <div class="record-creation-flow__action" data-record-creation-action></div>
   </div>`;
@@ -70,6 +72,8 @@ export function openRecordCreationOwner({
   let savedHeader = null;
   let savedBody = null;
   let inlineHeaderHost = null;
+  let inlineDismissControl = null;
+  let inlineDismissHandler = null;
 
   if (inline) {
     inlineHeaderHost = surfaceRoot.querySelector?.(':scope > [data-v2-z-header] > [data-v2-z-header-content]') || null;
@@ -99,11 +103,26 @@ export function openRecordCreationOwner({
   const restoreInline = () => {
     if (!inline || closed) return;
     closed = true;
+    if (inlineDismissControl && inlineDismissHandler) inlineDismissControl.removeEventListener('click', inlineDismissHandler, true);
     inlineHeaderHost.replaceChildren(savedHeader);
     bodyRoot.replaceChildren(savedBody);
   };
 
-  if (!inline) {
+  const cancelInline = () => {
+    if (!inline || closed) return;
+    restoreInline();
+    if (!committed) onCancel?.();
+  };
+
+  if (inline) {
+    inlineDismissControl = surfaceRoot.querySelector?.(':scope > [data-v2-z-header] > [data-v2-z-dismiss]') || null;
+    inlineDismissHandler = (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      cancelInline();
+    };
+    inlineDismissControl?.addEventListener('click', inlineDismissHandler, true);
+  } else {
     layer.v2Close = () => {
       if (!layer.isConnected) return;
       const cancelled = !committed;
@@ -137,7 +156,7 @@ export function openRecordCreationOwner({
     if (stepHeaderHost) stepHeaderHost.innerHTML = String(header || '');
     const resolvedTitle = title === false ? '' : resolveRecordCreationTitle(step, title);
     titleHost.textContent = resolvedTitle;
-    if (titleWrap) titleWrap.hidden = !resolvedTitle;
+    if (titleWrap) titleWrap.hidden = !resolvedTitle && !String(header || '').trim();
     bodyHost.innerHTML = body;
     const secondary = (Array.isArray(secondaryActions) ? secondaryActions : [])
       .filter((item) => item?.label)
@@ -184,10 +203,8 @@ export function openRecordCreationOwner({
       else layer.v2Close?.();
     },
     close() {
-      if (inline) {
-        restoreInline();
-        if (!committed) onCancel?.();
-      } else layer.v2Close?.();
+      if (inline) cancelInline();
+      else layer.v2Close?.();
     },
     isOpen() {
       return inline ? !closed && Boolean(bodyRoot.isConnected) : Boolean(layer.isConnected);
