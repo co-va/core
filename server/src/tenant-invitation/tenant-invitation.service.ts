@@ -249,6 +249,14 @@ export class TenantInvitationService {
     if (existingInvitation) throw new ConflictException('На этот email уже создано активное приглашение');
   }
 
+  private async findReusablePublicInvitation(email: string) {
+    return this.prisma.tenantInvitation.findFirst({
+      where: { email, status: TenantInvitationStatus.PENDING },
+      include: { tenant: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+  }
+
   private async createPendingInvitation(adminId: string, input: {
     email: string;
     name: string;
@@ -308,7 +316,7 @@ export class TenantInvitationService {
     name: string;
     tenantName: string;
     tools?: string[];
-  }) {
+  }, emailDelivery: 'required' | 'best-effort' = 'required') {
     const { token, tokenHash, expiresAt } = this.createInvitationToken();
     const created = await this.createPendingInvitation(adminId, {
       ...input,
@@ -319,8 +327,10 @@ export class TenantInvitationService {
     try {
       await this.sendInvitationEmail({ email: input.email, name: input.name, token });
     } catch (error) {
-      await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
-      throw error;
+      if (emailDelivery === 'required') {
+        await this.prisma.tenant.delete({ where: { id: created.tenant.id } }).catch(() => undefined);
+        throw error;
+      }
     }
 
     return { created, token, expiresAt };
@@ -437,13 +447,35 @@ export class TenantInvitationService {
     const email = normalizeEmail(input?.email);
     if (!email || !email.includes('@')) throw new BadRequestException('Укажите корректный email');
 
+    const existingAccount = await this.prisma.platformAccount.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (existingAccount) throw new ConflictException('Учётная запись с таким email уже зарегистрирована');
+
+    const reusable = await this.findReusablePublicInvitation(email);
+    if (reusable) {
+      const { token, tokenHash, expiresAt } = this.createInvitationToken();
+      await this.prisma.tenantInvitation.update({
+        where: { id: reusable.id },
+        data: { tokenHash, expiresAt },
+      });
+      await this.sendInvitationEmail({ email, name: reusable.name, token }).catch(() => undefined);
+      return {
+        token,
+        invitationId: reusable.id,
+        tenantId: reusable.tenantId,
+        expiresAt,
+      };
+    }
+
     await this.ensureEmailAvailable(email);
     const adminId = await this.ensurePlatformAdminId();
     const { created, token, expiresAt } = await this.createEmailInvitation(adminId, {
       email,
       name: '',
       tenantName: 'Новый профиль',
-    });
+    }, 'best-effort');
 
     return {
       token,

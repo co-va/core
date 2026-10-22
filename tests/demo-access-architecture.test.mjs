@@ -16,11 +16,18 @@ const settings = source('settings/settings.js');
 const admin = source('admin/admin.js');
 const adminAccess = source('server/src/saas-admin/saas-admin.service.ts');
 const adminController = source('server/src/saas-admin/saas-admin.controller.ts');
+const demoProfileMigration = source('server/prisma/migrations/20260922213000_demo_starts_at_profile_open/migration.sql');
 const cleanupMigration = source('server/prisma/migrations/20260930143000_remove_first_run_runtime/migration.sql');
 const recovery = source('server/scripts/recover-failed-prelaunch-migration.mjs');
 const dockerfile = source('Dockerfile');
 
-assert.match(core, /activateBookDemo\(\)/);
+assert.match(core, /loadBookAccess\(\)/);
+assert.match(core, /const freshDemo = getBookAccess\(\)\.commercialMode === 'DEMO' && !getBookAccess\(\)\.demoActivatedAt/);
+assert.match(core, /freshDemo && sectionAllowed\('profile'\)[\s\S]*\? 'profile'/);
+assert.match(core, /if \(freshDemo && state\.activeSection === 'profile'\) await activateBookDemo\(\)/);
+assert.doesNotMatch(core, /loadAuxiliaryState\(\),\s*activateBookDemo\(\)/);
+assert.match(demoProfileMigration, /opening an invitation or accepting platform documents must not consume DEMO time/);
+assert.match(demoProfileMigration, /first real[\s\S]*opening of the Profile step/);
 
 assert.match(access, /const DEMO_DAYS = 14/);
 assert.match(access, /async activateDemo\(/);
@@ -117,4 +124,4 @@ assert.match(recovery, /firstRunCleanupMigration/);
 assert.match(recovery, /return 43/);
 assert.match(dockerfile, /migrate resolve --rolled-back 20260930143000_remove_first_run_runtime/);
 
-console.log('Direct DEMO entry, self-service LIVE transition, assigned-tool and migration recovery contract: OK');
+console.log('Profile-first DEMO entry, self-service LIVE transition, assigned-tool and migration recovery contract: OK');
