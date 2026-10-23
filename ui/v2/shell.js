@@ -21,8 +21,8 @@ export function v2Shell({
     <div class="v2-app__stage">
       ${feDeck}
       <div class="v2-front" data-v2-front>
-        <main class="v2-z" ${zData}>
-${v2ZFrame(body)}
+        <main class="v2-z" ${zData} data-v2-dismissible="false">
+${v2ZFrame(body, { dismiss: false })}
 </main>
       </div>
       <div class="v2-edge-swipe-zone" data-v2-edge-swipe aria-hidden="true"></div>
