@@ -150,7 +150,8 @@ assert.match(accountShell, /v2Section\(/);
 assert.match(accountShell, /v2HorizontalRail\(/);
 assert.match(accountShell, /entityVisualCard\(\{/);
 assert.match(accountShell, /data-account-deck-item/);
-assert.match(accountShell, /GLOBAL_ACCOUNT_ROOTS = Object\.freeze\(\[[\s\S]*?id: 'profile', label: 'Профиль'[\s\S]*?id: 'home', label: 'Обзор'[\s\S]*?id: 'contacts', label: 'Контакты'[\s\S]*?id: 'history', label: 'История'/);
+assert.match(accountShell, /GLOBAL_ACCOUNT_ROOTS = Object\.freeze\(\[[\s\S]*?id: 'profile', label: 'Профиль'[\s\S]*?id: 'journal', label: 'Журнал'[\s\S]*?id: 'contacts', label: 'Контакты'[\s\S]*?id: 'history', label: 'История'/);
+assert.doesNotMatch(accountShell, /GLOBAL_ACCOUNT_ROOTS = Object\.freeze\(\[[\s\S]*?id: 'home', label: 'Обзор'/);
 assert.match(accountShell, /async function renderGlobalProfile\(/);
 assert.match(accountShell, /async function renderGlobalProfileSettings\(/);
 const endUserProfileCardBlock = accountShell.slice(
