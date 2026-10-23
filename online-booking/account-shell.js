@@ -1071,6 +1071,7 @@ async function renderGlobalJournal(root, state, handlers) {
   if (journalRoot) {
     root.accountJournalDispose = renderJournal(journalRoot, {
       context: 'account',
+      initialDate: state.accountJournalDate instanceof Date ? state.accountJournalDate : undefined,
       records: () => Array.isArray(state.accountRecords) ? state.accountRecords : [],
       resolveRecordContext: (record) => {
         const relationship = (Array.isArray(state.relationships) ? state.relationships : [])

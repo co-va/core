@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}*{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+  <link rel="stylesheet" href="/ui/v2/v.css">
+  <link rel="stylesheet" href="/ui/v2/surface-header.css">
+  <link rel="stylesheet" href="/ui/v2/horizontal-affordance.css">
+</head>
+<body>
+<div id="app"></div>
+<pre id="result">pending</pre>
+<script type="module">
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (value) => {
+  stage = value;
+  result.textContent = `running: ${value}`;
+  document.documentElement.dataset.bookingSuccessJournalRuntimeStage = value;
+};
+const ok = (condition, message) => { if (!condition) failures.push(`${stage}: ${message}`); };
+const wait = (ms = 100) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const click = (node) => node?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const addMinutes = (value, amount) => {
+  const [hours, minutes] = String(value || '00:00').split(':').map(Number);
+  const total = Math.max(0, hours * 60 + minutes + amount);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+
+window.addEventListener('error', (event) => failures.push(`${stage}: window error: ${event.error?.message || event.message}`));
+window.addEventListener('unhandledrejection', (event) => failures.push(`${stage}: rejection: ${event.reason?.message || event.reason || 'unknown'}`));
+
+const tenantId = 'runtime-booking-tenant';
+const workplaceKey = 'runtime-booking-workplace';
+const procedureId = 'runtime-booking-procedure';
+const account = {
+  id: 'runtime-account',
+  uei: 'END/RUNTIME/BOOKING',
+  name: 'Мария',
+  surname: 'Пользователь',
+  phone: '+79990000002',
+  phones: ['+79990000002'],
+  email: 'runtime@example.invalid',
+  profileData: {},
+};
+const professional = {
+  tenantId,
+  uei: 'PRO/RUNTIME/BOOKING',
+  name: 'Иван',
+  surname: 'Проверка',
+  phone: '+79998887766',
+};
+const futureDate = new Date();
+futureDate.setDate(futureDate.getDate() + 3);
+const bookingDate = dateKey(futureDate);
+const workplace = {
+  id: 'runtime-booking-workplace-db',
+  key: workplaceKey,
+  name: 'Студия Runtime Booking',
+  color: '#9AAED5',
+  indicatorColor: '#9AAED5',
+  from: '09:00',
+  to: '18:00',
+  timeZone: 'UTC',
+};
+const procedure = {
+  id: procedureId,
+  name: 'Runtime процедура',
+  duration: 60,
+  cost: { amount: 1500 },
+  workplaces: [{ workplaceId: workplaceKey, cost: { amount: 1500 } }],
+};
+const bookingContext = {
+  profile: professional,
+  workplaces: [workplace],
+  procedures: [procedure],
+  days: [{ workplaceId: workplaceKey, date: bookingDate, from: '09:00', to: '18:00' }],
+  occupancy: [],
+  documents: [],
+  settings: { slotStep: 30 },
+};
+const relationship = {
+  tenantId,
+  linkedAt: new Date().toISOString(),
+  context: { tenantId, profile: professional, workplaces: [workplace] },
+};
+
+let serverRecords = [];
+let createdRecord = null;
+let createCount = 0;
+let globalRecordsFetchCount = 0;
+let postCreateRecordsFetchCount = 0;
+let committedEvents = 0;
+let contactDetailAfterCommit = false;
+
+window.addEventListener('va-tools:record-creation-committed', () => {
+  committedEvents += 1;
+  queueMicrotask(() => {
+    if (document.querySelector('.account-contact-detail-z')) contactDetailAfterCommit = true;
+  });
+});
+
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (input, options = {}) => {
+  const url = new URL(typeof input === 'string' ? input : input.url, location.origin);
+  const path = url.pathname;
+  const method = String(options.method || input?.method || 'GET').toUpperCase();
+
+  if (path === '/online-booking/account/me' && method === 'GET') return json(account);
+  if (path === '/online-booking/account/platform-state' && method === 'GET') {
+    return json({ accepted: true, document: { key: 'platform-terms', version: 1, title: 'Условия', content: 'Runtime' } });
+  }
+  if (path === '/online-booking/account/relationships' && method === 'GET') return json([relationship]);
+  if (path === '/online-booking/account/unread-summary' && method === 'GET') return json({ total: 0, byTenant: [] });
+  if (path === '/online-booking/account/records' && method === 'GET') {
+    globalRecordsFetchCount += 1;
+    if (createCount > 0) postCreateRecordsFetchCount += 1;
+    return json(serverRecords.map((record) => ({ ...record })));
+  }
+  if (path === '/online-booking/account/personal-accounts' && method === 'GET') return json([]);
+  if (path === '/online-booking/account/deposits' && method === 'GET') return json([]);
+
+  if (path === `/online-booking/${tenantId}/context` && method === 'GET') return json(bookingContext);
+  if (path === `/online-booking/${tenantId}/account/me` && method === 'GET') return json(account);
+  if (path === `/online-booking/${tenantId}/account/platform-state` && method === 'GET') {
+    return json({ accepted: true, document: { key: 'platform-terms', version: 1, title: 'Условия', content: 'Runtime' } });
+  }
+  if (path === `/online-booking/${tenantId}/account/consent-state` && method === 'GET') {
+    return json({ pdnActive: true, consents: [] });
+  }
+  if (path === `/online-booking/${tenantId}/requests` && method === 'POST') {
+    createCount += 1;
+    const payload = JSON.parse(String(options.body || '{}'));
+    const from = String(payload.from || '09:00');
+    createdRecord = {
+      id: 'runtime-created-record',
+      tenantId,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      date: String(payload.date || bookingDate),
+      workplaceId: String(payload.workplaceKey || workplaceKey),
+      from,
+      to: addMinutes(from, 60),
+      person: account,
+      procedures: [{ id: procedureId, name: procedure.name, duration: 60, cost: 1500 }],
+      products: [],
+      finance: { serviceTotal: 1500, discountPercent: 0, discountTotal: 0, planTotal: 1500, factTotal: 0 },
+      payment: { state: 'due', paid: 0, due: 1500 },
+      history: [],
+    };
+    serverRecords = [createdRecord];
+    return json(createdRecord);
+  }
+
+  failures.push(`${stage}: unexpected fetch ${method} ${path}`);
+  return json({ message: 'Unexpected runtime request' }, 404);
+};
+
+localStorage.setItem('book.account.token', 'runtime-token');
+history.replaceState({}, '', `/?booking=${tenantId}&entry=account-booking&workplace=${workplaceKey}&procedures=${procedureId}`);
+
+mark('start-booking');
+await import('/online-booking/user-entry.js?booking-success-journal-runtime=1');
+await wait(220);
+ok(Boolean(document.querySelector('[data-record-creation-flow]')), 'end-user booking did not start in existing Shared Record creation flow');
+ok(Boolean(document.querySelector('.account-contact-detail-z')), 'Contacts professional context was not preserved beneath booking before success');
+
+mark('date');
+const dateButton = document.querySelector(`[data-calendar-date="${bookingDate}"]`);
+ok(Boolean(dateButton), 'booking date is missing from existing calendar');
+click(dateButton);
+await wait(160);
+
+mark('time');
+const timeButton = document.querySelector('[data-records-time]:not(:disabled)');
+ok(Boolean(timeButton), 'existing booking flow did not render an available time');
+click(timeButton);
+await wait(160);
+
+mark('confirm');
+const confirmButton = document.querySelector('[data-records-confirm]');
+ok(Boolean(confirmButton), 'booking did not reach Confirm');
+click(confirmButton);
+await wait(850);
+
+mark('success-return');
+ok(createCount === 1, 'createBookingRequest did not create exactly one Record');
+ok(committedEvents === 1, 'successful Shared Record creation did not commit exactly once');
+ok(Boolean(createdRecord), 'runtime backend did not persist the created Record');
+ok(location.pathname === '/' && !location.search, 'successful booking did not leave the booking route');
+ok(globalRecordsFetchCount >= 2, 'Account records were not refreshed through getGlobalAccountRecords');
+ok(postCreateRecordsFetchCount >= 1, 'Account records were not fetched after Record creation');
+ok(!contactDetailAfterCommit, 'success flow exposed contact-detail after Record commit');
+ok(!document.querySelector('.account-contact-detail-z'), 'success flow returned to contact-detail instead of Journal');
+
+const journalCard = document.querySelector('[data-v2-card-item="journal"]');
+ok(Boolean(journalCard?.classList.contains('is-active')), 'accountDeckActive is not Journal after success return');
+const journalRoot = document.querySelector('[data-account-journal-root]');
+ok(journalRoot?.dataset.journalContext === 'account', 'accountTab is not Journal after success return');
+ok(Boolean(journalRoot?.querySelector('[data-journal-day-context="account"]')), 'existing Account Journal Day did not render');
+ok(Boolean(journalRoot?.querySelector(`[data-journal-usage="${createdRecord?.id || ''}"]`)), 'refreshed Journal DOM does not contain the created Record');
+
+mark('confirmation-notice');
+const confirmationNotice = document.querySelector('.record-confirmation-notice-s');
+ok(Boolean(confirmationNotice), 'existing booking confirmation notice did not open');
+ok(String(confirmationNotice?.textContent || '').includes('Вы записаны'), 'confirmation notice lost its headline');
+ok(String(confirmationNotice?.textContent || '').includes('Запись подтверждена'), 'confirmation notice lost confirmation status');
+confirmationNotice?.closest('[data-v2-layer]')?.v2Close?.();
+await wait(120);
+
+mark('record-view');
+const createdUsage = document.querySelector(`[data-account-journal-root] [data-journal-usage="${createdRecord?.id || ''}"]`);
+click(createdUsage);
+await wait(220);
+const recordView = document.querySelector('[data-record-view-context="account"]');
+ok(Boolean(recordView), 'created Record did not open existing Shared Record View in account context');
+ok(recordView?.classList.contains('record-view-z'), 'created Record opened outside canonical Shared Record View');
+recordView?.v2Close?.();
+await wait(180);
+
+mark('record-close-return');
+ok(Boolean(document.querySelector('[data-account-journal-root]')), 'closing Record View did not return to Journal');
+ok(Boolean(document.querySelector(`[data-account-journal-root] [data-journal-usage="${createdRecord?.id || ''}"]`)), 'closing Record View lost the created Record from Journal');
+ok(Boolean(document.querySelector('[data-v2-card-item="journal"].is-active')), 'closing Record View changed Account root away from Journal');
+
+mark('finalize');
+window.fetch = originalFetch;
+if (failures.length) {
+  document.documentElement.dataset.bookingSuccessJournalRuntime = 'fail';
+  result.textContent = failures.join('\n');
+} else {
+  document.documentElement.dataset.bookingSuccessJournalRuntime = 'pass';
+  result.textContent = 'booking success returns to refreshed Account Journal runtime passed';
+}
+</script>
+</body>
+</html>
