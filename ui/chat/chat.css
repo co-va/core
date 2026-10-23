@@ -31,7 +31,8 @@
 .message-attachment--file{min-height:54px;padding:10px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;border:1px solid var(--border);background:var(--white);color:var(--text);text-decoration:none}
 .message-attachment--file strong{font-size:12px}
 .message-attachment--file span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
-.message-composer{position:fixed;z-index:19;left:50%;bottom:calc(var(--nav-height) + 8px + env(safe-area-inset-bottom));width:min(calc(100% - (var(--page-x) * 2)),calc(var(--app-max-width) - (var(--page-x) * 2)));transform:translateX(-50%);display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:8px;align-items:end;padding:8px 0;background:var(--app-bg) 46px}
+.message-composer{position:fixed;z-index:19;left:50%;bottom:calc(var(--nav-height) + 8px + env(safe-area-inset-bottom));width:min(calc(100% - (var(--page-x) * 2)),calc(var(--app-max-width) - (var(--page-x) * 2)));transform:translateX(-50%);display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:8px;align-items:end;padding:8px 0;background:var(--app-bg)}
+.message-composer--with-attachments{grid-template-columns:44px minmax(0,1fr) 46px}
 .message-composer__reply{grid-column:1/-1;min-height:34px;border:1px solid var(--border);border-radius:10px;background:var(--white);padding:6px 8px;display:grid;grid-template-columns:minmax(0,1fr) 28px;gap:6px;align-items:center;font-size:11px}
 .message-composer__reply span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .message-composer__reply-close{width:28px;height:28px;border:0;background:transparent;font:inherit;font-size:20px;line-height:1}
