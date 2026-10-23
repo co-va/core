@@ -26,7 +26,7 @@ if (install.status !== 0) {
 const hardStop = setTimeout(() => {
   console.error('FEZ browser regression exceeded hard runtime limit');
   process.exit(124);
-}, 120_000);
+}, 90_000);
 
 const { chromium } = await import(pathToFileURL(modulePath).href);
 const base = process.env.BROWSER_TEST_URL || 'http://127.0.0.1:4173';
@@ -40,27 +40,33 @@ const cases = [
 
 let browser;
 try {
+  console.log('FEZ runner: launching bundled Chromium');
   browser = await chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
     timeout: 15_000,
   });
+  console.log('FEZ runner: Chromium launched');
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 1,
     hasTouch: true,
   });
+  console.log('FEZ runner: context ready');
 
   for (const [path, resultKey, stageKey] of cases) {
+    console.log(`${path}: opening`);
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(`${base}/${path}`, { waitUntil: 'commit', timeout: 15_000 });
+    console.log(`${path}: navigation committed`);
     await page.waitForFunction(
       (key) => ['pass', 'fail'].includes(document.documentElement.dataset[key] || ''),
       resultKey,
       { timeout: 30_000 },
     );
+    console.log(`${path}: result marker reached`);
     const state = await page.evaluate(({ resultKey, stageKey }) => ({
       result: document.documentElement.dataset[resultKey] || '',
       stage: document.documentElement.dataset[stageKey] || '',
