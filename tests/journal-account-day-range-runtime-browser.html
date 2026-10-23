@@ -18,6 +18,7 @@
 import { v2Shell } from '/ui/v2/shell.js';
 import { renderJournal } from '/journal/journal.js';
 import { renderJournalDay } from '/journal/день.js';
+import { renderJournalMonth } from '/journal/месяц.js';
 
 const host = document.querySelector('#host');
 const result = document.querySelector('#result');
@@ -31,6 +32,7 @@ const mark = (name) => {
 const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
 const wait = (ms = 70) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const flatText = (node) => String(node?.textContent || '').replaceAll('\u00a0', ' ').replace(/\s+/g, ' ').trim();
+const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
 window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
 
@@ -65,13 +67,13 @@ function shellRoot() {
   return { app, root };
 }
 
-function mountDay(dateKey) {
+function mountDay(dateKeyValue) {
   const mounted = shellRoot();
   const dispose = renderJournalDay(mounted.root, {
     context:'account',
     records:() => records,
     resolveRecordContext,
-    date:new Date(dateKey + 'T12:00:00'),
+    date:new Date(dateKeyValue + 'T12:00:00'),
   }) || (() => {});
   return { ...mounted, dispose };
 }
@@ -113,6 +115,37 @@ await wait();
 assertRange(mounted, '09:00', '23:45', 'поздняя Record не расширила сетку позже 23:00');
 ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-late"]')), 'поздняя Record не отображается в account Day');
 mounted.dispose();
+
+mark('year-round-open-dates');
+for (const year of [2027, 2028]) {
+  let openedDates = 0;
+  let calendarDates = 0;
+  for (let month = 0; month < 12; month += 1) {
+    const shell = shellRoot();
+    const selected = [];
+    const dispose = renderJournalMonth(shell.root, {
+      context:'account',
+      records:() => records,
+      month:new Date(year, month, 15),
+      onDateSelect:(date) => selected.push(dateKey(date)),
+    }) || (() => {});
+    const expectedDays = new Date(year, month + 1, 0).getDate();
+    const cells = [...shell.root.querySelectorAll('[data-calendar-current-month="true"]')];
+    ok(cells.length === expectedDays, `${year}-${String(month + 1).padStart(2, '0')}: календарь содержит ${cells.length} дней вместо ${expectedDays}`);
+    cells.forEach((cell) => {
+      calendarDates += 1;
+      ok(!cell.disabled, `${cell.dataset.calendarDate}: дата disabled`);
+      ok(!cell.classList.contains('is-working'), `${cell.dataset.calendarDate}: Account Month использует professional working-day marker`);
+      cell.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+    });
+    openedDates += selected.length;
+    ok(selected.length === expectedDays, `${year}-${String(month + 1).padStart(2, '0')}: открылись ${selected.length} из ${expectedDays} дат`);
+    dispose();
+  }
+  const expectedYearDays = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+  ok(calendarDates === expectedYearDays, `${year}: календарь содержит ${calendarDates} дат вместо ${expectedYearDays}`);
+  ok(openedDates === expectedYearDays, `${year}: доступны ${openedDates} дат вместо ${expectedYearDays}`);
+}
 
 mark('month-to-empty-day');
 {
