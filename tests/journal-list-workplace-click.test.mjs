@@ -6,7 +6,7 @@ const daySource = readFileSync(new URL('../journal/день.js', import.meta.url
 const journalSource = readFileSync(new URL('../journal/journal.js', import.meta.url), 'utf8');
 const recordViewSource = readFileSync(new URL('../core/records/view.js', import.meta.url), 'utf8');
 
-assert.match(listSource, /renderJournalList\(root, \{ mode = 'flow', workplaceId = ALL_WORKPLACES_ID \}/);
+assert.match(listSource, /export function renderJournalList\(root, \{[\s\S]*context = 'professional',[\s\S]*records = null,[\s\S]*mode = 'flow',[\s\S]*workplaceId = ALL_WORKPLACES_ID,/);
 assert.match(listSource, /workplaceId === ALL_WORKPLACES_ID\s*\? allRecords\s*:\s*allRecords\.filter/);
 assert.match(listSource, /interactive: Boolean\(id\)/);
 assert.match(listSource, /data-journal-list-record=/);
@@ -41,6 +41,6 @@ assert.doesNotMatch(recordViewSource, /openRecordEditFlow|moveRecord/);
 assert.equal(existsSync(new URL('../core/records/end-user-record.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../core/records/account-record.js', import.meta.url)), false);
 assert.equal(existsSync(new URL('../core/records/client-record.js', import.meta.url)), false);
-assert.match(journalSource, /renderJournalList\(viewRoot, \{ mode: listMode, workplaceId: selectedWorkplaceId \}\)/);
+assert.match(journalSource, /renderJournalList\(viewRoot, \{[\s\S]*context: contextName,[\s\S]*records: accountMode \? readAccountRecords : null,[\s\S]*resolveRecordContext,[\s\S]*mode: listMode,[\s\S]*workplaceId: selectedWorkplaceId,/);
 
 console.log('journal list workplace/click and shared Record View context tests: OK');
