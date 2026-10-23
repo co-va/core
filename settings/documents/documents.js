@@ -56,11 +56,10 @@ const USER_PDF_TOTAL_LIMIT = 30 * 1024 * 1024;
 
 let currentView = 'documents';
 
-function headerContext(title = 'Документы', c = null, a = null) {
+function headerContext(title = 'Документы', c = null, v = null) {
   return workspaceHeaderContext({
     title,
-    a: a || {
-      kind: 'settings',
+    v: v || {
       data: 'data-documents-settings',
       aria: 'Настройки документов',
     },
@@ -369,7 +368,6 @@ function openDocumentDetail(root, item) {
 
   layer.innerHTML = page([
     headerContext('Документ', null, {
-      kind: 'settings',
       data: 'data-document-detail-settings',
       aria: 'Настройки документа',
     }),
