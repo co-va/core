@@ -102,3 +102,8 @@ jobs:
             'data-booking-success-journal-runtime="pass"' \
             'data-booking-success-journal-runtime-stage' \
             /tmp/booking-success-journal-runtime-dom.html
+          run_browser_case \
+            "tests/journal-account-day-range-runtime-browser.html" \
+            'data-journal-account-day-range-runtime="pass"' \
+            'data-journal-account-day-range-runtime-stage' \
+            /tmp/journal-account-day-range-runtime-dom.html
