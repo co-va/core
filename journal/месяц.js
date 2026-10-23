@@ -147,8 +147,8 @@ export function renderJournalMonth(root, {
   if (accountMode) {
     const recordIndex = recordsByDate(readRecords(records, contextName), '', true);
     initCalendar(calendarRoot, {
+      workingDates: [],
       month,
-      workingDates: [...recordIndex.keys()],
       renderDateContent: ({ dateKey, isCurrentMonth }) => {
         if (!isCurrentMonth) return '';
         return dateContent(accountDayRecordData({ dateKey, recordIndex }));
