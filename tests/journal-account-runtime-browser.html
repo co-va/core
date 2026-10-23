@@ -234,7 +234,7 @@ ok(mounted.root.dataset.journalContext === 'account', 'Journal did not enter acc
 ok(Boolean(mounted.root.querySelector('[data-journal-day-context="account"]')), 'existing Day renderer did not receive account context');
 const accountTimeline = mounted.root.querySelector('[data-time-timeline]');
 ok(Boolean(accountTimeline), 'account Day did not use Shared journalDayTimeline');
-ok(accountTimeline?.dataset.timeFrom === '10:00' && accountTimeline?.dataset.timeTo === '11:30', 'account Day timeline does not use account Record from/to geometry');
+ok(accountTimeline?.dataset.timeFrom === '09:00' && accountTimeline?.dataset.timeTo === '23:00', 'account Day timeline does not keep base 09:00–23:00 grid');
 const accountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
 ok(Boolean(accountPlaque?.classList.contains('journal-record')), 'account Record did not use existing Record plaque');
 ok(flatText(accountPlaque).includes('Иван Relationship'), 'account Day plaque does not present professional identity');
@@ -272,7 +272,7 @@ await wait();
 ok(Boolean(mounted.root.querySelector('[data-journal-month-context="account"] [data-calendar]')), 'account Month did not use existing Shared Calendar');
 const accountDateCell = mounted.root.querySelector(`[data-calendar-date="${accountDate}"]`);
 const fakeScheduleCell = mounted.root.querySelector(`[data-calendar-date="${scheduleOnlyDate}"]`);
-ok(Boolean(accountDateCell?.classList.contains('is-working')), 'date with account Record is not marked in Month');
+ok(!accountDateCell?.classList.contains('is-working'), 'account Record date uses professional working-day marker');
 ok(flatText(accountDateCell).includes('1 зап.'), 'account Month record count missing');
 ok(Boolean(accountDateCell?.querySelector('.calendar__date-fill')), 'account Month does not use existing Record color/state fill');
 ok(!fakeScheduleCell?.classList.contains('is-working'), 'professional working-day capacity leaked into account Month');

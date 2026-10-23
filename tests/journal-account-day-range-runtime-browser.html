@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}
+    *{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<div id="host"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import { v2Shell } from '/ui/v2/shell.js';
+import { renderJournal } from '/journal/journal.js';
+import { renderJournalDay } from '/journal/день.js';
+import { renderJournalMonth } from '/journal/месяц.js';
+
+const host = document.querySelector('#host');
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (name) => {
+  stage = name;
+  result.textContent = 'running: ' + name;
+  document.documentElement.dataset.journalAccountDayRangeRuntimeStage = name;
+};
+const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
+const wait = (ms = 70) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const flatText = (node) => String(node?.textContent || '').replaceAll('\u00a0', ' ').replace(/\s+/g, ' ').trim();
+const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
+window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
+
+const regularDate = '2026-11-12';
+const earlyDate = '2026-11-13';
+const lateDate = '2026-11-14';
+const emptyDate = '2026-11-15';
+const professional = { tenantId:'account-day-range-professional', name:'Иван', surname:'Диапазон' };
+const resolveRecordContext = () => ({ professional });
+const records = [
+  {
+    id:'account-day-regular', tenantId:professional.tenantId, status:'active', date:regularDate,
+    workplaceId:'account-day-range-workplace', from:'10:00', to:'11:30',
+    procedures:[{ id:'regular-procedure', name:'Обычная запись', duration:90, cost:1000 }], products:[],
+  },
+  {
+    id:'account-day-early', tenantId:professional.tenantId, status:'active', date:earlyDate,
+    workplaceId:'account-day-range-workplace', from:'07:30', to:'08:30',
+    procedures:[{ id:'early-procedure', name:'Ранняя запись', duration:60, cost:1000 }], products:[],
+  },
+  {
+    id:'account-day-late', tenantId:professional.tenantId, status:'active', date:lateDate,
+    workplaceId:'account-day-range-workplace', from:'22:30', to:'23:45',
+    procedures:[{ id:'late-procedure', name:'Поздняя запись', duration:75, cost:1000 }], products:[],
+  },
+];
+
+function shellRoot() {
+  host.innerHTML = v2Shell({ body:'<div data-runtime-root></div>', className:'v2-app--workspace' });
+  const app = host.querySelector('[data-v2-app]');
+  const root = app.querySelector('[data-runtime-root]');
+  return { app, root };
+}
+
+function mountDay(dateKeyValue) {
+  const mounted = shellRoot();
+  const dispose = renderJournalDay(mounted.root, {
+    context:'account',
+    records:() => records,
+    resolveRecordContext,
+    date:new Date(dateKeyValue + 'T12:00:00'),
+  }) || (() => {});
+  return { ...mounted, dispose };
+}
+
+function assertRange(mounted, from, to, message) {
+  const timeline = mounted.root.querySelector('[data-time-timeline]');
+  ok(Boolean(timeline), message + ': Shared timeline отсутствует');
+  ok(timeline?.dataset.timeFrom === from, message + ': from=' + String(timeline?.dataset.timeFrom || ''));
+  ok(timeline?.dataset.timeTo === to, message + ': to=' + String(timeline?.dataset.timeTo || ''));
+  return timeline;
+}
+
+mark('empty-day');
+let mounted = mountDay(emptyDate);
+await wait();
+assertRange(mounted, '09:00', '23:00', 'пустой account Day не держит базовую сетку 09:00–23:00');
+ok(!flatText(mounted.root).includes('Записей нет'), 'пустой account Day заменил сетку сообщением «Записей нет»');
+ok(!flatText(mounted.root).includes('Выходной день'), 'пустой account Day зависит от professional day-off');
+ok(!flatText(mounted.root).includes('Не задано рабочее время'), 'пустой account Day зависит от professional schedule');
+mounted.dispose();
+
+mark('regular-record');
+mounted = mountDay(regularDate);
+await wait();
+assertRange(mounted, '09:00', '23:00', 'обычная запись сжала базовую сетку');
+ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-regular"]')), 'обычная Record не отображается в account Day');
+mounted.dispose();
+
+mark('early-record');
+mounted = mountDay(earlyDate);
+await wait();
+assertRange(mounted, '07:30', '23:00', 'ранняя Record не расширила сетку раньше 09:00');
+ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-early"]')), 'ранняя Record не отображается в account Day');
+mounted.dispose();
+
+mark('late-record');
+mounted = mountDay(lateDate);
+await wait();
+assertRange(mounted, '09:00', '23:45', 'поздняя Record не расширила сетку позже 23:00');
+ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-late"]')), 'поздняя Record не отображается в account Day');
+mounted.dispose();
+
+mark('year-round-open-dates');
+for (const year of [2027, 2028]) {
+  let openedDates = 0;
+  let calendarDates = 0;
+  for (let month = 0; month < 12; month += 1) {
+    const shell = shellRoot();
+    const selected = [];
+    const dispose = renderJournalMonth(shell.root, {
+      context:'account',
+      records:() => records,
+      month:new Date(year, month, 15),
+      onDateSelect:(date) => selected.push(dateKey(date)),
+    }) || (() => {});
+    const expectedDays = new Date(year, month + 1, 0).getDate();
+    const cells = [...shell.root.querySelectorAll('[data-calendar-current-month="true"]')];
+    ok(cells.length === expectedDays, `${year}-${String(month + 1).padStart(2, '0')}: календарь содержит ${cells.length} дней вместо ${expectedDays}`);
+    cells.forEach((cell) => {
+      calendarDates += 1;
+      ok(!cell.disabled, `${cell.dataset.calendarDate}: дата disabled`);
+      ok(!cell.classList.contains('is-working'), `${cell.dataset.calendarDate}: Account Month использует professional working-day marker`);
+      cell.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+    });
+    openedDates += selected.length;
+    ok(selected.length === expectedDays, `${year}-${String(month + 1).padStart(2, '0')}: открылись ${selected.length} из ${expectedDays} дат`);
+    dispose();
+  }
+  const expectedYearDays = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+  ok(calendarDates === expectedYearDays, `${year}: календарь содержит ${calendarDates} дат вместо ${expectedYearDays}`);
+  ok(openedDates === expectedYearDays, `${year}: доступны ${openedDates} дат вместо ${expectedYearDays}`);
+}
+
+mark('month-to-empty-day');
+{
+  const shell = shellRoot();
+  const dispose = renderJournal(shell.root, {
+    context:'account',
+    records:() => records,
+    resolveRecordContext,
+    initialView:'month',
+    initialDate:new Date(regularDate + 'T12:00:00'),
+  }) || (() => {});
+  await wait();
+  const emptyCell = shell.root.querySelector(`[data-calendar-date="${emptyDate}"]`);
+  ok(Boolean(emptyCell), 'Month не содержит календарный пустой день');
+  emptyCell?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+  await wait();
+  ok(Boolean(shell.root.querySelector('[data-journal-day-context="account"]')), 'Month → пустой Day не открыл существующий account Day');
+  assertRange(shell, '09:00', '23:00', 'Month → пустой Day не открыл базовую сетку');
+  ok(!flatText(shell.root).includes('Выходной день'), 'Month → пустой Day показал professional day-off');
+  ok(!flatText(shell.root).includes('Не задано рабочее время'), 'Month → пустой Day показал professional schedule state');
+  dispose();
+}
+
+if (failures.length) {
+  result.textContent = failures.join('\n');
+  document.documentElement.dataset.journalAccountDayRangeRuntime = 'fail';
+} else {
+  result.textContent = 'PASS';
+  document.documentElement.dataset.journalAccountDayRangeRuntime = 'pass';
+}
+</script>
+</body>
+</html>
