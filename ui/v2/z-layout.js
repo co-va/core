@@ -93,8 +93,8 @@ export function v2ZBodySections(sections = []) {
   return `<div data-v2-z-body-sections style="${Z_BODY_SECTIONS_STYLE}">${values.map((section) => v2ZBodySection(section.content, { kind: section.kind })).join('')}</div>`;
 }
 
-export function v2ZFrame(content = '', { header = '' } = {}) {
-  return `${v2ZHeader(header)}${v2ZBody(content)}`;
+export function v2ZFrame(content = '', { header = '', dismiss = true } = {}) {
+  return `${surfaceHeader(header, { kind: 'z', dismiss })}${v2ZBody(content)}`;
 }
 
 export function v2QFrame(content = '', { header = '' } = {}) {
