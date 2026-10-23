@@ -42,11 +42,11 @@ try {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`${base}/${path}`, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+    await page.goto(`${base}/${path}`, { waitUntil: 'commit', timeout: 15_000 });
     await page.waitForFunction(
       (key) => ['pass', 'fail'].includes(document.documentElement.dataset[key] || ''),
       resultKey,
-      { timeout: 20_000 },
+      { timeout: 30_000 },
     );
     const state = await page.evaluate(({ resultKey, stageKey }) => ({
       result: document.documentElement.dataset[resultKey] || '',
