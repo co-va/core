@@ -9,6 +9,7 @@
 </head>
 <body>
   <div class="v2-app" data-v2-app>
+    <div class="v2-y-host" data-v2-y-host hidden></div>
     <div class="v2-app__stage">
       <div class="v2-front" data-v2-front>
         <section class="v2-z" data-v2-z>
@@ -306,11 +307,13 @@
       hydrateDaysFromServer([]);
       configureTimeUsageSource(() => []);
       const dayHost = document.querySelector('#day-host');
+      const sharedYHost = document.querySelector('[data-v2-y-host]');
+      assert(sharedYHost, 'Shared Y host is absent from browser fixture');
       const disposeDayOff = renderJournalDay(dayHost, {
         date: new Date(`${day}T12:00:00`),
         workplaceId: 'w1',
       });
-      assert(dayHost.querySelector('[data-note-reel="day-off-note"]'), 'Y did not render Note on a day without working time');
+      assert(sharedYHost.querySelector('[data-note-reel="day-off-note"]'), 'Y did not render Note on a day without working time');
       assert(dayHost.textContent.includes('Выходной день'), 'Day-off Timeline state disappeared when Y is present');
       assert(!dayHost.querySelector('[data-time-usage="day-off-note"]'), 'Note leaked into Timeline time usage');
       disposeDayOff?.();
@@ -344,7 +347,7 @@
       assert(eventUsage, 'Browser Event usage is absent from Timeline');
       eventUsage.click();
       await wait(20);
-      assert(dayHost.querySelector('[data-note-reel="time-note-browser"]')?.classList.contains('is-time-active'),
+      assert(sharedYHost.querySelector('[data-note-reel="time-note-browser"]')?.classList.contains('is-time-active'),
         'Y did not highlight Note from selected Journal time context');
       disposeTimeContext?.();
 
@@ -390,15 +393,15 @@
           date: new FakeDate(`${day}T12:00:00`),
           workplaceId: 'w1',
         });
-        const firstBefore = liveHost.querySelector('[data-note-reel]');
+        const firstBefore = sharedYHost.querySelector('[data-note-reel]');
         assert(firstBefore?.dataset.noteReel === 'live-old' && firstBefore.classList.contains('is-time-active'),
           'Live Y did not start with the currently active Note first');
         await wait(80);
-        const firstAfter = liveHost.querySelector('[data-note-reel]');
+        const firstAfter = sharedYHost.querySelector('[data-note-reel]');
         assert(liveTickIntercepted, 'Journal live-time refresh was not scheduled');
         assert(firstAfter?.dataset.noteReel === 'live-next', 'Y did not reorder automatically at the next Note time');
         assert(firstAfter.classList.contains('is-time-active'), 'Newly current Note was not highlighted automatically');
-        assert(!liveHost.querySelector('[data-note-reel="live-old"]')?.classList.contains('is-time-active'),
+        assert(!sharedYHost.querySelector('[data-note-reel="live-old"]')?.classList.contains('is-time-active'),
           'Expired Note remained highlighted after live time advanced');
         disposeLive?.();
       } finally {
