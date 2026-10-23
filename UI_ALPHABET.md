@@ -421,5 +421,9 @@ S — только информационное/техническое сооб�
 
 Текущее выбранное значение в закрытом select всегда визуально центрировано.
 
+### Canonical Shared owner rows
+
+| Shared primitive | Единственный owner |
+|---|---|
 | Calendar / DatePicker / DateNavigator | `ui/calendar` |
 | Workplace selector / workplace controls | `ui/workplaces` |
