@@ -75,6 +75,7 @@ import {
 } from '../core/loyalty/deposit/card-presentation.js';
 import { getGlobalPersonalAccounts } from './personal-account-data.js';
 import { getGlobalDeposits } from './deposit-data.js';
+import { renderJournal } from '../journal/journal.js';
 
 function money(value) {
   const number = Number(value || 0);
@@ -285,21 +286,22 @@ function visitCard(state, request, index) {
 
 const GLOBAL_ACCOUNT_ROOTS = Object.freeze([
   { id: 'profile', label: 'Профиль' },
-  { id: 'home', label: 'Обзор' },
+  { id: 'journal', label: 'Журнал' },
   { id: 'contacts', label: 'Контакты' },
   { id: 'history', label: 'История' },
 ]);
 
 function accountRootForTab(state) {
   if (state.accountTab === 'profile' || state.accountTab === 'profile-settings') return 'profile';
+  if (state.accountTab === 'journal') return 'journal';
   if (state.accountTab === 'contacts' || state.accountTab === 'contact-detail') return 'contacts';
   if (state.accountTab === 'history' || state.accountTab === 'history-detail') return 'history';
-  return 'home';
+  return 'journal';
 }
 
 function accountDeck(state) {
   const fallback = accountRootForTab(state);
-  state.accountDeckActive ||= fallback;
+  if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = fallback;
   return v2CardDeck(GLOBAL_ACCOUNT_ROOTS, { axis: 'x', active: state.accountDeckActive, data: 'data-account-deck-item', level: 'f' });
 }
 
@@ -354,8 +356,8 @@ function bindWorkspaceInteraction(root, state, handlers, { bindZ = true, onZRigh
       state.accountDeckOpen = open;
     },
     onRootSelect: (id) => {
-      const next = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id) ? id : 'home';
-      state.accountDeckActive = id;
+      const next = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id) ? id : 'journal';
+      state.accountDeckActive = next;
       state.accountDeckOpen = false;
       state.accountZEnter = true;
       state.accountChatOpen = false;
@@ -717,9 +719,12 @@ async function renderGlobalMessages(root, state, handlers) {
     });
     initV2Swipe(root, {
       onRight: () => {
-        state.accountTab = 'home';
+        const returnRoot = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)
+          ? state.accountDeckActive
+          : 'journal';
+        state.accountTab = returnRoot;
         state.accountDeckOpen = true;
-        state.accountDeckActive = 'home';
+        state.accountDeckActive = returnRoot;
         void handlers.render();
       },
     });
@@ -1044,6 +1049,42 @@ function bindAccountInvestments(scope, root, state, handlers, accepted, pending,
       if (row) openAccountInvestmentProposal(state, handlers, row);
     });
   });
+}
+
+function disposeGlobalAccountJournal(root) {
+  root.accountJournalDispose?.();
+  root.accountJournalDispose = null;
+}
+
+async function renderGlobalJournal(root, state, handlers) {
+  disposeGlobalAccountJournal(root);
+  const header = v2Header({
+    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
+    b: 'Журнал',
+    d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
+  });
+  renderV2Shell(root, state, {
+    header,
+    body: '<div data-account-journal-root></div>',
+  });
+  const journalRoot = root.querySelector('[data-account-journal-root]');
+  if (journalRoot) {
+    root.accountJournalDispose = renderJournal(journalRoot, {
+      context: 'account',
+      records: () => Array.isArray(state.accountRecords) ? state.accountRecords : [],
+      resolveRecordContext: (record) => {
+        const relationship = (Array.isArray(state.relationships) ? state.relationships : [])
+          .find((item) => String(item?.tenantId || '') === String(record?.tenantId || '')) || null;
+        const workplaces = Array.isArray(relationship?.context?.workplaces) ? relationship.context.workplaces : [];
+        return {
+          professional: relationship?.context?.profile || null,
+          workplace: workplaces.find((item) => String(item?.key || item?.id || '') === String(record?.workplaceId || '')) || null,
+        };
+      },
+    }) || null;
+  }
+  bindWorkspaceInteraction(root, state, handlers);
+  bindGlobalChatButton(root, state, handlers);
 }
 
 async function renderGlobalHome(root, state, handlers) {
@@ -1665,10 +1706,11 @@ async function renderGlobalHistoryDetail(root, state, handlers) {
 
 export async function renderGlobalAccount(root, state, callbacks = {}) {
   state.globalAccount = true;
-  state.accountTab ||= 'home';
+  state.accountTab ||= 'journal';
   state.accountDeckOpen = Boolean(state.accountDeckOpen);
   state.accountZEnter = Boolean(state.accountZEnter);
-  state.accountDeckActive ||= accountRootForTab(state);
+  if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = accountRootForTab(state);
+  if (state.accountTab !== 'journal') disposeGlobalAccountJournal(root);
 
   const handlers = {
     render: () => renderGlobalAccount(root, state, callbacks),
@@ -1679,9 +1721,11 @@ export async function renderGlobalAccount(root, state, callbacks = {}) {
   if (state.accountTab === 'messages') return renderGlobalMessages(root, state, handlers);
   if (state.accountTab === 'profile-settings') return renderGlobalProfileSettings(root, state, handlers);
   if (state.accountTab === 'profile') return renderGlobalProfile(root, state, handlers);
+  if (state.accountTab === 'journal') return renderGlobalJournal(root, state, handlers);
   if (state.accountTab === 'contact-detail') return renderGlobalContactDetail(root, state, handlers);
   if (state.accountTab === 'contacts') return renderGlobalContacts(root, state, handlers);
   if (state.accountTab === 'history-detail') return renderGlobalHistoryDetail(root, state, handlers);
   if (state.accountTab === 'history') return renderGlobalHistory(root, state, handlers);
-  return renderGlobalHome(root, state, handlers);
+  if (state.accountTab === 'home') return renderGlobalHome(root, state, handlers);
+  return renderGlobalJournal(root, state, handlers);
 }
