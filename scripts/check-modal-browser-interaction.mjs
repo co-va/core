@@ -211,6 +211,30 @@ for (const [name, engine, contextOptions] of [
     await page.locator('[data-modal]').waitFor({ state: 'detached' });
     assert.equal(await page.locator('[data-test-header-a-count]').textContent(), '0', `${name}: Header A fired through Q veil`);
 
+    // Shared Q owns its own frame and may stack another Q over itself. Closing the
+    // top Q must reveal the lower Q while Header and Z remain locked; closing the
+    // final Q returns ownership to Z and releases both locks.
+    await openQ();
+    await tapOrClick(page.locator('[data-test-open-q-child]'));
+    await page.locator('[data-test-q-child-content]').waitFor();
+    assert.equal(await page.locator('[data-modal]').count(), 2, `${name}: Q -> Q did not produce two Shared Q layers`);
+    assert.equal(await page.locator('[data-v2-header]').evaluate((node) => node.inert), true, `${name}: Header unlocked while nested Q is open`);
+    assert.equal(await page.locator('.v2-app__stage').evaluate((node) => node.inert), true, `${name}: Z/stage unlocked while nested Q is open`);
+    assert.equal(await z.evaluate((node) => node.classList.contains('has-v2-layer')), true, `${name}: base Z lost modal lock while nested Q is open`);
+
+    await tapOrClick(page.locator('[data-modal]').last().locator('[data-v2-z-dismiss]'));
+    await page.waitForFunction(() => document.querySelectorAll('[data-modal]').length === 1);
+    assert.equal(await page.locator('[data-test-q-content]').count(), 1, `${name}: closing top Q did not return to lower Q`);
+    assert.equal(await page.locator('[data-v2-header]').evaluate((node) => node.inert), true, `${name}: Header unlocked after closing only the top Q`);
+    assert.equal(await page.locator('.v2-app__stage').evaluate((node) => node.inert), true, `${name}: Z/stage unlocked after closing only the top Q`);
+    assert.equal(await z.evaluate((node) => node.classList.contains('has-v2-layer')), true, `${name}: base Z lock released before the last Q closed`);
+
+    await tapOrClick(page.locator('[data-modal]').last().locator('[data-v2-z-dismiss]'));
+    await page.waitForFunction(() => document.querySelectorAll('[data-modal]').length === 0);
+    assert.equal(await page.locator('[data-v2-header]').evaluate((node) => node.inert), false, `${name}: Header remained locked after final Q closed`);
+    assert.equal(await page.locator('.v2-app__stage').evaluate((node) => node.inert), false, `${name}: Z/stage remained locked after final Q closed`);
+    assert.equal(await z.evaluate((node) => node.classList.contains('has-v2-layer')), false, `${name}: base Z modal lock remained after final Q closed`);
+
     // Journal selector is a picker X over its editor X, then the selected workplace commits the owning control.
     for (let cycle = 0; cycle < 3; cycle += 1) {
       const journalTrigger = page.locator('[data-test-journal-workplace]');
@@ -247,7 +271,7 @@ for (const [name, engine, contextOptions] of [
     }
     assert.deepEqual(errors, [], `${name}: browser errors`);
     results.push({ name, result: 'PASS' });
-    console.log(`${name}: PASS (stable Z Header/Body, X action→editor→picker, Journal time discard/save, selectors, veil ownership, inert Q Header, 10 sheet variants)`);
+    console.log(`${name}: PASS (stable Z Header/Body, X action→editor→picker, Q→Q stack, Journal time discard/save, selectors, veil ownership, inert Q Header, 10 sheet variants)`);
   } finally {
     await browser.close();
   }
