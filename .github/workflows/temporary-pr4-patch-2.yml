@@ -1,0 +1,122 @@
+name: Temporary PR4 patch 2
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-pr4-patch-2
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Apply minimal PR4 patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import re
+
+          def patch(path, old, new):
+              file = Path(path)
+              text = file.read_text()
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f"Expected patch target not found in {path}")
+              file.write_text(text.replace(old, new, 1))
+
+          patch(
+              "online-booking/access.js",
+              """    onCreated: () => {
+                if (!exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId })) {
+                  document.querySelector('#app')?.replaceChildren();
+                  openNotice({ title: 'Запись создана', message: 'Запись отправлена специалисту.' });
+                }
+              },""",
+              """    onCreated: (record) => {
+                if (!exitBookingContext(state, {
+                  tab: 'journal',
+                  journalDate: String(record?.date || ''),
+                })) {
+                  document.querySelector('#app')?.replaceChildren();
+                  openNotice({ title: 'Запись создана', message: 'Запись отправлена специалисту.' });
+                }
+              },""",
+          )
+
+          patch(
+              "online-booking/booking.js",
+              "function globalAccountState(initial = {}) {\n  return {",
+              "function globalAccountState(initial = {}) {\n  const journalDate = String(initial.journalDate || '').trim();\n  return {",
+          )
+          patch(
+              "online-booking/booking.js",
+              "    accountRecords: [],\n    error: '',\n    accountTab: String(initial.tab || 'journal'),",
+              "    accountRecords: [],\n    error: '',\n    accountJournalDate: /^\\d{4}-\\d{2}-\\d{2}$/.test(journalDate) ? new Date(`${journalDate}T12:00:00`) : null,\n    accountTab: String(initial.tab || 'journal'),",
+          )
+          patch(
+              "online-booking/booking.js",
+              """    await refreshContext(state);
+                exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId });
+              } catch (error) {""",
+              """    await refreshContext(state);
+                exitBookingContext(state, {
+                  tab: 'journal',
+                  journalDate: String(state.date || ''),
+                });
+              } catch (error) {""",
+          )
+
+          patch(
+              "online-booking/account-shell.js",
+              "      context: 'account',\n      records: () => Array.isArray(state.accountRecords) ? state.accountRecords : [],",
+              "      context: 'account',\n      initialDate: state.accountJournalDate instanceof Date ? state.accountJournalDate : undefined,\n      records: () => Array.isArray(state.accountRecords) ? state.accountRecords : [],",
+          )
+
+          workflow = Path(".github/workflows/record-view-account-runtime.yml")
+          text = workflow.read_text()
+          marker = "            /tmp/journal-account-runtime-dom.html\n"
+          addition = (
+              "          run_browser_case \\\n"
+              "            \"tests/booking-success-journal-runtime-browser.html\" \\\n"
+              "            'data-booking-success-journal-runtime=\"pass\"' \\\n"
+              "            'data-booking-success-journal-runtime-stage' \\\n"
+              "            /tmp/booking-success-journal-runtime-dom.html\n"
+          )
+          if addition not in text:
+              if marker not in text:
+                  raise SystemExit("Focused runtime workflow marker not found")
+              workflow.write_text(text.replace(marker, marker + addition, 1))
+
+          temp = Path(".github/workflows/temporary-pr4-patch.yml").read_text()
+          match = re.search(r'base64\.b64decode\("([^"]+)"\)', temp)
+          if not match:
+              raise SystemExit("Runtime payload not found")
+          runtime = base64.b64decode(match.group(1)).decode()
+          Path("tests/booking-success-journal-runtime-browser.html").write_text(runtime)
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No patch needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add online-booking/access.js online-booking/booking.js online-booking/account-shell.js tests/booking-success-journal-runtime-browser.html .github/workflows/record-view-account-runtime.yml
+          git commit -m "Return successful booking to Account Journal"
+          git push origin HEAD:staging
