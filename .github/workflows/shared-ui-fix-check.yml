@@ -59,6 +59,85 @@ jobs:
               ) + '\n'
               doc += registry
           alphabet.write_text(doc)
+
+          checks_path = Path('scripts/check-ui-v2-architecture.mjs')
+          checks = checks_path.read_text()
+
+          def replace_expect(message, expression, new_message):
+              global checks
+              marker = f", '{message}');"
+              marker_index = checks.find(marker)
+              if marker_index < 0:
+                  raise SystemExit(f'missing old V2 assertion: {message}')
+              if checks.find(marker, marker_index + 1) >= 0:
+                  raise SystemExit(f'duplicate old V2 assertion: {message}')
+              start = checks.rfind('expect(', 0, marker_index)
+              if start < 0:
+                  raise SystemExit(f'cannot locate expect() for: {message}')
+              end = marker_index + len(marker)
+              checks = checks[:start] + f"expect({expression}, '{new_message}');" + checks[end:]
+
+          replace_expect(
+              'Shared Header owner must own A, B, C and D.',
+              "ui.includes('function avatarControl') && ui.includes('avatarControl(a)') && ui.includes(\"actionControl(c, 'c')\") && ui.includes(\"actionControl(d, 'd')\") && ui.includes('v2-header__title')",
+              'Shared Header owner must own photo-only A, B, contextual C and Messenger D.',
+          )
+          replace_expect(
+              'Workspace Header A must consume the canonical Header context, normalize it through the single photo/counter A contract, and keep no retired Back owner.',
+              "core.includes(\"const aContext = contextRoot.querySelector('[data-workspace-a-context]')\") && core.includes('const aSlot = aContext') && !core.includes('data-workspace-context-action') && !core.includes('function syncWorkspaceBack(')",
+              'Workspace Header A must consume only canonical photo context metadata and keep no settings/back action owner.',
+          )
+          replace_expect(
+              'Q must reuse Shared standard-modal geometry, cover active Z, keep global D available and keep Save as the direct Shared bottom action.',
+              "modals.includes('v2QFrame(content, { header: title ?') && ui.includes('v2QModalPortalGeometry') && !ui.includes('qHeaderAction') && appearanceQ.includes(\"actionBlock(button('Сохранить'\") && appearanceQ.includes('data-card-q-save') && appearanceQ.includes('controller?.save?.()')",
+              'Q must own its Header/title, overlay Shared H/Y without Header tap-through, and keep completion actions inside Q.',
+          )
+          replace_expect(
+              'Photo-less Entity Card must own a warm Shared gradient and must never derive its surface from disabled/system gray.',
+              "entityCardCss.includes('--entity-card-surface:var(--entity-card-mid)') && !/(?:linear|radial)-gradient/.test(entityCardCss) && !entityCardCss.includes('var(--v2-disabled') && !entityCardCss.includes('var(--button-secondary)')",
+              'Photo-less Entity Card must use a solid Shared surface and no forbidden gradient or disabled/system gray surface.',
+          )
+          replace_expect(
+              'Shared Header A must keep one 48x48 H circle with the canonical yellow outline while section data alone changes its content.',
+              "ui.includes('function avatarControl') && css.includes('.v2-header__slot--a .v2-header__control') && css.includes('width:48px') && css.includes('height:48px') && css.includes('border:2px solid var(--v2-yellow)') && css.includes('background:var(--v2-base)')",
+              'Shared Header A must remain one photo-only 48x48 H circle with the canonical yellow outline.',
+          )
+          replace_expect(
+              'Shared Header A settings gear must be one lower-right overlay that works for photo or counter and never be tied only to avatar content.',
+              "!ui.includes('settingsTag') && !css.includes('.v2-header__settings-tag') && headerUi.includes('data-workspace-v-action')",
+              'Shared Header A must contain no settings gear; section actions belong to independent Shared V.',
+          )
+          replace_expect(
+              'Professional Header A must never become empty or render a standalone settings icon: missing A falls back to profile photo/logo and legacy settings intent becomes photo/logo plus gear.',
+              "core.includes('function workspaceProfileASlot()') && core.includes('a: workspaceProfileASlot()') && core.includes(\"const aContext = contextRoot.querySelector('[data-workspace-a-context]')\") && !core.includes('settingsTag')",
+              'Professional Header A must fall back to profile photo data and must never own settings state.',
+          )
+          replace_expect(
+              'Clickable counter/photo A contexts must expose the same Shared settings gear while inactive A contexts omit it.',
+              "people.includes(\"v: { data: 'data-person-settings'\") && timetable.includes(\"data: 'data-timetable-settings-open'\") && recordRuntime.includes(\"data: 'data-record-owner-settings'\") && !people.includes('settingsTag') && !timetable.includes('settingsTag') && !recordRuntime.includes('settingsTag')",
+              'Professional section settings actions must use Shared V independently from photo-only A.',
+          )
+          replace_expect(
+              'Shared Header must move C into the chat area when D is absent and keep C left of D when chat is present.',
+              "ui.includes(\"actionControl(c, 'c')\") && ui.includes(\"actionControl(d, 'd')\") && !css.includes('.v2-header:not(.has-d).has-c')",
+              'Shared Header must keep one fixed A/B/C/D grid without a narrow or D-missing geometry fork.',
+          )
+          replace_expect(
+              'Shared Header context must support a visible but inactive A control without feature-local handling.',
+              "headerUi.includes('data-workspace-a-context') && !headerUi.includes('actionDisabled') && core.includes('const aSlot = aContext')",
+              'Shared Header context must expose A only as noninteractive photo metadata.',
+          )
+          replace_expect(
+              'Workspace Header must follow the top Z/Q surface while keeping global D=Chat available.',
+              "core.includes('activeWorkspaceSurface(surface)') && core.includes(\"[data-workspace-a-context]\") && !core.includes('workspaceHideD') && core.includes(\"d: sectionAllowed('chat') ? {\")",
+              'Workspace Header must follow the active Z surface for photo/context data while keeping Shared D=Chat.',
+          )
+          replace_expect(
+              'Shared standard modal-Z must keep Header A-D visible but inactive, while Q is the explicit exception that leaves Header C interactive.',
+              "ui.includes('function lockModalHeader(app)') && ui.includes('header.inert = true') && ui.includes('const releaseHeaderLock = technical ? () => {} : lockModalHeader(app)') && !ui.includes('allowContextActions') && !ui.includes('qHeaderAction')",
+              'Shared modal veil must keep Header A-D visible but inert for Q as well as other application modals.',
+          )
+          checks_path.write_text(checks)
       - name: Run existing architecture checks
         run: npm run check
       - name: Commit checked tails and remove helper
@@ -69,5 +148,5 @@ jobs:
           git config user.name "3001vaf-maker"
           git config user.email "30.01vaf@gmail.com"
           git add -A
-          git commit -m "Complete Shared UI ownership contract"
+          git commit -m "Align Shared UI regression contracts"
           git push origin HEAD:staging
