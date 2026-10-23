@@ -11,13 +11,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: check-v2-${{ github.workflow }}-${{ github.ref }}
+  group: check-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,8 +39,6 @@ jobs:
         run: npm run check
       - name: Domain regression tests
         run: npm test
-      - name: Install isolated FEZ browser runner
-        run: npm install --prefix "$RUNNER_TEMP/fez-browser" --no-audit --no-fund playwright-core@1.62.1
       - name: Browser FEZ runtime regression
         shell: bash
         run: |
@@ -66,9 +63,24 @@ jobs:
             fi
             sleep 0.25
           done
-          CHROME_BIN="$chrome_bin" \
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/fez-browser/node_modules/playwright-core/index.mjs" \
-          node scripts/check-fez-browser-runtime.mjs
+          run_browser_case() {
+            local path="$1"
+            local marker="$2"
+            local stage_attr="$3"
+            local output="$4"
+            "$chrome_bin"               --headless=new               --no-sandbox               --disable-gpu               --disable-dev-shm-usage               --window-size=390,844               --force-device-scale-factor=1               --touch-events=enabled               --virtual-time-budget=12000               --dump-dom               "http://127.0.0.1:4173/$path"               > "$output"
+            if ! grep -Fq "$marker" "$output"; then
+              echo "Browser runtime regression failed: $path"
+              grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
+              grep -A4 -B2 '<pre id="result"' "$output" || true
+              exit 1
+            fi
+          }
+          run_browser_case "tests/fez-runtime-browser.html" 'data-fez-runtime="pass"' 'data-fez-runtime-stage' /tmp/fez-runtime-dom.html
+          run_browser_case "tests/account-shell-runtime-browser.html" 'data-account-runtime="pass"' 'data-account-runtime-stage' /tmp/account-runtime-dom.html
+          run_browser_case "tests/professional-core-runtime-browser.html" 'data-professional-runtime="pass"' 'data-professional-runtime-stage' /tmp/professional-runtime-dom.html
+          run_browser_case "tests/documents-runtime-browser.html" 'data-documents-runtime="pass"' 'data-documents-runtime-stage' /tmp/documents-runtime-dom.html
+          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-transfer-runtime="pass"' 'data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
       - name: Validate staging compose
         run: docker compose -f docker-compose.staging.yml config >/dev/null
       - name: Install server dependencies
