@@ -135,7 +135,7 @@ function editorWorkspace(state,fields,allowPhoto=true){
   }
   const line=state.appearance.lines[state.line];
   return `<div class="entity-card-editor__card-tools">
-    <div class="entity-card-editor__line-picker">${Array.from({length:ENTITY_CARD_LINE_COUNT},(_,i)=>`<button type="button" class="${i===state.line?' is-active':''}" data-card-line-select="${i}">${i+1}</button>`).join('')}</div>
+    <div class="entity-card-editor__line-picker">${Array.from({length:ENTITY_CARD_LINE_COUNT},(_,i)=>`<button type="button" class="${i===state.line?'is-active':''}" data-card-line-select="${i}">${i+1}</button>`).join('')}</div>
     <div class="entity-card-editor__data">${fieldControl(line,fields)}</div>
 
     <div class="entity-card-editor__tool-row entity-card-editor__tool-row--position" aria-label="Положение">
