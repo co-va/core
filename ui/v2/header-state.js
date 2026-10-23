@@ -10,7 +10,6 @@ function captureHeader(header) {
   const title = header.querySelector('.v2-header__title');
   const cSlot = header.querySelector('.v2-header__slot--c');
   const dSlot = header.querySelector('.v2-header__slot--d');
-  const aControl = header.querySelector('.v2-header__slot--a .v2-header__control');
   const dControl = dSlot?.querySelector('.v2-header__control');
   return {
     title,
@@ -20,11 +19,6 @@ function captureHeader(header) {
     cHidden: Boolean(cSlot?.hidden),
     cDisplay: cSlot?.style.display ?? '',
     hadCClass: header.classList.contains('has-c'),
-    gridTemplateColumns: header.style.gridTemplateColumns,
-    dSlot,
-    dGridColumn: dSlot?.style.gridColumn ?? '',
-    aControl,
-    aDisabled: Boolean(aControl?.disabled),
     dControl,
     dDisabled: Boolean(dControl?.disabled),
     dClassName: dControl?.className || '',
@@ -43,14 +37,7 @@ function applyMenuHeader(header, state) {
     state.cSlot.style.display = 'none';
   }
   header.classList.remove('has-c');
-  if (state.aControl) state.aControl.disabled = true;
   if (state.dControl) state.dControl.disabled = false;
-
-  const hasD = Boolean(state.dSlot);
-  header.style.gridTemplateColumns = hasD
-    ? '52px minmax(0,1fr) 46px'
-    : '52px minmax(0,1fr)';
-  if (state.dSlot) state.dSlot.style.gridColumn = '3';
 }
 
 function restoreHeader(header, state) {
@@ -64,9 +51,6 @@ function restoreHeader(header, state) {
     state.cSlot.style.display = state.cDisplay;
   }
   header.classList.toggle('has-c', state.hadCClass);
-  header.style.gridTemplateColumns = state.gridTemplateColumns;
-  if (state.dSlot?.isConnected) state.dSlot.style.gridColumn = state.dGridColumn;
-  if (state.aControl?.isConnected) state.aControl.disabled = state.aDisabled;
   if (state.dControl?.isConnected) {
     state.dControl.disabled = state.dDisabled;
     state.dControl.className = state.dClassName;
