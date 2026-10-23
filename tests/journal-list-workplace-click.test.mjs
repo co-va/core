@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const listSource = readFileSync(new URL('../journal/список.js', import.meta.url), 'utf8');
+const daySource = readFileSync(new URL('../journal/день.js', import.meta.url), 'utf8');
 const journalSource = readFileSync(new URL('../journal/journal.js', import.meta.url), 'utf8');
 const recordViewSource = readFileSync(new URL('../core/records/view.js', import.meta.url), 'utf8');
 
@@ -10,9 +11,36 @@ assert.match(listSource, /workplaceId === ALL_WORKPLACES_ID\s*\? allRecords\s*:\
 assert.match(listSource, /interactive: Boolean\(id\)/);
 assert.match(listSource, /data-journal-list-record=/);
 assert.match(listSource, /openRecordView\(record\)/);
+assert.match(daySource, /openRecordView\(record, \{ onClose: rerender \}\)/);
 assert.match(recordViewSource, /export function openRecordView/);
+assert.match(recordViewSource, /context = 'professional'/);
+assert.match(recordViewSource, /String\(context \|\| ''\).*=== 'account'/s);
+assert.match(recordViewSource, /professional: Object\.freeze\(\{[\s\S]*settings: true,[\s\S]*personHistory: true,[\s\S]*loyaltyProgram: true,[\s\S]*procedureSettings: true,[\s\S]*zReport: true,[\s\S]*sale: true,[\s\S]*payment: true,[\s\S]*confirmation: true,[\s\S]*attendance: true,[\s\S]*notes: true/);
+assert.match(recordViewSource, /account: Object\.freeze\(\{[\s\S]*settings: false,[\s\S]*personHistory: false,[\s\S]*loyaltyProgram: false,[\s\S]*procedureSettings: false,[\s\S]*zReport: false,[\s\S]*sale: false,[\s\S]*payment: false,[\s\S]*confirmation: false,[\s\S]*attendance: false,[\s\S]*notes: false/);
+assert.match(recordViewSource, /mountRecordZ\(\{/);
+assert.match(recordViewSource, /recordConfirmationMiniCard\(\{/);
+assert.match(recordViewSource, /workplace: workplaceName\(source\.workplaceId\)/);
+assert.match(recordViewSource, /date: formatDate\(source\.date\)/);
+assert.match(recordViewSource, /period: `\$\{source\.from \|\| ''\} - \$\{source\.to \|\| ''\}`/);
+assert.match(recordViewSource, /duration: durationText\(appointmentMinutes\)/);
+assert.match(recordViewSource, /discountMoney:/);
+assert.match(recordViewSource, /total: formatMoney\(grossTotal\)/);
+assert.match(recordViewSource, /\.\.\.products\.map/);
+assert.match(recordViewSource, /settings: capabilities\.settings/);
+assert.match(recordViewSource, /capabilities\.loyaltyProgram && programOptions\.length/);
+assert.match(recordViewSource, /capabilities\.procedureSettings && !payment\.hasPayments/);
+assert.match(recordViewSource, /if \(capabilities\.zReport\)/);
+assert.match(recordViewSource, /capabilities\.sale && !payment\.hasPayments/);
+assert.match(recordViewSource, /capabilities\.payment/);
+assert.match(recordViewSource, /capabilities\.confirmation \? confirmedControl/);
+assert.match(recordViewSource, /capabilities\.attendance \? attendanceControl/);
+assert.match(recordViewSource, /capabilities\.notes && hasNotesForTarget/);
 assert.match(recordViewSource, /openRecords\(\{/);
+assert.doesNotMatch(recordViewSource, /openEndUserRecordView|openAccountRecordView|openClientRecordView/);
 assert.doesNotMatch(recordViewSource, /openRecordEditFlow|moveRecord/);
+assert.equal(existsSync(new URL('../core/records/end-user-record.js', import.meta.url)), false);
+assert.equal(existsSync(new URL('../core/records/account-record.js', import.meta.url)), false);
+assert.equal(existsSync(new URL('../core/records/client-record.js', import.meta.url)), false);
 assert.match(journalSource, /renderJournalList\(viewRoot, \{ mode: listMode, workplaceId: selectedWorkplaceId \}\)/);
 
-console.log('journal list workplace/click tests: OK');
+console.log('journal list workplace/click and shared Record View context tests: OK');
