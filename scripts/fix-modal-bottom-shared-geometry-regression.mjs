@@ -38,6 +38,44 @@ replaceOnce(
 );
 
 replaceOnce(
+`const qExistingZ=v2QModalPortalGeometry(baseHost,fullViewport,{hostIsZ:true});
+assert.deepEqual(qExistingZ,{left:16,top:72,width:374,height:772,bottom:844});`,
+`const qExplicitHeader=v2QModalPortalGeometry(
+  {left:0,top:0,right:390,width:390,height:844,bottom:844},
+  fullViewport,
+  {headerBottom:72},
+);
+assert.deepEqual(qExplicitHeader,{left:16,top:72,width:374,height:772,bottom:844});`,
+  'retired hostIsZ Q geometry case',
+);
+
+replaceOnce(
+`const qKeyboard=v2QModalPortalGeometry(
+  {left:0,top:0,right:390,width:390,height:844,bottom:844},
+  {offsetLeft:0,offsetTop:0,width:390,height:508},
+);
+assert.deepEqual(qKeyboard,{left:16,top:72,width:374,height:436,bottom:508});`,
+`const qKeyboardStable=v2QModalPortalGeometry(
+  {left:0,top:0,right:390,width:390,height:844,bottom:844},
+  fullViewport,
+  {headerBottom:72},
+);
+assert.deepEqual(qKeyboardStable,{left:16,top:72,width:374,height:772,bottom:844});`,
+  'Q keyboard must use stable app viewport',
+);
+
+replaceOnce(
+`const qAlreadyBelowHeader=v2QModalPortalGeometry(
+  {left:0,top:72,right:390,width:390,height:772,bottom:844},
+  fullViewport,
+);
+assert.deepEqual(qAlreadyBelowHeader,{left:16,top:72,width:374,height:772,bottom:844});
+`,
+``,
+  'retired pre-offset Z host Q case',
+);
+
+replaceOnce(
 `assert.match(v2,/lockModalHeader\\(app, \\{ allowContextActions: true \\}\\)/);
 assert.match(v2,/v2QModalPortalGeometry/);
 assert.match(v2,/mountV2ModalPortal\\(host\\)/);`,
