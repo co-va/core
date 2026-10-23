@@ -31,7 +31,7 @@
 .message-attachment--file{min-height:54px;padding:10px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;border:1px solid var(--border);background:var(--white);color:var(--text);text-decoration:none}
 .message-attachment--file strong{font-size:12px}
 .message-attachment--file span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
-.message-composer{position:fixed;z-index:19;left:50%;bottom:calc(var(--nav-height) + 8px + env(safe-area-inset-bottom));width:min(calc(100% - (var(--page-x) * 2)),calc(var(--app-max-width) - (var(--page-x) * 2)));transform:translateX(-50%);display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:8px;align-items:end;padding:8px 0;background:var(--app-bg)}
+.message-composer{position:fixed;z-index:19;left:50%;bottom:calc(var(--nav-height) + 8px + env(safe-area-inset-bottom));width:min(calc(100% - (var(--page-x) * 2)),calc(var(--app-max-width) - (var(--page-x) * 2)));transform:translateX(-50%);display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:8px;align-items:end;padding:8px 0;background:linear-gradient(180deg,rgba(245,245,243,0),var(--app-bg) 20%)}
 .message-composer--with-attachments{grid-template-columns:44px minmax(0,1fr) 46px}
 .message-composer__reply{grid-column:1/-1;min-height:34px;border:1px solid var(--border);border-radius:10px;background:var(--white);padding:6px 8px;display:grid;grid-template-columns:minmax(0,1fr) 28px;gap:6px;align-items:center;font-size:11px}
 .message-composer__reply span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -44,8 +44,12 @@
 
 @media(max-width:360px){.message-bubble{max-width:88%}}
 
-.v2-app .message-composer{bottom:env(safe-area-inset-bottom);width:min(calc(100% - 36px),calc(var(--app-max-width) - 36px));background:var(--app-bg)}
+.v2-app .message-composer{bottom:env(safe-area-inset-bottom);width:min(calc(100% - 36px),calc(var(--app-max-width) - 36px));background:linear-gradient(180deg,rgba(255,255,255,0),#fff 24%)}
 .v2-app--chat .v2-z,.v2-workspace-surface--chat{padding-bottom:92px}
+.booking-account--account .message-bubble{border-radius:var(--radius-control)}
+.booking-account--account .message-bubble--incoming{border-bottom-left-radius:max(4px,calc(var(--radius-control) / 3))}
+.booking-account--account .message-bubble--outgoing{border-bottom-right-radius:max(4px,calc(var(--radius-control) / 3))}
+.booking-account--account.booking-shape--cut .message-bubble,.booking-account--account.booking-shape--cut .message-composer__input,.booking-account--account.booking-shape--cut .message-composer__attach{clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)}
 
 .message-composer__input:focus,.message-composer__input:focus-visible,.message-composer__attach:focus,.message-composer__attach:focus-visible,.message-composer .ui-button.message-composer__send:focus,.message-composer .ui-button.message-composer__send:focus-visible{outline:none;box-shadow:none}
 .message-composer__input:focus,.message-composer__input:focus-visible{border-color:var(--border)}

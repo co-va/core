@@ -3,6 +3,7 @@ import { selectPhotoFile } from '../inputs/index.js';
 import { button } from '../buttons/index.js';
 import { select } from '../selectors/index.js';
 import { colorPicker, initColorPickers } from '../colors/index.js';
+import { rangeField } from '../inputs/index.js';
 
 export const ENTITY_CARD_LINE_COUNT = 9;
 export const ENTITY_CARD_DEFAULT_GRADIENT = Object.freeze({
@@ -70,7 +71,7 @@ export function entityVisualCard({appearance={},fields=[],image='',imagePosition
   const config=normalizeEntityCardAppearance(appearance);
   const map=fieldMap(fields);
   const style=[
-    `--entity-visual-surface:${config.gradient.mid}`,
+    `--entity-visual-gradient:linear-gradient(${config.gradient.angle}deg,${config.gradient.from} 0%,${config.gradient.mid} 54%,${config.gradient.to} 100%)`,
     image?`--entity-visual-image:url('${escapeHtml(String(image))}')`:'',
     `--entity-visual-image-position:${escapeHtml(String(imagePosition||'50% 50%'))}`,
   ].filter(Boolean).join(';');
@@ -124,13 +125,16 @@ function editorWorkspace(state,fields,allowPhoto=true){
     return `<div class="entity-card-editor__photo">
       ${button(state.photo?'Заменить фото':'Добавить фото',{data:'data-card-photo-select'})}
       ${state.photo?button('Удалить фото',{variant:'outline',className:'ui-button--delete-outline',data:'data-card-photo-remove'}):''}
-      <p>Фото заполняет карту. Если фото нет, используется выбранный цвет фона.</p>
+      <p>Фото заполняет карту. Если фото нет, используется градиентный фон.</p>
     </div>`;
   }
   if(state.tab==='background'){
     const g=state.appearance.gradient;
     return `<div class="entity-card-editor__background">
-      <div data-card-surface-color>${colorPicker({name:'entityCardSurfaceColor',value:g.mid})}</div>
+      <div data-card-gradient-color="from">${colorPicker({name:'entityCardGradientFrom',value:g.from})}</div>
+      <div data-card-gradient-color="mid">${colorPicker({name:'entityCardGradientMid',value:g.mid})}</div>
+      <div data-card-gradient-color="to">${colorPicker({name:'entityCardGradientTo',value:g.to})}</div>
+      <div class="entity-card-editor__direction">${rangeField({label:'Направление',name:'entityCardGradientAngle',value:g.angle,min:0,max:360,step:5,data:'data-card-gradient-angle',aria:'Направление градиента'})}</div>
     </div>`;
   }
   const line=state.appearance.lines[state.line];
@@ -258,9 +262,17 @@ export function mountEntityCardConstructor(root,{appearance={},fields=[],photo='
     }));
 
     initColorPickers(root);
-    root.querySelector('[data-card-surface-color] [data-color-value]')?.addEventListener('change',(event)=>{
-      const value=String(event.target.value||'').toUpperCase();
-      state.appearance.gradient={...state.appearance.gradient,from:value,mid:value,to:value};
+    root.querySelectorAll('[data-card-gradient-color]').forEach((holder)=>{
+      holder.querySelector('[data-color-value]')?.addEventListener('change',(event)=>{
+        const key=holder.dataset.cardGradientColor;
+        if(!key)return;
+        state.appearance.gradient[key]=String(event.target.value||'').toUpperCase();
+        updatePreview();
+        markDirty();
+      });
+    });
+    root.querySelector('[data-card-gradient-angle]')?.addEventListener('input',(event)=>{
+      state.appearance.gradient.angle=Number(event.target.value);
       updatePreview();
       markDirty();
     });

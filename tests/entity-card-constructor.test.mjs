@@ -68,9 +68,7 @@ assert.match(appearanceQSource,/data-entity-card-appearance-type/);
 
 assert.match(constructorSource,/select\(\{/);
 assert.match(constructorSource,/colorPicker\(\{/);
-assert.match(constructorSource,/data-card-surface-color/);
-assert.match(constructorSource,/--entity-visual-surface/);
-assert.doesNotMatch(constructorSource,/rangeField\(\{|linear-gradient|radial-gradient/);
+assert.match(constructorSource,/rangeField\(\{/);
 assert.doesNotMatch(constructorSource,/data-card-save|v2-primary-source-only|data-v2-primary-action/);
 assert.match(constructorSource,/onStateChange/);
 assert.match(appearanceQSource,/data-card-q-save/);

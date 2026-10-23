@@ -23,6 +23,6 @@
 .calendar-workspace{display:grid;gap:0}
 .calendar-workspace .page-header{margin:4px 0 8px;padding-bottom:8px}
 .calendar-workspace [data-calendar-workspace-host]{padding:8px 0}
-.calendar__date-fill{position:absolute;inset:0;z-index:0;pointer-events:none;display:flex;align-items:stretch;justify-content:flex-start;overflow:hidden}.calendar__date-fill>span{display:block;height:100%}
+.calendar__date-fill{position:absolute;inset:0;z-index:0;pointer-events:none;background:var(--calendar-date-fill)}
 .calendar__date-count{position:relative;z-index:1;font-weight:700;color:var(--text)}
 @media (max-width:360px){.calendar__date{padding:6px 3px}}

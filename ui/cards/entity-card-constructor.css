@@ -1,7 +1,7 @@
-.entity-visual-card{position:relative;isolation:isolate;box-sizing:border-box;width:min(338px,100%);max-width:338px;aspect-ratio:338/213;min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);padding:0;background:var(--entity-visual-surface,#777A7D);color:#fff;text-align:left}
+.entity-visual-card{position:relative;isolation:isolate;box-sizing:border-box;width:min(338px,100%);max-width:338px;aspect-ratio:338/213;min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);padding:0;background:var(--entity-visual-gradient);color:#fff;text-align:left}
 .entity-visual-card[type="button"]{appearance:none;-webkit-appearance:none;font:inherit;cursor:pointer}
-.entity-visual-card__surface{position:absolute;z-index:-2;inset:0;background:var(--entity-visual-surface,#777A7D)}
-.entity-visual-card.has-image .entity-visual-card__surface{background-image:var(--entity-visual-image);background-size:cover;background-position:var(--entity-visual-image-position)}
+.entity-visual-card__surface{position:absolute;z-index:-2;inset:0;background:var(--entity-visual-gradient)}
+.entity-visual-card.has-image .entity-visual-card__surface{background-image:linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.18)),var(--entity-visual-image);background-size:cover;background-position:var(--entity-visual-image-position)}
 .entity-visual-card__grid{position:absolute;inset:12px 14px;display:grid;grid-template-rows:repeat(9,minmax(0,1fr));align-items:center}
 .entity-visual-card__line{display:flex;align-items:center;min-width:0;height:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;line-height:1}
 .entity-visual-card__line--full{width:100%}
@@ -28,8 +28,8 @@
 .entity-card-editor__workspace{min-height:236px}
 .entity-card-editor__photo{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .entity-card-editor__photo p{grid-column:1/-1;margin:4px 0 0;color:var(--text-secondary);font-size:12px;line-height:1.35}
-.entity-card-editor__background{display:grid;grid-template-columns:1fr;gap:10px}
-.entity-card-editor__background [data-card-surface-color]{min-width:0}
+.entity-card-editor__background{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.entity-card-editor__background [data-card-gradient-color]{min-width:0}
 .entity-card-editor__background .color-picker__trigger{width:100%;min-width:0;min-height:48px}
 .entity-card-editor__background .color-picker__trigger>span:last-child{display:none}
 .entity-card-editor__background .color-picker__swatch{width:100%;height:28px;border:1px solid #111}
