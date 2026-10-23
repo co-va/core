@@ -93,6 +93,7 @@ export function v2ZBodySections(sections = []) {
   return `<div data-v2-z-body-sections style="${Z_BODY_SECTIONS_STYLE}">${values.map((section) => v2ZBodySection(section.content, { kind: section.kind })).join('')}</div>`;
 }
 
+// The application root passes dismiss:false; nested Z levels keep the Shared dismiss affordance.
 export function v2ZFrame(content = '', { header = '', dismiss = true } = {}) {
   return `${surfaceHeader(header, { kind: 'z', dismiss })}${v2ZBody(content)}`;
 }
