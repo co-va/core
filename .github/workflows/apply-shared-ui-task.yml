@@ -30,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           sed -i "s/'profile settings selectors', 2)/'profile settings selectors', 3)/" scripts/apply-shared-ui-task.mjs
+          sed -i "s/'profile A settings metadata', 3)/'profile A settings metadata', 2)/" scripts/apply-shared-ui-task.mjs
           node scripts/apply-shared-ui-task.mjs
       - name: Commit patched Shared UI
         shell: bash
