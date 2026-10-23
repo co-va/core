@@ -1,0 +1,241 @@
+name: PR3 Account Journal Root Patch
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - .github/workflows/pr3-account-journal-root-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Apply focused PR3 patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          # Account shell: visible root Overview -> existing account Journal.
+          path = Path('online-booking/account-shell.js')
+          text = path.read_text()
+          text = replace_once(text,
+              "import { getGlobalDeposits } from './deposit-data.js';\n",
+              "import { getGlobalDeposits } from './deposit-data.js';\nimport { renderJournal } from '../journal/journal.js';\n",
+              'journal import')
+          text = replace_once(text,
+              "const GLOBAL_ACCOUNT_ROOTS = Object.freeze([\n  { id: 'profile', label: 'Профиль' },\n  { id: 'home', label: 'Обзор' },\n  { id: 'contacts', label: 'Контакты' },\n  { id: 'history', label: 'История' },\n]);\n\nfunction accountRootForTab(state) {\n  if (state.accountTab === 'profile' || state.accountTab === 'profile-settings') return 'profile';\n  if (state.accountTab === 'contacts' || state.accountTab === 'contact-detail') return 'contacts';\n  if (state.accountTab === 'history' || state.accountTab === 'history-detail') return 'history';\n  return 'home';\n}\n\nfunction accountDeck(state) {\n  const fallback = accountRootForTab(state);\n  state.accountDeckActive ||= fallback;\n  return v2CardDeck(GLOBAL_ACCOUNT_ROOTS, { axis: 'x', active: state.accountDeckActive, data: 'data-account-deck-item', level: 'f' });\n}\n",
+              "const GLOBAL_ACCOUNT_ROOTS = Object.freeze([\n  { id: 'profile', label: 'Профиль' },\n  { id: 'journal', label: 'Журнал' },\n  { id: 'contacts', label: 'Контакты' },\n  { id: 'history', label: 'История' },\n]);\n\nfunction accountRootForTab(state) {\n  if (state.accountTab === 'profile' || state.accountTab === 'profile-settings') return 'profile';\n  if (state.accountTab === 'journal') return 'journal';\n  if (state.accountTab === 'contacts' || state.accountTab === 'contact-detail') return 'contacts';\n  if (state.accountTab === 'history' || state.accountTab === 'history-detail') return 'history';\n  return 'journal';\n}\n\nfunction accountDeck(state) {\n  const fallback = accountRootForTab(state);\n  if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = fallback;\n  return v2CardDeck(GLOBAL_ACCOUNT_ROOTS, { axis: 'x', active: state.accountDeckActive, data: 'data-account-deck-item', level: 'f' });\n}\n",
+              'account roots')
+          text = replace_once(text,
+              "      const next = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id) ? id : 'home';\n      state.accountDeckActive = id;",
+              "      const next = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id) ? id : 'journal';\n      state.accountDeckActive = next;",
+              'root selection fallback')
+          text = replace_once(text,
+              "    initV2Swipe(root, {\n      onRight: () => {\n        state.accountTab = 'home';\n        state.accountDeckOpen = true;\n        state.accountDeckActive = 'home';\n        void handlers.render();\n      },\n    });",
+              "    initV2Swipe(root, {\n      onRight: () => {\n        const returnRoot = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)\n          ? state.accountDeckActive\n          : 'journal';\n        state.accountTab = returnRoot;\n        state.accountDeckOpen = true;\n        state.accountDeckActive = returnRoot;\n        void handlers.render();\n      },\n    });",
+              'messenger root return')
+          marker = "async function renderGlobalHome(root, state, handlers) {\n"
+          journal_impl = """function disposeGlobalAccountJournal(root) {
+  root.accountJournalDispose?.();
+  root.accountJournalDispose = null;
+}
+
+async function renderGlobalJournal(root, state, handlers) {
+  disposeGlobalAccountJournal(root);
+  const header = v2Header({
+    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
+    b: 'Журнал',
+    d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
+  });
+  renderV2Shell(root, state, {
+    header,
+    body: '<div data-account-journal-root></div>',
+  });
+  const journalRoot = root.querySelector('[data-account-journal-root]');
+  if (journalRoot) {
+    root.accountJournalDispose = renderJournal(journalRoot, {
+      context: 'account',
+      records: () => Array.isArray(state.accountRecords) ? state.accountRecords : [],
+      resolveRecordContext: (record) => {
+        const relationship = (Array.isArray(state.relationships) ? state.relationships : [])
+          .find((item) => String(item?.tenantId || '') === String(record?.tenantId || '')) || null;
+        const workplaces = Array.isArray(relationship?.context?.workplaces) ? relationship.context.workplaces : [];
+        return {
+          professional: relationship?.context?.profile || null,
+          workplace: workplaces.find((item) => String(item?.key || item?.id || '') === String(record?.workplaceId || '')) || null,
+        };
+      },
+    }) || null;
+  }
+  bindWorkspaceInteraction(root, state, handlers);
+  bindGlobalChatButton(root, state, handlers);
+}
+
+"""
+          text = replace_once(text, marker, journal_impl + marker, 'account journal renderer')
+          text = replace_once(text,
+              "export async function renderGlobalAccount(root, state, callbacks = {}) {\n  state.globalAccount = true;\n  state.accountTab ||= 'home';\n  state.accountDeckOpen = Boolean(state.accountDeckOpen);\n  state.accountZEnter = Boolean(state.accountZEnter);\n  state.accountDeckActive ||= accountRootForTab(state);",
+              "export async function renderGlobalAccount(root, state, callbacks = {}) {\n  state.globalAccount = true;\n  state.accountTab ||= 'journal';\n  state.accountDeckOpen = Boolean(state.accountDeckOpen);\n  state.accountZEnter = Boolean(state.accountZEnter);\n  if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = accountRootForTab(state);\n  if (state.accountTab !== 'journal') disposeGlobalAccountJournal(root);",
+              'account default root')
+          text = replace_once(text,
+              "  if (state.accountTab === 'profile') return renderGlobalProfile(root, state, handlers);\n  if (state.accountTab === 'contact-detail') return renderGlobalContactDetail(root, state, handlers);",
+              "  if (state.accountTab === 'profile') return renderGlobalProfile(root, state, handlers);\n  if (state.accountTab === 'journal') return renderGlobalJournal(root, state, handlers);\n  if (state.accountTab === 'contact-detail') return renderGlobalContactDetail(root, state, handlers);",
+              'journal dispatch')
+          text = replace_once(text,
+              "  if (state.accountTab === 'history-detail') return renderGlobalHistoryDetail(root, state, handlers);\n  if (state.accountTab === 'history') return renderGlobalHistory(root, state, handlers);\n  return renderGlobalHome(root, state, handlers);\n}",
+              "  if (state.accountTab === 'history-detail') return renderGlobalHistoryDetail(root, state, handlers);\n  if (state.accountTab === 'history') return renderGlobalHistory(root, state, handlers);\n  if (state.accountTab === 'home') return renderGlobalHome(root, state, handlers);\n  return renderGlobalJournal(root, state, handlers);\n}",
+              'legacy home dispatch')
+          path.write_text(text)
+
+          # Global Account state: normal entry defaults to Journal. Explicit booking destinations remain untouched.
+          path = Path('online-booking/booking.js')
+          text = path.read_text()
+          text = replace_once(text,
+              "    accountTab: String(initial.tab || 'home'),\n    accountDeckOpen: false,\n    accountDeckActive: String(initial.tab === 'profile' ? 'profile' : initial.tab === 'history' ? 'history' : initial.tab === 'contacts' || initial.tab === 'contact-detail' ? 'contacts' : 'home'),",
+              "    accountTab: String(initial.tab || 'journal'),\n    accountDeckOpen: false,\n    accountDeckActive: String(initial.tab === 'profile' ? 'profile' : initial.tab === 'history' ? 'history' : initial.tab === 'contacts' || initial.tab === 'contact-detail' ? 'contacts' : 'journal'),",
+              'global account initial root')
+          path.write_text(text)
+
+          # Existing focused account-shell browser runtime: test the new root and preserve all existing shell/contact coverage.
+          path = Path('tests/account-shell-runtime-browser.html')
+          text = path.read_text()
+          insertion = """const runtimeNow = new Date();
+const accountDate = `${runtimeNow.getFullYear()}-${String(runtimeNow.getMonth() + 1).padStart(2, '0')}-${String(runtimeNow.getDate()).padStart(2, '0')}`;
+const accountWorkplace = {
+  id:'runtime-workplace-db', key:'runtime-workplace', name:'Студия Runtime',
+  color:'#9AAE85', indicatorColor:'#9AAE85', from:'09:00', to:'18:00', timeZone:'Europe/Moscow',
+};
+const accountRecord = {
+  id:'account-shell-journal-record', tenantId:'tenant-invest', status:'active',
+  date:accountDate, workplaceId:accountWorkplace.key, from:'10:00', to:'11:00',
+  person:{id:'runtime-user',key:'runtime-user',uei:'END-RUNTIME-001',name:'Иван',surname:'Тестов',phone:'+79990000000'},
+  procedures:[{id:'runtime-procedure',name:'Runtime процедура',duration:60,cost:1500}], products:[],
+  payment:{state:'due',paid:0,due:1500}, finance:{planTotal:1500,factTotal:0},
+};
+
+"""
+          text = replace_once(text,
+              "window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));\n\nconst state = {",
+              "window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));\n\n" + insertion + "const state = {",
+              'runtime fixture insertion')
+          text = replace_once(text, "  accountRecords:[],", "  accountRecords:[accountRecord],", 'runtime account records')
+          text = replace_once(text,
+              "      profile:{name:'Александр',surname:'Проект'},\n      workplaces:[],",
+              "      profile:{uei:'PRO-RUNTIME-001',name:'Александр',surname:'Проект',phone:'+79991112233'},\n      workplaces:[accountWorkplace],",
+              'runtime relationship context')
+          text = replace_once(text,
+              "  accountTab:'home',\n  accountDeckOpen:false,\n  accountDeckActive:'home',",
+              "  accountDeckOpen:false,",
+              'runtime initial root')
+          text = replace_once(text,
+              "ok(card('home')?.classList.contains('is-active'), 'home must be initial active F');\n\nmark(\"linked-investments-overview\");\nok(!root.querySelector('[data-account-investment=\"tenant-invest:investment-accepted\"]'), 'Accepted linked investment must not appear in Overview');\nok(!root.querySelector('[data-account-investment-proposal]'), 'Pending investment proposal must not appear in Overview');",
+              "ok(state.accountTab === 'journal', 'normal Account entry did not default to Journal');\nok(card('journal')?.classList.contains('is-active'), 'Journal must be initial active F');\nok(Boolean(card('journal')), 'Journal root card missing');\nok(!card('home'), 'Legacy Overview must not remain a visible Account root');\nok(![...fDeck().querySelectorAll('[data-v2-card-item]')].some((node) => node.textContent.trim() === 'Обзор'), 'Visible Account navigation still contains Overview');\nconst initialJournalRoot = root.querySelector('[data-account-journal-root]');\nok(initialJournalRoot?.dataset.journalContext === 'account', 'Account root did not start the existing Journal in account context');\nok(Boolean(initialJournalRoot?.querySelector('[data-journal-day-context=\"account\"]')), 'Account root did not mount existing Journal Day');\nok(Boolean(initialJournalRoot?.querySelector('[data-journal-usage=\"' + accountRecord.id + '\"]')), 'Account Journal did not display state.accountRecords');\n\nmark(\"linked-investments-journal\");\nok(!root.querySelector('[data-account-investment=\"tenant-invest:investment-accepted\"]'), 'Accepted linked investment must not leak into Journal root');\nok(!root.querySelector('[data-account-investment-proposal]'), 'Pending investment proposal must not leak into Journal root');",
+              'runtime initial Journal assertions')
+          old_nav = """await edgeOpen(2);
+await selectRoot('profile',12);
+ok(shell() === initialShell, 'profile navigation rebuilt the whole account shell');
+
+await edgeOpen(3);
+await selectRoot('contacts',13);
+ok(shell() === initialShell, 'contacts navigation rebuilt the whole account shell');
+
+await edgeOpen(4);
+await selectRoot('history',14);
+ok(shell() === initialShell, 'history navigation rebuilt the whole account shell');
+
+await edgeOpen(5);
+await selectRoot('home',15);
+ok(shell() === initialShell, 'home navigation rebuilt the whole account shell');
+
+// Repeat the cycle to expose handler accumulation that only appears after several renders.
+for (const [index,id] of ['profile','contacts','history','home','profile','home'].entries()) {
+  await edgeOpen(20 + index);
+  await selectRoot(id,40 + index);
+  ok(ownerCount() === 1, 'owner accumulation after repeated navigation to ' + id);
+}
+
+// Real profile Z2 must close one level from the same edge owner.
+"""
+          new_nav = """await edgeOpen(2);
+await selectRoot('profile',12);
+ok(shell() === initialShell, 'profile navigation rebuilt the whole account shell');
+
+await edgeOpen(3);
+await selectRoot('journal',13);
+ok(shell() === initialShell, 'Profile → Journal rebuilt the whole account shell');
+ok(Boolean(root.querySelector('[data-account-journal-root] [data-journal-usage=\"' + accountRecord.id + '\"]')), 'Profile → Journal lost account Record');
+
+await edgeOpen(4);
+await selectRoot('contacts',14);
+ok(shell() === initialShell, 'contacts navigation rebuilt the whole account shell');
+
+await edgeOpen(5);
+await selectRoot('journal',15);
+ok(shell() === initialShell, 'Contacts → Journal rebuilt the whole account shell');
+ok(Boolean(root.querySelector('[data-account-journal-root] [data-journal-usage=\"' + accountRecord.id + '\"]')), 'Contacts → Journal lost account Record');
+
+await edgeOpen(6);
+await selectRoot('history',16);
+ok(shell() === initialShell, 'history navigation rebuilt the whole account shell');
+ok(Boolean(root.querySelector('[data-account-history]')), 'History root stopped rendering account history');
+
+await edgeOpen(7);
+await selectRoot('journal',17);
+ok(shell() === initialShell, 'History → Journal rebuilt the whole account shell');
+
+mark('messenger-return-root');
+root.querySelector('[data-account-open-chat-root]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait(140);
+ok(state.accountTab === 'messages', 'Journal D did not open Messenger');
+const messengerEdge = edge();
+pointer(messengerEdge,'pointerdown',10,320,18);
+pointer(messengerEdge,'pointermove',48,322,18);
+pointer(messengerEdge,'pointerup',48,322,18);
+await wait(160);
+ok(state.accountTab === 'journal', 'Messenger return did not preserve Journal Account root');
+ok(state.accountDeckActive === 'journal', 'Messenger return lost Journal deck root');
+ok(Boolean(root.querySelector('[data-account-journal-root]')), 'Messenger return did not restore Journal DOM');
+
+mark('legacy-booking-home');
+state.accountTab = 'home';
+state.accountDeckActive = 'journal';
+state.accountDeckOpen = false;
+await renderGlobalAccount(root,state,callbacks);
+await wait(120);
+ok(root.querySelector('[data-v2-header] .v2-header__title')?.textContent.trim() === 'Обзор', 'Explicit legacy home no longer renders Overview; booking return changed inside PR3');
+ok(!root.querySelector('[data-account-journal-root]'), 'Explicit legacy home was redirected to Journal; PR4 leaked into PR3');
+
+// Repeat visible-root navigation to expose handler accumulation after the migration.
+for (const [index,id] of ['profile','journal','contacts','journal','history','journal'].entries()) {
+  await edgeOpen(30 + index);
+  await selectRoot(id,50 + index);
+  ok(ownerCount() === 1, 'owner accumulation after repeated navigation to ' + id);
+}
+
+// Real profile Z2 must close one level from the same edge owner.
+"""
+          text = replace_once(text, old_nav, new_nav, 'runtime root navigation')
+          path.write_text(text)
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add online-booking/account-shell.js online-booking/booking.js tests/account-shell-runtime-browser.html
+          git diff --cached --check
+          git commit -m "Set Account Journal as end-user root"
+          git push origin HEAD:staging
