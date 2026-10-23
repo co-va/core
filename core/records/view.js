@@ -155,6 +155,62 @@ function hasAppointmentStarted(record = {}) {
   return Boolean(start && Date.now() >= start.getTime());
 }
 
+const RECORD_VIEW_CAPABILITIES = Object.freeze({
+  professional: Object.freeze({
+    settings: true,
+    personHistory: true,
+    contactIdentity: true,
+    loyaltyProgram: true,
+    procedureSettings: true,
+    zReport: true,
+    sale: true,
+    payment: true,
+    confirmation: true,
+    attendance: true,
+    notes: true,
+  }),
+  account: Object.freeze({
+    settings: false,
+    personHistory: false,
+    contactIdentity: false,
+    loyaltyProgram: false,
+    procedureSettings: false,
+    zReport: false,
+    sale: false,
+    payment: false,
+    confirmation: false,
+    attendance: false,
+    notes: false,
+  }),
+});
+
+function recordViewCapabilities(context = 'professional') {
+  return String(context || '').trim().toLowerCase() === 'account'
+    ? RECORD_VIEW_CAPABILITIES.account
+    : RECORD_VIEW_CAPABILITIES.professional;
+}
+
+function accountProfessionalDisplay(professional = null) {
+  if (!professional || typeof professional !== 'object' || Array.isArray(professional)) {
+    return { name: '', phone: '', uei: '', photo: '', initials: '' };
+  }
+  const display = personDisplay(professional);
+  const name = [professional?.name, professional?.surname].filter(Boolean).join(' ').trim();
+  const initials = [professional?.name, professional?.surname]
+    .filter(Boolean)
+    .map((value) => String(value).trim().slice(0, 1))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  return {
+    name,
+    phone: display.phone || '',
+    uei: String(professional?.uei || ''),
+    photo: String(professional?.photo || ''),
+    initials,
+  };
+}
+
 function actionSheet({ cancelled = false } = {}) {
   return actionBlock([
     !cancelled ? button('Корректировка', { variant: 'secondary', data: 'data-record-view-correct' }) : '',
@@ -164,15 +220,27 @@ function actionSheet({ cancelled = false } = {}) {
   ].filter(Boolean).join(''));
 }
 
-export function openRecordView(record, { onClose = () => {} } = {}) {
+export function openRecordView(record, {
+  onClose = () => {},
+  context = 'professional',
+  professional = null,
+} = {}) {
   if (!record?.id) return null;
 
+  const capabilities = recordViewCapabilities(context);
+  const professionalDisplay = accountProfessionalDisplay(professional);
   let currentRecord = getRecord(record.id) || record;
   let startTimer = null;
   const layer = mountRecordZ({
-    settings: true,
-    title: personDisplay(currentRecord.person || {}).name || 'Запись',
+    settings: capabilities.settings,
+    title: capabilities.contactIdentity
+      ? (personDisplay(currentRecord.person || {}).name || 'Запись')
+      : (professionalDisplay.name || 'Запись'),
     className: 'record-view-z journal-view-z',
+    ...(capabilities.contactIdentity ? {} : {
+      aImage: professionalDisplay.photo,
+      aInitials: professionalDisplay.initials,
+    }),
     onClose: () => {
       if (startTimer) clearTimeout(startTimer);
       startTimer = null;
@@ -197,6 +265,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
   };
 
   const openHistory = (source = syncCurrent()) => {
+    if (!capabilities.personHistory) return null;
     const person = historyPerson(source);
     if (!String(person?.key || '').trim()) return null;
     return openPersonHistoryQ(document.body, person);
@@ -282,6 +351,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
   };
 
   const openActions = () => {
+    if (!capabilities.settings) return;
     const source = syncCurrent();
     const paymentState = getRecordPaymentState(source);
     if (paymentState.hasPayments) {
@@ -290,7 +360,9 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
           syncCurrent();
           render();
         },
-        extraActions: button('История', { variant: 'secondary', data: 'data-record-view-history' }),
+        extraActions: capabilities.personHistory
+          ? button('История', { variant: 'secondary', data: 'data-record-view-history' })
+          : '',
       });
       actions?.querySelector('[data-record-view-history]')?.addEventListener('click', () => {
         actions.v2Close?.();
@@ -343,7 +415,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     });
   };
 
-  bindRecordSettings(layer, openActions);
+  if (capabilities.settings) bindRecordSettings(layer, openActions);
 
   const scheduleStartRender = (source) => {
     if (startTimer) clearTimeout(startTimer);
@@ -370,10 +442,12 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       .filter((item) => String(item?.sourceType || 'procedure') === 'procedure')
       .map((item) => [String(item?.sourceId || ''), item]));
     const personKey = String(source?.person?.key || source?.person?.id || '').trim();
-    const contact = getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === personKey) || source.person || {};
-    const programOptions = getRecordProgramOptions(personKey);
+    const contact = capabilities.contactIdentity
+      ? (getAllPeople().find((item) => String(item?.key || item?.id || '').trim() === personKey) || source.person || {})
+      : (source.person || {});
+    const programOptions = capabilities.loyaltyProgram ? getRecordProgramOptions(personKey) : [];
     const selectedProgramKey = String(source?.loyaltyProgram?.key || '');
-    const programControl = programOptions.length ? select({
+    const programControl = capabilities.loyaltyProgram && programOptions.length ? select({
       label: 'Программа',
       name: 'recordLoyaltyProgram',
       value: selectedProgramKey,
@@ -392,18 +466,20 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     const appointmentMinutes = fromMinutes != null && toMinutes != null && toMinutes > fromMinutes
       ? toMinutes - fromMinutes
       : procedures.reduce((sum, item) => sum + (Number(item?.duration) || 0), 0);
-    const identity = [
-      String(person.uei || '').trim(),
-      String(source?.person?.name || '').trim(),
-      String(source?.person?.surname || '').trim(),
-    ].filter(Boolean).join('; ');
+    const identity = capabilities.contactIdentity
+      ? [
+        String(person.uei || '').trim(),
+        String(source?.person?.name || '').trim(),
+        String(source?.person?.surname || '').trim(),
+      ].filter(Boolean).join('; ')
+      : [String(professionalDisplay.uei || '').trim(), professionalDisplay.name].filter(Boolean).join('; ');
     const card = recordConfirmationMiniCard({
       workplace: workplaceName(source.workplaceId),
       contactDiscount: contactDiscountPercent > 0 ? `${contactDiscountPercent}%` : '',
       date: formatDate(source.date),
       period: `${source.from || ''} - ${source.to || ''}`,
       identity,
-      phone: person.phone || '',
+      phone: capabilities.contactIdentity ? (person.phone || '') : professionalDisplay.phone,
       duration: durationText(appointmentMinutes),
       discountMoney: discountMoney > 0.009 ? formatMoney(discountMoney) : '',
       total: formatMoney(grossTotal),
@@ -415,13 +491,13 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
             name: item?.name || 'Процедура',
             durationText: durationText(Number(item?.duration) || 0),
             right: formatMoney(financeItem?.planAmount ?? item?.cost ?? 0),
-            ...(payment.hasPayments ? {} : {
+            ...(capabilities.procedureSettings && !payment.hasPayments ? {
               action: {
                 data: 'data-record-view-procedure-settings',
                 aria: `Настроить ${item?.name || 'процедуру'}`,
                 label: '⚙',
               },
-            }),
+            } : {}),
           };
         }),
         ...products.map((item) => ({
@@ -441,22 +517,31 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       <button type="button" class="${effectiveAttendance === 'arrived' ? 'is-active' : ''}" aria-pressed="${effectiveAttendance === 'arrived'}" data-record-view-attendance="arrived"${!started ? ' disabled' : ''}>Пришел</button>
       <button type="button" class="${effectiveAttendance === 'no-show' ? 'is-active' : ''}" aria-pressed="${effectiveAttendance === 'no-show'}" data-record-view-attendance="no-show"${!started ? ' disabled' : ''}>Не пришел</button>
     </div>`;
-    setV2ZHeaderRows(layer, [confirmedControl, attendanceControl]);
+    setV2ZHeaderRows(layer, [
+      capabilities.confirmation ? confirmedControl : '',
+      capabilities.attendance ? attendanceControl : '',
+    ].filter(Boolean));
 
+    const paymentStateLabel = payment.fullyPaid
+      ? 'Оплачено'
+      : `${recordHasEnded(source) ? 'Задолженность' : 'К оплате'}: ${formatMoney(payment.remaining)}`;
     root.innerHTML = `<div class="record-screen record-screen--state-view record-screen--record-view">
       ${card}
       ${actionBlock([
-        payment.hasPayments ? '' : button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }),
-        hasNotesForTarget('record', source.id)
+        capabilities.sale && !payment.hasPayments ? button('Продажа', { variant: 'secondary', data: 'data-record-view-sale' }) : '',
+        capabilities.notes && hasNotesForTarget('record', source.id)
           ? button('Заметки', { variant: 'secondary', data: 'data-record-view-notes' })
           : '',
         payment.fullyPaid
           ? button('Оплачено', { disabled: true })
-          : button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' }),
+          : capabilities.payment
+            ? button(`К оплате: ${formatMoney(payment.remaining)}`, { data: 'data-record-view-payment' })
+            : button(paymentStateLabel, { disabled: true }),
       ].filter(Boolean).join(''))}
     </div>`;
 
     root.querySelector('[data-record-view-program]')?.addEventListener('change', async (event) => {
+      if (!capabilities.loyaltyProgram) return;
       if (payment.hasPayments) {
         render();
         openNotice({ message: 'После оплаты программа записи не изменяется.' });
@@ -480,6 +565,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     });
 
     root.querySelectorAll('[data-record-view-procedure-settings]').forEach((node, index) => {
+      if (!capabilities.procedureSettings) return;
       const procedure = procedures[index];
       if (!procedure) return;
       const open = (event) => {
@@ -509,16 +595,19 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     });
 
     const reportCard = root.querySelector('.record-confirmation-view__card');
-    reportCard?.setAttribute('role', 'button');
-    reportCard?.setAttribute('tabindex', '0');
-    reportCard?.setAttribute('aria-label', 'Z-отчёт записи');
-    reportCard?.addEventListener('click', () => openRecordZReport(syncCurrent()));
-    reportCard?.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      openRecordZReport(syncCurrent());
-    });
+    if (capabilities.zReport) {
+      reportCard?.setAttribute('role', 'button');
+      reportCard?.setAttribute('tabindex', '0');
+      reportCard?.setAttribute('aria-label', 'Z-отчёт записи');
+      reportCard?.addEventListener('click', () => openRecordZReport(syncCurrent()));
+      reportCard?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openRecordZReport(syncCurrent());
+      });
+    }
     root.querySelector('[data-record-view-notes]')?.addEventListener('click', () => {
+      if (!capabilities.notes) return;
       const notes = getNotesForTarget('record', source.id);
       if (!notes.length) return;
       const noteDate = String(notes[0]?.date || source.date || '').slice(0, 10);
@@ -535,6 +624,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       });
     });
     root.querySelector('[data-record-view-sale]')?.addEventListener('click', () => {
+      if (!capabilities.sale) return;
       openRecordSale(syncCurrent(), {
         onSaved: (saved) => {
           currentRecord = saved;
@@ -543,6 +633,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       });
     });
     root.querySelector('[data-record-view-payment]')?.addEventListener('click', () => {
+      if (!capabilities.payment) return;
       openRecordPayment(syncCurrent(), {
         onCompleted: () => {
           syncCurrent();
@@ -552,14 +643,14 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
     });
 
     layer.querySelector('[data-record-view-confirmed]')?.addEventListener('click', () => {
-      if (payment.fullyPaid) return;
+      if (!capabilities.confirmation || payment.fullyPaid) return;
       persistStatus(
         () => setRecordConfirmed(source.id, !Boolean(source.confirmed)),
         'Сервер не подтвердил изменение статуса.',
       );
     });
     layer.querySelectorAll('[data-record-view-attendance]').forEach((node) => node.addEventListener('click', () => {
-      if (!hasAppointmentStarted(source)) return;
+      if (!capabilities.attendance || !hasAppointmentStarted(source)) return;
       const next = normalizedAttendance(node.dataset.recordViewAttendance);
       const current = normalizedAttendance(source.attendance) || 'arrived';
       if (!next || next === current) return;
@@ -569,6 +660,7 @@ export function openRecordView(record, { onClose = () => {} } = {}) {
       );
     }));
 
+    layer.dataset.recordViewContext = capabilities === RECORD_VIEW_CAPABILITIES.account ? 'account' : 'professional';
     layer.dataset.recordViewPaymentState = payment.fullyPaid ? 'paid' : payment.partiallyPaid ? 'partial' : 'unpaid';
   };
 
