@@ -175,13 +175,17 @@ for (const command of ['cancelFinanceOperation', 'correctFinanceOperation', 'har
 
 assert.doesNotMatch(journalDaySource, /openRecordPaymentEntry|openRecordPayment/);
 assert.match(recordViewSource, /import \{ openRecordPayment \} from '\.\.\/payment\/record-payment\.js'/);
+assert.match(recordViewSource, /professional: Object\.freeze\(\{[\s\S]*sale: true,[\s\S]*payment: true/);
+assert.match(recordViewSource, /account: Object\.freeze\(\{[\s\S]*sale: false,[\s\S]*payment: false/);
 assert.match(recordViewSource, /data-record-view-payment/);
 assert.match(recordViewSource, /К оплате: \$\{formatMoney\(payment\.remaining\)\}/);
-assert.match(recordViewSource, /payment\.hasPayments \? '' : button\('Продажа'/);
+assert.match(recordViewSource, /capabilities\.sale && !payment\.hasPayments \? button\('Продажа'/);
 assert.match(recordViewSource, /button\('Оплачено', \{ disabled: true \}\)/);
 assert.match(recordViewSource, /openRecordPayment\(syncCurrent\(\),\s*\{/);
 assert.match(recordViewSource, /onCompleted:\s*\(\)\s*=>\s*\{[\s\S]*?syncCurrent\(\);[\s\S]*?render\(\);/);
-assert.match(recordViewSource, /settings: true/);
+assert.match(recordViewSource, /professional: Object\.freeze\(\{[\s\S]*settings: true/);
+assert.match(recordViewSource, /account: Object\.freeze\(\{[\s\S]*settings: false/);
+assert.match(recordViewSource, /settings: capabilities\.settings/);
 assert.match(recordViewSource, /bindRecordSettings\(layer, openActions\)/);
 assert.doesNotMatch(recordViewSource, /data-record-view-actions/);
 assert.match(recordViewSource, /querySelector\('\.record-confirmation-view__card'\)/);
