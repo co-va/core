@@ -24,6 +24,7 @@ import { hydrateRecordStateFromServer } from '/core/record/index.js';
 import { hydrateNotesFromServer } from '/core/note/index.js';
 import { hydrateEventsFromServer } from '/core/event/index.js';
 import { setWorkplaceContext } from '/core/workplace-context.js';
+import { loadBookAccess } from '/core/access.js';
 
 const host = document.querySelector('#host');
 const result = document.querySelector('#result');
@@ -41,6 +42,26 @@ const navigation = (mounted, index = 0) => mounted.app.querySelectorAll('[data-v
 const viewButton = (mounted, id, index = 0) => navigation(mounted, index)?.querySelector(`[data-view="${id}"]`) || null;
 window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
 window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  let path = '';
+  try { path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname; } catch {}
+  if (path.endsWith('/saas-access/me')) {
+    return Promise.resolve(new Response(JSON.stringify({
+      tenantId:'journal-runtime-tenant',
+      status:'ACTIVE',
+      isOwnerBook:false,
+      capabilities:[
+        { key:'journal.day.access', valueType:'BOOLEAN', enabled:true, limit:null, source:'RUNTIME' },
+        { key:'journal.month.access', valueType:'BOOLEAN', enabled:true, limit:null, source:'RUNTIME' },
+        { key:'journal.list.access', valueType:'BOOLEAN', enabled:true, limit:null, source:'RUNTIME' },
+      ],
+    }), { status:200, headers:{ 'Content-Type':'application/json' } }));
+  }
+  return nativeFetch(input, init);
+};
+await loadBookAccess();
 
 const accountDate = '2026-11-12';
 const scheduleOnlyDate = '2026-11-13';
