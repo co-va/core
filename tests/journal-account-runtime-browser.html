@@ -272,7 +272,7 @@ await wait();
 ok(Boolean(mounted.root.querySelector('[data-journal-month-context="account"] [data-calendar]')), 'account Month did not use existing Shared Calendar');
 const accountDateCell = mounted.root.querySelector(`[data-calendar-date="${accountDate}"]`);
 const fakeScheduleCell = mounted.root.querySelector(`[data-calendar-date="${scheduleOnlyDate}"]`);
-ok(Boolean(accountDateCell?.classList.contains('is-working')), 'date with account Record is not marked in Month');
+ok(!accountDateCell?.classList.contains('is-working'), 'account Record date uses professional working-day marker');
 ok(flatText(accountDateCell).includes('1 зап.'), 'account Month record count missing');
 ok(Boolean(accountDateCell?.querySelector('.calendar__date-fill')), 'account Month does not use existing Record color/state fill');
 ok(!fakeScheduleCell?.classList.contains('is-working'), 'professional working-day capacity leaked into account Month');
