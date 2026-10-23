@@ -89,20 +89,19 @@ function accountUsage(record, resolveRecordContext) {
 }
 
 function accountTimelineRange(usages = []) {
-  const starts = [];
-  const ends = [];
+  let start = 9 * 60;
+  let end = 23 * 60;
   (Array.isArray(usages) ? usages : []).forEach((usage) => {
     const from = timeToMinutes(usage?.from);
     const to = timeToMinutes(usage?.to);
     if (from == null || to == null || to <= from) return;
-    starts.push(from);
-    ends.push(to);
+    start = Math.min(start, from);
+    end = Math.max(end, to);
   });
-  if (!starts.length || !ends.length) return { from: '00:00', to: '23:59' };
-  const start = Math.max(0, Math.min(...starts));
-  const end = Math.min((24 * 60) - 1, Math.max(...ends));
-  if (end <= start) return { from: '00:00', to: '23:59' };
-  return { from: minutesToTime(start), to: minutesToTime(end) };
+  return {
+    from: minutesToTime(Math.max(0, start)),
+    to: minutesToTime(Math.min((24 * 60) - 1, end)),
+  };
 }
 
 async function openExistingRecord(record, rerender = () => {}) {
@@ -184,10 +183,6 @@ export function renderJournalDay(root, {
     const accountRecords = readRecords(records)
       .filter((record) => String(record?.date || '').slice(0, 10) === dayDate)
       .filter((record) => String(record?.status || '').toLowerCase() !== 'cancelled');
-    if (!accountRecords.length) {
-      timelineRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Записей нет</div>';
-      return dispose;
-    }
 
     const recordById = new Map(accountRecords.map((record) => [recordId(record), record]).filter(([id]) => Boolean(id)));
     const usages = accountRecords.map((record) => accountUsage(record, resolveRecordContext));
