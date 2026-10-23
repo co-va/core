@@ -142,8 +142,7 @@ function openOnlineBookingSettings(root) {
 function mountScreen(root, body) {
   root.innerHTML = `${workspaceHeaderContext({
     title: 'Онлайн-запись',
-    a: {
-      kind: 'settings',
+    v: {
       data: 'data-online-booking-settings',
       aria: 'Настройки онлайн-записи',
     },

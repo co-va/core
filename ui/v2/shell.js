@@ -6,6 +6,7 @@ export function v2Shell({
   body = '',
   deck = '',
   eDeck = '',
+  v = '',
   className = '',
   deckOpen = false,
   eOpen = false,
@@ -14,17 +15,19 @@ export function v2Shell({
 } = {}) {
   const classes = ['v2-app', deck ? 'v2-app--with-deck' : '', eDeck ? 'has-e-deck' : '', deckOpen ? 'is-deck-open' : '', deckOpen && eOpen && eDeck ? 'is-e-open' : '', zEnter && !deckOpen ? 'is-z-entering' : '', className].filter(Boolean).join(' ');
   const feDeck = deck || eDeck ? `<div class="v2-fe-deck" data-v2-fe>${deck}${eDeck}</div>` : '';
-  return `<section class="${classes}" data-v2-app style="--v2-base:#000000">
+  return `<section class="${classes}" data-v2-app>
     ${header}
+    <div class="v2-y-host" data-v2-y-host hidden></div>
     <div class="v2-app__stage">
       ${feDeck}
       <div class="v2-front" data-v2-front>
-        <main class="v2-z" ${zData} style="padding-top:0">
-${v2ZFrame(body)}
+        <main class="v2-z" ${zData} data-v2-dismissible="false">
+${v2ZFrame(body, { dismiss: false })}
 </main>
       </div>
-      <div class="v2-edge-swipe-zone" data-v2-edge-swipe aria-hidden="true" style="top:20px"></div>
+      <div class="v2-edge-swipe-zone" data-v2-edge-swipe aria-hidden="true"></div>
     </div>
+    <div class="v2-v-host" data-v2-v-host${v ? '' : ' hidden'}>${v}</div>
   </section>`;
 }
 

@@ -80,13 +80,15 @@ export function renderTimetable(root) {
     const workplace = workplaces.find((item) => String(item?.key || '') === String(selectedWorkplaceId || '')) || null;
     return workspaceHeaderContext({
       title: title || (allMode ? 'Общий график' : (workplace?.name || 'Рабочее пространство')),
-      a: {
-        kind: 'logo',
-        label: String(summary.days),
-        settingsTag: !inactiveA,
-        data: inactiveA ? '' : 'data-timetable-settings-open',
-        aria: inactiveA ? `Рабочих дней: ${summary.days}` : `Настройки графика. Рабочих дней: ${summary.days}`,
-        disabled: inactiveA,
+      a: workplace ? {
+        kind: 'avatar',
+        image: String(workplace.photo || ''),
+        imagePosition: `${Number(workplace.photoCropX || 50)}% ${Number(workplace.photoCropY || 50)}%`,
+        initials: String(workplace.name || '?').slice(0, 1).toUpperCase(),
+      } : null,
+      v: inactiveA ? null : {
+        data: 'data-timetable-settings-open',
+        aria: `Настройки графика. Рабочих дней: ${summary.days}`,
       },
       hideD: true,
     });

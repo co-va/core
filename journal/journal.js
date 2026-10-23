@@ -281,12 +281,7 @@ export function renderJournal(root, options = {}) {
 
     root.innerHTML = `${workspaceHeaderContext({
       title: activeView === 'day' ? journalTitle() : 'Журнал',
-      a: {
-        kind: 'settings',
-        label: 'Настройки журнала',
-        data: 'data-journal-settings',
-        aria: 'Настройки журнала',
-      },
+      v: { data: 'data-journal-settings', aria: 'Настройки журнала' },
     })}<div data-journal-view${viewClass}></div>`;
     const viewRoot = root.querySelector('[data-journal-view]');
     if (activeView === 'day') {

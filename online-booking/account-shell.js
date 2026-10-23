@@ -33,6 +33,9 @@ import {
   v2CardDeck,
   v2Header,
   v2HorizontalRail,
+  v2V,
+  setV2V,
+  clearV2V,
   modal,
   openNotice,
   page,
@@ -300,8 +303,9 @@ function accountDeck(state) {
   return v2CardDeck(GLOBAL_ACCOUNT_ROOTS, { axis: 'x', active: state.accountDeckActive, data: 'data-account-deck-item', level: 'f' });
 }
 
-function renderV2Shell(root, state, { header, body = '', deck = true, className = '' } = {}) {
+function renderV2Shell(root, state, { header, body = '', deck = true, className = '', v = null } = {}) {
   const deckMarkup = deck ? accountDeck(state) : '';
+  const vMarkup = v ? v2V(v) : '';
   let shell = root.querySelector(':scope > [data-v2-app]');
   const canReuseScene = Boolean(deck && shell?.querySelector('[data-v2-card-deck][data-v2-deck-level="f"]'));
 
@@ -315,6 +319,7 @@ function renderV2Shell(root, state, { header, body = '', deck = true, className 
       deckOpen: Boolean(state.accountDeckOpen && deck),
       zEnter: Boolean(state.accountZEnter),
       className,
+      v: vMarkup,
     });
     shell = root.querySelector(':scope > [data-v2-app]');
   } else {
@@ -322,6 +327,8 @@ function renderV2Shell(root, state, { header, body = '', deck = true, className 
     if (currentHeader) currentHeader.outerHTML = header;
     const z = shell.querySelector('[data-v2-front] > [data-v2-z]');
     if (z) z.innerHTML = body;
+    const vHost = shell.querySelector(':scope > [data-v2-v-host]');
+    if (vHost) { vHost.innerHTML = vMarkup; vHost.hidden = !vMarkup; }
     setV2DeckOpen(shell, Boolean(state.accountDeckOpen));
     shell.classList.toggle('is-z-entering', Boolean(state.accountZEnter && !state.accountDeckOpen));
     const preserved = ['v2-app', 'v2-app--with-deck'];
@@ -475,9 +482,6 @@ function syncGlobalProfileHeader(root, state, handlers) {
       kind: 'avatar',
       label: accountName(state),
       image: accountPhoto(state),
-      data: 'data-account-profile-settings',
-      settingsTag: true,
-      aria: 'Настройки профиля',
     },
     b: accountName(state),
     d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
@@ -771,12 +775,13 @@ async function renderGlobalMessages(root, state, handlers) {
 
 async function renderGlobalProfile(root, state, handlers) {
   const header = v2Header({
-    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state), data: 'data-account-profile-settings', settingsTag: true, aria: 'Настройки профиля' },
+    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
     b: accountName(state),
     d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
   });
   renderV2Shell(root, state, {
     header,
+    v: { data: 'data-account-profile-settings', aria: 'Настройки профиля' },
     body: profileSummary(state),
   });
   bindWorkspaceInteraction(root, state, handlers);
@@ -806,7 +811,7 @@ async function renderGlobalProfileSettings(root, state, handlers) {
 
 function globalHomeHeader(state) {
   return v2Header({
-    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state), data: 'data-account-profile-settings', settingsTag: true, aria: 'Настройки профиля' },
+    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
     b: 'Обзор',
     d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
   });
@@ -1014,6 +1019,7 @@ function openAccountInvestmentDetail(root, state, handlers, row, restoreHeader =
     b: String(investment.name || 'Инвестиция'),
     d: { kind: 'chat', data: 'data-account-investment-chat', aria: 'Чат' },
   }));
+  clearV2V(root);
   root.querySelector('[data-account-investment-chat]')?.addEventListener('click', () => {
     state.accountSelectedChatTenantId = row.tenantId;
     state.accountTab = 'messages';
@@ -1048,6 +1054,7 @@ async function renderGlobalHome(root, state, handlers) {
 
   renderV2Shell(root, state, {
     header: globalHomeHeader(state),
+    v: { data: 'data-account-profile-settings', aria: 'Настройки профиля' },
     body: v2Section('Предстоящие визиты', upcoming),
   });
   bindWorkspaceInteraction(root, state, handlers);
@@ -1086,12 +1093,13 @@ async function renderGlobalContacts(root, state, handlers) {
   const relationships = Array.isArray(state.relationships) ? state.relationships : [];
   const searchable = relationships.length > 15;
   const header = v2Header({
-    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state), data: 'data-account-profile-settings', settingsTag: true, aria: 'Настройки контактов' },
+    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
     b: 'Контакты',
     d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
   });
   renderV2Shell(root, state, {
     header,
+    v: { data: 'data-account-profile-settings', aria: 'Настройки контактов' },
     body: `${searchable ? field({ name: 'accountContactSearch', type: 'search', placeholder: 'Поиск', autocomplete: 'off', data: 'data-account-contact-search' }) : ''}<div data-account-contact-list>${contactsBody(relationships)}</div>`,
   });
   bindWorkspaceInteraction(root, state, handlers);
@@ -1173,7 +1181,7 @@ function contactHeaderMarkup(relationship) {
   const profile = relationship?.context?.profile || {};
   const title = relationshipTitle(relationship);
   return v2Header({
-    a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-contact-settings', settingsTag: true, aria: 'Настройки' },
+    a: { kind: 'avatar', label: title, image: String(profile.photo || '') },
     b: title,
     d: { kind: 'chat', data: 'data-global-contact-chat', aria: 'Чат' },
   });
@@ -1286,6 +1294,7 @@ function openGlobalContactDepositLayer(root, state, handlers, relationship, depo
     b: String(deposit?.programName || 'Депозит'),
     d: { kind: 'chat', data: 'data-global-deposit-chat', aria: 'Чат' },
   }));
+  clearV2V(root);
   root.querySelector('[data-global-deposit-chat]')?.addEventListener('click', () => {
     state.accountSelectedChatTenantId = tenantId;
     state.accountTab = 'messages';
@@ -1361,6 +1370,7 @@ function openGlobalContactPersonalAccountLayer(root, state, handlers, relationsh
     b: 'Личный счёт',
     d: { kind: 'chat', data: 'data-global-personal-account-chat', aria: 'Чат' },
   }));
+  clearV2V(root);
   root.querySelector('[data-global-personal-account-chat]')?.addEventListener('click', () => {
     state.accountSelectedChatTenantId = tenantId;
     state.accountTab = 'messages';
@@ -1434,10 +1444,11 @@ function openGlobalContactHistoryLayer(root, state, handlers, relationship, requ
   if (!layer) return null;
 
   setGlobalAccountHeader(root, v2Header({
-    a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-contact-settings', settingsTag: true, aria: 'Настройки' },
+    a: { kind: 'avatar', label: title, image: String(profile.photo || '') },
     b: workplaceName(state, request),
     d: { kind: 'chat', data: 'data-global-contact-chat', aria: 'Чат' },
   }));
+  setV2V(root, { data: 'data-global-contact-settings', aria: 'Настройки' });
   bindContactHeaderActions(root, state, handlers, relationship, { repeatRequest: request, actionRoot: layer });
   return layer;
 }
@@ -1465,10 +1476,11 @@ function openGlobalContactWorkplaceLayer(root, state, handlers, relationship, wo
   const title = relationshipTitle(relationship);
   const showHeader = () => {
     setGlobalAccountHeader(root, v2Header({
-      a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-contact-settings', settingsTag: true, aria: 'Настройки' },
+      a: { kind: 'avatar', label: title, image: String(profile.photo || '') },
       b: String(workplace.name || title),
       d: { kind: 'chat', data: 'data-global-contact-chat', aria: 'Чат' },
     }));
+    setV2V(root, { data: 'data-global-contact-settings', aria: 'Настройки' });
     bindContactHeaderActions(root, state, handlers, relationship, { workplaceKey: key, actionRoot: layer });
   };
   showHeader();
@@ -1526,6 +1538,7 @@ async function renderGlobalContactDetail(root, state, handlers) {
   let layer = null;
   const showContactHeader = () => {
     setGlobalAccountHeader(root, contactHeaderMarkup(relationship));
+    setV2V(root, { data: 'data-global-contact-settings', aria: 'Настройки' });
     bindContactHeaderActions(root, state, handlers, relationship, { actionRoot: layer });
   };
 
@@ -1605,7 +1618,7 @@ async function renderGlobalHistoryDetail(root, state, handlers) {
   const canRepeat = requestProcedures(request).length > 0;
 
   const header = v2Header({
-    a: { kind: 'avatar', label: title, image: String(profile.photo || ''), data: 'data-global-history-contact-settings', settingsTag: true, aria: 'Настройки' },
+    a: { kind: 'avatar', label: title, image: String(profile.photo || '') },
     b: workplaceName(state, request),
     d: { kind: 'chat', data: 'data-global-history-chat', aria: 'Чат' },
   });
@@ -1614,7 +1627,11 @@ async function renderGlobalHistoryDetail(root, state, handlers) {
     aria: 'Записаться снова',
   })) : ''}`;
 
-  renderV2Shell(root, state, { header, body });
+  renderV2Shell(root, state, {
+    header,
+    v: { data: 'data-global-history-contact-settings', aria: 'Настройки' },
+    body,
+  });
 
   bindWorkspaceInteraction(root, state, handlers, {
     onZRight: () => {

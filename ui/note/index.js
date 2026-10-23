@@ -109,7 +109,7 @@ export function noteReels(notes = [], {
     related: related.has(String(note?.id || '')),
     targetLabel: targetLabel(note),
   })).join('');
-  return `<section class="note-reels" data-ui-y="note-reels" data-journal-y aria-label="Заметки">
+  return `<section class="note-reels" aria-label="Заметки">
     <div class="note-reels__label">Заметки</div>
     ${v2HorizontalRail(cards, { className: 'note-reels__rail' })}
   </section>`;

@@ -29,7 +29,8 @@ export function render(root,navigateBack=()=>{},options={}){renderProfile(root,n
 function profileContext(p,title=fullName(p)){
   return workspaceHeaderContext({
     title,
-    a:{kind:'avatar',image:p.photo||'',imagePosition:avatarPosition(p),initials:initial(p),settingsTag:true,aria:'Настройки профиля'},
+    a:{kind:'avatar',image:p.photo||'',imagePosition:avatarPosition(p),initials:initial(p)},
+    v:{data:'data-profile-settings',aria:'Настройки профиля'},
   });
 }
 
@@ -180,7 +181,7 @@ function openProfileData(root,navigateBack,options={}){
     profileDataForm(p,options)
   ]),{className:'v2-profile-data-layer'}));
   if(!layer)return;
-  layer.querySelector('[data-workspace-context-action]')?.addEventListener('click',()=>openProfileSettings(root,navigateBack,options));
+  layer.querySelector('[data-profile-settings]')?.addEventListener('click',()=>openProfileSettings(root,navigateBack,options));
   bindProfileData(layer,p,options,()=>{
     layer.v2Close?.();
     renderProfile(root,navigateBack,options);
@@ -290,9 +291,8 @@ function openWorkplaceZ2(root,existing,navigateBack,options={}){
         image:current.photo||'',
         imagePosition:`${crop(current.photoCropX)}% ${crop(current.photoCropY)}%`,
         initials:(current.name||'?').slice(0,1).toUpperCase(),
-        settingsTag:true,
-        aria:'Настройки пространства',
       },
+      v:{data:'data-workplace-settings',aria:'Настройки пространства'},
     }),
     workplaceForm(existing,{sourceOnly:true})
   ]),{className:'v2-workplace-data-layer'}));
@@ -301,7 +301,7 @@ function openWorkplaceZ2(root,existing,navigateBack,options={}){
     layer.v2Close?.();
     renderProfile(root,navigateBack,options);
   };
-  layer.querySelector('[data-workspace-context-action]')?.addEventListener('click',()=>openWorkplaceSettingsMenu(layer,existing,{onDeleted:closeAndRender}));
+  layer.querySelector('[data-workplace-settings]')?.addEventListener('click',()=>openWorkplaceSettingsMenu(layer,existing,{onDeleted:closeAndRender}));
   bindWorkplaceForm(layer,existing,{
     onSaved:closeAndRender,
     onDeleted:closeAndRender,
@@ -335,7 +335,7 @@ function renderProfile(root,navigateBack,options={}){
     workplacesAllowed?v2Section('Рабочие пространства',workplaceRail()):'',
     workplacesAllowed?rootAddSource():''
   ]);
-  root.querySelector('[data-workspace-context-action]')?.addEventListener('click',()=>openProfileSettings(root,navigateBack,options));
+  root.querySelector('[data-profile-settings]')?.addEventListener('click',()=>openProfileSettings(root,navigateBack,options));
   root.querySelector('[data-profile-card]')?.addEventListener('click',()=>openProfileData(root,navigateBack,options));
   root.querySelector('[data-add-workplace]')?.addEventListener('click',()=>openWorkplace(root,null,navigateBack,options));
   root.querySelectorAll('[data-workplace]').forEach(el=>el.addEventListener('click',()=>openWorkplace(root,getWorkplaces().find(w=>w.key===el.dataset.workplace)||null,navigateBack,options)));

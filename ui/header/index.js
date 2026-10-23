@@ -22,19 +22,20 @@ function isAddAction(action) {
 
 /**
  * Canonical workspace Header context.
- * It supplies A/B/D metadata to the shared workspace shell without drawing a
- * second visible header inside Z. C accepts add actions only.
+ * A is photo metadata only. V is the independent floating section action.
+ * C accepts add actions only; D remains the Messenger entry/action.
  */
-export function workspaceHeaderContext({ title = '', a = null, c = null, d = null } = {}) {
-  const actionData = a?.data ? ` ${String(a.data).trim()}` : '';
+export function workspaceHeaderContext({ title = '', a = null, v = null, c = null, d = null } = {}) {
   const cData = c?.data ? ` ${String(c.data).trim()}` : '';
   const dData = d?.data ? ` ${String(d.data).trim()}` : '';
-  const actionDisabled = a?.disabled ? ' disabled' : '';
+  const vData = v?.data ? ` ${String(v.data).trim()}` : '';
   const cDisabled = c?.disabled ? ' disabled' : '';
-  const action = a ? `<button type="button" class="workspace-header-context__action" data-workspace-context-action${actionData} data-workspace-a-kind="${escapeHtml(a.kind || 'settings')}" data-workspace-a-label="${escapeHtml(a.label || '')}" data-workspace-a-image="${escapeHtml(a.image || '')}" data-workspace-a-image-position="${escapeHtml(a.imagePosition || '')}" data-workspace-a-initials="${escapeHtml(a.initials || '')}" data-workspace-a-settings-tag="${a.settingsTag ? 'true' : 'false'}" aria-label="${escapeHtml(a.aria || 'Настройки контекста')}"${actionDisabled}></button>` : '';
+  const vDisabled = v?.disabled ? ' disabled' : '';
+  const aContext = a ? `<span hidden data-workspace-a-context data-workspace-a-label="${escapeHtml(a.label || '')}" data-workspace-a-image="${escapeHtml(a.image || '')}" data-workspace-a-image-position="${escapeHtml(a.imagePosition || '')}" data-workspace-a-initials="${escapeHtml(a.initials || '')}"></span>` : '';
+  const vAction = v ? `<button type="button" class="workspace-header-context__v-action" data-workspace-v-action${vData} aria-label="${escapeHtml(v.aria || v.label || 'Действия раздела')}"${vDisabled}></button>` : '';
   const cAction = isAddAction(c) ? `<button type="button" class="workspace-header-context__c-action" data-v2-primary-action data-v2-primary-label="+" data-workspace-c-kind="add"${cData} aria-label="${escapeHtml(c?.aria || c?.label || 'Добавить')}"${cDisabled}></button>` : '';
   const dAction = d ? `<button type="button" class="workspace-header-context__d-action" data-workspace-d-action${dData} data-workspace-d-kind="${escapeHtml(d.kind || 'chat')}" aria-label="${escapeHtml(d.aria || 'Действие справа')}"></button>` : '';
-  return `<div class="workspace-header-context" data-workspace-header-context data-workspace-title="${escapeHtml(title)}">${action}${cAction}${dAction}</div>`;
+  return `<div class="workspace-header-context" data-workspace-header-context data-workspace-title="${escapeHtml(title)}">${aContext}${vAction}${cAction}${dAction}</div>`;
 }
 
 /**

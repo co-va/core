@@ -26,7 +26,7 @@ let underVeilCount = 0;
 let journalTime = { from: '09:00', to: '18:00' };
 const host = document.querySelector('#host');
 const header = v2Header({
-  a: { kind: 'settings', aria: 'A', data: 'data-test-header-a' },
+  a: { label: 'A', initials: 'A' },
   b: 'Проверка modal',
   c: { label: 'C', aria: 'C', data: 'data-test-header-c' },
   d: { kind: 'chat', aria: 'D', data: 'data-test-header-d' },
@@ -47,7 +47,9 @@ host.innerHTML = v2Shell({
 });
 setV2ZHeaderRows(host, ['<div data-test-z-header-control style="min-height:48px;display:grid;align-items:center">Стабильный Z Header</div>']);
 
-host.querySelector('[data-test-header-a]').addEventListener('click', () => {
+const headerASlot = host.querySelector('.v2-header__slot--a');
+headerASlot?.setAttribute('data-test-header-a', '');
+headerASlot?.addEventListener('click', () => {
   headerACount += 1;
   host.querySelector('[data-test-header-a-count]').textContent = String(headerACount);
 });
@@ -64,10 +66,17 @@ host.querySelector('[data-test-under-veil]').addEventListener('click', () => {
   host.querySelector('[data-test-under-veil-count]').textContent = String(underVeilCount);
 });
 host.querySelector('[data-test-open-q]').addEventListener('click', () => {
-  mountModal(host, modal(button('Q content', { data: 'data-test-q-content' }), {
-    variant: 'q',
-    title: 'Q',
-  }));
+  const lowerQ = mountModal(host, modal(
+    button('Q content', { data: 'data-test-q-content' })
+      + button('Открыть следующий Q', { data: 'data-test-open-q-child' }),
+    { variant: 'q', title: 'Q' },
+  ));
+  lowerQ?.querySelector('[data-test-open-q-child]')?.addEventListener('click', () => {
+    mountModal(lowerQ, modal(button('Q child content', { data: 'data-test-q-child-content' }), {
+      variant: 'q',
+      title: 'Q child',
+    }));
+  });
 });
 
 host.querySelector('[data-test-time-range]').addEventListener('click', () => {

@@ -97,6 +97,8 @@ assert.match(emailMigration, /ProfessionalEmailOAuthState/);
 
 assert.match(inputs, /disabled = false/);
 assert.match(inputs, /disabled \? ' disabled'/);
-assert.match(v2Css, /v2-header__slot--c \.v2-header__control--danger\{border-color:#EB4C42;background:#FDD2D2;color:#EB4C42\}/);
+assert.match(v2Css, /--v2-danger:#FF1111/);
+assert.match(v2Css, /v2-header__slot--c \.v2-header__control--danger\{border-color:var\(--v2-danger\);background:var\(--v2-danger\);color:#fff\}/);
+assert.doesNotMatch(v2Css, /#FDD2D2|#EB4C42/);
 
 console.log('Email and Telegram integrations UI architecture tests: OK');

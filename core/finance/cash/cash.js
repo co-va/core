@@ -154,7 +154,7 @@ function cashContext() {
     || financeOperationGroups({ groups: ['income-expense', 'transfer'] }).length > 0;
   return workspaceHeaderContext({
     title: investmentOnly ? 'Инвестиции' : 'Касса',
-    a: hasSettings ? {
+    v: hasSettings ? {
       kind: 'settings',
       data: 'data-cash-settings',
       aria: 'Настройки кассы',
@@ -170,7 +170,7 @@ function cashContext() {
 function walletContext(wallet, title = wallet?.name || 'Касса') {
   return workspaceHeaderContext({
     title,
-    a: wallet && !wallet.system ? {
+    v: wallet && !wallet.system ? {
       kind: 'settings',
       data: 'data-wallet-settings',
       aria: `Настройки ${wallet?.name || 'кассы'}`,
@@ -181,7 +181,7 @@ function walletContext(wallet, title = wallet?.name || 'Касса') {
 function operationContext(operation) {
   return workspaceHeaderContext({
     title: operationName(operation),
-    a: {
+    v: {
       kind: 'settings',
       data: 'data-wallet-operation-settings',
       aria: 'Настройки операции',
@@ -576,7 +576,7 @@ function financeEntityContext(entity, type) {
     : null;
   return workspaceHeaderContext({
     title: entity?.name || fallback,
-    a: {
+    v: {
       kind: 'settings',
       data: 'data-finance-entity-settings',
       aria: `Настройки ${entity?.name || fallback}`,
@@ -1346,7 +1346,7 @@ function openInvestmentEvent(root, entityLayer, entity, eventId) {
   const layer = mountV2ZLayer(entityLayer, v2ZLayer(page([
     workspaceHeaderContext({
       title: investmentEventTitle(event),
-      a: {
+      v: {
         kind: 'settings',
         data: 'data-investment-event-settings',
         aria: 'Настройки события инвестиции',

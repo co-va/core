@@ -18,7 +18,7 @@ const miniCardCss = readFileSync(new URL('../ui/cards/mini-card.css', import.met
 
 // Clients Z1: one shared A/B/C/D contract, search by name/UEI and canonical list.
 assert.match(people, /title:\s*'Клиенты'/);
-assert.match(people, /kind:\s*'settings'/);
+assert.match(people, /v:\s*\{\s*data:\s*'data-people-list-settings'/);
 assert.match(people, /data-people-list-settings/);
 assert.match(people, /Поиск по имени или UEI/);
 assert.match(people, /return v2ListEntries\(items\.map/);
@@ -63,11 +63,11 @@ assert.match(people, /function openCreateX/);
 assert.match(people, /personCreateForm\(preset\)/);
 assert.doesNotMatch(people, /function openCreateZ2/);
 
-// Client overview stays Z2. A opens one action X; Documents remain their existing X -> S flow.
+// Client overview stays Z2. V opens one action X; Documents remain their existing X -> S flow.
 assert.match(people, /mountV2ZLayer\([\s\S]*stack:\s*true/);
 assert.match(people, /people-overview-layer/);
 assert.match(people, /kind:\s*'avatar'/);
-assert.match(people, /settingsTag:\s*true/);
+assert.match(people, /v:\s*\{\s*data:\s*'data-person-settings'/);
 assert.match(people, /data-person-settings/);
 assert.doesNotMatch(people, /data-person-consents/);
 assert.match(people, /function openPersonSettings/);
@@ -125,7 +125,7 @@ assert.doesNotMatch(records, /mountV2ZLayer|v2ZLayer\(/);
 assert.match(procedureSelection, /procedureCostForWorkplace/);
 assert.match(procedureSelection, /procedureWorkplaceAssignment/);
 
-// Client card is canonical; its configured appearance is not duplicated in the client A menu.
+// Client card is canonical; its configured appearance is not duplicated in the client V menu.
 assert.match(people, /data-person-card/);
 assert.match(people, /entityVisualCard\(\{/);
 assert.match(people, /personCardAppearance\(person\)/);

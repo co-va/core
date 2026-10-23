@@ -298,8 +298,7 @@ export async function render(root) {
   root.innerHTML = page([
     workspaceHeaderContext({
       title: 'Уведомления',
-      a: {
-        kind: 'settings',
+      v: {
         data: 'data-notification-delivery-settings-open',
         aria: 'Настройки доставки уведомлений',
       },

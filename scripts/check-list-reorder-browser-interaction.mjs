@@ -3,13 +3,23 @@ import { pathToFileURL } from 'node:url';
 
 const { chromium, webkit, devices } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const base = process.env.BROWSER_TEST_URL || 'http://127.0.0.1:4173';
+const chromeBin = String(process.env.CHROME_BIN || '').trim();
+const browserCases = chromeBin
+  ? [
+      ['desktop-chromium', chromium, { viewport: { width: 1280, height: 900 } }],
+      ['mobile-chromium', chromium, devices['iPhone 13 Pro Max']],
+    ]
+  : [
+      ['desktop-chromium', chromium, { viewport: { width: 1280, height: 900 } }],
+      ['mobile-chromium', chromium, devices['iPhone 13 Pro Max']],
+      ['mobile-webkit', webkit, devices['iPhone 13 Pro Max']],
+    ];
 
-for (const [name, engine, contextOptions] of [
-  ['desktop-chromium', chromium, { viewport: { width: 1280, height: 900 } }],
-  ['mobile-chromium', chromium, devices['iPhone 13 Pro Max']],
-  ['mobile-webkit', webkit, devices['iPhone 13 Pro Max']],
-]) {
-  const browser = await engine.launch({ headless:true });
+for (const [name, engine, contextOptions] of browserCases) {
+  const browser = await engine.launch({
+    headless:true,
+    ...(chromeBin ? { executablePath: chromeBin } : {}),
+  });
   try {
     const context = await browser.newContext(contextOptions);
     const page = await context.newPage();

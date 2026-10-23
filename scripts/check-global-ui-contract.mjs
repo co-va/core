@@ -3,6 +3,8 @@ import fs from 'node:fs';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const alphabet = read('UI_ALPHABET.md');
 const shell = read('ui/v2/shell.js');
+const v2Css = read('ui/v2/v2.css');
+const style = read('css/style.css');
 const header = read('ui/v2/header.js');
 const workspaceHeader = read('ui/header/index.js');
 const menuHeader = read('ui/v2/header-state.js');
@@ -50,7 +52,7 @@ expect(!booking.includes('c: action ?') && booking.includes('function actionMark
 expect(!accountShell.includes("label: 'Сохранить',\n      data: 'data-account-profile-save'") && !accountShell.includes("c: { kind: 'text', label: 'Записаться'") && !accountShell.includes("c: canRepeat ? { kind: 'text'"), 'End-user account shell must not place save/book/repeat actions in C.');
 expect(accountShell.includes("actionBlock(button('Записаться'") && accountShell.includes("actionBlock(button('Повторить'"), 'End-user account booking/repeat actions must use the shared bottom action owner.');
 
-expect(shell.includes('data-v2-app style="--v2-base:#000000"'), 'Shared H owner must keep the application background black.');
+expect(v2Css.includes('--v2-base:var(--surface-dark)') && style.includes('--surface-dark:#2F3338'), 'Shared H owner must use the canonical dark application surface token.');
 expect(shell.includes('data-v2-horizontal-rail'), 'Shared horizontal rail must expose one canonical marker.');
 expect(menuHeader.includes("state.title.textContent = 'Меню'"), 'Shared H owner must set B to Menu while the deck is open.');
 expect(
@@ -60,7 +62,7 @@ expect(
   'Shared H owner must remove C from Menu visually and from layout geometry.',
 );
 expect(menuHeader.includes('state.cSlot.style.display = state.cDisplay'), 'Shared H owner must restore C display after leaving Menu.');
-expect(menuHeader.includes('state.aControl.disabled = true'), 'Shared H owner must keep A inactive in menu state.');
+expect(!menuHeader.includes('aControl'), 'Shared H owner must leave photo-only A untouched in menu state.');
 expect(menuHeader.includes('state.dControl.disabled = false'), 'Shared H owner must keep D interactive in menu state.');
 expect(!menuHeader.includes("state.dControl.className = 'v2-header__control v2-header__control--mode'"), 'Menu state must not rewrite D into a different control; it preserves the owning screen D.');
 
@@ -74,11 +76,11 @@ expect(
 expect(messengerMode.includes('dismissible: false') && messengerMode.includes("ROOT_CLASS = 'messenger-mode-z'"), 'Messenger Z1 must be a non-dismissible shared mode root.');
 
 expect(header.includes("if (!slot || slot.hidden) return '';"), 'Shared Header must not render empty action placeholders.');
-expect(header.includes("role === 'a' && slot.settingsTag") && !header.includes('slot.settingsTag && !slot.disabled'), 'Shared Header settings badge must follow the explicit settingsTag contract without guessing from disabled state.');
+expect(!header.includes('settingsTag') && header.includes('function avatarControl'), 'Shared Header A must be photo-only and contain no settings badge contract.');
 expect(header.includes("const kind = slot.kind || 'text'") && !header.includes("role === 'd' ? 'mode'"), 'Shared Header D must respect its current APP/Messenger depth role.');
-expect(header.includes('const cVisible = Boolean(c && !c.hidden);'), 'Shared Header must derive C geometry from a real visible action.');
+expect(header.includes("actionControl(c, 'c')") && header.includes("if (!slot || slot.hidden) return '';"), 'Shared Header C must render only from a real visible contextual action.');
 expect(!header.includes('v2-header__slot is-empty'), 'Shared Header must not reserve visual space with empty slots.');
-expect(workspaceHeader.includes('data-workspace-a-settings-tag="${a.settingsTag ? \'true\' : \'false\'}"') && !workspaceHeader.includes('function isSettingsTarget'), 'Workspace A settings badge must follow the explicit screen context and must not infer settings from labels.');
+expect(workspaceHeader.includes('data-workspace-a-context') && workspaceHeader.includes('data-workspace-v-action') && !workspaceHeader.includes('settingsTag'), 'Workspace Header must keep photo-only A metadata separate from independent V action metadata.');
 expect(!workspaceHeader.includes('hideD'), 'Surface Header context must never expose a way to hide Header D.');
 expect(!appearanceQ.includes('hideD'), 'Q surfaces must never request suppression of Header D.');
 
@@ -101,7 +103,7 @@ expect(horizontalAffordance.includes('rail.children.length > 1') && horizontalAf
 expect(horizontalAffordanceCss.includes('.v2-section.has-v2-horizontal-rail') && horizontalAffordanceCss.includes('content:"→"') && horizontalAffordanceCss.includes('opacity:.72'), 'Horizontal rail cue must be clearly visible and visually distinct from the Z dismiss chevron.');
 expect(accountShell.includes('if (!canReuseScene) {') && accountShell.includes('root.innerHTML = v2Shell({'), 'End-user surfaces must keep the persistent Shared FEZ scene.');
 
-expect(modalPortal.includes('.v2-header__slot--c .v2-header__control, [data-v2-header] .v2-header__slot--d .v2-header__control'), 'Q veil must leave both Header C and D interactive.');
+expect(modalPortal.includes('function lockModalHeader(app)') && modalPortal.includes('header.inert = true') && !modalPortal.includes('qHeaderAction') && !modalPortal.includes('allowContextActions'), 'Q veil must keep Header C and D visible underneath but fully inert.');
 expect(modalPortal.includes("if (qLayer && event.target.closest('[data-v2-z-dismiss]')) node.v2Close?.();"), 'Q Shared dismiss affordance must close only the active Q layer.');
 expect(modals.includes('S_INTERACTIVE_CONTENT') && modals.includes('S modal is informational only'), 'Shared S owner must reject buttons/forms/editors/pickers.');
 expect(modalCss.includes('.modal-sheet.modal--top > .document-tiles:has(+ .entity-details){display:none}'), 'Document S modal must show facts only and never duplicate the source document tile.');

@@ -68,7 +68,30 @@ jobs:
             local marker="$2"
             local stage_attr="$3"
             local output="$4"
-            "$chrome_bin"               --headless=new               --no-sandbox               --disable-gpu               --disable-dev-shm-usage               --window-size=390,844               --force-device-scale-factor=1               --touch-events=enabled               --virtual-time-budget=12000               --dump-dom               "http://127.0.0.1:4173/$path"               > "$output"
+            local browser_status
+            set +e
+            timeout --signal=TERM --kill-after=5s 45s "$chrome_bin" \
+              --headless=new \
+              --no-sandbox \
+              --disable-gpu \
+              --disable-dev-shm-usage \
+              --window-size=390,844 \
+              --force-device-scale-factor=1 \
+              --touch-events=enabled \
+              --virtual-time-budget=12000 \
+              --dump-dom \
+              "http://127.0.0.1:4173/$path" \
+              > "$output"
+            browser_status=$?
+            set -e
+            if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
+              echo "Browser runtime regression timed out after 45s: $path"
+              exit 1
+            fi
+            if [ "$browser_status" -ne 0 ]; then
+              echo "Browser runtime regression browser failed: $path (exit $browser_status)"
+              exit 1
+            fi
             if ! grep -Fq "$marker" "$output"; then
               echo "Browser runtime regression failed: $path"
               grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
@@ -93,6 +116,8 @@ jobs:
 
   modal-browser-interaction:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -100,9 +125,7 @@ jobs:
         with:
           node-version: 24
       - name: Install isolated browser test runner
-        run: |
-          npm install --prefix "$RUNNER_TEMP/modal-browser" --no-audit --no-fund playwright@1.62.1
-          node "$RUNNER_TEMP/modal-browser/node_modules/playwright/cli.js" install --with-deps chromium webkit
+        run: npm install --prefix "$RUNNER_TEMP/modal-browser" --no-audit --no-fund playwright@1.62.1
       - name: Verify shared modal hit targets with mouse and touch
         shell: bash
         run: |

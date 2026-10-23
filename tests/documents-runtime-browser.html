@@ -38,8 +38,9 @@ window.addEventListener('error', (event) => failures.push(stage + ': window erro
 window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
 
 mark('imports');
-const [{ v2Header, v2Shell, documentTile, documentTiles }, documentsUi, data, consents, history] = await Promise.all([
+const [{ v2Header, v2Shell, documentTile, documentTiles }, vHost, documentsUi, data, consents, history] = await Promise.all([
   import('/ui/ui.js'),
+  import('/ui/v2/v-host.js'),
   import('/settings/documents/documents.js'),
   import('/settings/documents/data.js'),
   import('/settings/documents/consents.js'),
@@ -194,12 +195,17 @@ app.innerHTML = v2Shell({
   className:'v2-app--workspace',
   body:'<section class="v2-workspace-surface" id="documents-root"></section>',
 });
+const appRoot = app.querySelector('[data-v2-app]');
 const root = document.querySelector('#documents-root');
+const sharedV = () => appRoot?.querySelector('[data-v2-v]');
 documentsUi.render(root);
+const disposeVContext = vHost.bindV2VContext(appRoot);
 await wait();
 
 mark('z1-documents');
 ok(Boolean(root.querySelector('[data-workspace-header-context][data-workspace-title="Документы"]')), 'Documents workspace context missing');
+ok(Boolean(sharedV()), 'Documents V/settings control missing');
+ok(!appRoot?.querySelector('[data-v2-header] .v2-header__settings-tag'), 'Documents A must not expose a settings gear');
 ok(root.querySelectorAll('[data-segment-option]').length === 2, 'Documents/History switch must contain two options');
 ok(root.querySelector('[data-segment-option="documents"]')?.classList.contains('is-active'), 'Documents must be active by default');
 ok(root.querySelectorAll('[data-document-group="core"] [data-profile-document]').length === 1, 'Fixture core rail must contain the available core tenant document');
@@ -220,7 +226,7 @@ mark('rkn-hide');
 root.querySelector('[data-profile-document="rkn-old"]')?.click();
 await wait();
 let detailLayer = root.closest('[data-v2-app]')?.querySelector('[data-v2-z-layer]');
-detailLayer?.querySelector('[data-document-detail-settings]')?.click();
+sharedV()?.click();
 await wait();
 let rknSettings = document.querySelector('[data-modal][data-v2-layer-kind="bottom"]');
 ok(rknSettings?.querySelector('[data-detail-delete]')?.textContent.includes('Убрать документ'), 'RKN settings must describe removal as hiding');
@@ -239,7 +245,7 @@ await wait();
 detailLayer = root.closest('[data-v2-app]')?.querySelector('[data-v2-z-layer]');
 ok(Boolean(detailLayer?.querySelector('[data-document-detail]')), 'Document click must open information Z2 first');
 ok(Boolean(detailLayer?.querySelector('[data-read-only-sheet]')), 'Document information must use factual receipt UI');
-ok(Boolean(detailLayer?.querySelector('[data-document-detail-settings]')), 'Document information must expose A settings');
+ok(Boolean(sharedV()), 'Document information must expose Shared V settings');
 ok(!document.querySelector('[data-v2-layer-kind="technical"].document-viewer-backdrop'), 'Document click must not jump directly to the technical viewer');
 
 mark('technical-viewer');
@@ -252,7 +258,7 @@ ok(Boolean(technical?.querySelector('.document-page')), 'Text document must rend
 technical?.v2Close?.();
 
 mark('other-document-settings');
-detailLayer?.querySelector('[data-document-detail-settings]')?.click();
+sharedV()?.click();
 await wait();
 let documentSettings = document.querySelector('[data-modal][data-v2-layer-kind="bottom"]');
 ok(Boolean(documentSettings?.querySelector('[data-detail-delete]')), 'Other document settings must allow deletion');
@@ -264,7 +270,7 @@ mark('core-document-settings');
 root.querySelector('[data-profile-document="pdn-consent"]')?.click();
 await wait();
 detailLayer = root.closest('[data-v2-app]')?.querySelector('[data-v2-z-layer]');
-detailLayer?.querySelector('[data-document-detail-settings]')?.click();
+sharedV()?.click();
 await wait();
 documentSettings = document.querySelector('[data-modal][data-v2-layer-kind="bottom"]');
 ok(!documentSettings?.querySelector('[data-detail-delete]'), 'Core document settings must not expose deletion');
@@ -274,12 +280,12 @@ detailLayer?.v2Close?.();
 await wait();
 
 mark('settings-x');
-root.querySelector('[data-documents-settings]')?.click();
+sharedV()?.click();
 await wait();
 let settingsX = document.querySelector('[data-modal][data-v2-layer-kind="bottom"]');
-ok(Boolean(settingsX), 'A must open bottom X');
-ok(Boolean(settingsX?.querySelector('[data-open-document-templates]')), 'Templates action missing from A/X');
-ok(Boolean(settingsX?.querySelector('[data-add-profile-document]')), 'Add document action missing from A/X');
+ok(Boolean(settingsX), 'V must open bottom X');
+ok(Boolean(settingsX?.querySelector('[data-open-document-templates]')), 'Templates action missing from V/X');
+ok(Boolean(settingsX?.querySelector('[data-add-profile-document]')), 'Add document action missing from V/X');
 settingsX?.querySelector('[data-open-document-templates]')?.click();
 await wait();
 
@@ -293,6 +299,7 @@ await wait();
 
 mark('template-editor-z2');
 ok(Boolean(templateLayer?.querySelector('[data-template-form]')), 'Template editor must reuse the same Z2');
+ok(Boolean(sharedV()), 'Template editor must keep Documents settings in Shared V');
 let saveSource = templateLayer?.querySelector('[data-template-save]');
 const saveActions = saveSource?.closest('.modal-actions');
 ok(Boolean(saveSource) && Boolean(saveActions), 'Template editor must expose one bottom Save action');
@@ -364,6 +371,7 @@ ok(!controlledOpen?.contains(controlledToggle), 'Document toggle must not be nes
 ok(controlledToggle?.getAttribute('aria-pressed') === 'true', 'Controlled document must expose the current yes/no state');
 ok(controlledTile?.querySelectorAll('.document-tile__title span').length <= 2, 'Controlled document title must stay within two lines');
 controlledProbe.remove();
+disposeVContext?.();
 
 if (failures.length) {
   document.documentElement.dataset.documentsRuntime = 'fail';

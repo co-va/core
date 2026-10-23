@@ -1,11 +1,13 @@
 import {
   ALL_WORKPLACES_ID,
+  clearV2Y,
   focusNoteReels,
   initDateNavigator,
   initJournalDayTimeline,
   initNoteReels,
   journalDayTimeline,
   noteReels,
+  setV2Y,
 } from '../ui/ui.js';
 import { getWorkplaces } from '../core/workplace-time.js';
 import { getDays, getDay, getDayTime, getDaysForDate, getScheduleConflicts } from '../core/day/index.js';
@@ -63,14 +65,13 @@ export function renderJournalDay(root, {
   focusTarget = null,
 } = {}) {
   root.innerHTML = navigationRoot
-    ? '<div data-journal-day-content><div data-journal-y-host></div><div data-journal-timeline-host></div></div>'
-    : '<div data-journal-day-navigator></div><div data-journal-day-content><div data-journal-y-host></div><div data-journal-timeline-host></div></div>';
+    ? '<div data-journal-day-content><div data-journal-timeline-host></div></div>'
+    : '<div data-journal-day-navigator></div><div data-journal-day-content><div data-journal-timeline-host></div></div>';
 
   const navigatorRoot = navigationRoot || root.querySelector('[data-journal-day-navigator]');
   if (navigatorRoot) initDateNavigator(navigatorRoot, { date, onChange });
 
   const contentRoot = root.querySelector('[data-journal-day-content]');
-  const yRoot = contentRoot?.querySelector('[data-journal-y-host]');
   const timelineRoot = contentRoot?.querySelector('[data-journal-timeline-host]');
   const workplaces = getWorkplaces();
   const dayDate = dateKey(date);
@@ -81,6 +82,7 @@ export function renderJournalDay(root, {
   const dispose = () => {
     if (clockTimer) clearTimeout(clockTimer);
     clockTimer = null;
+    clearV2Y(root);
   };
 
   const dayNotes = getNotesForDay(dayDate);
@@ -110,12 +112,12 @@ export function renderJournalDay(root, {
   };
 
   const renderY = () => {
-    if (!yRoot) return;
-    yRoot.innerHTML = noteReels(visibleNotes, {
+    const yRoot = setV2Y(root, noteReels(visibleNotes, {
       activeTime,
       relatedIds,
       targetLabel: noteTargetLabel,
-    });
+    }));
+    if (!yRoot || yRoot.hidden) return;
     initNoteReels(yRoot, {
       onOpen: async ({ noteId }) => {
         const note = visibleNotes.find((item) => String(item?.id || '') === String(noteId || ''));

@@ -1,6 +1,6 @@
 import { workspaceHeaderContext } from '../header/index.js';
 import { mountV2ZLayer, v2ZLayer } from '../v2/index.js';
-import { v2QFrame, v2ZBodySections } from '../v2/z-layout.js';
+import { v2ZBodySections } from '../v2/z-layout.js';
 import { modal, mountModal } from '../modals/index.js';
 import { bindCalendarHeaderHost } from '../calendar/index.js';
 import { entityVisualCard } from '../cards/entity-card-constructor.js';
@@ -61,21 +61,17 @@ function recordHeaderContext({
     html: workspaceHeaderContext({
       title,
       hideD: false,
-      a: {
+      a: showA ? {
         kind: 'avatar',
         label: 'Запись',
         image: aImage,
         imagePosition: aImagePosition,
         initials: aInitials,
-        ...(showA && settings ? {
-          settingsTag: true,
-          data: 'data-record-owner-settings',
-          aria: 'Настройки записи',
-        } : {
-          disabled: true,
-          aria: 'Запись',
-        }),
-      },
+      } : null,
+      v: showA && settings ? {
+        data: 'data-record-owner-settings',
+        aria: 'Настройки записи',
+      } : null,
       d: {
         kind: 'chat',
         data: 'data-record-owner-chat',
@@ -340,7 +336,7 @@ export function mountRecordQ({
   });
   const classes = ['record-shared-q', className].filter(Boolean).join(' ');
   const layer = mountModal(document.body, modal(
-    `${context.html}${v2QFrame('<div data-record-owner-host></div>')}`,
+    `${context.html}<div data-record-owner-host></div>`,
     { variant: 'q', surface: 'app', title, className: classes },
   ));
   if (!layer) return null;

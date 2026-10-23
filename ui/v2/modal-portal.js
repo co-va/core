@@ -21,7 +21,7 @@ export function v2Layer(content = '', { kind = 'standard', title = '', className
   return `<div class="v2-layer-backdrop" data-v2-layer data-v2-layer-kind="${resolved}"><section class="v2-layer v2-layer--${resolved} ${text(className)}" role="dialog" aria-modal="true" aria-label="${text(title)}" tabindex="-1">${closeControl}${gestureZone}${title ? `<header class="v2-layer__header"><h2>${text(title)}</h2></header>` : ''}${content}</section></div>`;
 }
 
-function mountV2ModalPortal(host) {
+function mountV2ModalPortal(host, app = null) {
   if (!host) return null;
 
   const portal = document.createElement('div');
@@ -32,12 +32,25 @@ function mountV2ModalPortal(host) {
 
   const sync = () => {
     if (!portal.isConnected || !host.isConnected) return;
-    const standardGeometry = v2ModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport());
-    const geometry = qLayer
-      ? v2QModalPortalGeometry(host.getBoundingClientRect(), currentVisualViewport(), {
-          hostIsZ: Boolean(host.matches?.('[data-v2-z], [data-v2-z-layer]')),
-        })
-      : standardGeometry;
+    const viewport = currentVisualViewport();
+    const standardGeometry = v2ModalPortalGeometry(host.getBoundingClientRect(), viewport);
+    let geometry = standardGeometry;
+    if (qLayer && app) {
+      const appRect = app.getBoundingClientRect();
+      geometry = { left: appRect.left, top: appRect.top, width: appRect.width, height: appRect.height, bottom: appRect.bottom };
+      const headerBottom = app.querySelector?.('[data-v2-header]')?.getBoundingClientRect?.().bottom;
+      const qGeometry = v2QModalPortalGeometry(appRect, {
+        offsetLeft: appRect.left,
+        offsetTop: appRect.top,
+        width: appRect.width,
+        height: appRect.height,
+      }, { headerBottom });
+      portal.style.setProperty('--v2-q-top', `${Math.max(0, qGeometry.top - geometry.top)}px`);
+      portal.style.setProperty('--v2-q-left', `${Math.max(0, qGeometry.left - geometry.left)}px`);
+    } else {
+      portal.style.removeProperty('--v2-q-top');
+      portal.style.removeProperty('--v2-q-left');
+    }
     portal.style.left = `${geometry.left}px`;
     portal.style.top = `${geometry.top}px`;
     portal.style.width = `${geometry.width}px`;
@@ -72,6 +85,7 @@ function mountV2ModalPortal(host) {
     sync: settle,
     setQLayer(value) {
       qLayer = Boolean(value);
+      portal.classList.toggle('is-q', qLayer);
       settle();
     },
     dispose() {
@@ -108,23 +122,15 @@ function retainModalHeaderTarget(target) {
   };
 }
 
-function lockModalHeader(app, { allowContextActions = false } = {}) {
+function lockModalHeader(app) {
   const header = app?.querySelector?.('[data-v2-header]');
   if (!header) return () => {};
-
-  const targets = allowContextActions
-    ? [
-        header.querySelector('.v2-header__slot--a'),
-        header.querySelector('.v2-header__title'),
-      ].filter(Boolean)
-    : [header];
-
-  // Header remains pointer-addressable on purpose: outside input must reach the
-  // Shared modal owner so the veil can dismiss the active modal. The capture
-  // handler below consumes that input before any underlying Header action runs.
-  // Using inert here would make locked Header zones dead instead of veil-dismiss zones.
-  const releases = targets.map(retainModalHeaderTarget);
-  return () => releases.forEach((release) => release());
+  header.inert = true;
+  const release = retainModalHeaderTarget(header);
+  return () => {
+    release();
+    if (!modalHeaderLocks.has(header)) header.inert = false;
+  };
 }
 
 function applicationLayers() {
@@ -186,29 +192,13 @@ export function mountV2Layer(html, { root = null } = {}) {
   if (!host) return null;
   if (!technical) applyXTransitionPolicy(node);
   const app = technical ? null : host.closest?.('[data-v2-app]');
-  const locksHeader = Boolean(app && kind === 'standard' && !qLayer);
-  const header = locksHeader ? app.querySelector?.('[data-v2-header]') : null;
   const lockedStage = technical ? null : lockV2StageInteraction(app);
-  const releaseHeaderLock = technical
-    ? () => {}
-    : (qLayer
-        ? lockModalHeader(app, { allowContextActions: true })
-        : (locksHeader
-            ? () => {
-                if (!header) return;
-                header.inert = false;
-                header.classList.remove('is-modal-locked');
-              }
-            : lockModalHeader(app)));
-  const portalOwner = technical ? null : mountV2ModalPortal(host);
+  const releaseHeaderLock = technical ? () => {} : lockModalHeader(app);
+  const portalOwner = technical ? null : mountV2ModalPortal(host, app);
   portalOwner?.setQLayer?.(qLayer);
   const mountHost = portalOwner?.portal || host;
   node.classList.add(technical ? 'v2-layer-backdrop--technical' : 'v2-layer-backdrop--contained');
   if (!technical && host.matches?.('[data-v2-z], [data-v2-z-layer]')) lockV2ModalSurface(host);
-  if (header) {
-    header.inert = true;
-    header.classList.add('is-modal-locked');
-  }
   mountHost.appendChild(node);
   node.v2Portal = portalOwner?.portal || null;
   if (qLayer) {
@@ -238,9 +228,7 @@ export function mountV2Layer(html, { root = null } = {}) {
     if (foreignLayer && foreignLayer !== node) return true;
     const sheet = node.querySelector(':scope > .v2-layer');
     if (sheet?.contains(event.target)) return true;
-    if (!qLayer) return false;
-    const qHeaderAction = event.target.closest?.('[data-v2-header] .v2-header__slot--c .v2-header__control, [data-v2-header] .v2-header__slot--d .v2-header__control');
-    return Boolean(qHeaderAction && app?.contains?.(qHeaderAction));
+    return false;
   };
 
   const resetVeilPointer = () => {
@@ -267,10 +255,8 @@ export function mountV2Layer(html, { root = null } = {}) {
     if (!technical && host.matches?.('[data-v2-z], [data-v2-z-layer]')) unlockV2ModalSurface(host);
     if (!technical) unlockV2StageInteraction(app, lockedStage);
     const anotherQ = qLayer && applicationLayers().some((layer) => layer.dataset.v2Q === 'true');
-    if (!anotherQ) {
-      releaseHeaderLock();
-      if (qLayer) app?.classList.remove('has-v2-q-modal');
-    }
+    releaseHeaderLock();
+    if (qLayer && !anotherQ) app?.classList.remove('has-v2-q-modal');
     if (qLayer) window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
   };
 
