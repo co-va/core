@@ -419,7 +419,7 @@ ok(Boolean(eCard('dds')), 'Finance E DDS missing');
 
 await tapAndOpen(eDeck(), eCard('cash'), 12, 'finance-cash');
 ok(!shell()?.classList.contains('is-deck-open'), 'Cash selection did not enter Z');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'Cash A/settings control missing');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'Cash V/settings control missing');
 ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() === '+', 'Cash C add control missing');
 ok(Boolean(shell()?.querySelector('[data-v2-workspace-chat]')), 'Cash D chat control missing');
 
@@ -432,14 +432,14 @@ ok(!cashSections[1]?.querySelector('.entity-visual-card'), 'Cash investments sec
 ok(!cashSections[2]?.querySelector('.entity-visual-card'), 'Cash loan section must start empty');
 
 mark('cash-financial-operations');
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(35);
 let cashRootSettings = document.querySelector('[data-shared-profile-settings-menu]');
-ok(Boolean(cashRootSettings), 'Cash A/settings did not open');
+ok(Boolean(cashRootSettings), 'Cash V/settings did not open');
 const cashRootActionIds = [...(cashRootSettings?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node) => node.dataset.sharedProfileAction);
 ok(cashRootActionIds.join('|') === 'appearance|financial-operations',
-  'Cash A/settings must contain centralized View and Financial operations');
+  'Cash V/settings must contain centralized View and Financial operations');
 
 cashRootSettings?.querySelector('[data-shared-profile-action="appearance"]')
   ?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
@@ -463,7 +463,7 @@ cashAppearanceQ?.v2Close?.();
 await wait(35);
 ok(!document.querySelector('[data-v2-q="true"]'), 'Cash View Q must fully release before returning to Cash Z');
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(30);
 cashRootSettings = document.querySelector('[data-shared-profile-settings-menu]');
 cashRootSettings?.querySelector('[data-shared-profile-action="financial-operations"]')
@@ -498,7 +498,7 @@ ok(!document.querySelector('[data-modal][data-v2-layer-kind="bottom"]'),
 cashOperationLayer?.v2Close?.();
 await wait(35);
 ok(!shell()?.querySelector('[data-v2-z-layer]'), 'Cash operation Z2 did not close');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'Cash A was not restored after operation Z2');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'Cash V was not restored after operation Z2');
 
 shell()?.querySelector('[data-v2-workspace-primary]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(35);
@@ -549,13 +549,13 @@ let loanZ2 = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at(-1);
 ok(Boolean(loanZ2), 'Loan card did not open its Z1/history surface');
 ok(loanZ2?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Займ Runtime',
   'Loan card B must use the entity name');
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(30);
 let loanSettings = document.querySelector('[data-shared-profile-settings-menu]');
 const loanActionIds = [...(loanSettings?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node) => node.dataset.sharedProfileAction);
 ok(loanActionIds.join('|') === 'terms|financial-operation',
-  'Loan A must contain only Loan terms and Financial operation; View belongs to Cash Q');
+  'Loan V must contain only Loan terms and Financial operation; View belongs to Cash Q');
 
 loanSettings?.querySelector('[data-shared-profile-action="terms"]')
   ?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
@@ -599,7 +599,7 @@ ok(Boolean(loanTermsZ?.querySelector('input[name="firstPaymentDate"]')), 'Monthl
 loanTermsZ?.v2Close?.();
 await wait(30);
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(25);
 loanSettings = document.querySelector('[data-shared-profile-settings-menu]');
 loanSettings?.querySelector('[data-shared-profile-action="financial-operation"]')
@@ -632,13 +632,13 @@ const investmentCard = investmentSection?.querySelector('[data-finance-entity-ty
 investmentCard?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(35);
 let investmentZ2 = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at(-1);
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(25);
 let investmentSettings = document.querySelector('[data-shared-profile-settings-menu]');
 const investmentActionIds = [...(investmentSettings?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node) => node.dataset.sharedProfileAction);
 ok(investmentActionIds.join('|') === 'terms|financial-operation',
-  'Investment A must contain only Investment terms and Financial operation; View belongs to Cash Q');
+  'Investment V must contain only Investment terms and Financial operation; View belongs to Cash Q');
 
 investmentSettings?.querySelector('[data-shared-profile-action="terms"]')
   ?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
@@ -652,7 +652,7 @@ ok(Boolean(investmentTermsZ?.querySelector('input[name="termMode"]')), 'Investme
 investmentTermsZ?.v2Close?.();
 await wait(25);
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(25);
 investmentSettings = document.querySelector('[data-shared-profile-settings-menu]');
 investmentSettings?.querySelector('[data-shared-profile-action="financial-operation"]')
@@ -684,7 +684,7 @@ ok(Boolean(cashZ2), 'Cash card did not open Z2');
 ok(cashZ2?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Наличные', 'Cash Z2 B title is wrong');
 const cashSystemA = shell()?.querySelector('.v2-header__slot--a .v2-header__control');
 ok(Boolean(cashSystemA), 'Cash Z2 A photo/logo must remain visible');
-ok(Boolean(cashSystemA?.disabled), 'System cash A must be visible but inactive because View is centralized in Cash Q');
+ok(cashSystemA?.getAttribute('aria-hidden') === 'true', 'System cash A must remain visual-only photo/logo');
 const runtimeOperation = cashZ2?.querySelector('[data-wallet-operation="runtime-payment"]');
 ok(Boolean(runtimeOperation?.classList.contains('list-entry')), 'Cash operations must use the canonical List Entry');
 ok([...((runtimeOperation?.querySelectorAll('.list-entry__text > strong')) || [])].some((node) => node.textContent.trim() === 'Оплата услуги'), 'Cash operation name must stay in the List Entry title');
@@ -720,13 +720,13 @@ ok(!receipt?.textContent.includes('Конечный пользователь'), 
 ok(!receipt?.textContent.includes('Стрижка'), 'Cash receipt must not show what was paid for');
 ok(operationZ3?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Оплата услуги', 'Cash Z3 B operation title is wrong');
 
-const cashOperationA = shell()?.querySelector('[data-v2-workspace-a]');
-ok(Boolean(cashOperationA), 'Cash operation Z3 must expose clickable A/settings gear');
-ok(Boolean(cashOperationA?.querySelector('.v2-header__settings-tag')), 'Cash operation Z3 A must show settings gear');
-cashOperationA?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+const cashOperationV = shell()?.querySelector('[data-v2-v]');
+ok(Boolean(cashOperationV), 'Cash operation Z3 must expose clickable Shared V settings');
+ok(Boolean(cashOperationV?.querySelector('.v2-v__medallion')), 'Cash operation Z3 V must show Shared V medallion');
+cashOperationV?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(20);
 const operationSettings = document.querySelector('[data-shared-profile-settings-menu]');
-ok(Boolean(operationSettings?.querySelector('[data-shared-profile-action="delete-operation"]')), 'Cash operation A/settings must expose delete operation');
+ok(Boolean(operationSettings?.querySelector('[data-shared-profile-action="delete-operation"]')), 'Cash operation V/settings must expose delete operation');
 operationSettings?.closest('[data-modal]')?.v2Close?.();
 
 zEdge = edge();
@@ -749,21 +749,21 @@ ok(!shell()?.classList.contains('is-deck-open'), 'DDS selection did not enter Z'
 
 ok(shell()?.querySelector('.v2-header__title')?.textContent.trim() === 'Движения денежных средств',
   'DDS B title must be full movement name');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'DDS A/settings control missing');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'DDS V/settings control missing');
 ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS Z1 must not expose a C action');
 ok(Boolean(shell()?.querySelector('[data-v2-workspace-chat]')), 'DDS D/chat control missing');
 
 const openDdsSettings = async () => {
-  const a = shell()?.querySelector('[data-v2-workspace-a]');
-  ok(Boolean(a), 'DDS A/settings control missing');
-  a?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+  const v = shell()?.querySelector('[data-v2-v]');
+  ok(Boolean(v), 'DDS V/settings control missing');
+  v?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
   await wait(40);
   const settings = document.querySelector('[data-modal][data-v2-layer-kind="bottom"]');
   ok(Boolean(settings), 'DDS settings did not open as bottom modal');
   const ids = [...(settings?.querySelectorAll('[data-finance-dds-tool]') || [])]
     .map((node) => node.dataset.financeDdsTool);
   ok(ids.join('|') === 'excel|articles',
-    'DDS A must contain only Excel and Articles');
+    'DDS V must contain only Excel and Articles');
   return settings;
 };
 
@@ -804,10 +804,10 @@ ok(ddsReceipt?.textContent.includes('Тестовый комментарий'), 
 ok(ddsReceipt?.textContent.includes('глажка') && ddsReceipt?.textContent.includes('стирка'),
   'DDS receipt must expose operation composition');
 ok(ddsReceipt?.textContent.includes('357'), 'DDS receipt total missing');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'DDS receipt A/settings control missing');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'DDS receipt V/settings control missing');
 ok(!shell()?.querySelector('[data-v2-workspace-primary]'), 'DDS receipt must not expose a C action');
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
 let ddsOperationSettings = document.querySelector('[data-shared-profile-settings-menu]');
 ok(Boolean(ddsOperationSettings), 'DDS receipt settings did not open');
@@ -844,7 +844,7 @@ await closeTopDdsZ(119, 'correction');
 ok([...((shell()?.querySelectorAll('[data-v2-z-layer]')) || [])].length === 1,
   'DDS correction did not return to receipt Z2');
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
 ddsOperationSettings = document.querySelector('[data-shared-profile-settings-menu]');
 ddsOperationSettings?.querySelector('[data-shared-profile-action="cancel-operation"]')
@@ -880,7 +880,7 @@ ok(!cancelInfo?.isConnected, 'Top information modal must close by upward swipe')
 cancelModal?.v2Close?.();
 await wait(20);
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
 ddsOperationSettings = document.querySelector('[data-shared-profile-settings-menu]');
 ddsOperationSettings?.querySelector('[data-shared-profile-action="delete-operation"]')
@@ -974,7 +974,7 @@ ok(!document.querySelector('[data-modal][data-v2-layer-kind="bottom"]'),
   'DDS settings bottom modal remained behind Excel Z2');
 await closeTopDdsZ(121, 'export');
 ok(!shell()?.querySelector('[data-v2-z-layer]'), 'DDS Excel Z2 did not close by swipe');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'DDS A was not restored after Excel Z2');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'DDS V was not restored after Excel Z2');
 
 mark('dds-articles');
 settings = await openDdsSettings();
@@ -1007,7 +1007,7 @@ ok(shell()?.querySelector('[data-v2-workspace-primary]')?.textContent.trim() ===
   'DDS Articles C was not restored after closing editor');
 await closeTopDdsZ(124, 'articles');
 ok(!shell()?.querySelector('[data-v2-z-layer]'), 'DDS Articles Z2 did not close by swipe');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'DDS A was not restored after Articles Z2');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'DDS V was not restored after Articles Z2');
 
 await openF(3,'dds');
 await tapAndOpen(fDeck(), fCard('journal'), 15, 'journal');
@@ -1022,18 +1022,18 @@ ok(journalViewNavigation?.querySelector('[data-view="day"]')?.getAttribute('aria
   'Journal Z must open in Day view by default');
 ok(shell()?.querySelector('.v2-header__title')?.textContent.trim() === 'Студия Тест',
   'Journal Day B must be selected workplace');
-ok(Boolean(shell()?.querySelector('[data-v2-workspace-a]')), 'Journal Day A/settings missing');
+ok(Boolean(shell()?.querySelector('[data-v2-v]')), 'Journal Day V/settings missing');
 ok(Boolean(shell()?.querySelector('[data-v2-workspace-chat]')), 'Journal Day D/general chat missing');
 
 mark('journal-day-settings');
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
 let journalSettings = document.querySelector('[data-shared-profile-settings-menu]');
-ok(Boolean(journalSettings), 'Journal Day A did not open shared settings');
+ok(Boolean(journalSettings), 'Journal Day V did not open shared settings');
 const journalActionIds = [...(journalSettings?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node) => node.dataset.sharedProfileAction);
 ok(journalActionIds.includes('workplace') && journalActionIds.includes('z-report'),
-  'Journal Day A must contain Workplace and Z-report');
+  'Journal Day V must contain Workplace and Z-report');
 ok(!journalActionIds.includes('day-off'),
   'Journal Day must hide Day-off action while an active record exists');
 
@@ -1058,7 +1058,7 @@ journalWorkplaceModal?.v2Close?.();
 await wait(25);
 
 mark('journal-day-z-report');
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(30);
 journalSettings = document.querySelector('[data-shared-profile-settings-menu]');
 journalSettings?.querySelector('[data-shared-profile-action="z-report"]')
@@ -1167,13 +1167,13 @@ ok(serviceZ2?.isConnected, 'Q swipe must return to the source Z2 instead of clos
 ok([...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at(-1) === serviceZ2, 'Q swipe must preserve the exact active Z2');
 ok(!shell()?.classList.contains('is-deck-open') && !shell()?.classList.contains('is-e-open'), 'Q swipe must not reveal F/E');
 
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
-let serviceA2 = document.querySelector('[data-shared-profile-settings-menu]');
-const procedureA2Ids = [...(serviceA2?.querySelectorAll('[data-shared-profile-action]') || [])]
+let serviceV2 = document.querySelector('[data-shared-profile-settings-menu]');
+const procedureV2Ids = [...(serviceV2?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node)=>node.dataset.sharedProfileAction);
-ok(procedureA2Ids.join(',') === 'workplaces,editor,delete', 'Procedure Z2 A must contain only Workplaces, Editor, Delete');
-serviceA2?.querySelector('[data-shared-profile-action="workplaces"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+ok(procedureV2Ids.join(',') === 'workplaces,editor,delete', 'Procedure Z2 V must contain only Workplaces, Editor, Delete');
+serviceV2?.querySelector('[data-shared-profile-action="workplaces"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
 let workplaceSheet = document.querySelector('.modal--service-workplaces');
 ok(Boolean(workplaceSheet?.classList.contains('modal--profile-settings-sheet')), 'Workplace selection must use existing full settings bottom sheet');
@@ -1198,24 +1198,24 @@ serviceZ2 = [...(shell()?.querySelectorAll('[data-v2-z-layer]') || [])].at(-1);
 ok(Boolean(serviceZ2?.querySelector('.entity-visual-card--service')), 'Product Z2 missing main product card');
 ok(Boolean(serviceZ2?.querySelector('[data-mini-card-rail] .mini-card')), 'Product Z2 missing workplace miniCard');
 ok(serviceZ2?.querySelector('.mini-card__title')?.textContent?.trim() === 'Студия Тест', 'Product Z2 miniCard does not represent assigned workplace');
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
-serviceA2 = document.querySelector('[data-shared-profile-settings-menu]');
-const productA2Ids = [...(serviceA2?.querySelectorAll('[data-shared-profile-action]') || [])]
+serviceV2 = document.querySelector('[data-shared-profile-settings-menu]');
+const productV2Ids = [...(serviceV2?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node)=>node.dataset.sharedProfileAction);
-ok(productA2Ids.join(',') === 'workplaces,editor,delete', 'Product Z2 A must contain only Workplaces, Editor, Delete');
-serviceA2?.closest('[data-modal]')?.v2Close?.();
+ok(productV2Ids.join(',') === 'workplaces,editor,delete', 'Product Z2 V must contain only Workplaces, Editor, Delete');
+serviceV2?.closest('[data-modal]')?.v2Close?.();
 serviceZ2?.v2Close?.();
 await wait(60);
 
 mark('service-view-header-c-save');
-shell()?.querySelector('[data-v2-workspace-a]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+shell()?.querySelector('[data-v2-v]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(40);
-const serviceA1 = document.querySelector('[data-shared-profile-settings-menu]');
-const serviceA1Ids = [...(serviceA1?.querySelectorAll('[data-shared-profile-action]') || [])]
+const serviceV1 = document.querySelector('[data-shared-profile-settings-menu]');
+const serviceV1Ids = [...(serviceV1?.querySelectorAll('[data-shared-profile-action]') || [])]
   .map((node)=>node.dataset.sharedProfileAction);
-ok(serviceA1Ids.join(',') === 'appearance', 'Service Z1 A must contain only View');
-serviceA1?.querySelector('[data-shared-profile-action="appearance"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+ok(serviceV1Ids.join(',') === 'appearance', 'Service Z1 V must contain only View');
+serviceV1?.querySelector('[data-shared-profile-action="appearance"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(80);
 let serviceViewQ = document.querySelector('[data-v2-q="true"]');
 ok(Boolean(serviceViewQ), 'Service View Q did not open');
