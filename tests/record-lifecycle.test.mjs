@@ -107,11 +107,13 @@ assert.match(personHistorySource, /const records = recordIds\.map\(\(recordId\) 
 assert.match(personHistorySource, /fact\.entityType === 'finance-operation' && !text\(fact\.recordId\)/);
 assert.match(personHistorySource, /return \[\.\.\.records, \.\.\.standaloneFinance\]/);
 
-// Record View opens the same canonical Person History in both unpaid and paid action flows.
+// Professional Record View keeps the same canonical Person History in unpaid and paid action flows.
 assert.match(recordViewSource, /import \{ openPersonHistoryQ \} from '\.\.\/people\/people\.js';/);
+assert.match(recordViewSource, /professional: Object\.freeze\(\{[\s\S]*personHistory: true/);
+assert.match(recordViewSource, /account: Object\.freeze\(\{[\s\S]*personHistory: false/);
 assert.match(recordViewSource, /return openPersonHistoryQ\(document\.body, person\);/);
 assert.match(recordViewSource, /button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)/);
-assert.match(recordViewSource, /extraActions: button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)/);
+assert.match(recordViewSource, /extraActions: capabilities\.personHistory\s*\? button\('История', \{ variant: 'secondary', data: 'data-record-view-history' \}\)\s*: ''/);
 assert.doesNotMatch(recordViewSource, /insertAdjacentHTML\('beforeend', button\('История'/);
 
 console.log('record lifecycle tests: OK');
