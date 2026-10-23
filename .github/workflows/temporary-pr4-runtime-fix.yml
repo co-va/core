@@ -1,0 +1,37 @@
+name: Temporary PR4 Runtime Fix
+
+on:
+  push:
+    branches:
+      - staging
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Fix runtime notice close
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tests/booking-success-journal-runtime-browser.html')
+          text = path.read_text()
+          old = "confirmationNotice?.v2Close?.();\nawait wait(120);"
+          new = "confirmationNotice?.closest('[data-v2-layer]')?.v2Close?.();\nawait wait(120);"
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('runtime close target not found')
+              path.write_text(text.replace(old, new, 1))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/booking-success-journal-runtime-browser.html
+          git commit -m "Fix booking success runtime notice close"
+          git push origin HEAD:staging
