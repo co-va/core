@@ -22,26 +22,46 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Remove final A settings metadata
+      - name: Apply confirmed Shared contract tails
         shell: python
         run: |
           from pathlib import Path
           import re
 
-          p = Path('online-booking/account-shell.js')
-          s = p.read_text()
+          account = Path('online-booking/account-shell.js')
+          source = account.read_text()
           pattern = re.compile(
               r"a:\s*\{\s*kind:\s*'avatar',\s*label:\s*accountName\(state\),\s*image:\s*accountPhoto\(state\),\s*data:\s*'data-account-profile-settings',\s*settingsTag:\s*true,\s*aria:\s*'Настройки профиля',\s*\},",
               re.S,
           )
           replacement = "a: {\n      kind: 'avatar',\n      label: accountName(state),\n      image: accountPhoto(state),\n    },"
-          next_s, count = pattern.subn(replacement, s)
+          source, count = pattern.subn(replacement, source)
           if count != 1:
               raise SystemExit(f'expected one final profile A settings block, found {count}')
-          p.write_text(next_s)
+          account.write_text(source)
+
+          alphabet = Path('UI_ALPHABET.md')
+          doc = alphabet.read_text()
+          marker = '## Полный реестр Shared UI owners'
+          if marker not in doc:
+              owners = [
+                  'ui/ui.js',
+                  'ui/accordion', 'ui/auth', 'ui/booking', 'ui/buttons', 'ui/calendar',
+                  'ui/cards', 'ui/chat', 'ui/colors', 'ui/cost', 'ui/documents', 'ui/duration',
+                  'ui/forms', 'ui/header', 'ui/info', 'ui/inputs', 'ui/layout', 'ui/links',
+                  'ui/lists', 'ui/modals', 'ui/note', 'ui/page', 'ui/payment', 'ui/profile',
+                  'ui/receipt', 'ui/record', 'ui/reference', 'ui/repeated-fields', 'ui/selection',
+                  'ui/selectors', 'ui/settings', 'ui/states', 'ui/tags', 'ui/time', 'ui/uei',
+                  'ui/utils', 'ui/v2', 'ui/view-navigation', 'ui/workplaces',
+              ]
+              registry = '\n\n---\n\n' + marker + '\n\n`ui/ui.js` — единый Shared UI facade.\n\n' + '\n'.join(
+                  f'- `{owner}`' for owner in owners if owner != 'ui/ui.js'
+              ) + '\n'
+              doc += registry
+          alphabet.write_text(doc)
       - name: Run existing architecture checks
         run: npm run check
-      - name: Commit checked fix and remove helper
+      - name: Commit checked tails and remove helper
         shell: bash
         run: |
           set -euo pipefail
@@ -49,5 +69,5 @@ jobs:
           git config user.name "3001vaf-maker"
           git config user.email "30.01vaf@gmail.com"
           git add -A
-          git commit -m "Remove final A settings metadata"
+          git commit -m "Complete Shared UI ownership contract"
           git push origin HEAD:staging
