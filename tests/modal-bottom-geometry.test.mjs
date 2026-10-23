@@ -20,11 +20,11 @@ const restored=v2ModalPortalGeometry(
   {...baseHost,height:436,bottom:508},
   fullViewport,
 );
-assert.equal(restored.bottom,844);
-assert.equal(restored.height,772);
+assert.equal(restored.bottom,508);
+assert.equal(restored.height,436);
 
 const shiftedViewport=v2ModalPortalGeometry(
-  {left:28,top:82,right:390,width:362},
+  {left:28,top:82,right:390,width:362,height:762,bottom:844},
   {offsetLeft:0,offsetTop:12,width:390,height:832},
 );
 assert.equal(shiftedViewport.bottom,844);
@@ -104,11 +104,12 @@ assert.match(v2,/modalHeaderLocks/);
 assert.doesNotMatch(v2,/closeApplicationLayer\(current\)/);
 assert.match(v2,/document\.addEventListener\('click', handleOutsideClick, true\)/);
 assert.match(v2,/event\.stopImmediatePropagation\(\)/);
-assert.match(v2,/\.v2-header__slot--c \.v2-header__control/);
-assert.match(v2,/\.v2-header__slot--d \.v2-header__control/);
-assert.match(v2,/lockModalHeader\(app, \{ allowContextActions: true \}\)/);
+assert.match(v2,/function lockModalHeader\(app\)/);
+assert.match(v2,/header\.inert = true/);
+assert.match(v2,/lockModalHeader\(app\)/);
+assert.doesNotMatch(v2,/allowContextActions|qHeaderAction/);
 assert.match(v2,/v2QModalPortalGeometry/);
-assert.match(v2,/mountV2ModalPortal\(host\)/);
+assert.match(v2,/mountV2ModalPortal\(host, app\)/);
 assert.match(v2,/setQLayer\?\.\(qLayer\)/);
 assert.match(css,/\.v2-layer-portal--viewport\{position:fixed/);
 assert.match(modals,/const X_ROLES = new Set\(\['action', 'editor', 'picker'\]\)/);
