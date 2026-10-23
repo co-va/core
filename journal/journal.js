@@ -355,13 +355,14 @@ export function renderJournal(root, options = {}) {
           renderView();
         },
       }) || (() => {});
-    } else renderJournalList(viewRoot, {
+    } else if (accountMode) renderJournalList(viewRoot, {
       context: contextName,
-      records: accountMode ? readAccountRecords : null,
+      records: readAccountRecords,
       resolveRecordContext,
       mode: listMode,
       workplaceId: selectedWorkplaceId,
     });
+    else renderJournalList(viewRoot, { mode: listMode, workplaceId: selectedWorkplaceId });
 
     if (!accountMode) root.querySelector('[data-journal-settings]')?.addEventListener('click', openJournalSettings);
     if (activeView === 'list' && secondaryNavigationRoot) {

@@ -205,21 +205,20 @@ function renderFlowMode(root, records, workplaces, { contextName, resolveRecordC
   scrollToFocus(root, '[data-journal-list-anchor]');
 }
 
-export function renderJournalList(root, {
-  context = 'professional',
-  records = null,
-  resolveRecordContext = () => ({}),
-  mode = 'flow',
-  workplaceId = ALL_WORKPLACES_ID,
-} = {}) {
-  const contextName = journalContext(context);
+export function renderJournalList(root, { mode = 'flow', workplaceId = ALL_WORKPLACES_ID } = {}) {
+  const options = arguments[1] && typeof arguments[1] === 'object' ? arguments[1] : {};
+  const contextName = journalContext(options.context);
   const accountMode = contextName === 'account';
+  const records = options.records ?? null;
+  const resolveRecordContext = typeof options.resolveRecordContext === 'function' ? options.resolveRecordContext : () => ({});
   root.dataset.journalListContext = contextName;
   const workplaces = accountMode ? [] : getWorkplaces();
   const allRecords = readRecords(records, contextName);
-  const visibleRecords = accountMode || workplaceId === ALL_WORKPLACES_ID
+  const visibleRecords = accountMode
     ? allRecords
-    : allRecords.filter((record) => String(record?.workplaceId || '') === String(workplaceId || ''));
+    : workplaceId === ALL_WORKPLACES_ID
+      ? allRecords
+      : allRecords.filter((record) => String(record?.workplaceId || '') === String(workplaceId || ''));
 
   if (!visibleRecords.length) {
     root.innerHTML = emptyState('Список', 'Записей пока нет.');
