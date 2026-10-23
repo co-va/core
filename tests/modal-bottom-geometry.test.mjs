@@ -36,7 +36,11 @@ const qFallback=v2QModalPortalGeometry(
 );
 assert.deepEqual(qFallback,{left:16,top:72,width:374,height:772,bottom:844});
 
-const qExistingZ=v2QModalPortalGeometry(baseHost,fullViewport,{hostIsZ:true});
+const qExistingZ=v2QModalPortalGeometry(
+  {left:0,top:0,right:390,width:390,height:844,bottom:844},
+  fullViewport,
+  {headerBottom:72},
+);
 assert.deepEqual(qExistingZ,{left:16,top:72,width:374,height:772,bottom:844});
 
 const qKeyboard=v2QModalPortalGeometry(
