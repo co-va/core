@@ -575,7 +575,7 @@ function openFinanceOperation(root, movements, operationId) {
 
   layer.innerHTML = `${workspaceHeaderContext({
     title: operationName(first),
-    a: {
+    v: {
       kind: 'settings',
       data: 'data-finance-operation-settings',
       aria: 'Настройки операции',
@@ -732,7 +732,7 @@ function renderDDS(root) {
   const settingsItems = availableDDSSettings();
   const headerContext = workspaceHeaderContext({
     title: 'Движения денежных средств',
-    a: settingsItems.length ? {
+    v: settingsItems.length ? {
       kind: 'settings',
       data: 'data-finance-dds-settings',
       aria: 'Настройки ДДС',
