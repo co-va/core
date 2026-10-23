@@ -255,10 +255,8 @@ export function mountV2Layer(html, { root = null } = {}) {
     if (!technical && host.matches?.('[data-v2-z], [data-v2-z-layer]')) unlockV2ModalSurface(host);
     if (!technical) unlockV2StageInteraction(app, lockedStage);
     const anotherQ = qLayer && applicationLayers().some((layer) => layer.dataset.v2Q === 'true');
-    if (!anotherQ) {
-      releaseHeaderLock();
-      if (qLayer) app?.classList.remove('has-v2-q-modal');
-    }
+    releaseHeaderLock();
+    if (qLayer && !anotherQ) app?.classList.remove('has-v2-q-modal');
     if (qLayer) window.dispatchEvent(new CustomEvent('book:v2-context-changed'));
   };
 
