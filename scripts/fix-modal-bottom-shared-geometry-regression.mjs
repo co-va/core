@@ -26,6 +26,18 @@ assert.equal(restored.height,436);`,
 );
 
 replaceOnce(
+`const shiftedViewport=v2ModalPortalGeometry(
+  {left:28,top:82,right:390,width:362},
+  {offsetLeft:0,offsetTop:12,width:390,height:832},
+);`,
+`const shiftedViewport=v2ModalPortalGeometry(
+  {left:28,top:82,right:390,width:362,height:762,bottom:844},
+  {offsetLeft:0,offsetTop:12,width:390,height:832},
+);`,
+  'complete shifted viewport DOMRect fixture',
+);
+
+replaceOnce(
 `assert.match(v2,/lockModalHeader\\(app, \\{ allowContextActions: true \\}\\)/);
 assert.match(v2,/v2QModalPortalGeometry/);
 assert.match(v2,/mountV2ModalPortal\\(host\\)/);`,
