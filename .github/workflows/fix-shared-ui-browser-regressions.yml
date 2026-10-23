@@ -26,6 +26,7 @@ jobs:
         run: |
           node scripts/fix-shared-ui-browser-regressions.mjs
           node scripts/fix-booking-account-shared-v-regression.mjs
+          node scripts/fix-modal-bottom-shared-geometry-regression.mjs
       - name: Run architecture checks
         run: npm run check
       - name: Run unit regressions
@@ -37,6 +38,7 @@ jobs:
           rm .github/workflows/fix-shared-ui-browser-regressions.yml
           rm scripts/fix-shared-ui-browser-regressions.mjs
           rm scripts/fix-booking-account-shared-v-regression.mjs
+          rm scripts/fix-modal-bottom-shared-geometry-regression.mjs
           git config user.name "3001vaf-maker"
           git config user.email "30.01vaf@gmail.com"
           git add -A
