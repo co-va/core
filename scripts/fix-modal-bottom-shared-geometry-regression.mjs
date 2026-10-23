@@ -76,6 +76,14 @@ assert.deepEqual(qAlreadyBelowHeader,{left:16,top:72,width:374,height:772,bottom
 );
 
 replaceOnce(
+`assert.match(v2,/\\.v2-header__slot--c \\.v2-header__control/);
+assert.match(v2,/\\.v2-header__slot--d \\.v2-header__control/);`,
+`assert.doesNotMatch(v2,/v2-header__slot--[cd]/);
+assert.match(v2,/header\\.inert = true/);`,
+  'retired Q C/D portal exceptions',
+);
+
+replaceOnce(
 `assert.match(v2,/lockModalHeader\\(app, \\{ allowContextActions: true \\}\\)/);
 assert.match(v2,/v2QModalPortalGeometry/);
 assert.match(v2,/mountV2ModalPortal\\(host\\)/);`,
