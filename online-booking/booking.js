@@ -1022,9 +1022,9 @@ function globalAccountState(initial = {}) {
     relationships: [],
     accountRecords: [],
     error: '',
-    accountTab: String(initial.tab || 'home'),
+    accountTab: String(initial.tab || 'journal'),
     accountDeckOpen: false,
-    accountDeckActive: String(initial.tab === 'profile' ? 'profile' : initial.tab === 'history' ? 'history' : initial.tab === 'contacts' || initial.tab === 'contact-detail' ? 'contacts' : 'home'),
+    accountDeckActive: String(initial.tab === 'profile' ? 'profile' : initial.tab === 'history' ? 'history' : initial.tab === 'contacts' || initial.tab === 'contact-detail' ? 'contacts' : 'journal'),
     accountSelectedContactTenantId: String(initial.tab === 'contact-detail' ? initial.tenantId || '' : ''),
     accountSelectedChatTenantId: String(initial.tab === 'messages' ? initial.tenantId || '' : ''),
   };

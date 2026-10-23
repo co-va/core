@@ -41,16 +41,30 @@ Object.defineProperty(Element.prototype, 'hasPointerCapture', { configurable:tru
 window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
 window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
 
+const runtimeNow = new Date();
+const accountDate = `${runtimeNow.getFullYear()}-${String(runtimeNow.getMonth() + 1).padStart(2, '0')}-${String(runtimeNow.getDate()).padStart(2, '0')}`;
+const accountWorkplace = {
+  id:'runtime-workplace-db', key:'runtime-workplace', name:'Студия Runtime',
+  color:'#9AAE85', indicatorColor:'#9AAE85', from:'09:00', to:'18:00', timeZone:'Europe/Moscow',
+};
+const accountRecord = {
+  id:'account-shell-journal-record', tenantId:'tenant-invest', status:'active',
+  date:accountDate, workplaceId:accountWorkplace.key, from:'10:00', to:'11:00',
+  person:{id:'runtime-user',key:'runtime-user',uei:'END-RUNTIME-001',name:'Иван',surname:'Тестов',phone:'+79990000000'},
+  procedures:[{id:'runtime-procedure',name:'Runtime процедура',duration:60,cost:1500}], products:[],
+  payment:{state:'due',paid:0,due:1500}, finance:{planTotal:1500,factTotal:0},
+};
+
 const state = {
   account:{ id:'runtime-user', name:'Иван', surname:'Тестов', phone:'+79990000000', profileData:{} },
-  accountRecords:[],
+  accountRecords:[accountRecord],
   relationships:[{
     tenantId:'tenant-invest',
     linkedAt:'2026-01-01T00:00:00.000Z',
     context:{
       tenantId:'tenant-invest',
-      profile:{name:'Александр',surname:'Проект'},
-      workplaces:[],
+      profile:{uei:'PRO-RUNTIME-001',name:'Александр',surname:'Проект',phone:'+79991112233'},
+      workplaces:[accountWorkplace],
       investments:[{
         id:'investment-accepted',
         name:'Приложение',
@@ -89,9 +103,7 @@ const state = {
       }],
     },
   }],
-  accountTab:'home',
   accountDeckOpen:false,
-  accountDeckActive:'home',
   accountZEnter:false,
   accountChatOpen:false,
 };
@@ -139,11 +151,19 @@ const initialShell = shell();
 ok(Boolean(initialShell), 'real account shell did not render');
 ok(Boolean(fDeck()), 'real account F deck did not render');
 ok(ownerCount() === 1, 'initial account shell must have exactly one FEZ owner');
-ok(card('home')?.classList.contains('is-active'), 'home must be initial active F');
+ok(state.accountTab === 'journal', 'normal Account entry did not default to Journal');
+ok(card('journal')?.classList.contains('is-active'), 'Journal must be initial active F');
+ok(Boolean(card('journal')), 'Journal root card missing');
+ok(!card('home'), 'Legacy Overview must not remain a visible Account root');
+ok(![...fDeck().querySelectorAll('[data-v2-card-item]')].some((node) => node.textContent.trim() === 'Обзор'), 'Visible Account navigation still contains Overview');
+const initialJournalRoot = root.querySelector('[data-account-journal-root]');
+ok(initialJournalRoot?.dataset.journalContext === 'account', 'Account root did not start the existing Journal in account context');
+ok(Boolean(initialJournalRoot?.querySelector('[data-journal-day-context="account"]')), 'Account root did not mount existing Journal Day');
+ok(Boolean(initialJournalRoot?.querySelector('[data-journal-usage="' + accountRecord.id + '"]')), 'Account Journal did not display state.accountRecords');
 
-mark("linked-investments-overview");
-ok(!root.querySelector('[data-account-investment="tenant-invest:investment-accepted"]'), 'Accepted linked investment must not appear in Overview');
-ok(!root.querySelector('[data-account-investment-proposal]'), 'Pending investment proposal must not appear in Overview');
+mark("linked-investments-journal");
+ok(!root.querySelector('[data-account-investment="tenant-invest:investment-accepted"]'), 'Accepted linked investment must not leak into Journal root');
+ok(!root.querySelector('[data-account-investment-proposal]'), 'Pending investment proposal must not leak into Journal root');
 
 await edgeOpen(1);
 await selectRoot('contacts',11);
@@ -202,21 +222,54 @@ await selectRoot('profile',12);
 ok(shell() === initialShell, 'profile navigation rebuilt the whole account shell');
 
 await edgeOpen(3);
-await selectRoot('contacts',13);
-ok(shell() === initialShell, 'contacts navigation rebuilt the whole account shell');
+await selectRoot('journal',13);
+ok(shell() === initialShell, 'Profile → Journal rebuilt the whole account shell');
+ok(Boolean(root.querySelector('[data-account-journal-root] [data-journal-usage="' + accountRecord.id + '"]')), 'Profile → Journal lost account Record');
 
 await edgeOpen(4);
-await selectRoot('history',14);
-ok(shell() === initialShell, 'history navigation rebuilt the whole account shell');
+await selectRoot('contacts',14);
+ok(shell() === initialShell, 'contacts navigation rebuilt the whole account shell');
 
 await edgeOpen(5);
-await selectRoot('home',15);
-ok(shell() === initialShell, 'home navigation rebuilt the whole account shell');
+await selectRoot('journal',15);
+ok(shell() === initialShell, 'Contacts → Journal rebuilt the whole account shell');
+ok(Boolean(root.querySelector('[data-account-journal-root] [data-journal-usage="' + accountRecord.id + '"]')), 'Contacts → Journal lost account Record');
 
-// Repeat the cycle to expose handler accumulation that only appears after several renders.
-for (const [index,id] of ['profile','contacts','history','home','profile','home'].entries()) {
-  await edgeOpen(20 + index);
-  await selectRoot(id,40 + index);
+await edgeOpen(6);
+await selectRoot('history',16);
+ok(shell() === initialShell, 'history navigation rebuilt the whole account shell');
+ok(Boolean(root.querySelector('[data-account-history]')), 'History root stopped rendering account history');
+
+await edgeOpen(7);
+await selectRoot('journal',17);
+ok(shell() === initialShell, 'History → Journal rebuilt the whole account shell');
+
+mark('messenger-return-root');
+root.querySelector('[data-account-open-chat-root]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait(140);
+ok(state.accountTab === 'messages', 'Journal D did not open Messenger');
+const messengerEdge = edge();
+pointer(messengerEdge,'pointerdown',10,320,18);
+pointer(messengerEdge,'pointermove',48,322,18);
+pointer(messengerEdge,'pointerup',48,322,18);
+await wait(160);
+ok(state.accountTab === 'journal', 'Messenger return did not preserve Journal Account root');
+ok(state.accountDeckActive === 'journal', 'Messenger return lost Journal deck root');
+ok(Boolean(root.querySelector('[data-account-journal-root]')), 'Messenger return did not restore Journal DOM');
+
+mark('legacy-booking-home');
+state.accountTab = 'home';
+state.accountDeckActive = 'journal';
+state.accountDeckOpen = false;
+await renderGlobalAccount(root,state,callbacks);
+await wait(120);
+ok(root.querySelector('[data-v2-header] .v2-header__title')?.textContent.trim() === 'Обзор', 'Explicit legacy home no longer renders Overview; booking return changed inside PR3');
+ok(!root.querySelector('[data-account-journal-root]'), 'Explicit legacy home was redirected to Journal; PR4 leaked into PR3');
+
+// Repeat visible-root navigation to expose handler accumulation after the migration.
+for (const [index,id] of ['profile','journal','contacts','journal','history','journal'].entries()) {
+  await edgeOpen(30 + index);
+  await selectRoot(id,50 + index);
   ok(ownerCount() === 1, 'owner accumulation after repeated navigation to ' + id);
 }
 
