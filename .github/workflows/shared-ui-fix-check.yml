@@ -22,37 +22,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Remove remaining A settings metadata
-        shell: python
-        run: |
-          from pathlib import Path
-          p = Path('online-booking/account-shell.js')
-          s = p.read_text()
-          old = """    a: {
-              kind: 'avatar',
-              label: accountName(state),
-              image: accountPhoto(state),
-              data: 'data-account-profile-settings',
-              settingsTag: true,
-              aria: 'Настройки профиля',
-            },"""
-          new = """    a: {
-              kind: 'avatar',
-              label: accountName(state),
-              image: accountPhoto(state),
-            },"""
-          if s.count(old) != 1:
-              raise SystemExit(f'expected one remaining profile A settings block, found {s.count(old)}')
-          p.write_text(s.replace(old, new))
       - name: Run architecture and syntax checks
         run: npm run check
-      - name: Commit checked fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm .github/workflows/shared-ui-fix-check.yml
-          git config user.name "3001vaf-maker"
-          git config user.email "30.01vaf@gmail.com"
-          git add -A
-          git commit -m "Remove remaining A settings metadata"
-          git push origin HEAD:staging
