@@ -26,7 +26,11 @@ jobs:
         with:
           node-version: 24
       - name: Apply deterministic patch
-        run: node scripts/apply-shared-ui-task.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i "s/'profile settings selectors', 2)/'profile settings selectors', 3)/" scripts/apply-shared-ui-task.mjs
+          node scripts/apply-shared-ui-task.mjs
       - name: Commit patched Shared UI
         shell: bash
         run: |
