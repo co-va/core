@@ -19,6 +19,7 @@ import { openJournalWorkplaceControl } from '/journal/workplace-control.js';
 
 hydrateWorkplacesFromServer([{ key: 'test-space', name: 'Тестовое пространство' }]);
 let selection = [];
+let headerACount = 0;
 let headerCCount = 0;
 let headerDCount = 0;
 let underVeilCount = 0;
@@ -40,12 +41,18 @@ host.innerHTML = v2Shell({
     + button('Открыть Q', { data: 'data-test-open-q' })
     + '<output data-test-selection>0</output><output data-test-journal-selection>__all__</output>'
     + '<output data-test-time-result></output><output data-test-journal-time-result>09:00-18:00</output>'
-    + '<output data-test-header-c-count>0</output><output data-test-header-d-count>0</output>'
+    + '<output data-test-header-a-count>0</output><output data-test-header-c-count>0</output><output data-test-header-d-count>0</output>'
     + '<output data-test-under-veil-count>0</output>'
     + '<div data-test-scroll-filler style="height:1400px" aria-hidden="true"></div>',
 });
 setV2ZHeaderRows(host, ['<div data-test-z-header-control style="min-height:48px;display:grid;align-items:center">Стабильный Z Header</div>']);
 
+const headerASlot = host.querySelector('.v2-header__slot--a');
+headerASlot?.setAttribute('data-test-header-a', '');
+headerASlot?.addEventListener('click', () => {
+  headerACount += 1;
+  host.querySelector('[data-test-header-a-count]').textContent = String(headerACount);
+});
 host.querySelector('[data-test-header-c]').addEventListener('click', () => {
   headerCCount += 1;
   host.querySelector('[data-test-header-c-count]').textContent = String(headerCCount);
