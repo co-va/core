@@ -66,10 +66,17 @@ host.querySelector('[data-test-under-veil]').addEventListener('click', () => {
   host.querySelector('[data-test-under-veil-count]').textContent = String(underVeilCount);
 });
 host.querySelector('[data-test-open-q]').addEventListener('click', () => {
-  mountModal(host, modal(button('Q content', { data: 'data-test-q-content' }), {
-    variant: 'q',
-    title: 'Q',
-  }));
+  const lowerQ = mountModal(host, modal(
+    button('Q content', { data: 'data-test-q-content' })
+      + button('Открыть следующий Q', { data: 'data-test-open-q-child' }),
+    { variant: 'q', title: 'Q' },
+  ));
+  lowerQ?.querySelector('[data-test-open-q-child]')?.addEventListener('click', () => {
+    mountModal(lowerQ, modal(button('Q child content', { data: 'data-test-q-child-content' }), {
+      variant: 'q',
+      title: 'Q child',
+    }));
+  });
 });
 
 host.querySelector('[data-test-time-range]').addEventListener('click', () => {
