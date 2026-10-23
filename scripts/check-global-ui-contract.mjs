@@ -62,7 +62,7 @@ expect(
   'Shared H owner must remove C from Menu visually and from layout geometry.',
 );
 expect(menuHeader.includes('state.cSlot.style.display = state.cDisplay'), 'Shared H owner must restore C display after leaving Menu.');
-expect(menuHeader.includes('state.aControl.disabled = true'), 'Shared H owner must keep A inactive in menu state.');
+expect(!menuHeader.includes('aControl'), 'Shared H owner must leave photo-only A untouched in menu state.');
 expect(menuHeader.includes('state.dControl.disabled = false'), 'Shared H owner must keep D interactive in menu state.');
 expect(!menuHeader.includes("state.dControl.className = 'v2-header__control v2-header__control--mode'"), 'Menu state must not rewrite D into a different control; it preserves the owning screen D.');
 
