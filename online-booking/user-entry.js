@@ -226,7 +226,7 @@ async function renderAccessRoute(route) {
   syncViewport();
 }
 
-window.addEventListener('book:account-journal-booking-request', (event) => {
+window.addEventListener('cova:account-journal-booking-request', (event) => {
   void handleJournalBookingRequest(event);
 });
 document.addEventListener('click', handleJournalBookingContactSelection, true);
