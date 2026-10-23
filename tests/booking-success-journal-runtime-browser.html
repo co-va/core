@@ -215,7 +215,7 @@ const confirmationNotice = document.querySelector('.record-confirmation-notice-s
 ok(Boolean(confirmationNotice), 'existing booking confirmation notice did not open');
 ok(String(confirmationNotice?.textContent || '').includes('Вы записаны'), 'confirmation notice lost its headline');
 ok(String(confirmationNotice?.textContent || '').includes('Запись подтверждена'), 'confirmation notice lost confirmation status');
-confirmationNotice?.v2Close?.();
+confirmationNotice?.closest('[data-v2-layer]')?.v2Close?.();
 await wait(120);
 
 mark('record-view');
