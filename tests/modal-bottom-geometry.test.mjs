@@ -52,6 +52,7 @@ assert.deepEqual(qKeyboard,{left:16,top:72,width:374,height:436,bottom:508});
 const qAlreadyBelowHeader=v2QModalPortalGeometry(
   {left:0,top:72,right:390,width:390,height:772,bottom:844},
   fullViewport,
+  {headerBottom:72},
 );
 assert.deepEqual(qAlreadyBelowHeader,{left:16,top:72,width:374,height:772,bottom:844});
 
