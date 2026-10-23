@@ -355,3 +355,71 @@ Shared runtime CSS/SVG не использует:
 | Shared list entry | `ui/lists` |
 
 Shared UI един для professional и end-user.
+
+
+---
+
+## Полный реестр Shared UI owners
+
+`ui/ui.js` — единый Shared UI facade.
+
+- `ui/accordion`
+- `ui/auth`
+- `ui/booking`
+- `ui/buttons`
+- `ui/calendar`
+- `ui/cards`
+- `ui/chat`
+- `ui/colors`
+- `ui/cost`
+- `ui/documents`
+- `ui/duration`
+- `ui/forms`
+- `ui/header`
+- `ui/info`
+- `ui/inputs`
+- `ui/layout`
+- `ui/links`
+- `ui/lists`
+- `ui/modals`
+- `ui/note`
+- `ui/page`
+- `ui/payment`
+- `ui/profile`
+- `ui/receipt`
+- `ui/record`
+- `ui/reference`
+- `ui/repeated-fields`
+- `ui/selection`
+- `ui/selectors`
+- `ui/settings`
+- `ui/states`
+- `ui/tags`
+- `ui/time`
+- `ui/uei`
+- `ui/utils`
+- `ui/v2`
+- `ui/view-navigation`
+- `ui/workplaces`
+
+
+---
+
+## Общие interaction-контракты
+
+Контракт одинаков для профессионального интерфейса и интерфейса конечного пользователя.
+
+B показывает только присвоенный текущему контексту заголовок; если заголовок контексту не присвоен, B может оставаться пустым.
+
+В APP-состоянии D с иконкой чата всегда означает `включить Messenger`.
+В корне Messenger Z1 D меняется на явный control `вернуться в приложение`.
+Для обычного диалога D — скрепка/вложения.
+
+Информационный control `I` всегда находится в правой зоне `Z Header`.
+
+S — только информационное/техническое сообщение; сложные формы и editors принадлежат X/Q.
+
+Текущее выбранное значение в закрытом select всегда визуально центрировано.
+
+| Calendar / DatePicker / DateNavigator | `ui/calendar` |
+| Workplace selector / workplace controls | `ui/workplaces` |
