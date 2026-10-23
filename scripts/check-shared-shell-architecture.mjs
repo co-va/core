@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 
+// Regression guard for the canonical Shared H/Header/Y/Z/V/Q architecture.
 function filesUnder(directory, extensions = new Set(['.js', '.css'])) {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
