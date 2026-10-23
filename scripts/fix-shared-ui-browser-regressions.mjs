@@ -133,4 +133,21 @@ let headerCCount = 0;`,
   write(path, source);
 }
 
+// End-user static regression: A is photo-only and settings live in independent Shared V.
+{
+  const path = 'tests/booking-account-ui.test.mjs';
+  let source = read(path);
+  source = replaceOnce(path, source,
+`assert.match(v2Ui, /role === 'a' && slot\\.settingsTag/);
+assert.doesNotMatch(v2Ui, /kind === 'avatar' && slot\\.settingsTag/);
+assert.match(v2Css, /\\.v2-header__settings-tag\\{position:absolute;right:-2px;bottom:-2px/);`,
+`assert.match(v2Ui, /function avatarControl/);
+assert.match(v2Ui, /export \\{ v2V \\} from '\\.\\/v\\.js'/);
+assert.match(v2Ui, /bindV2VContext/);
+assert.doesNotMatch(v2Ui, /settingsTag/);
+assert.doesNotMatch(v2Css, /\\.v2-header__settings-tag/);`,
+  'booking account A/V static contract');
+  write(path, source);
+}
+
 console.log('Shared UI browser regressions aligned.');
