@@ -26,6 +26,15 @@ const listModes = [
   { id: 'time', label: 'По времени' },
 ];
 
+function journalContext(value = 'professional') {
+  return String(value || '').trim().toLowerCase() === 'account' ? 'account' : 'professional';
+}
+
+function sourceRecords(source) {
+  const value = typeof source === 'function' ? source() : source;
+  return Array.isArray(value) ? value : [];
+}
+
 function dateKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -71,21 +80,40 @@ function recordHasEnded(record = null, now = new Date()) {
 }
 
 export function renderJournal(root, options = {}) {
-  const availableViews = views.filter((view) => canUseBookCapability(view.capability));
+  const contextName = journalContext(options.context);
+  const accountMode = contextName === 'account';
+  const availableViews = accountMode ? views : views.filter((view) => canUseBookCapability(view.capability));
   let activeView = availableViews.some((view) => view.id === options.initialView)
     ? options.initialView
     : (availableViews[0]?.id || 'day');
   let listMode = 'flow';
-  const workplaces = getWorkplaces();
-  const context = getWorkplaceContext(workplaces, { scope: JOURNAL_CONTEXT_SCOPE });
-  let selectedWorkplaceId = context.workplaceId;
-  let selectedDate = context.date;
+  const workplaces = accountMode ? [] : getWorkplaces();
+  const requestedDate = options.date instanceof Date
+    ? options.date
+    : options.initialDate instanceof Date ? options.initialDate : new Date();
+  const professionalContext = accountMode ? null : getWorkplaceContext(workplaces, { scope: JOURNAL_CONTEXT_SCOPE });
+  let selectedWorkplaceId = accountMode ? ALL_WORKPLACES_ID : professionalContext.workplaceId;
+  let selectedDate = accountMode
+    ? (Number.isNaN(requestedDate.getTime()) ? new Date() : new Date(requestedDate))
+    : professionalContext.date;
   let disposeActiveView = () => {};
   let noteFocusTarget = null;
+  const readAccountRecords = () => sourceRecords(options.records);
+  const resolveRecordContext = typeof options.resolveRecordContext === 'function'
+    ? options.resolveRecordContext
+    : () => ({});
 
-  const activeDayWorkplaces = () => getActiveDayWorkplaces(selectedDate, workplaces);
+  root.dataset.journalContext = contextName;
+
+  const persistProfessionalContext = () => {
+    if (accountMode) return;
+    setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+  };
+
+  const activeDayWorkplaces = () => accountMode ? [] : getActiveDayWorkplaces(selectedDate, workplaces);
 
   const openDayTime = (workplaceId = '') => {
+    if (accountMode) return;
     const id = String(workplaceId || selectedWorkplaceId || '');
     if (!id || id === ALL_WORKPLACES_ID) return;
     openTimetableDayTimeEditor({
@@ -99,12 +127,14 @@ export function renderJournal(root, options = {}) {
   };
 
   const selectWorkplace = (nextId) => {
+    if (accountMode) return;
     selectedWorkplaceId = nextId || selectedWorkplaceId;
-    setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+    persistProfessionalContext();
     renderView();
   };
 
   const openDayWorkplaces = () => {
+    if (accountMode) return;
     const day = dateKey(selectedDate);
     const active = activeDayWorkplaces().map((item) => {
       const workplace = workplaces.find((entry) => String(entry?.key || '') === String(item.workplaceId || '')) || null;
@@ -132,6 +162,7 @@ export function renderJournal(root, options = {}) {
   };
 
   const openWorkplace = () => {
+    if (accountMode) return;
     const day = dateKey(selectedDate);
     const recordCounts = Object.fromEntries(workplaces.map((workplace) => {
       const key = String(workplace?.key || '');
@@ -148,11 +179,12 @@ export function renderJournal(root, options = {}) {
   };
 
   const journalTitle = () => {
-    if (selectedWorkplaceId === ALL_WORKPLACES_ID) return 'Журнал';
+    if (accountMode || selectedWorkplaceId === ALL_WORKPLACES_ID) return 'Журнал';
     return workplaces.find((item) => String(item?.key || '') === String(selectedWorkplaceId || ''))?.name || 'Журнал';
   };
 
   const openJournalZReport = () => {
+    if (accountMode) return;
     const allMode = selectedWorkplaceId === ALL_WORKPLACES_ID;
     const isMonth = activeView === 'month';
     const records = (isMonth
@@ -220,7 +252,7 @@ export function renderJournal(root, options = {}) {
   };
 
   const makeSelectedDayOff = () => {
-    if (selectedWorkplaceId === ALL_WORKPLACES_ID) return;
+    if (accountMode || selectedWorkplaceId === ALL_WORKPLACES_ID) return;
     const day = dateKey(selectedDate);
     if (getActiveRecordCountForDay(day, selectedWorkplaceId) > 0) return;
     makeTimetableDayOff({
@@ -231,6 +263,7 @@ export function renderJournal(root, options = {}) {
   };
 
   const openJournalSettings = () => {
+    if (accountMode) return;
     const day = dateKey(selectedDate);
     const allMode = selectedWorkplaceId === ALL_WORKPLACES_ID;
     const canMakeDayOff = activeView === 'day'
@@ -278,28 +311,32 @@ export function renderJournal(root, options = {}) {
     const secondaryNavigationRoot = headerRows[1] || null;
     const periodNavigationRoot = secondaryNavigationRoot?.querySelector('[data-journal-period-navigation]') || null;
     const viewClass = activeView === 'list' ? ' class="journal-list-viewport"' : '';
+    const headerOptions = { title: activeView === 'day' ? journalTitle() : 'Журнал' };
+    if (!accountMode) headerOptions.v = { data: 'data-journal-settings', aria: 'Настройки журнала' };
 
-    root.innerHTML = `${workspaceHeaderContext({
-      title: activeView === 'day' ? journalTitle() : 'Журнал',
-      v: { data: 'data-journal-settings', aria: 'Настройки журнала' },
-    })}<div data-journal-view${viewClass}></div>`;
+    root.innerHTML = `${workspaceHeaderContext(headerOptions)}<div data-journal-view${viewClass}></div>`;
     const viewRoot = root.querySelector('[data-journal-view]');
     if (activeView === 'day') {
       disposeActiveView = renderJournalDay(viewRoot, {
+        context: contextName,
+        records: accountMode ? readAccountRecords : null,
+        resolveRecordContext,
         date: selectedDate,
         workplaceId: selectedWorkplaceId,
         navigationRoot: periodNavigationRoot,
-        focusTarget: noteFocusTarget,
-        onWorkplaceFieldClick: openDayTime,
+        focusTarget: accountMode ? null : noteFocusTarget,
+        onWorkplaceFieldClick: accountMode ? () => {} : openDayTime,
         onChange: (nextDate) => {
           selectedDate = nextDate;
-          setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+          persistProfessionalContext();
           renderView();
         },
       }) || (() => {});
       noteFocusTarget = null;
     } else if (activeView === 'month') {
       disposeActiveView = renderJournalMonth(viewRoot, {
+        context: contextName,
+        records: accountMode ? readAccountRecords : null,
         month: selectedDate,
         workplaceId: selectedWorkplaceId,
         navigationRoot: periodNavigationRoot,
@@ -308,19 +345,25 @@ export function renderJournal(root, options = {}) {
           const month = nextMonth.getMonth();
           const day = Math.min(selectedDate.getDate(), new Date(year, month + 1, 0).getDate());
           selectedDate = new Date(year, month, day);
-          setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+          persistProfessionalContext();
         },
         onDateSelect: (nextDate) => {
           selectedDate = nextDate;
-          setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+          persistProfessionalContext();
           activeView = 'day';
           options.onViewChange?.(activeView);
           renderView();
         },
       }) || (() => {});
-    } else renderJournalList(viewRoot, { mode: listMode, workplaceId: selectedWorkplaceId });
+    } else renderJournalList(viewRoot, {
+      context: contextName,
+      records: accountMode ? readAccountRecords : null,
+      resolveRecordContext,
+      mode: listMode,
+      workplaceId: selectedWorkplaceId,
+    });
 
-    root.querySelector('[data-journal-settings]')?.addEventListener('click', openJournalSettings);
+    if (!accountMode) root.querySelector('[data-journal-settings]')?.addEventListener('click', openJournalSettings);
     if (activeView === 'list' && secondaryNavigationRoot) {
       initViewNavigation(secondaryNavigationRoot, {
         views: listModes,
@@ -341,6 +384,7 @@ export function renderJournal(root, options = {}) {
   };
 
   const focusJournalNotes = (event) => {
+    if (accountMode) return;
     const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
     const targetType = detail.targetType === 'record' || detail.targetType === 'event' ? detail.targetType : '';
     const targetId = String(detail.targetId || '');
@@ -355,12 +399,12 @@ export function renderJournal(root, options = {}) {
     }
     activeView = 'day';
     noteFocusTarget = { targetType, targetId };
-    setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
+    persistProfessionalContext();
     options.onViewChange?.(activeView);
     renderView();
   };
 
-  window.addEventListener('book:journal-note-focus-request', focusJournalNotes);
+  if (!accountMode) window.addEventListener('book:journal-note-focus-request', focusJournalNotes);
 
   let refreshQueued = false;
   const scheduleRefresh = () => {
@@ -386,7 +430,7 @@ export function renderJournal(root, options = {}) {
   return () => {
     disposeActiveView();
     refreshEvents.forEach((eventName) => window.removeEventListener(eventName, scheduleRefresh));
-    window.removeEventListener('book:journal-note-focus-request', focusJournalNotes);
+    if (!accountMode) window.removeEventListener('book:journal-note-focus-request', focusJournalNotes);
     clearV2ZHeaderRows(root);
   };
 }

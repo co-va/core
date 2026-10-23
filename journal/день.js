@@ -11,14 +11,26 @@ import {
 } from '../ui/ui.js';
 import { getWorkplaces } from '../core/workplace-time.js';
 import { getDays, getDay, getDayTime, getDaysForDate, getScheduleConflicts } from '../core/day/index.js';
-import { getTimeUsagesForScope } from '../core/time/index.js';
-import { getTimeAvailabilityAt } from '../core/time/index.js';
+import { getTimeUsagesForScope, getTimeAvailabilityAt, timeToMinutes, minutesToTime } from '../core/time/index.js';
 import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { getNotesForDay } from '../core/note/index.js';
 import { noteTargetLabel, noteVisibleForWorkplace, resolveNoteTarget } from './note-target.js';
 
 function dateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function journalContext(value = 'professional') {
+  return String(value || '').trim().toLowerCase() === 'account' ? 'account' : 'professional';
+}
+
+function readRecords(source) {
+  const value = typeof source === 'function' ? source() : source;
+  return Array.isArray(value) ? value : [];
+}
+
+function recordId(record = null) {
+  return String(record?.id || record?.sourceId || '');
 }
 
 function currentTimeForDay(day) {
@@ -32,6 +44,20 @@ function nextMinuteDelay() {
   return Math.max(25, 60000 - ((now.getSeconds() * 1000) + now.getMilliseconds()) + 25);
 }
 
+function accountRecordPaid(record = null) {
+  const payment = record?.payment && typeof record.payment === 'object' ? record.payment : null;
+  const state = String(payment?.state || '').trim().toLowerCase();
+  if (state) return state === 'paid';
+  if (payment && ('due' in payment || 'paid' in payment)) {
+    const due = Math.max(0, Number(payment.due) || 0);
+    const paid = Math.max(0, Number(payment.paid) || 0);
+    if (due <= 0.009 && paid > 0.009) return true;
+  }
+  const planTotal = Math.max(0, Number(record?.finance?.planTotal) || 0);
+  const factTotal = Math.max(0, Number(record?.finance?.factTotal) || 0);
+  return planTotal > 0.009 && factTotal + 0.009 >= planTotal;
+}
+
 function withFinancialState(usages = []) {
   return (Array.isArray(usages) ? usages : []).map((usage) => usage?.type === 'record' ? {
     ...usage,
@@ -40,9 +66,58 @@ function withFinancialState(usages = []) {
   } : usage);
 }
 
+function accountAmountDue(record = null) {
+  const planTotal = Number(record?.finance?.planTotal);
+  if (Number.isFinite(planTotal)) return Math.max(0, planTotal);
+  return [...(Array.isArray(record?.procedures) ? record.procedures : []), ...(Array.isArray(record?.products) ? record.products : [])]
+    .reduce((sum, item) => sum + Math.max(0, Number(item?.cost ?? item?.price) || 0), 0);
+}
+
+function accountUsage(record, resolveRecordContext) {
+  const presentation = typeof resolveRecordContext === 'function' ? (resolveRecordContext(record) || {}) : {};
+  const professional = presentation?.professional && typeof presentation.professional === 'object'
+    ? presentation.professional
+    : {};
+  return {
+    ...record,
+    type: 'record',
+    sourceId: recordId(record),
+    person: professional,
+    paid: accountRecordPaid(record),
+    financialTotal: accountAmountDue(record),
+  };
+}
+
+function accountTimelineRange(usages = []) {
+  const starts = [];
+  const ends = [];
+  (Array.isArray(usages) ? usages : []).forEach((usage) => {
+    const from = timeToMinutes(usage?.from);
+    const to = timeToMinutes(usage?.to);
+    if (from == null || to == null || to <= from) return;
+    starts.push(from);
+    ends.push(to);
+  });
+  if (!starts.length || !ends.length) return { from: '00:00', to: '23:59' };
+  const start = Math.max(0, Math.min(...starts));
+  const end = Math.min((24 * 60) - 1, Math.max(...ends));
+  if (end <= start) return { from: '00:00', to: '23:59' };
+  return { from: minutesToTime(start), to: minutesToTime(end) };
+}
+
 async function openExistingRecord(record, rerender = () => {}) {
   const { openRecordView } = await import('../core/records/view.js');
   openRecordView(record, { onClose: rerender });
+}
+
+async function openAccountRecord(record, resolveRecordContext, rerender = () => {}) {
+  const presentation = typeof resolveRecordContext === 'function' ? (resolveRecordContext(record) || {}) : {};
+  const { openRecordView } = await import('../core/records/view.js');
+  openRecordView(record, {
+    context: 'account',
+    professional: presentation?.professional || null,
+    onClose: rerender,
+  });
 }
 
 async function openUsage(usage, rerender = () => {}) {
@@ -57,6 +132,9 @@ async function openUsage(usage, rerender = () => {}) {
 }
 
 export function renderJournalDay(root, {
+  context = 'professional',
+  records = null,
+  resolveRecordContext = () => ({}),
   date = new Date(),
   workplaceId = '',
   onChange = () => {},
@@ -64,6 +142,9 @@ export function renderJournalDay(root, {
   navigationRoot = null,
   focusTarget = null,
 } = {}) {
+  const contextName = journalContext(context);
+  const accountMode = contextName === 'account';
+  root.dataset.journalDayContext = contextName;
   root.innerHTML = navigationRoot
     ? '<div data-journal-day-content><div data-journal-timeline-host></div></div>'
     : '<div data-journal-day-navigator></div><div data-journal-day-content><div data-journal-timeline-host></div></div>';
@@ -73,9 +154,7 @@ export function renderJournalDay(root, {
 
   const contentRoot = root.querySelector('[data-journal-day-content]');
   const timelineRoot = contentRoot?.querySelector('[data-journal-timeline-host]');
-  const workplaces = getWorkplaces();
   const dayDate = dateKey(date);
-  const allMode = workplaceId === ALL_WORKPLACES_ID;
   let activeTime = currentTimeForDay(dayDate);
   let clockTimer = null;
 
@@ -85,6 +164,51 @@ export function renderJournalDay(root, {
     clearV2Y(root);
   };
 
+  const rerender = () => {
+    dispose();
+    return renderJournalDay(root, {
+      context: contextName,
+      records,
+      resolveRecordContext,
+      date,
+      workplaceId,
+      onChange,
+      onWorkplaceFieldClick,
+      navigationRoot,
+      focusTarget: accountMode ? null : focusTarget,
+    });
+  };
+
+  if (accountMode) {
+    clearV2Y(root);
+    const accountRecords = readRecords(records)
+      .filter((record) => String(record?.date || '').slice(0, 10) === dayDate)
+      .filter((record) => String(record?.status || '').toLowerCase() !== 'cancelled');
+    if (!accountRecords.length) {
+      timelineRoot.innerHTML = '<div class="time-day-state" aria-disabled="true">Записей нет</div>';
+      return dispose;
+    }
+
+    const recordById = new Map(accountRecords.map((record) => [recordId(record), record]).filter(([id]) => Boolean(id)));
+    const usages = accountRecords.map((record) => accountUsage(record, resolveRecordContext));
+    const range = accountTimelineRange(usages);
+    timelineRoot.innerHTML = journalDayTimeline({
+      from: range.from,
+      to: range.to,
+      usages,
+      day: dayDate,
+    });
+    initJournalDayTimeline(timelineRoot, {
+      onUsageClick: ({ usageId }) => {
+        const record = recordById.get(String(usageId || ''));
+        if (record) void openAccountRecord(record, resolveRecordContext, rerender);
+      },
+    });
+    return dispose;
+  }
+
+  const workplaces = getWorkplaces();
+  const allMode = workplaceId === ALL_WORKPLACES_ID;
   const dayNotes = getNotesForDay(dayDate);
   const visibleNotes = dayNotes.filter((note) => noteVisibleForWorkplace(note, workplaceId, { allMode }));
   const relatedIds = focusTarget?.targetType && focusTarget?.targetId
@@ -98,18 +222,6 @@ export function renderJournalDay(root, {
     const target = relatedNote ? resolveNoteTarget(relatedNote) : null;
     if (target?.entity?.from) activeTime = String(target.entity.from);
   }
-
-  const rerender = () => {
-    dispose();
-    return renderJournalDay(root, {
-      date,
-      workplaceId,
-      onChange,
-      onWorkplaceFieldClick,
-      navigationRoot,
-      focusTarget,
-    });
-  };
 
   const renderY = () => {
     const yRoot = setV2Y(root, noteReels(visibleNotes, {
