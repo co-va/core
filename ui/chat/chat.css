@@ -45,6 +45,7 @@
 @media(max-width:360px){.message-bubble{max-width:88%}}
 
 .v2-app .message-composer{bottom:env(safe-area-inset-bottom);width:min(calc(100% - 36px),calc(var(--app-max-width) - 36px));background:var(--app-bg)}
+.v2-app--chat .v2-z,.v2-workspace-surface--chat{padding-bottom:92px}
 
 .message-composer__input:focus,.message-composer__input:focus-visible,.message-composer__attach:focus,.message-composer__attach:focus-visible,.message-composer .ui-button.message-composer__send:focus,.message-composer .ui-button.message-composer__send:focus-visible{outline:none;box-shadow:none}
 .message-composer__input:focus,.message-composer__input:focus-visible{border-color:var(--border)}
