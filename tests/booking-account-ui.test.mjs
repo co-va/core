@@ -388,7 +388,7 @@ assert.doesNotMatch(bookingSettingsUi, /\bappShell\s*\(/);
 assert.doesNotMatch(bookingSettingsUi, /\bappHeader\s*\(/);
 assert.doesNotMatch(bookingSettingsUi, /app-content--book-shell/);
 assert.doesNotMatch(headerUi, /data-workspace-back-source/);
-assert.match(headerUi, /actionData/);
+assert.match(headerUi, /data-workspace-v-action/);
 assert.match(bookingSettingsUi, /openSharedProfileSettingsMenu/);
 assert.match(bookingSettingsUi, /label: 'Приветствие'/);
 assert.doesNotMatch(bookingSettingsUi, /label: 'Настройки уведомлений'/);
