@@ -25,7 +25,7 @@ export function v2QModalPortalGeometry(appRect = {}, viewport = {}, { edge = 16,
   const safeEdge = Math.max(0, Number(edge) || 0);
   const right = base.left + base.width;
   const left = Math.min(right, base.left + safeEdge);
-  const explicitHeaderBottom = Number(headerBottom);
+  const explicitHeaderBottom = headerBottom == null ? NaN : Number(headerBottom);
   const fallbackTop = base.top + Math.max(0, Number(headerHeight) || 0);
   const top = Math.min(base.bottom, Math.max(base.top, Number.isFinite(explicitHeaderBottom) ? explicitHeaderBottom : fallbackTop));
   return { left, top, width: Math.max(0, right - left), height: Math.max(0, base.bottom - top), bottom: base.bottom };
