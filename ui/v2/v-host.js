@@ -11,6 +11,14 @@ function activeWorkspaceSurface(app) {
   return layers.at(-1) || app?.querySelector?.('[data-v2-front] > [data-v2-z]') || null;
 }
 
+function syncControlState(control, source) {
+  if (!control || !source) return;
+  const disabled = Boolean(source.disabled);
+  const aria = source.getAttribute('aria-label') || 'Действия раздела';
+  if (control.disabled !== disabled) control.disabled = disabled;
+  if (control.getAttribute('aria-label') !== aria) control.setAttribute('aria-label', aria);
+}
+
 export function setV2V(root, options = null) {
   const app = rootApp(root);
   const host = app?.querySelector?.(':scope > [data-v2-v-host]');
@@ -36,8 +44,7 @@ export function bindV2VContext(root) {
     if (!app.isConnected) return;
     const nextSource = activeWorkspaceSurface(app)?.querySelector?.('[data-workspace-v-action]') || null;
     if (nextSource === source && control?.isConnected) {
-      control.disabled = Boolean(source?.disabled);
-      control.setAttribute('aria-label', source?.getAttribute('aria-label') || 'Действия раздела');
+      syncControlState(control, source);
       return;
     }
     source = nextSource;
@@ -45,7 +52,7 @@ export function bindV2VContext(root) {
       ? setV2V(app, { aria: source.getAttribute('aria-label') || 'Действия раздела' })
       : clearV2V(app);
     if (control) {
-      control.disabled = Boolean(source.disabled);
+      syncControlState(control, source);
       control.addEventListener('click', () => {
         if (!source?.isConnected || source.disabled) return;
         source.click();
