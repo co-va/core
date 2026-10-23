@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}
+    *{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<div id="host"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import { v2Shell } from '/ui/v2/shell.js';
+import { renderJournal } from '/journal/journal.js';
+import { configureWorkplaceSource } from '/core/workplace-time.js';
+import { configureTimeUsageSource } from '/core/time/index.js';
+import { hydrateDaysFromServer } from '/core/day/index.js';
+import { hydrateRecordStateFromServer } from '/core/record/index.js';
+import { hydrateNotesFromServer } from '/core/note/index.js';
+import { hydrateEventsFromServer } from '/core/event/index.js';
+import { setWorkplaceContext } from '/core/workplace-context.js';
+import { loadBookAccess } from '/core/access.js';
+
+const host = document.querySelector('#host');
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (name) => {
+  stage = name;
+  result.textContent = 'running: ' + name;
+  document.documentElement.dataset.journalAccountRuntimeStage = name;
+};
+const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
+const wait = (ms = 70) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const flatText = (node) => String(node?.textContent || '').replaceAll('\u00a0', ' ').replace(/\s+/g, ' ').trim();
+const navigation = (mounted, index = 0) => mounted.app.querySelectorAll('[data-view-navigation]')[index] || null;
+const viewButton = (mounted, id, index = 0) => navigation(mounted, index)?.querySelector(`[data-view="${id}"]`) || null;
+window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
+window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  let path = '';
+  try { path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname; } catch {}
+  if (path.endsWith('/saas-access/me')) {
+    return Promise.resolve(new Response(JSON.stringify({
+      tenantId:'journal-runtime-tenant',
+      status:'ACTIVE',
+      isOwnerBook:false,
+      capabilities:[
+        { key:'journal.day.access', valueType:'BOOLEAN', enabled:true, limit:null, source:'RUNTIME' },
+        { key:'journal.month.access', valueType:'BOOLEAN', enabled:true, limit:null, source:'RUNTIME' },
+        { key:'journal.list.access', valueType:'BOOLEAN', enabled:true, limit:null, source:'RUNTIME' },
+      ],
+    }), { status:200, headers:{ 'Content-Type':'application/json' } }));
+  }
+  return nativeFetch(input, init);
+};
+await loadBookAccess();
+
+const accountDate = '2026-11-12';
+const scheduleOnlyDate = '2026-11-13';
+const secondAccountDate = '2026-11-17';
+const workplace = {
+  id: 'journal-runtime-studio-db',
+  key: 'journal-runtime-studio',
+  name: 'Студия Relationship',
+  color: '#9AAE85',
+  indicatorColor: '#9AAE85',
+  from: '09:00',
+  to: '18:00',
+  timeZone: 'Europe/Moscow',
+};
+const professional = {
+  tenantId: 'tenant-journal-runtime',
+  uei: 'PRO-JOURNAL-001',
+  name: 'Иван',
+  surname: 'Relationship',
+  phone: '+79998887766',
+  phones: ['+79998887766'],
+};
+const endUser = {
+  id: 'account-person',
+  key: 'account-person',
+  uei: 'END-JOURNAL-001',
+  name: 'Мария',
+  surname: 'Account',
+  phone: '+79990000001',
+};
+const relationship = {
+  tenantId: professional.tenantId,
+  context: { profile: professional, workplaces: [workplace] },
+};
+const relationships = [relationship];
+const resolveRecordContext = (record) => {
+  const relation = relationships.find((item) => String(item?.tenantId || '') === String(record?.tenantId || '')) || null;
+  const workplaces = Array.isArray(relation?.context?.workplaces) ? relation.context.workplaces : [];
+  return {
+    professional: relation?.context?.profile || null,
+    workplace: workplaces.find((item) => String(item?.key || item?.id || '') === String(record?.workplaceId || '')) || null,
+  };
+};
+const accountRecords = [
+  {
+    id: 'account-journal-record-1',
+    tenantId: professional.tenantId,
+    status: 'active',
+    date: accountDate,
+    workplaceId: workplace.key,
+    from: '10:00',
+    to: '11:30',
+    person: endUser,
+    procedures: [{ id:'account-procedure-1', name:'Account процедура', duration:90, cost:2100 }],
+    products: [],
+    payment: { state:'due', due:2100, paid:0 },
+    createdAt: accountDate + 'T08:00:00.000Z',
+    updatedAt: accountDate + 'T08:00:00.000Z',
+  },
+  {
+    id: 'account-journal-record-2',
+    tenantId: professional.tenantId,
+    status: 'active',
+    date: secondAccountDate,
+    workplaceId: workplace.key,
+    from: '14:00',
+    to: '15:00',
+    person: endUser,
+    procedures: [{ id:'account-procedure-2', name:'Account процедура 2', duration:60, cost:1200 }],
+    products: [],
+    payment: { state:'paid', due:0, paid:1200, paidAt: secondAccountDate + 'T15:00:00.000Z' },
+    createdAt: secondAccountDate + 'T08:00:00.000Z',
+    updatedAt: secondAccountDate + 'T15:00:00.000Z',
+  },
+];
+const professionalRecord = {
+  id: 'professional-journal-record',
+  status: 'active',
+  date: accountDate,
+  workplaceId: workplace.key,
+  from: '12:00',
+  to: '13:00',
+  person: { id:'professional-client', key:'professional-client', name:'Внутренний', surname:'Клиент', phone:'+79990000002' },
+  procedures: [{ id:'professional-procedure', name:'Professional процедура', duration:60, cost:1500 }],
+  products: [],
+};
+const professionalEvent = {
+  id: 'professional-event',
+  type: 'event',
+  sourceId: 'professional-event',
+  date: accountDate,
+  workplaceId: workplace.key,
+  from: '15:00',
+  to: '16:00',
+  title: 'Внутреннее событие professional',
+  color: '#777A7D',
+};
+
+configureWorkplaceSource(() => [workplace]);
+hydrateDaysFromServer([
+  { date:accountDate, workplaceId:workplace.key, from:'09:00', to:'18:00' },
+  { date:scheduleOnlyDate, workplaceId:workplace.key, from:'09:00', to:'18:00' },
+]);
+hydrateRecordStateFromServer({ records:[professionalRecord], recordEvents:[] });
+hydrateEventsFromServer([professionalEvent]);
+hydrateNotesFromServer([{
+  id:'professional-note-account-date',
+  date:accountDate,
+  targetType:'record',
+  targetId:professionalRecord.id,
+  title:'Внутренняя заметка professional',
+  text:'Не должна попасть в account Journal',
+  workplaceId:workplace.key,
+}]);
+configureTimeUsageSource(({ date, workplaceId } = {}) => {
+  if (String(date || '') !== accountDate || String(workplaceId || '') !== workplace.key) return [];
+  return [
+    { ...professionalRecord, type:'record', sourceId:professionalRecord.id, rigidity:'hard' },
+    { ...professionalEvent, rigidity:'soft' },
+  ];
+});
+
+function mountJournal(options) {
+  host.innerHTML = v2Shell({ body:'<div data-runtime-journal-root></div>', className:'v2-app--workspace' });
+  const app = host.querySelector('[data-v2-app]');
+  const body = app.querySelector('[data-v2-z-body]');
+  const root = body.querySelector('[data-runtime-journal-root]');
+  const dispose = renderJournal(root, options) || (() => {});
+  return { app, root, dispose };
+}
+
+mark('professional-day');
+setWorkplaceContext({ workplaceId: workplace.key, date: new Date('2026-11-12T12:00:00'), scope:'journal' });
+let mounted = mountJournal({ initialView:'day' });
+await wait();
+ok(mounted.root.dataset.journalContext === 'professional', 'default Journal context is not professional');
+ok(Boolean(mounted.root.querySelector('[data-journal-settings]')), 'professional Journal settings disappeared');
+ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${professionalRecord.id}"]`)), 'professional Day record disappeared');
+ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${professionalEvent.id}"]`)), 'professional Day event disappeared');
+
+mark('professional-month');
+viewButton(mounted, 'month')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+const professionalScheduledCell = mounted.root.querySelector(`[data-calendar-date="${scheduleOnlyDate}"]`);
+ok(Boolean(professionalScheduledCell?.classList.contains('is-working')), 'professional Month stopped using working schedule/capacity dates');
+
+mark('professional-list');
+viewButton(mounted, 'list')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+const professionalRow = mounted.root.querySelector(`[data-journal-list-record="${professionalRecord.id}"]`);
+ok(Boolean(professionalRow), 'professional List stopped using canonical records');
+professionalRow?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+let recordLayer = mounted.app.querySelector('[data-v2-z-layer].record-view-z');
+ok(recordLayer?.dataset.recordViewContext === 'professional', 'professional List record click no longer opens professional Record View');
+recordLayer?.v2Close?.();
+mounted.dispose();
+await wait(20);
+
+mark('account-day');
+mounted = mountJournal({
+  context:'account',
+  records:() => accountRecords,
+  resolveRecordContext,
+  initialView:'day',
+  initialDate:new Date('2026-11-12T12:00:00'),
+});
+await wait();
+ok(mounted.root.dataset.journalContext === 'account', 'Journal did not enter account context');
+ok(Boolean(mounted.root.querySelector('[data-journal-day-context="account"]')), 'existing Day renderer did not receive account context');
+const accountTimeline = mounted.root.querySelector('[data-time-timeline]');
+ok(Boolean(accountTimeline), 'account Day did not use Shared journalDayTimeline');
+ok(accountTimeline?.dataset.timeFrom === '10:00' && accountTimeline?.dataset.timeTo === '11:30', 'account Day timeline does not use account Record from/to geometry');
+const accountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
+ok(Boolean(accountPlaque?.classList.contains('journal-record')), 'account Record did not use existing Record plaque');
+ok(flatText(accountPlaque).includes('Иван Relationship'), 'account Day plaque does not present professional identity');
+ok(accountPlaque?.dataset.journalUsage === accountRecords[0].id, 'account Day record is not mapped to canonical Record id');
+ok(!mounted.root.querySelector('[data-journal-settings]'), 'account Journal exposes professional settings');
+ok(!mounted.root.querySelector('[data-time-workplace-field]'), 'account Day exposes professional working-time control');
+ok(!flatText(mounted.root).includes('Сделать выходным'), 'account Day exposes professional day-off');
+ok(!flatText(mounted.root).includes('Z-Отчет'), 'account Day exposes professional Z-report');
+ok(!flatText(mounted.root).includes('Внутренняя заметка professional'), 'professional Note leaked into account Day');
+ok(!flatText(mounted.root).includes('Внутреннее событие professional'), 'professional Event leaked into account Day');
+ok(!mounted.root.querySelector(`[data-journal-usage="${professionalRecord.id}"]`), 'professional Record leaked into account Day');
+
+mark('account-free-slot');
+const slot = mounted.root.querySelector('[data-time-slot-from]');
+ok(Boolean(slot), 'account Shared timeline has no slot surface to verify inert creation behavior');
+slot?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+ok(!document.querySelector('[data-record-creation],[data-journal-creation]'), 'account free slot started professional creation flow');
+ok(!document.querySelector('[data-modal]'), 'account free slot opened a professional modal');
+
+mark('account-record-open');
+accountPlaque?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+recordLayer = mounted.app.querySelector('[data-v2-z-layer].record-view-z');
+ok(Boolean(recordLayer), 'account Day Record click did not open Shared Record View');
+ok(recordLayer?.dataset.recordViewContext === 'account', 'account Day Record click did not use account Record View context');
+ok(recordLayer?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Иван Relationship', 'account Record View professional identity is wrong');
+ok(!recordLayer?.querySelector('[data-record-owner-settings]'), 'professional Record controls leaked from account Journal click');
+recordLayer?.v2Close?.();
+await wait();
+
+mark('account-month');
+viewButton(mounted, 'month')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+ok(Boolean(mounted.root.querySelector('[data-journal-month-context="account"] [data-calendar]')), 'account Month did not use existing Shared Calendar');
+const accountDateCell = mounted.root.querySelector(`[data-calendar-date="${accountDate}"]`);
+const fakeScheduleCell = mounted.root.querySelector(`[data-calendar-date="${scheduleOnlyDate}"]`);
+ok(Boolean(accountDateCell?.classList.contains('is-working')), 'date with account Record is not marked in Month');
+ok(flatText(accountDateCell).includes('1 зап.'), 'account Month record count missing');
+ok(Boolean(accountDateCell?.querySelector('.calendar__date-fill')), 'account Month does not use existing Record color/state fill');
+ok(!fakeScheduleCell?.classList.contains('is-working'), 'professional working-day capacity leaked into account Month');
+ok(!fakeScheduleCell?.querySelector('.calendar__date-fill'), 'date without account Record received fake professional load');
+ok(!fakeScheduleCell?.querySelector('.calendar__date-indicators'), 'professional workplace indicators leaked into account Month');
+
+mark('account-month-to-day');
+accountDateCell?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+ok(Boolean(mounted.root.querySelector('[data-journal-day-context="account"]')), 'Month date selection did not use existing Month → Day contract');
+ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`)), 'Month → Day lost selected account Record');
+
+mark('account-list-flow');
+viewButton(mounted, 'list')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+const listHost = mounted.root.querySelector('[data-journal-list-context="account"]');
+ok(Boolean(listHost?.querySelector('.list-entries')), 'account List did not use v2ListEntries');
+let accountRows = [...(listHost?.querySelectorAll('[data-journal-list-record]') || [])];
+ok(accountRows.length === 2, 'account List did not render passed account source records');
+const firstRowText = flatText(accountRows.find((row) => row.dataset.journalListRecord === accountRecords[0].id));
+ok(firstRowText.includes('Иван Relationship'), 'account List row does not show professional presentation');
+ok(firstRowText.includes('Студия Relationship'), 'account List row does not show relationship workplace presentation');
+ok(!firstRowText.includes('Мария Account'), 'account List exposes end user as primary Record identity');
+
+mark('account-list-time');
+const timeSwitch = viewButton(mounted, 'time', 1);
+timeSwitch?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+accountRows = [...(mounted.root.querySelectorAll('[data-journal-list-record]') || [])];
+ok(accountRows.length === 2, 'account List time mode lost account records');
+ok(viewButton(mounted, 'time', 1)?.getAttribute('aria-selected') === 'true', 'account List time mode did not activate');
+
+mark('account-list-record-open');
+const accountListRow = accountRows.find((row) => row.dataset.journalListRecord === accountRecords[0].id);
+accountListRow?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+recordLayer = mounted.app.querySelector('[data-v2-z-layer].record-view-z');
+ok(recordLayer?.dataset.recordViewContext === 'account', 'account List click did not open Shared Record View in account context');
+ok(recordLayer?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Иван Relationship', 'account List click resolved wrong professional');
+ok(!recordLayer?.querySelector('[data-record-owner-settings]'), 'account List click leaked professional Record controls');
+recordLayer?.v2Close?.();
+mounted.dispose();
+
+mark('finalize');
+if (failures.length) {
+  document.documentElement.dataset.journalAccountRuntime = 'fail';
+  result.textContent = failures.join('\n');
+} else {
+  document.documentElement.dataset.journalAccountRuntime = 'pass';
+  result.textContent = 'shared Journal professional/account runtime passed';
+}
+</script>
+</body>
+</html>
