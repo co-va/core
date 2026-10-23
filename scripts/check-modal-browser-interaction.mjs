@@ -186,18 +186,27 @@ for (const [name, engine, contextOptions] of [
     await activateSelector('[data-test-under-veil]');
     assert.equal(await page.locator('[data-test-under-veil-count]').textContent(), '1', `${name}: Z action did not fire on the next clean tap after veil dismissal`);
 
-    // Q keeps contextual Header C active. This isolated fixture does not load the Messenger owner,
-    // so raw Header D remains locally addressable and must not destroy Q.
-    await tapOrClick(page.locator('[data-test-open-q]'));
-    await page.locator('[data-test-q-content]').waitFor();
-    assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: Q missing or duplicated`);
+    // Q overlays Y and leaves the visible application Header fully inert. A tap on
+    // any Header slot belongs to the Q veil: it may dismiss Q, but it must never
+    // activate the underlying Header control in the same pointer sequence.
+    const openQ = async () => {
+      await tapOrClick(page.locator('[data-test-open-q]'));
+      await page.locator('[data-test-q-content]').waitFor();
+      assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: Q missing or duplicated`);
+      assert.equal(await page.locator('[data-v2-header]').evaluate((node) => node.inert), true, `${name}: Header is not inert while Q is open`);
+    };
+
+    await openQ();
     await activateSelector('[data-test-header-c]');
-    assert.equal(await page.locator('[data-test-header-c-count]').textContent(), '1', `${name}: Q-owned Header C did not fire`);
-    assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: Q-owned Header C dismissed Q`);
+    await page.locator('[data-modal]').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('[data-test-header-c-count]').textContent(), '0', `${name}: Header C fired through Q veil`);
+
+    await openQ();
     await activateSelector('[data-test-header-d]');
-    assert.equal(await page.locator('[data-test-header-d-count]').textContent(), '1', `${name}: raw fixture Header D did not fire`);
-    assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: raw fixture Header D destroyed Q`);
-    assert.equal(await page.locator('[data-test-q-content]').count(), 1, `${name}: Q was lost after raw fixture Header D`);
+    await page.locator('[data-modal]').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('[data-test-header-d-count]').textContent(), '0', `${name}: Header D fired through Q veil`);
+
+    await openQ();
     await activateSelector('[data-test-header-a]');
     await page.locator('[data-modal]').waitFor({ state: 'detached' });
     assert.equal(await page.locator('[data-test-header-a-count]').textContent(), '0', `${name}: Header A fired through Q veil`);
@@ -238,7 +247,7 @@ for (const [name, engine, contextOptions] of [
     }
     assert.deepEqual(errors, [], `${name}: browser errors`);
     results.push({ name, result: 'PASS' });
-    console.log(`${name}: PASS (stable Z Header/Body, X action→editor→picker, Journal time discard/save, selectors, veil ownership, Q C/D, 10 sheet variants)`);
+    console.log(`${name}: PASS (stable Z Header/Body, X action→editor→picker, Journal time discard/save, selectors, veil ownership, inert Q Header, 10 sheet variants)`);
   } finally {
     await browser.close();
   }
