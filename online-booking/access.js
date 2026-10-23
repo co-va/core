@@ -468,8 +468,11 @@ function startBookingFlow(root, state) {
         exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId });
       }
     },
-    onCreated: () => {
-      if (!exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId })) {
+    onCreated: (record) => {
+      if (!exitBookingContext(state, {
+        tab: 'journal',
+        journalDate: String(record?.date || ''),
+      })) {
         document.querySelector('#app')?.replaceChildren();
         openNotice({ title: 'Запись создана', message: 'Запись отправлена специалисту.' });
       }

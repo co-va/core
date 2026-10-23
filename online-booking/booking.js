@@ -989,7 +989,10 @@ async function finalizeBookingRequest(root, state) {
     state.notice = 'Запись отправлена в журнал.';
     state.error = '';
     await refreshContext(state);
-    exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId });
+    exitBookingContext(state, {
+      tab: 'journal',
+      journalDate: String(state.date || ''),
+    });
   } catch (error) {
     await refreshContext(state).catch(() => {});
     if (state.from && !slotStillAvailable()) {
@@ -1010,6 +1013,7 @@ async function refreshContext(state) {
 }
 
 function globalAccountState(initial = {}) {
+  const journalDate = String(initial.journalDate || '').trim();
   return {
     tenantId: '',
     context: {},
@@ -1022,6 +1026,7 @@ function globalAccountState(initial = {}) {
     relationships: [],
     accountRecords: [],
     error: '',
+    accountJournalDate: /^\d{4}-\d{2}-\d{2}$/.test(journalDate) ? new Date(`${journalDate}T12:00:00`) : null,
     accountTab: String(initial.tab || 'journal'),
     accountDeckOpen: false,
     accountDeckActive: String(initial.tab === 'profile' ? 'profile' : initial.tab === 'history' ? 'history' : initial.tab === 'contacts' || initial.tab === 'contact-detail' ? 'contacts' : 'journal'),
