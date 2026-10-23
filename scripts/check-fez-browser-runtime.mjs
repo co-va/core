@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const modulePath = process.env.PLAYWRIGHT_MODULE;
 if (!modulePath) throw new Error('PLAYWRIGHT_MODULE is required');
+
+const moduleDir = dirname(modulePath);
+execFileSync(process.execPath, [join(moduleDir, 'cli.js'), 'install', 'chromium'], {
+  stdio: 'inherit',
+  timeout: 180_000,
+  env: { ...process.env, PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '30000' },
+});
 
 const { chromium } = await import(pathToFileURL(modulePath).href);
 const base = process.env.BROWSER_TEST_URL || 'http://127.0.0.1:4173';
