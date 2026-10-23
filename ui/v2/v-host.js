@@ -45,18 +45,34 @@ export function bindV2VContext(root) {
   let control = null;
   let queued = false;
 
+  const hostControl = () => app.querySelector?.(':scope > [data-v2-v-host] [data-v2-v]') || null;
+
   const sync = () => {
     queued = false;
     if (!app.isConnected) return;
     const nextSource = activeWorkspaceSurface(app)?.querySelector?.('[data-workspace-v-action]') || null;
+    const currentControl = hostControl();
+
+    if (currentControl && currentControl !== control) {
+      source = nextSource;
+      control = null;
+      return;
+    }
+
+    if (!nextSource || nextSource.hidden) {
+      if (control?.isConnected) clearV2V(app);
+      source = nextSource;
+      control = null;
+      return;
+    }
+
     if (nextSource === source && control?.isConnected) {
       syncControlState(control, source);
       return;
     }
+
     source = nextSource;
-    control = source && !source.hidden
-      ? setV2V(app, { aria: source.getAttribute('aria-label') || 'Действия раздела' })
-      : clearV2V(app);
+    control = setV2V(app, { aria: source.getAttribute('aria-label') || 'Действия раздела' });
     if (control) {
       syncControlState(control, source);
       control.addEventListener('click', () => {
@@ -76,6 +92,8 @@ export function bindV2VContext(root) {
   sync();
   return () => {
     observer.disconnect();
-    clearV2V(app);
+    if (control?.isConnected && hostControl() === control) clearV2V(app);
+    source = null;
+    control = null;
   };
 }
