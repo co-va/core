@@ -199,7 +199,7 @@ export function renderJournalDay(root, {
         if (record) void openAccountRecord(record, resolveRecordContext, rerender);
       },
       onSlotClick: ({ from }) => {
-        window.dispatchEvent(new CustomEvent('book:account-journal-booking-request', {
+        window.dispatchEvent(new CustomEvent('cova:account-journal-booking-request', {
           detail: {
             date: dayDate,
             from: String(from || ''),
