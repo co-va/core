@@ -28,5 +28,17 @@ assert.match(v2Css, /\\[data-v2-z-body\\],\\[data-v2-q-body\\]\\{[\\s\\S]*?overf
   'stale fixed-stage geometry assertions',
 );
 
+replaceOnce(
+`assert.match(v2Ui, /mountV2ModalPortal\\(host\\)/);
+assert.match(v2Ui, /document\\.body\\.appendChild\\(portal\\)/);
+assert.match(v2Ui, /v2ModalPortalGeometry\\(host\\.getBoundingClientRect\\(\\), currentVisualViewport\\(\\)\\)/);`,
+`assert.match(v2Ui, /mountV2ModalPortal\\(host, app\\)/);
+assert.match(v2Ui, /document\\.body\\.appendChild\\(portal\\)/);
+assert.match(v2Ui, /const viewport = currentVisualViewport\\(\\)/);
+assert.match(v2Ui, /v2ModalPortalGeometry\\(host\\.getBoundingClientRect\\(\\), viewport\\)/);
+assert.match(v2Ui, /v2QModalPortalGeometry\\(appRect,[\\s\\S]*?headerBottom/);`,
+  'stale modal portal signature and geometry assertions',
+);
+
 fs.writeFileSync(path, source);
-console.log('booking account Shared V/Y regressions aligned');
+console.log('booking account Shared V/Y/Q regressions aligned');
