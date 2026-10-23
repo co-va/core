@@ -345,7 +345,7 @@ export function renderJournal(root, options = {}) {
           const month = nextMonth.getMonth();
           const day = Math.min(selectedDate.getDate(), new Date(year, month + 1, 0).getDate());
           selectedDate = new Date(year, month, day);
-          persistProfessionalContext();
+          if (!accountMode) setWorkplaceContext({ workplaceId: selectedWorkplaceId, date: selectedDate, scope: JOURNAL_CONTEXT_SCOPE });
         },
         onDateSelect: (nextDate) => {
           selectedDate = nextDate;
