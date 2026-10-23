@@ -23,8 +23,14 @@ export function setV2V(root, options = null) {
   const app = rootApp(root);
   const host = app?.querySelector?.(':scope > [data-v2-v-host]');
   if (!host) return null;
-  host.innerHTML = options ? v2V(options) : '';
-  host.hidden = !options;
+  if (!options) {
+    if (!host.firstChild && host.hidden) return null;
+    if (host.firstChild) host.innerHTML = '';
+    if (!host.hidden) host.hidden = true;
+    return null;
+  }
+  host.innerHTML = v2V(options);
+  host.hidden = false;
   return host.querySelector?.('[data-v2-v]') || null;
 }
 
