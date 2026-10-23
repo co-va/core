@@ -37,6 +37,8 @@ const mark = (name) => {
 const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
 const wait = (ms = 70) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const flatText = (node) => String(node?.textContent || '').replaceAll('\u00a0', ' ').replace(/\s+/g, ' ').trim();
+const navigation = (mounted, index = 0) => mounted.app.querySelectorAll('[data-view-navigation]')[index] || null;
+const viewButton = (mounted, id, index = 0) => navigation(mounted, index)?.querySelector(`[data-view="${id}"]`) || null;
 window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
 window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
 
@@ -180,13 +182,13 @@ ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${professionalRecord
 ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${professionalEvent.id}"]`)), 'professional Day event disappeared');
 
 mark('professional-month');
-mounted.root.querySelector('[data-view-navigation] [data-view="month"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+viewButton(mounted, 'month')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 const professionalScheduledCell = mounted.root.querySelector(`[data-calendar-date="${scheduleOnlyDate}"]`);
 ok(Boolean(professionalScheduledCell?.classList.contains('is-working')), 'professional Month stopped using working schedule/capacity dates');
 
 mark('professional-list');
-mounted.root.querySelector('[data-view-navigation] [data-view="list"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+viewButton(mounted, 'list')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 const professionalRow = mounted.root.querySelector(`[data-journal-list-record="${professionalRecord.id}"]`);
 ok(Boolean(professionalRow), 'professional List stopped using canonical records');
@@ -244,7 +246,7 @@ recordLayer?.v2Close?.();
 await wait();
 
 mark('account-month');
-mounted.root.querySelector('[data-view-navigation] [data-view="month"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+viewButton(mounted, 'month')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 ok(Boolean(mounted.root.querySelector('[data-journal-month-context="account"] [data-calendar]')), 'account Month did not use existing Shared Calendar');
 const accountDateCell = mounted.root.querySelector(`[data-calendar-date="${accountDate}"]`);
@@ -263,7 +265,7 @@ ok(Boolean(mounted.root.querySelector('[data-journal-day-context="account"]')), 
 ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`)), 'Month → Day lost selected account Record');
 
 mark('account-list-flow');
-mounted.root.querySelector('[data-view-navigation] [data-view="list"]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+viewButton(mounted, 'list')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 const listHost = mounted.root.querySelector('[data-journal-list-context="account"]');
 ok(Boolean(listHost?.querySelector('.list-entries')), 'account List did not use v2ListEntries');
@@ -275,12 +277,12 @@ ok(firstRowText.includes('Студия Relationship'), 'account List row does no
 ok(!firstRowText.includes('Мария Account'), 'account List exposes end user as primary Record identity');
 
 mark('account-list-time');
-const timeSwitch = mounted.root.querySelectorAll('[data-view-navigation]')[1]?.querySelector('[data-view="time"]');
+const timeSwitch = viewButton(mounted, 'time', 1);
 timeSwitch?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 accountRows = [...(mounted.root.querySelectorAll('[data-journal-list-record]') || [])];
 ok(accountRows.length === 2, 'account List time mode lost account records');
-ok(mounted.root.querySelectorAll('[data-view-navigation]')[1]?.querySelector('[data-view="time"]')?.getAttribute('aria-selected') === 'true', 'account List time mode did not activate');
+ok(viewButton(mounted, 'time', 1)?.getAttribute('aria-selected') === 'true', 'account List time mode did not activate');
 
 mark('account-list-record-open');
 const accountListRow = accountRows.find((row) => row.dataset.journalListRecord === accountRecords[0].id);

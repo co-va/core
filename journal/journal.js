@@ -325,7 +325,7 @@ export function renderJournal(root, options = {}) {
         workplaceId: selectedWorkplaceId,
         navigationRoot: periodNavigationRoot,
         focusTarget: accountMode ? null : noteFocusTarget,
-        onWorkplaceFieldClick: accountMode ? () => {} : openDayTime,
+        onWorkplaceFieldClick: openDayTime,
         onChange: (nextDate) => {
           selectedDate = nextDate;
           persistProfessionalContext();
