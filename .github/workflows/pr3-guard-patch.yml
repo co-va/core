@@ -1,0 +1,57 @@
+name: PR3 Guard Patch
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - .github/workflows/pr3-guard-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Update Account root architecture guard
+        shell: bash
+        run: |
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnA9UGF0aCgic2NyaXB0cy9jaGVjay11aS12Mi1hcmNoaXRlY3R1cmUubWpzIikKcz1wLnJlYWRfdGV4dCgpCm9sZDE9IiIiZXhwZWN0KGFjY291bnQuaW5jbHVkZXMoJ0dMT0JBTF9BQ0NPVU5UX1JPT1RTJykgJiYgYWNjb3VudC5pbmNsdWRlcygiaWQ6ICdwcm9maWxlJywgbGFiZWw6ICfQn9GA0L7RhNC40LvRjCciKSAmJiBhY2NvdW50LmluY2x1ZGVzKCJpZDogJ2hvbWUnLCBsYWJlbDogJ9Ce0LHQt9C+0YAnIikgJiYgYWNjb3VudC5pbmNsdWRlcygiaWQ6ICdjb250YWN0cycsIGxhYmVsOiAn0JrQvtC90YLQsNC60YLRiyciKSAmJiBhY2NvdW50LmluY2x1ZGVzKCJpZDogJ2hpc3RvcnknLCBsYWJlbDogJ9CY0YHRgtC+0YDQuNGPJylgKSAmJiBhY2NvdW50LmluY2x1ZGVzKCdpbml0VjJXb3Jrc3BhY2VJbnRlcmFjdGlvbihyb290JykgJiYgYWNjb3VudC5pbmNsdWRlcygnR0xPQkFMX0FDQ09VTlRfUk9PVFMu c29tZSgoaXRlbSkgPT4gaXRlbS5pZCA9PT0gaWQpJyksICdDaGFuZ2luZyB0aGUgYWN0aXZlIGVuZC11c2VyIEYgZm9sZGVyIG11c3Qgcm91dGUgdGhyb3VnaCB0aGUgU2hhcmVkIHdvcmtzcGFjZSBvd25lciBhbmQgaW1tZWRpYXRlbHkgY2hhbmdlIFogdG8gdGhlIHNlbGVjdGVkIFByb2ZpbGUgLyBPdmVydmlldyAvIENvbnRhY3RzIC8gSGlzdG9yeSBmYWNlLicpOyIiIg==' | tr -d ' ' | base64 -d >/tmp/part1.py
+          cat >/tmp/patch.py <<'PY'
+from pathlib import Path
+p=Path('scripts/check-ui-v2-architecture.mjs')
+s=p.read_text()
+old1="expect(account.includes('GLOBAL_ACCOUNT_ROOTS') && account.includes(\"id: 'profile', label: 'Профиль'\") && account.includes(\"id: 'home', label: 'Обзор'\") && account.includes(\"id: 'contacts', label: 'Контакты'\") && account.includes(\"id: 'history', label: 'История'\") && account.includes('initV2WorkspaceInteraction(root') && account.includes('GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)'), 'Changing the active end-user F folder must route through the Shared workspace owner and immediately change Z to the selected Profile / Overview / Contacts / History face.');"
+new1="expect(account.includes('GLOBAL_ACCOUNT_ROOTS') && account.includes(\"id: 'profile', label: 'Профиль'\") && account.includes(\"id: 'journal', label: 'Журнал'\") && account.includes(\"id: 'contacts', label: 'Контакты'\") && account.includes(\"id: 'history', label: 'История'\") && account.includes('initV2WorkspaceInteraction(root') && account.includes('GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)'), 'Changing the active end-user F folder must route through the Shared workspace owner and immediately change Z to the selected Profile / Journal / Contacts / History face.');"
+old2="""expect(account.includes(\"id: 'profile', label: 'Профиль'\")
+  && account.includes(\"id: 'home', label: 'Обзор'\")
+  && account.includes(\"id: 'contacts', label: 'Контакты'\")
+  && account.includes(\"id: 'history', label: 'История'\")
+  && !account.includes(\"id: 'representatives'\"),
+  'End-user F owner must expose exactly Profile / Overview / Contacts / History and no legacy two-folder deck.');"""
+new2="""expect(account.includes(\"id: 'profile', label: 'Профиль'\")
+  && account.includes(\"id: 'journal', label: 'Журнал'\")
+  && account.includes(\"id: 'contacts', label: 'Контакты'\")
+  && account.includes(\"id: 'history', label: 'История'\")
+  && !account.includes(\"id: 'home', label: 'Обзор'\")
+  && !account.includes(\"id: 'representatives'\"),
+  'End-user F owner must expose exactly Profile / Journal / Contacts / History and no legacy Overview/two-folder deck.');"""
+for old,new,label in [(old1,new1,'root route guard'),(old2,new2,'root set guard')]:
+    count=s.count(old)
+    if count != 1: raise SystemExit(f'{label}: expected 1 match, found {count}')
+    s=s.replace(old,new,1)
+p.write_text(s)
+PY
+          python3 /tmp/patch.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr3-guard-patch.yml
+          git add scripts/check-ui-v2-architecture.mjs
+          git diff --cached --check
+          git commit -m "Update Account Journal root architecture guard"
+          git push origin HEAD:staging
