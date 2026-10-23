@@ -61,6 +61,12 @@ function replaceExpect(source, message, expression, newMessage) {
       'Текущее выбранное значение в закрытом select всегда визуально центрировано.', '',
     ].join('\n');
   }
+  if (!doc.includes('| Calendar / DatePicker / DateNavigator | `ui/calendar` |')) {
+    doc += '\n| Calendar / DatePicker / DateNavigator | `ui/calendar` |\n';
+  }
+  if (!doc.includes('| Workplace selector / workplace controls | `ui/workplaces` |')) {
+    doc += '| Workplace selector / workplace controls | `ui/workplaces` |\n';
+  }
   write(path, doc);
 }
 
