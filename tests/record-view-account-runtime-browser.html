@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}
+    *{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<div id="surface"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import { v2Shell } from '/ui/v2/shell.js';
+import { configureWorkplaceSource } from '/core/workplace-time.js';
+import { hydratePeopleFromServer } from '/core/people/data.js';
+import { hydrateFinanceFromServer } from '/core/finance/index.js';
+import { hydrateDepositInstances } from '/core/loyalty/deposit/data.js';
+import { hydrateNotesFromServer } from '/core/note/index.js';
+import { openRecordView } from '/core/records/view.js';
+
+const result = document.querySelector('#result');
+const surface = document.querySelector('#surface');
+const failures = [];
+let stage = 'boot';
+const mark = (name) => {
+  stage = name;
+  result.textContent = 'running: ' + name;
+  document.documentElement.dataset.recordViewAccountRuntimeStage = name;
+};
+const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
+const wait = (ms = 40) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const flatText = (node) => String(node?.textContent || '').replaceAll('\u00a0', ' ').replace(/\s+/g, ' ').trim();
+window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
+window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
+
+surface.innerHTML = v2Shell({ body: '<div data-record-view-runtime-base></div>', className: 'v2-app--workspace' });
+
+const workplace = {
+  id: 'runtime-studio-db',
+  key: 'runtime-studio',
+  name: 'Студия Runtime',
+  color: '#9AAE85',
+  indicatorColor: '#9AAE85',
+  from: '09:00',
+  to: '18:00',
+  timeZone: 'Europe/Moscow',
+};
+configureWorkplaceSource(() => [workplace]);
+
+const professionalPerson = {
+  id: 'person-professional',
+  key: 'person-professional',
+  uei: 'END-001',
+  name: 'Анна',
+  surname: 'Профессиональный тест',
+  phone: '+79990000001',
+  phones: ['+79990000001'],
+};
+const accountPerson = {
+  id: 'person-account',
+  key: 'person-account',
+  uei: 'END-002',
+  name: 'Мария',
+  surname: 'Пользователь',
+  phone: '+79990000002',
+  phones: ['+79990000002'],
+};
+hydratePeopleFromServer([professionalPerson, accountPerson]);
+
+hydrateDepositInstances([
+  {
+    depositId: 'deposit-professional',
+    programId: 'program-professional',
+    programName: 'Runtime программа',
+    person: { key: professionalPerson.key },
+    status: 'active',
+    discountPercent: 0,
+    history: [],
+  },
+  {
+    depositId: 'deposit-account',
+    programId: 'program-account',
+    programName: 'Account программа',
+    person: { key: accountPerson.key },
+    status: 'active',
+    discountPercent: 10,
+    history: [],
+  },
+]);
+
+hydrateNotesFromServer([
+  {
+    id: 'note-professional',
+    date: '2026-01-15',
+    targetType: 'record',
+    targetId: 'record-professional',
+    title: 'Внутренняя заметка professional',
+    text: 'Не должна исчезнуть из professional context.',
+  },
+  {
+    id: 'note-account',
+    date: '2026-01-15',
+    targetType: 'record',
+    targetId: 'record-account',
+    title: 'Внутренняя заметка account',
+    text: 'Не должна показываться конечному пользователю.',
+  },
+]);
+
+hydrateFinanceFromServer({
+  version: 7,
+  articles: [],
+  settlements: [],
+  operations: [{
+    operationId: 'payment-account-partial',
+    kind: 'payment',
+    status: 'completed',
+    source: { type: 'record', id: 'record-account' },
+    occurredAt: '2026-01-15T10:30:00.000Z',
+    recordedAt: '2026-01-15T10:31:00.000Z',
+    data: {
+      total: 500,
+      serviceAmount: 500,
+      tips: 0,
+      allocations: [{ walletId: 'cash', walletName: 'Наличные', amount: 500 }],
+    },
+  }],
+  ledger: [],
+});
+
+const professionalRecord = {
+  id: 'record-professional',
+  status: 'active',
+  date: '2026-01-15',
+  workplaceId: workplace.key,
+  from: '09:00',
+  to: '10:00',
+  person: professionalPerson,
+  confirmed: false,
+  attendance: '',
+  procedures: [{ id: 'procedure-professional', name: 'Стрижка Runtime', duration: 60, cost: 1500 }],
+  products: [],
+};
+const accountRecord = {
+  id: 'record-account',
+  status: 'active',
+  date: '2026-01-15',
+  workplaceId: workplace.key,
+  from: '10:00',
+  to: '11:30',
+  person: accountPerson,
+  confirmed: false,
+  attendance: '',
+  loyaltyProgram: {
+    key: 'deposit:deposit-account',
+    type: 'deposit',
+    assignmentId: 'deposit-account',
+    programId: 'program-account',
+    name: 'Account программа',
+    pricePercent: 10,
+  },
+  procedures: [{ id: 'procedure-account', name: 'Окрашивание Runtime', duration: 90, cost: 2000 }],
+  products: [{ id: 'product-account', name: 'Домашний уход Runtime', cost: 500 }],
+};
+const accountProfessional = {
+  uei: 'PRO-001',
+  name: 'Иван',
+  surname: 'Проверка',
+  phone: '+79998887766',
+  phones: ['+79998887766'],
+};
+
+mark('professional-open');
+const professionalLayer = openRecordView(professionalRecord);
+await wait();
+ok(Boolean(professionalLayer), 'professional Record View did not open');
+ok(professionalLayer?.matches('[data-v2-z-layer].record-shared-z.record-view-z.journal-view-z'), 'professional did not use the canonical Shared Record View Z');
+ok(professionalLayer?.dataset.recordViewContext === 'professional', 'default context is not professional');
+ok(Boolean(professionalLayer?.querySelector('[data-record-owner-settings]')), 'professional settings control missing');
+ok(Boolean(professionalLayer?.querySelector('[data-record-view-program]')), 'professional loyalty control missing');
+ok(Boolean(professionalLayer?.querySelector('[data-record-view-procedure-settings]')), 'professional procedure settings missing');
+ok(Boolean(professionalLayer?.querySelector('[data-record-view-sale]')), 'professional Sale action missing');
+ok(Boolean(professionalLayer?.querySelector('[data-record-view-payment]')), 'professional Payment action missing');
+ok(Boolean(professionalLayer?.querySelector('[data-record-view-confirmed]')), 'professional Confirmed control missing');
+ok(professionalLayer?.querySelectorAll('[data-record-view-attendance]').length === 2, 'professional attendance controls missing');
+ok(Boolean(professionalLayer?.querySelector('[data-record-view-notes]')), 'professional Notes action missing for an existing note');
+ok(professionalLayer?.querySelector('.record-confirmation-view__card')?.getAttribute('role') === 'button', 'professional Z-report card is not interactive');
+
+mark('professional-settings-actions');
+professionalLayer?.querySelector('[data-record-owner-settings]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+await wait();
+const professionalActions = document.querySelector('[data-modal]');
+ok(Boolean(professionalActions?.querySelector('[data-record-view-correct]')), 'professional Correct action missing');
+ok(Boolean(professionalActions?.querySelector('[data-record-view-delete]')), 'professional Delete action missing');
+ok(Boolean(professionalActions?.querySelector('[data-record-view-history]')), 'professional History action missing');
+professionalActions?.v2Close?.();
+await wait();
+professionalLayer?.v2Close?.();
+await wait();
+
+mark('account-open');
+const accountLayer = openRecordView(accountRecord, { context: 'account', professional: accountProfessional });
+await wait();
+ok(Boolean(accountLayer), 'account Record View did not open');
+ok(accountLayer?.matches('[data-v2-z-layer].record-shared-z.record-view-z.journal-view-z'), 'account did not use the same canonical Shared Record View Z');
+ok(accountLayer?.dataset.recordViewContext === 'account', 'Record View did not enter account context');
+ok(accountLayer?.querySelector('[data-workspace-header-context]')?.dataset.workspaceTitle === 'Иван Проверка', 'account header does not show professional identity');
+ok(accountLayer?.querySelector('[data-workspace-a-context]')?.dataset.workspaceAInitials === 'ИП', 'account A does not carry professional identity initials');
+
+const accountText = flatText(accountLayer);
+ok(accountText.includes('Студия Runtime'), 'account Record View lost workplace');
+ok(accountText.includes('15.01.26'), 'account Record View lost date');
+ok(accountText.includes('10:00 - 11:30'), 'account Record View lost time');
+ok(accountText.includes('Окрашивание Runtime'), 'account Record View lost procedure');
+ok(accountText.includes('Домашний уход Runtime'), 'account Record View lost product');
+ok(accountText.includes('PRO-001') && accountText.includes('Иван Проверка'), 'account Record View lost professional identity in record presentation');
+ok(accountText.includes('2 500 ₽'), 'account Record View lost record gross amount');
+ok(accountText.includes('250 ₽'), 'account Record View lost record discount amount');
+
+mark('account-professional-controls-hidden');
+ok(!accountLayer?.querySelector('[data-record-owner-settings]'), 'account exposes professional settings');
+ok(!accountLayer?.querySelector('[data-record-view-history]'), 'account exposes professional History');
+ok(!accountLayer?.querySelector('[data-record-view-program]'), 'account exposes loyalty control');
+ok(!accountLayer?.querySelector('[data-record-view-procedure-settings]'), 'account exposes procedure settings');
+ok(!accountLayer?.querySelector('[data-record-view-sale]'), 'account exposes Sale action');
+ok(!accountLayer?.querySelector('[data-record-view-payment]'), 'account exposes professional Payment action');
+ok(!accountLayer?.querySelector('[data-record-view-confirmed]'), 'account exposes Confirmed control');
+ok(accountLayer?.querySelectorAll('[data-record-view-attendance]').length === 0, 'account exposes Arrived/No-show controls');
+ok(!accountLayer?.querySelector('[data-record-view-notes]'), 'account exposes professional Notes despite an existing note');
+
+const accountReportCard = accountLayer?.querySelector('.record-confirmation-view__card');
+ok(accountReportCard?.getAttribute('role') !== 'button', 'account Z-report card is still interactive');
+ok(!accountReportCard?.hasAttribute('tabindex'), 'account Z-report card is keyboard-interactive');
+accountReportCard?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+await wait();
+ok(!document.querySelector('[data-modal][data-v2-layer-kind="top"]'), 'account record card opened professional Z-report');
+
+const paymentStatus = [...(accountLayer?.querySelectorAll('.ui-button[disabled]') || [])]
+  .find((node) => /К оплате|Задолженность|Оплачено/.test(flatText(node)));
+ok(Boolean(paymentStatus), 'account payment status is not rendered');
+ok(/К оплате|Задолженность/.test(flatText(paymentStatus)), 'partial account payment status is not outstanding/read-only');
+ok(flatText(paymentStatus).includes('1 750 ₽'), 'account read-only payment balance is incorrect');
+ok(paymentStatus?.disabled === true, 'account payment status is actionable instead of read-only');
+
+mark('finalize');
+accountLayer?.v2Close?.();
+if (failures.length) {
+  document.documentElement.dataset.recordViewAccountRuntime = 'fail';
+  result.textContent = failures.join('\n');
+} else {
+  document.documentElement.dataset.recordViewAccountRuntime = 'pass';
+  result.textContent = 'shared Record View professional/account runtime passed';
+}
+</script>
+</body>
+</html>
