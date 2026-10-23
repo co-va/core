@@ -1,0 +1,41 @@
+name: Fix Shared UI Browser Regressions
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-shared-ui-browser-regressions-staging
+  cancel-in-progress: true
+
+jobs:
+  fix-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Align stale browser regressions
+        run: node scripts/fix-shared-ui-browser-regressions.mjs
+      - name: Run architecture checks
+        run: npm run check
+      - name: Run unit regressions
+        run: npm test
+      - name: Commit validated browser regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/fix-shared-ui-browser-regressions.yml
+          rm scripts/fix-shared-ui-browser-regressions.mjs
+          git config user.name "3001vaf-maker"
+          git config user.email "30.01vaf@gmail.com"
+          git add -A
+          git commit -m "Align Shared UI browser regressions"
+          git push origin HEAD:staging
