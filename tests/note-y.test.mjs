@@ -61,8 +61,7 @@ const reels = noteReels([
   { id: 'n1', date: '2026-10-22', title: 'A', text: '', from: '', to: '', color: '#CFC3FF' },
   { id: 'n2', date: '2026-10-22', title: '', text: 'B', from: '10:00', to: '', color: '#CFC3FF' },
 ], { activeTime: '10:00', relatedIds: ['n2'] });
-assert.match(reels, /data-ui-y="note-reels"/);
-assert.match(reels, /data-journal-y/);
+assert.doesNotMatch(reels, /data-ui-y|data-journal-y/);
 assert.match(reels, /data-note-reel="n1"/);
 assert.match(reels, /data-note-reel="n2"/);
 assert.ok(reels.indexOf('data-note-reel="n2"') < reels.indexOf('data-note-reel="n1"'), 'active Note must move to first Y position');
@@ -180,9 +179,9 @@ const list = read('journal/список.js');
 const recordView = read('core/records/view.js');
 const eventView = read('journal/event-view.js');
 
-assert.match(alphabet, /\| Y \|[^|]*Note Reels/);
-assert.match(alphabet, /Y не является Z/);
-assert.match(alphabet, /Y не является Timeline/);
+assert.match(alphabet, /Y = универсальная Shared H-zone/);
+assert.match(alphabet, /Note ≠ Y/);
+assert.match(alphabet, /Y не находится внутри Z/);
 
 assert.match(schema, /model Note \{/);
 for (const field of [
@@ -214,7 +213,8 @@ assert.match(noteCreate, /colorPicker/);
 assert.match(noteCreate, /ownerType: 'profile'/);
 assert.match(noteCreate, /noteContextWithTarget/);
 
-assert.match(day, /data-journal-y-host/);
+assert.doesNotMatch(day, /data-journal-y-host|data-journal-y/);
+assert.match(day, /setV2Y/);
 assert.match(day, /noteReels/);
 assert.match(day, /scheduleLiveTimeRefresh/);
 assert.match(day, /nextMinuteDelay/);

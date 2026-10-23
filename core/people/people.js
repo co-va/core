@@ -265,10 +265,8 @@ function personQContext(person) {
       kind: 'avatar',
       image: person.photo || '',
       initials: initials(person),
-      settingsTag: true,
-      data: 'data-person-settings',
-      aria: `Настройки ${name(person)}`,
     },
+    v: { data: 'data-person-settings', aria: `Настройки ${name(person)}` },
     d: {
       kind: 'chat',
       data: 'data-person-direct-chat',
@@ -505,11 +503,7 @@ function refreshPeopleList(root) {
 function listContext() {
   return workspaceHeaderContext({
     title: 'Клиенты',
-    a: {
-      kind: 'settings',
-      data: 'data-people-list-settings',
-      aria: 'Настройки клиентов',
-    },
+    v: { data: 'data-people-list-settings', aria: 'Настройки клиентов' },
   });
 }
 

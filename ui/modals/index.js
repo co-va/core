@@ -28,7 +28,7 @@ export function modal(content, { title = '', className = '', variant = 'q', surf
   const variantClass = `modal--${kind}`;
   const surfaceClass = MODAL_SURFACES.has(surface) ? `modal--surface-${surface}` : '';
   const classes = ['modal-sheet', className, variantClass, surfaceClass].filter(Boolean).join(' ');
-  if (resolvedVariant === 'q') content = v2QFrame(content);
+  if (resolvedVariant === 'q') content = v2QFrame(content, { header: title ? `<h2 class="v2-q-title">${escapeHtml(title)}</h2>` : '' });
   let html = v2Layer(content, {
     kind,
     title: '',

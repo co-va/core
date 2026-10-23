@@ -51,32 +51,21 @@ function dayRecordData({ dateKey, workplaceId, allMode, workingDays, workplaces,
   return { count: records.length, capacity, minutes };
 }
 
-function usageGradient({ capacity, minutes }) {
-  if (!(capacity > 0)) return '';
-  const values = [
+function usageSegments({ capacity, minutes }) {
+  if (!(capacity > 0)) return [];
+  return [
     { color: PAID_COLOR, minutes: minutes.paid },
     { color: RECORD_COLOR, minutes: minutes.active },
     { color: NO_SHOW_COLOR, minutes: minutes.noShow },
-  ];
-  let cursor = 0;
-  const stops = [];
-
-  values.forEach((item) => {
-    if (!(item.minutes > 0) || cursor >= 100) return;
-    const width = Math.min(100 - cursor, (item.minutes / capacity) * 100);
-    const end = cursor + width;
-    stops.push(`${item.color} ${cursor.toFixed(2)}%`, `${item.color} ${end.toFixed(2)}%`);
-    cursor = end;
-  });
-
-  if (!stops.length) return '';
-  stops.push(`transparent ${cursor.toFixed(2)}%`, 'transparent 100%');
-  return `linear-gradient(90deg,${stops.join(',')})`;
+  ].filter((item) => item.minutes > 0).map((item) => ({
+    color: item.color,
+    width: Math.max(0, Math.min(100, (item.minutes / capacity) * 100)),
+  }));
 }
 
 function dateContent(data) {
-  const gradient = usageGradient(data);
-  const fill = gradient ? `<span class="calendar__date-fill" style="--calendar-date-fill:${gradient}" aria-hidden="true"></span>` : '';
+  const segments = usageSegments(data);
+  const fill = segments.length ? `<span class="calendar__date-fill" aria-hidden="true">${segments.map((item) => `<span style="width:${item.width.toFixed(2)}%;background:${item.color}"></span>`).join('')}</span>` : '';
   const count = data.count ? `<span class="calendar__date-count">${data.count} зап.</span>` : '';
   return `${fill}${count}`;
 }

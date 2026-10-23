@@ -181,7 +181,7 @@ function setWorkplaceDraft(root,name,value,{notify=true}={}){
 }
 
 function syncWorkplaceAvatar(root,photo){
-  const source=root.querySelector('[data-workspace-context-action]');
+  const source=root.querySelector('[data-workspace-a-context]');
   if(source){
     source.dataset.workspaceAImage=String(photo||'');
     source.dataset.workspaceAImagePosition='50% 50%';
