@@ -181,11 +181,11 @@ async function renderGlobalClientRoot(initial = {}) {
   syncViewport();
 }
 
-async function startJournalBooking(tenantId, selectorOwner) {
+async function startJournalBooking(tenantId, creationOwner) {
   const id = String(tenantId || '').trim();
   const content = document.querySelector('#app-content');
   if (!id || !content) {
-    selectorOwner?.close?.();
+    creationOwner?.close?.();
     return;
   }
 
@@ -196,31 +196,16 @@ async function startJournalBooking(tenantId, selectorOwner) {
     telegramEntry: '',
     entry: 'account-booking',
   };
-  let committed = false;
-  let finished = false;
-  const onCommitted = () => { committed = true; };
-  const cleanup = () => {
-    if (finished) return;
-    finished = true;
-    window.removeEventListener('va-tools:record-creation-committed', onCommitted);
-  };
-  window.addEventListener('va-tools:record-creation-committed', onCommitted);
 
-  try {
-    await renderAccess(content, {
-      ...route,
-      onExitToAccount: async (target = {}) => {
-        const confirmed = committed;
-        cleanup();
-        if (!confirmed) return;
-        history.replaceState({}, '', '/');
-        await renderGlobalClientRoot(target);
-        await showOnlineBookingConfirmation(route);
-      },
-    });
-  } finally {
-    if (selectorOwner?.isOpen?.()) selectorOwner.close();
-  }
+  await renderAccess(content, {
+    ...route,
+    creationOwner,
+    onExitToAccount: async (target = {}) => {
+      history.replaceState({}, '', '/');
+      await renderGlobalClientRoot(target);
+      if (String(target?.journalDate || '')) await showOnlineBookingConfirmation(route);
+    },
+  });
 }
 
 async function openAccountBookingProfessionalSelector() {
