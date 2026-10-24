@@ -126,7 +126,6 @@ window.fetch = async (input, options = {}) => {
     if (createCount > 0) postCreateRecordsFetchCount += 1;
     return json(serverRecords.map((record) => ({ ...record })));
   }
-  if (path === '/online-booking/account/events' && method === 'GET') return json([]);
   if (path === '/online-booking/account/personal-accounts' && method === 'GET') return json([]);
   if (path === '/online-booking/account/deposits' && method === 'GET') return json([]);
 

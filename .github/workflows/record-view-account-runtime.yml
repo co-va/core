@@ -107,13 +107,3 @@ jobs:
             'data-journal-account-day-range-runtime="pass"' \
             'data-journal-account-day-range-runtime-stage' \
             /tmp/journal-account-day-range-runtime-dom.html
-          run_browser_case \
-            "tests/journal-account-booking-start-runtime-browser.html" \
-            'data-journal-account-booking-start-runtime="pass"' \
-            'data-journal-account-booking-start-runtime-stage' \
-            /tmp/journal-account-booking-start-runtime-dom.html
-          run_browser_case \
-            "tests/journal-account-event-runtime-browser.html" \
-            'data-journal-account-event-runtime="pass"' \
-            'data-journal-account-event-runtime-stage' \
-            /tmp/journal-account-event-runtime-dom.html

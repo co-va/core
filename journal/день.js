@@ -14,12 +14,6 @@ import { getDays, getDay, getDayTime, getDaysForDate, getScheduleConflicts } fro
 import { getTimeUsagesForScope, getTimeAvailabilityAt, timeToMinutes, minutesToTime } from '../core/time/index.js';
 import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { getNotesForDay } from '../core/note/index.js';
-import {
-  accountEventActions,
-  accountEventsLoaded,
-  getAccountEvents,
-  loadAccountEvents,
-} from '../core/event/account-owner.js';
 import { noteTargetLabel, noteVisibleForWorkplace, resolveNoteTarget } from './note-target.js';
 
 function dateKey(date) {
@@ -94,15 +88,6 @@ function accountUsage(record, resolveRecordContext) {
   };
 }
 
-function accountEventUsage(event = null) {
-  return {
-    ...(event || {}),
-    type: 'event',
-    sourceId: String(event?.id || ''),
-    rigidity: 'soft',
-  };
-}
-
 function accountTimelineRange(usages = []) {
   let start = 9 * 60;
   let end = 23 * 60;
@@ -132,11 +117,6 @@ async function openAccountRecord(record, resolveRecordContext, rerender = () => 
     professional: presentation?.professional || null,
     onClose: rerender,
   });
-}
-
-async function openAccountEvent(event, rerender = () => {}) {
-  const { openEventView } = await import('./event-view.js');
-  openEventView(event, { eventActions: accountEventActions, onClose: rerender });
 }
 
 async function openUsage(usage, rerender = () => {}) {
@@ -200,25 +180,12 @@ export function renderJournalDay(root, {
 
   if (accountMode) {
     clearV2Y(root);
-    if (!accountEventsLoaded()) {
-      void loadAccountEvents().then(() => {
-        if (root.isConnected) rerender();
-      }).catch(() => {});
-    }
-
     const accountRecords = readRecords(records)
       .filter((record) => String(record?.date || '').slice(0, 10) === dayDate)
       .filter((record) => String(record?.status || '').toLowerCase() !== 'cancelled');
-    const accountEvents = getAccountEvents()
-      .filter((event) => String(event?.date || '').slice(0, 10) === dayDate);
 
-    const usages = [
-      ...accountRecords.map((record) => accountUsage(record, resolveRecordContext)),
-      ...accountEvents.map(accountEventUsage),
-    ];
-    const usageById = new Map(usages.map((usage) => [String(usage?.sourceId || usage?.id || ''), usage]));
     const recordById = new Map(accountRecords.map((record) => [recordId(record), record]).filter(([id]) => Boolean(id)));
-    const eventById = new Map(accountEvents.map((event) => [String(event?.id || ''), event]).filter(([id]) => Boolean(id)));
+    const usages = accountRecords.map((record) => accountUsage(record, resolveRecordContext));
     const range = accountTimelineRange(usages);
     timelineRoot.innerHTML = journalDayTimeline({
       from: range.from,
@@ -228,35 +195,8 @@ export function renderJournalDay(root, {
     });
     initJournalDayTimeline(timelineRoot, {
       onUsageClick: ({ usageId }) => {
-        const id = String(usageId || '');
-        const usage = usageById.get(id);
-        if (usage?.type === 'event') {
-          const event = eventById.get(id);
-          if (event) void openAccountEvent(event, rerender);
-          return;
-        }
-        const record = recordById.get(id);
+        const record = recordById.get(String(usageId || ''));
         if (record) void openAccountRecord(record, resolveRecordContext, rerender);
-      },
-      onSlotClick: async ({ from }) => {
-        const { openJournalCreation } = await import('./creation-flow.js');
-        openJournalCreation({
-          context: 'account',
-          date: dayDate,
-          timeHint: from,
-          eventActions: accountEventActions,
-          surfaceRoot: root.closest('[data-v2-z],[data-v2-z-layer]'),
-          bodyRoot: root,
-          onRecordRequest: ({ date: recordDate, from: recordFrom }) => {
-            window.dispatchEvent(new CustomEvent('cova:account-journal-booking-request', {
-              detail: {
-                date: recordDate || dayDate,
-                from: String(recordFrom || from || ''),
-              },
-            }));
-          },
-          onCreated: rerender,
-        });
       },
     });
     return dispose;
