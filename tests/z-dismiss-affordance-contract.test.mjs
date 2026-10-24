@@ -8,6 +8,8 @@ const affordance = fs.readFileSync('ui/v2/z-affordance.js', 'utf8');
 const stack = fs.readFileSync('ui/v2/z-stack.js', 'utf8');
 const workspaceNavigation = fs.readFileSync('ui/v2/workspace-navigation.js', 'utf8');
 const shell = fs.readFileSync('ui/v2/shell.js', 'utf8');
+const yOwner = fs.readFileSync('ui/v2/y.js', 'utf8');
+const zLayout = fs.readFileSync('ui/v2/z-layout.js', 'utf8');
 const vOwner = fs.readFileSync('ui/v2/v.js', 'utf8');
 const vCss = fs.readFileSync('ui/v2/v.css', 'utf8');
 const noteOwner = fs.readFileSync('ui/note/index.js', 'utf8');
@@ -17,8 +19,8 @@ const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 
 assert.match(
   affordance,
-  /'margin:8px 0 4px 18px'/,
-  'Shared Z/Q dismiss affordance must stay compact at the top of the stable Header without creating an empty header band.',
+  /'margin:0 0 2px 18px'/,
+  'Shared Z/Q dismiss affordance must begin at the top of its Header without creating an empty upper band.',
 );
 assert.match(affordance, /'color:#111'/, 'Shared Z/Q dismiss affordance must keep full readable contrast.');
 assert.match(
@@ -55,8 +57,12 @@ assert.doesNotMatch(vOwner, /<circle\b/, 'The post-#732 black-triangle/yellow-do
 assert.match(vCss, /drop-shadow\(0 2px 7px rgba\(255,255,0,\.16\)\)/, 'Pre-#732 V glow must be restored.');
 assert.match(vCss, /html\.keyboard-open \.v2-v/, 'Standalone V must retain the old keyboard visibility behavior.');
 assert.doesNotMatch(noteOwner, /note-reels__label/, 'Shared Y must not render a separate “Заметки” label.');
-assert.match(noteCss, /\.v2-y-host \.note-reel-card\{[\s\S]*?width:50px;[\s\S]*?height:60px;/, 'Shared Y Note card must be 50×60px.');
-assert.match(noteCss, /\.v2-y-host \.note-reels__rail\{[\s\S]*?gap:15px;[\s\S]*?height:60px;/, 'Shared Y rail must stay within the 60px H budget.');
+assert.match(noteCss, /\.v2-y-host \.note-reel-card\{[\s\S]*?width:60px;[\s\S]*?height:60px;/, 'Shared Y Note card must be 60×60px.');
+assert.match(noteCss, /\.v2-y-host \.note-reels__rail\{[\s\S]*?height:66px;/, 'Shared Y rail must leave room for the Note message tail.');
+assert.match(noteCss, /\.v2-y-host \.note-reel-card::after\{[\s\S]*?bottom:-6px;[\s\S]*?width:10px;[\s\S]*?height:7px;/, 'Shared Note must retain a visible message tail.');
+assert.match(yOwner, /host\.style\.paddingBottom = active \? '12px' : '';/, 'Shared Y owner must provide the lower 12px gap before Z.');
+assert.match(zLayout, /'min-height:28px'[\s\S]*?'padding:0 18px 0 0'/, 'Shared Z/Q Header must keep its compact 28px base geometry.');
+assert.match(surfaceHeaderCss, /\[data-v2-z-header\]:has[\s\S]*?min-height:28px!important;[\s\S]*?padding-bottom:0!important;/, 'Empty Shared Z Header must not recreate a white upper band.');
 assert.match(surfaceHeaderCss, /\[data-v2-q-header\],[\s\S]*?background:transparent!important;[\s\S]*?border:0!important;[\s\S]*?box-shadow:none!important;/, 'Q fixed and scroll regions must read as one continuous visual surface.');
 assert.match(accountShell, /initV2WorkspaceInteraction\(root, \{/, 'End-user account shell must stay on the shared workspace interaction contour.');
 assert.doesNotMatch(accountShell, /bindV2ZDismissAffordance/, 'End-user account shell must not own a separate Z affordance implementation.');
@@ -114,8 +120,11 @@ try{
   ok(v?.querySelector('#v2-v-glass') && v.querySelector('#v2-v-glow') && !v.querySelector('circle'),'V visual is not the pre-#732 visual');
 
   const dispose=initV2WorkspaceInteraction(app,{activeId:'journal',deckOpen:false});
+  const rootHeader=z.querySelector(':scope > [data-v2-z-header]');
   const rootAffordance=z.querySelector(':scope > [data-v2-z-header] > [data-v2-z-dismiss]');
   ok(rootAffordance && !rootAffordance.hidden,'Root Z affordance is not visible');
+  ok(Math.abs(rootAffordance.getBoundingClientRect().top-rootHeader.getBoundingClientRect().top)<=0.5,'Root Z affordance is not at the top of its Header');
+  ok(rootHeader.getBoundingClientRect().height<=28.5,'Empty root Z Header is taller than the compact Shared Header');
   rootAffordance.click();
   await frame();
   ok(app.classList.contains('is-deck-open'),'Root Z affordance did not open FE');
@@ -139,18 +148,22 @@ try{
   const zRect=z.getBoundingClientRect();
   const stageRect=stage.getBoundingClientRect();
   ok(!y.querySelector('.note-reels__label'),'Separate Note label is still present');
-  ok(yRect.height<=60.5 && yRect.height>=59.5,'Shared Y is not 60px high');
-  ok(Math.abs((zRect.top-appRect.top)-132)<=1.5,'Header + Y does not place Z at about 132px');
-  ok((zRect.top-appRect.top)<=144,'H territory exceeds 144px');
+  ok(yRect.height<=72.5 && yRect.height>=71.5,'Shared Y is not 72px high (60px Note + 12px lower gap)');
+  ok(Math.abs((zRect.top-appRect.top)-144)<=1.5,'Header + Y does not place Z at about 144px');
+  ok((zRect.top-appRect.top)<=144.5,'H territory exceeds the 144px ceiling');
   const cards=[...y.querySelectorAll('[data-note-reel]')];
   ok(cards.length===7,'Shared Y did not render Note cards');
   cards.slice(0,5).forEach((card,index)=>{
     const rect=card.getBoundingClientRect();
-    ok(Math.abs(rect.width-50)<=0.5 && Math.abs(rect.height-60)<=0.5,'Note '+(index+1)+' is not 50×60px');
+    ok(Math.abs(rect.width-60)<=0.5 && Math.abs(rect.height-60)<=0.5,'Note '+(index+1)+' is not 60×60px');
     ok(rect.right<=yRect.right+0.5,'One of the first five Notes is clipped');
   });
-  const sixth=cards[5].getBoundingClientRect();
-  ok(sixth.left<yRect.right && sixth.right>yRect.right,'Sixth Note does not remain partially visible');
+  const firstCardRect=cards[0].getBoundingClientRect();
+  ok(Math.abs(zRect.top-firstCardRect.bottom-12)<=1.5,'Shared Y does not keep the required 12px visual gap between Note body and Z');
+  const cardStyle=getComputedStyle(cards[0]);
+  const tailStyle=getComputedStyle(cards[0],'::after');
+  ok(cardStyle.overflow==='visible','Note body clips its message tail');
+  ok(tailStyle.bottom==='-6px' && tailStyle.width==='10px' && tailStyle.height==='7px','Note message tail geometry is not visible');
   ok(zRect.right>=stageRect.right+20,'Z right edge is visible inside the viewport instead of continuing beyond it');
   ok(zRect.bottom>=stageRect.bottom+20,'Z bottom edge is visible inside the viewport instead of continuing beyond it');
   const zStyle=getComputedStyle(z);
@@ -160,7 +173,9 @@ try{
   await frame();
   const qHeader=q?.querySelector('[data-v2-q-header]');
   const qHeaderContent=q?.querySelector('[data-v2-q-header-content]');
-  ok(qHeader && qHeaderContent,'Q fixed header/body structure disappeared');
+  const qAffordance=q?.querySelector('[data-v2-q-header] > [data-v2-z-dismiss]');
+  ok(qHeader && qHeaderContent && qAffordance,'Q fixed Header/body structure disappeared');
+  ok(Math.abs(qAffordance.getBoundingClientRect().top-qHeader.getBoundingClientRect().top)<=0.5,'Q affordance is not at the top of its Shared Header');
   for(const node of [qHeader,qHeaderContent]){
     const style=getComputedStyle(node);
     ok(style.backgroundColor==='rgba(0, 0, 0, 0)','Q header has a separate background');
