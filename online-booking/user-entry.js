@@ -27,6 +27,7 @@ function bookingRouteQuery(params) {
     procedureIds: String(params.get('procedures') || '').split(',').map((value) => value.trim()).filter(Boolean),
     telegramEntry: String(params.get('tg_entry') || '').trim(),
     entry: String(params.get('entry') || '').trim(),
+    origin: String(params.get('origin') || '').trim(),
   };
 }
 
@@ -139,6 +140,7 @@ function startAccountBookingRoute(tenantId) {
   const params = new URLSearchParams();
   params.set('booking', id);
   params.set('entry', 'account-booking');
+  params.set('origin', 'journal');
   history.replaceState({}, '', `${location.pathname || '/'}?${params.toString()}`);
   void renderAccessRoute({
     tenantId: id,
@@ -146,6 +148,7 @@ function startAccountBookingRoute(tenantId) {
     procedureIds: [],
     telegramEntry: '',
     entry: 'account-booking',
+    origin: 'journal',
   });
 }
 
@@ -235,7 +238,12 @@ async function renderGlobalClientRoot(initial = {}) {
   setThemeColor('#2F3338');
   app.classList.add('app-shell--booking');
   app.innerHTML = '<main class="booking-content" id="app-content"></main>';
-  await renderGlobalClient(document.querySelector('#app-content'), initial);
+  const content = document.querySelector('#app-content');
+  if (!content) return;
+  content.style.visibility = 'hidden';
+  try {
+    await renderGlobalClient(content, initial);
+  } finally { content.style.visibility = ''; }
   syncViewport();
 }
 
@@ -243,8 +251,16 @@ async function renderAccessRoute(route) {
   disposeView();
   setThemeColor('#2F3338');
   app.classList.add('app-shell--booking');
-  app.innerHTML = '<main class="booking-content" id="app-content"></main>';
+  const fromJournal = route.entry === 'account-booking' && route.origin === 'journal';
 
+  if (route.entry === 'account-booking' && route.origin !== 'journal') {
+    await renderGlobalClientRoot({ tab: 'contact-detail', tenantId: route.tenantId });
+  } else if (!fromJournal) {
+    app.innerHTML = '<main class="booking-content" id="app-content"></main>';
+  }
+
+  const content = document.querySelector('#app-content');
+  if (!content) return;
   const disposeRuntime = await startAccountRuntime(route);
   let recordCreationCommitted = false;
   const onRecordCreationCommitted = () => { recordCreationCommitted = true; };
@@ -253,7 +269,7 @@ async function renderAccessRoute(route) {
     disposeRuntime?.();
     window.removeEventListener('va-tools:record-creation-committed', onRecordCreationCommitted);
   };
-  await renderAccess(document.querySelector('#app-content'), {
+  await renderAccess(content, {
     ...route,
     onExitToAccount: async (target = {}) => {
       const confirmed = recordCreationCommitted;

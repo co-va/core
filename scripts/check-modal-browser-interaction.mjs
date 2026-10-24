@@ -25,13 +25,11 @@ for (const [name, engine, contextOptions] of [
     };
     const targetPoints = async (selector) => page.locator(selector).evaluate((node) => {
       const r = node.getBoundingClientRect();
-      const label = node.matches?.('input[type="checkbox"]') ? node.closest('label') : null;
       return [3, r.height / 2, r.height - 3].map((dy) => {
         const x = r.left + r.width / 2;
         const y = r.top + dy;
         const hit = document.elementFromPoint(x, y);
-        const ownedHit = hit && (hit === node || node.contains(hit) || label?.contains(hit));
-        return { x, y, hit: Boolean(ownedHit) };
+        return { x, y, hit: Boolean(hit && (hit === node || node.contains(hit))) };
       });
     });
     const activate = async (point) => {

@@ -16,13 +16,11 @@ const journalListener = entry.slice(journalListenerStart, entry.indexOf('\n});',
 assert.match(journalListener, /openAccountBookingProfessionalSelector/, 'Journal booking must open the professional selector');
 assert.doesNotMatch(journalListener, /renderGlobalClientRoot\(\{ tab: 'contacts'/, 'Journal booking must not redirect to Contacts');
 
-const accessRouteStart = entry.indexOf('async function renderAccessRoute');
-const accessRouteEnd = entry.indexOf("window.addEventListener('resize'", accessRouteStart);
-const accessRoute = entry.slice(accessRouteStart, accessRouteEnd);
-assert.doesNotMatch(accessRoute, /renderGlobalClientRoot\(\{ tab: 'contact-detail'/, 'Account booking must not pre-render Profile/Loading before booking');
-assert.match(accessRoute, /app\.innerHTML = '<main class="booking-content" id="app-content"><\/main>';/, 'Account booking must mount directly into the booking root');
+assert.match(entry, /params\.set\('origin', 'journal'\)/, 'Journal booking route must preserve Journal as its origin');
+assert.match(entry, /route\.entry === 'account-booking' && route\.origin !== 'journal'/, 'Contact booking must preserve Contact detail beneath Shared Q while Journal booking must not replace Journal');
+assert.match(entry, /content\.style\.visibility = 'hidden'/, 'Global account loading placeholder must not be exposed during account surface restoration');
+assert.match(entry, /finally \{ content\.style\.visibility = '';/, 'Global account surface must become visible after restoration');
 
-assert.match(entry, /history\.replaceState\(\{\}, '', `\$\{location\.pathname \|\| '\/'\}\?\$\{params\.toString\(\)\}`\);[\s\S]*renderAccessRoute\(/, 'Journal professional selection must enter account-booking without a page reload');
 assert.match(access, /workplaces\.length === 1 \? String\(workplaces\[0\]\?\.key \|\| ''\) : ''/, 'Existing booking must keep automatic single-workplace skip');
 assert.match(access, /openRecords\(\{[\s\S]*context: 'online'/, 'Existing Shared Record booking flow must remain the booking owner');
 
