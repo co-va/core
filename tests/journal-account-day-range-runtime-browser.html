@@ -78,18 +78,18 @@ function mountDay(dateKeyValue) {
   return { ...mounted, dispose };
 }
 
-function assertPersonalDay(mounted, message) {
+function assertRange(mounted, from, to, message) {
   const timeline = mounted.root.querySelector('[data-time-timeline]');
   ok(Boolean(timeline), message + ': Shared timeline отсутствует');
-  ok(timeline?.dataset.timeFrom === '00:00', message + ': from=' + String(timeline?.dataset.timeFrom || ''));
-  ok(timeline?.dataset.timeTo === '23:59', message + ': to=' + String(timeline?.dataset.timeTo || ''));
+  ok(timeline?.dataset.timeFrom === from, message + ': from=' + String(timeline?.dataset.timeFrom || ''));
+  ok(timeline?.dataset.timeTo === to, message + ': to=' + String(timeline?.dataset.timeTo || ''));
   return timeline;
 }
 
 mark('empty-day');
 let mounted = mountDay(emptyDate);
 await wait();
-assertPersonalDay(mounted, 'пустой account Day не держит личное поле суток');
+assertRange(mounted, '09:00', '23:00', 'пустой account Day не держит базовую сетку 09:00–23:00');
 ok(!flatText(mounted.root).includes('Записей нет'), 'пустой account Day заменил сетку сообщением «Записей нет»');
 ok(!flatText(mounted.root).includes('Выходной день'), 'пустой account Day зависит от professional day-off');
 ok(!flatText(mounted.root).includes('Не задано рабочее время'), 'пустой account Day зависит от professional schedule');
@@ -98,21 +98,21 @@ mounted.dispose();
 mark('regular-record');
 mounted = mountDay(regularDate);
 await wait();
-assertPersonalDay(mounted, 'обычная запись изменила личное поле суток');
+assertRange(mounted, '09:00', '23:00', 'обычная запись сжала базовую сетку');
 ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-regular"]')), 'обычная Record не отображается в account Day');
 mounted.dispose();
 
 mark('early-record');
 mounted = mountDay(earlyDate);
 await wait();
-assertPersonalDay(mounted, 'ранняя Record изменила личное поле суток');
+assertRange(mounted, '07:30', '23:00', 'ранняя Record не расширила сетку раньше 09:00');
 ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-early"]')), 'ранняя Record не отображается в account Day');
 mounted.dispose();
 
 mark('late-record');
 mounted = mountDay(lateDate);
 await wait();
-assertPersonalDay(mounted, 'поздняя Record изменила личное поле суток');
+assertRange(mounted, '09:00', '23:45', 'поздняя Record не расширила сетку позже 23:00');
 ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-day-late"]')), 'поздняя Record не отображается в account Day');
 mounted.dispose();
 
@@ -163,7 +163,7 @@ mark('month-to-empty-day');
   emptyCell?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
   await wait();
   ok(Boolean(shell.root.querySelector('[data-journal-day-context="account"]')), 'Month → пустой Day не открыл существующий account Day');
-  assertPersonalDay(shell, 'Month → пустой Day не открыл личное поле суток');
+  assertRange(shell, '09:00', '23:00', 'Month → пустой Day не открыл базовую сетку');
   ok(!flatText(shell.root).includes('Выходной день'), 'Month → пустой Day показал professional day-off');
   ok(!flatText(shell.root).includes('Не задано рабочее время'), 'Month → пустой Day показал professional schedule state');
   dispose();
