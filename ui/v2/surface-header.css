@@ -5,6 +5,14 @@
   background:var(--v2-white,#fff)!important;
 }
 
+/* Q keeps fixed Header + scrolling Body technically, but both are one visual surface. */
+[data-v2-q-header],
+[data-v2-q-header] > [data-v2-q-header-content]{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+}
+
 /* Empty Q does not need a visible header strip: keep only the shared dismiss affordance. */
 [data-v2-q-header]:has(> [data-v2-q-header-content]:empty){
   min-height:28px!important;

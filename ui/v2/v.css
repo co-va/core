@@ -39,13 +39,19 @@
   overflow:visible;
   transform:rotate(-4deg);
   transform-origin:50% 50%;
-  filter:drop-shadow(0 7px 10px rgba(0,0,0,.28));
+  filter:drop-shadow(0 7px 10px rgba(0,0,0,.28)) drop-shadow(0 2px 7px rgba(255,255,0,.16));
   transition:transform .14s ease,filter .14s ease;
 }
 .v2-v:active .v2-v__medallion{
   transform:rotate(-6deg) translateY(1px) scale(.94);
-  filter:drop-shadow(0 4px 7px rgba(0,0,0,.24));
+  filter:drop-shadow(0 4px 7px rgba(0,0,0,.24)) drop-shadow(0 1px 9px rgba(255,255,0,.28));
 }
 .v2-v:focus-visible{outline:2px solid var(--v2-yellow);outline-offset:0;border-radius:14px}
 .v2-app.is-deck-open .v2-v,
-.v2-app.has-v2-modal .v2-v{visibility:hidden;pointer-events:none}
+.v2-app.has-v2-modal .v2-v,
+html.keyboard-open .v2-v{visibility:hidden;pointer-events:none}
+
+@media(max-width:360px){
+  .v2-app{--v2-v-bottom:32px}
+  .v2-v{left:32px}
+}
