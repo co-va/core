@@ -67,6 +67,11 @@ function exitBookingContext(state, target = {}) {
   return true;
 }
 
+function releaseCreationOwner(state) {
+  if (state?.creationOwner?.isOpen?.()) state.creationOwner.close();
+  if (state) state.creationOwner = null;
+}
+
 function openConsentDocument(document = {}) {
   return openDocumentViewer({
     title: document?.title || 'Документ',
@@ -341,17 +346,20 @@ function renderLegal(root, state, { registration = false } = {}) {
 
 async function continueAfterIdentity(root, state) {
   if (!state.account) {
+    releaseCreationOwner(state);
     renderAccountEntry(root, state);
     return;
   }
   try {
     const { platform, tenant } = await loadLegalState(state);
     if (!platform?.accepted || !tenant?.pdnActive) {
+      releaseCreationOwner(state);
       renderLegal(root, state);
       return;
     }
     startBookingFlow(root, state);
   } catch (error) {
+    releaseCreationOwner(state);
     state.error = accountFlowError(error, 'Не удалось проверить учетную запись');
     renderAccountEntry(root, state);
   }
@@ -381,6 +389,7 @@ function onlineProcedureEntry(state, procedure, workplaceKey) {
 function startBookingFlow(root, state) {
   const workplaces = Array.isArray(state.context.workplaces) ? state.context.workplaces : [];
   if (!workplaces.length) {
+    releaseCreationOwner(state);
     openNotice({ title: 'Запись недоступна', message: 'Рабочие пространства не настроены.' });
     return;
   }
@@ -463,6 +472,7 @@ function startBookingFlow(root, state) {
     procedures: initialProcedures,
     professionalActions: false,
     provider,
+    creationOwner: state.creationOwner?.isOpen?.() ? state.creationOwner : null,
     onCancel: () => {
       if (state.entry === 'account-booking') {
         exitBookingContext(state, { tab: 'journal' });
@@ -485,6 +495,7 @@ export async function renderAccess(root, {
   workplaceKey = '',
   procedureIds = [],
   entry = '',
+  creationOwner = null,
   onExitToAccount = null,
 } = {}) {
   const state = {
@@ -500,10 +511,12 @@ export async function renderAccess(root, {
     consents: {},
     error: '',
     entry: String(entry || ''),
+    creationOwner,
     onExitToAccount,
   };
 
   if (!state.tenantId) {
+    releaseCreationOwner(state);
     root.innerHTML = emptyState('Ссылка недействительна', 'В ссылке отсутствует идентификатор онлайн-записи.');
     return;
   }
@@ -519,7 +532,10 @@ export async function renderAccess(root, {
     state.account = account;
     if (state.entry === 'account-booking') {
       if (state.account) await continueAfterIdentity(root, state);
-      else renderAccountEntry(root, state);
+      else {
+        releaseCreationOwner(state);
+        renderAccountEntry(root, state);
+      }
       return;
     }
     if (state.account) {
@@ -528,6 +544,7 @@ export async function renderAccess(root, {
     }
     renderWelcome(root, state);
   } catch (error) {
+    releaseCreationOwner(state);
     root.innerHTML = emptyState('Запись недоступна', accountFlowError(error, 'Не удалось открыть онлайн-запись.'));
   }
 }
