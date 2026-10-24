@@ -98,6 +98,7 @@ window.fetch = async (input, options = {}) => {
     return json(relationships);
   }
   if (path === '/online-booking/account/records' && method === 'GET') return json([]);
+  if (path === '/online-booking/account/events' && method === 'GET') return json([]);
   if (path === '/online-booking/account/unread-summary' && method === 'GET') return json({ total:0, byTenant:[] });
   if (path === '/online-booking/account/personal-accounts' && method === 'GET') return json([]);
   if (path === '/online-booking/account/deposits' && method === 'GET') return json([]);
@@ -133,16 +134,26 @@ ok(Boolean(journalRoot), 'Account Journal did not render as root');
 ok(journalRoot?.dataset.journalContext === 'account', 'Journal did not enter account context');
 const slot = journalRoot?.querySelector('[data-time-slot-from]');
 ok(Boolean(slot), 'Account Journal Day has no free slot surface');
-ok(!document.querySelector('[data-journal-creation]'), 'professional Journal creation leaked before booking request');
+ok(!document.querySelector('[data-record-creation-flow]'), 'Shared Journal creation leaked before slot request');
 
 mark('journal-slot');
 click(slot);
+await wait(160);
+const creation = document.querySelector('[data-record-creation-flow]');
+ok(Boolean(creation), 'Journal slot did not open existing Shared creation owner');
+ok(Boolean(document.querySelector('[data-view="record"]')), 'Shared creation owner has no Record mode');
+ok(Boolean(document.querySelector('[data-view="event"]')), 'Shared creation owner has no Event mode');
+ok(!document.querySelector('[data-view="note"]'), 'Note mode leaked before the Note task');
+const bookingAction = document.querySelector('[data-account-journal-record-create]');
+ok(Boolean(bookingAction), 'Record mode has no existing booking action');
+
+mark('journal-booking-action');
+click(bookingAction);
 await wait(320);
 ok(relationshipsFetches >= 2, 'Journal booking request did not resolve existing Account relationships');
 ok(Boolean(document.querySelector('[data-v2-card-item="contacts"].is-active')), 'multiple relationships did not reuse existing Contacts root');
 const relationshipCards = [...document.querySelectorAll('[data-global-relationship]')];
 ok(relationshipCards.length === 2, 'existing Contacts did not render both relationships for booking choice');
-ok(!document.querySelector('[data-journal-creation]'), 'Journal slot started professional creation flow');
 ok(!document.querySelector('[data-modal]'), 'Journal booking choice created a local modal instead of Contacts');
 
 mark('contact-choice');
@@ -150,7 +161,6 @@ click(relationshipCards[0]);
 await wait(420);
 ok(bookingContextFetches >= 1, 'selected relationship did not enter existing online booking context');
 ok(Boolean(document.querySelector('[data-record-creation-flow]')), 'existing Shared Record creation flow did not start');
-ok(!document.querySelector('[data-journal-creation]'), 'professional Journal creation was used instead of account booking');
 ok(Boolean(document.querySelector('[data-records-procedure]')), 'existing booking did not reach canonical procedure selection');
 
 mark('finalize');
@@ -160,7 +170,7 @@ if (failures.length) {
   result.textContent = failures.join('\n');
 } else {
   document.documentElement.dataset.journalAccountBookingStartRuntime = 'pass';
-  result.textContent = 'Account Journal starts existing booking through existing Contacts runtime passed';
+  result.textContent = 'Account Journal starts existing booking through Shared creation owner and existing Contacts runtime passed';
 }
 </script>
 </body>
