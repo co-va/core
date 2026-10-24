@@ -1,19 +1,30 @@
 import {
   ALL_WORKPLACES_ID,
+  button,
   clearV2Y,
   focusNoteReels,
   initDateNavigator,
   initJournalDayTimeline,
   initNoteReels,
   journalDayTimeline,
+  modal,
+  mountModal,
   noteReels,
+  openRecordCreationOwner,
   setV2Y,
 } from '../ui/ui.js';
 import { getWorkplaces } from '../core/workplace-time.js';
 import { getDays, getDay, getDayTime, getDaysForDate, getScheduleConflicts } from '../core/day/index.js';
-import { getTimeUsagesForScope, getTimeAvailabilityAt, timeToMinutes, minutesToTime } from '../core/time/index.js';
+import { getTimeUsagesForScope, getTimeAvailabilityAt } from '../core/time/index.js';
 import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { getNotesForDay } from '../core/note/index.js';
+import {
+  accountEventActions,
+  accountEventsLoaded,
+  getAccountEvents,
+  loadAccountEvents,
+} from '../core/event/account-owner.js';
+import { createJournalEventFlow } from './event-create.js';
 import { noteTargetLabel, noteVisibleForWorkplace, resolveNoteTarget } from './note-target.js';
 
 function dateKey(date) {
@@ -88,19 +99,12 @@ function accountUsage(record, resolveRecordContext) {
   };
 }
 
-function accountTimelineRange(usages = []) {
-  let start = 9 * 60;
-  let end = 23 * 60;
-  (Array.isArray(usages) ? usages : []).forEach((usage) => {
-    const from = timeToMinutes(usage?.from);
-    const to = timeToMinutes(usage?.to);
-    if (from == null || to == null || to <= from) return;
-    start = Math.min(start, from);
-    end = Math.max(end, to);
-  });
+function accountEventUsage(event = null) {
   return {
-    from: minutesToTime(Math.max(0, start)),
-    to: minutesToTime(Math.min((24 * 60) - 1, end)),
+    ...(event || {}),
+    type: 'event',
+    sourceId: String(event?.id || ''),
+    rigidity: 'soft',
   };
 }
 
@@ -119,6 +123,11 @@ async function openAccountRecord(record, resolveRecordContext, rerender = () => 
   });
 }
 
+async function openAccountEvent(event, rerender = () => {}) {
+  const { openEventView } = await import('./event-view.js');
+  openEventView(event, { eventActions: accountEventActions, onClose: rerender });
+}
+
 async function openUsage(usage, rerender = () => {}) {
   if (usage?.type === 'record') {
     await openExistingRecord(usage, rerender);
@@ -128,6 +137,50 @@ async function openUsage(usage, rerender = () => {}) {
     const { openEventView } = await import('./event-view.js');
     openEventView(usage, { onClose: rerender });
   }
+}
+
+function openAccountDayAction({ root, date, from, onCreated = () => {} } = {}) {
+  const content = `<div class="modal-actions">
+    ${button('Событие', { variant: 'secondary', data: 'data-account-day-event' })}
+    ${button('Заметка', { variant: 'secondary', data: 'data-account-day-note' })}
+    ${button('Записаться', { data: 'data-account-day-booking' })}
+  </div>`;
+  const layer = mountModal(document.body, modal(content, {
+    variant: 'x',
+    xRole: 'action',
+    surface: 'app',
+    title: 'Действие',
+  }));
+  if (!layer) return null;
+
+  layer.querySelector('[data-account-day-booking]')?.addEventListener('click', () => {
+    layer.v2Close?.();
+    window.dispatchEvent(new CustomEvent('cova:account-journal-open-contacts'));
+  });
+
+  layer.querySelector('[data-account-day-note]')?.addEventListener('click', () => {
+    layer.v2Close?.();
+  });
+
+  layer.querySelector('[data-account-day-event]')?.addEventListener('click', () => {
+    layer.v2Close?.();
+    const owner = openRecordCreationOwner({
+      surfaceRoot: root.closest('[data-v2-z],[data-v2-z-layer]'),
+      bodyRoot: root,
+    });
+    if (!owner) return;
+    owner.setShellHeader('<div class="record-creation-step-title">Событие</div>');
+    createJournalEventFlow({
+      owner,
+      date,
+      workplaceId: '',
+      timeHint: from,
+      eventActions: accountEventActions,
+      onCreated,
+    });
+  });
+
+  return layer;
 }
 
 export function renderJournalDay(root, {
@@ -180,23 +233,43 @@ export function renderJournalDay(root, {
 
   if (accountMode) {
     clearV2Y(root);
+    if (!accountEventsLoaded()) {
+      void loadAccountEvents().then(() => {
+        if (root.isConnected) rerender();
+      }).catch(() => {});
+    }
+
     const accountRecords = readRecords(records)
       .filter((record) => String(record?.date || '').slice(0, 10) === dayDate)
       .filter((record) => String(record?.status || '').toLowerCase() !== 'cancelled');
-
+    const accountEvents = getAccountEvents()
+      .filter((event) => String(event?.date || '').slice(0, 10) === dayDate);
+    const usages = [
+      ...accountRecords.map((record) => accountUsage(record, resolveRecordContext)),
+      ...accountEvents.map(accountEventUsage),
+    ];
     const recordById = new Map(accountRecords.map((record) => [recordId(record), record]).filter(([id]) => Boolean(id)));
-    const usages = accountRecords.map((record) => accountUsage(record, resolveRecordContext));
-    const range = accountTimelineRange(usages);
+    const eventById = new Map(accountEvents.map((event) => [String(event?.id || ''), event]).filter(([id]) => Boolean(id)));
+
     timelineRoot.innerHTML = journalDayTimeline({
-      from: range.from,
-      to: range.to,
+      from: '00:00',
+      to: '23:59',
       usages,
       day: dayDate,
     });
     initJournalDayTimeline(timelineRoot, {
       onUsageClick: ({ usageId }) => {
-        const record = recordById.get(String(usageId || ''));
+        const id = String(usageId || '');
+        const event = eventById.get(id);
+        if (event) {
+          void openAccountEvent(event, rerender);
+          return;
+        }
+        const record = recordById.get(id);
         if (record) void openAccountRecord(record, resolveRecordContext, rerender);
+      },
+      onSlotClick: ({ from }) => {
+        openAccountDayAction({ root, date: dayDate, from, onCreated: rerender });
       },
     });
     return dispose;
