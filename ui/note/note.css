@@ -119,27 +119,27 @@
   max-height:60px;
   margin:0;
   padding:0 0 0 16px;
-  overflow:hidden;
+  overflow:visible;
 }
 .v2-y-host .note-reels__rail{
   box-sizing:border-box;
   width:100%;
-  height:60px;
-  min-height:60px;
+  height:66px;
+  min-height:66px;
   gap:15px;
   padding:0;
   align-items:flex-start;
 }
 .v2-y-host .note-reels .v2-rail>*{
-  flex:0 0 50px;
-  width:50px;
-  min-width:50px;
-  max-width:50px;
+  flex:0 0 60px;
+  width:60px;
+  min-width:60px;
+  max-width:60px;
 }
 .v2-y-host .note-reel-card{
-  width:50px;
-  min-width:50px;
-  max-width:50px;
+  width:60px;
+  min-width:60px;
+  max-width:60px;
   height:60px;
   min-height:60px;
   max-height:60px;
@@ -147,13 +147,14 @@
   padding:5px 4px 7px;
   gap:1px;
   transform:none;
-  overflow:hidden;
+  overflow:visible;
 }
 .v2-y-host .note-reel-card::after{
-  left:8px;
-  bottom:0;
-  width:8px;
-  height:6px;
+  left:10px;
+  bottom:-6px;
+  width:10px;
+  height:7px;
+  background:color-mix(in srgb,var(--note-color) 72%,rgba(255,255,255,.72) 28%);
 }
 .v2-y-host .note-reel-card:active{transform:translateY(1px)}
 .v2-y-host .note-reel-card__meta{font-size:8px;line-height:1}
