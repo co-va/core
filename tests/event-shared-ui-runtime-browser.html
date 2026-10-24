@@ -97,7 +97,7 @@ try {
   ok(Boolean(editForm?.querySelector('[data-event-edit-time]')), 'Edit Q has no shared time action');
   ok(!editForm?.querySelector('[data-time-picker]'), 'Edit Q still embeds S/Do directly');
   ok(!editForm?.querySelector('[data-color-picker]'), 'Edit Q still embeds color picker directly');
-  const editButtons = [...(editForm?.querySelectorAll('.action-block .ui-button') || [])];
+  const editButtons = [...(editForm?.querySelectorAll('.modal-actions .ui-button') || [])];
   ok(editButtons[0]?.matches('[data-event-edit-cancel]'), 'secondary Cancel is not above Save');
   ok(editButtons.at(-1)?.type === 'submit', 'primary Save is not the lower action');
   editForm?.querySelector('[data-event-edit-time]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
