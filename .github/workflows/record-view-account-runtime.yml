@@ -112,3 +112,8 @@ jobs:
             'data-journal-account-action-x-runtime="pass"' \
             'data-journal-account-action-x-runtime-stage' \
             /tmp/journal-account-action-x-runtime-dom.html
+          run_browser_case \
+            "tests/event-shared-ui-runtime-browser.html" \
+            'data-event-shared-ui-runtime="pass"' \
+            'data-event-shared-ui-runtime-stage' \
+            /tmp/event-shared-ui-runtime-dom.html

@@ -2,11 +2,10 @@ import { mountV2ZLayer, setV2ZHeaderRows, v2ZLayer } from '../ui/v2/index.js';
 import { actionBlock } from '../ui/page/page.js';
 import {
   button,
-  colorPicker,
   field,
-  initColorPickers,
   modal,
   mountModal,
+  openColorPickerAction,
   openNotice,
   openTimeRangeAction,
   textareaField,
@@ -50,6 +49,14 @@ function timeRangeValid(from, to) {
   return start != null && end != null && end > start;
 }
 
+function timeLabel(from, to) {
+  return `Время · С ${String(from || '—')} — До ${String(to || '—')}`;
+}
+
+function descriptionHtml(value = '') {
+  return esc(value).replace(/\n/g, '<br>');
+}
+
 export function openEventView(eventOrId, { onClose = () => {}, eventActions = null } = {}) {
   const eventId = String(typeof eventOrId === 'object' ? eventOrId?.id : eventOrId || '');
   const customActions = eventActions && typeof eventActions.read === 'function' ? eventActions : null;
@@ -63,7 +70,6 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
     { stack: true, onClose },
   );
   if (!layer) return null;
-  setV2ZHeaderRows(layer, ['<div class="record-creation-step-title">Событие</div>']);
 
   const openNotes = (source) => {
     if (customActions?.supportsNotes === false) return;
@@ -91,26 +97,29 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
       ? false
       : hasNotesForTarget('event', current.id);
 
+    setV2ZHeaderRows(layer, [
+      `<div class="record-creation-step-title">${esc(current.title || 'Событие')}</div>`,
+    ]);
+
     root.innerHTML = `<section class="form-grid event-view">
-      <h2>${esc(current.title || 'Событие')}</h2>
       <div><strong>${esc(current.date)}</strong></div>
       <div><strong>С ${esc(current.from)} — До ${esc(current.to)}</strong></div>
-      ${current.description ? `<div class="muted">${esc(current.description)}</div>` : ''}
       <div class="color-picker__swatch" style="background:${esc(current.color || '#777A7D')}" aria-label="Цвет события"></div>
+      ${current.description ? `<div class="event-view__description">${descriptionHtml(current.description)}</div>` : ''}
       ${actionBlock([
         notesAvailable
           ? button('Заметки', { variant: 'secondary', data: 'data-event-notes' })
           : '',
         button('Изменить', { data: 'data-event-edit' }),
-        button('Удалить', { data: 'data-event-delete', variant: 'danger' }),
+        button('Удалить событие', { data: 'data-event-delete', variant: 'danger' }),
       ].filter(Boolean).join(''))}
     </section>`;
 
     root.querySelector('[data-event-notes]')?.addEventListener('click', () => openNotes(current));
-    root.querySelector('[data-event-edit]')?.addEventListener('click', renderEdit);
+    root.querySelector('[data-event-edit]')?.addEventListener('click', openEdit);
     root.querySelector('[data-event-delete]')?.addEventListener('click', () => {
       const confirm = mountModal(document.body, modal(
-        button('Удалить', { data: 'data-event-delete-confirm', variant: 'danger' }),
+        button('Удалить событие', { data: 'data-event-delete-confirm', variant: 'danger' }),
         { variant: 'x', title: 'Удалить событие' },
       ));
       confirm?.querySelector('[data-event-delete-confirm]')?.addEventListener('click', async (domEvent) => {
@@ -149,46 +158,99 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
     });
   };
 
-  const renderEdit = () => {
+  const validateEditSelection = async (state, { from = state.from, to = state.to } = {}) => {
+    if (!timeRangeValid(from, to)) {
+      openNotice({ title: 'Событие', message: 'Проверьте время события.' });
+      return false;
+    }
+
+    if (customActions) {
+      if (typeof customActions.validate === 'function') {
+        const availability = await customActions.validate({ ...state, from, to, excludeId: eventId });
+        if (availability && availability.ok === false) {
+          openNotice({ title: 'Событие', message: unavailable(availability.reason) });
+          return false;
+        }
+      }
+      return true;
+    }
+
+    const availability = checkTimeAvailability({
+      date: state.date,
+      workplaceId: state.workplaceId,
+      from,
+      to,
+      excludeId: eventId,
+    });
+    if (!availability.ok) {
+      openNotice({ title: 'Событие', message: unavailable(availability.reason) });
+      return false;
+    }
+    return true;
+  };
+
+  function openEdit() {
     current = readCurrent();
-    const root = host(layer);
-    if (!root || !current) return;
+    if (!current) return null;
     const before = { ...current };
     const state = { ...current };
 
-    root.innerHTML = `<form class="form-grid" data-event-edit-form>
-      ${field({ label: 'Название', name: 'title', value: state.title, required: true })}
-      <button type="button" class="people-action-btn" data-event-edit-time>С ${esc(state.from)} — До ${esc(state.to)}</button>
-      ${textareaField({ label: 'Описание', name: 'description', value: state.description, rows: 5 })}
-      ${colorPicker({ name: 'color', value: state.color })}
-      ${actionBlock(`${button('Сохранить', { type: 'submit' })}${button('Отмена', { data: 'data-event-edit-cancel', variant: 'secondary' })}`)}
-    </form>`;
+    const editLayer = mountModal(document.body, modal(
+      `<form class="form-grid" data-event-edit-form>
+        ${field({ label: 'Наименование', name: 'title', value: state.title, required: true })}
+        ${textareaField({ label: 'Описание', name: 'description', value: state.description, rows: 8 })}
+        ${button(timeLabel(state.from, state.to), { variant: 'secondary', data: 'data-event-edit-time' })}
+        <div class="color-picker__swatch" data-event-edit-color style="background:${esc(state.color || '#777A7D')}" aria-label="Цвет события"></div>
+        ${actionBlock(`${button('Отмена', { data: 'data-event-edit-cancel', variant: 'secondary' })}${button('Сохранить', { type: 'submit' })}`)}
+      </form>`,
+      {
+        variant: 'q',
+        surface: 'app',
+        title: current.title || 'Событие',
+        className: 'event-edit-q',
+      },
+    ));
+    if (!editLayer) return null;
 
-    initColorPickers(root);
-    const form = root.querySelector('[data-event-edit-form]');
+    const form = editLayer.querySelector('[data-event-edit-form]');
+    const timeButton = editLayer.querySelector('[data-event-edit-time]');
+    const colorMark = editLayer.querySelector('[data-event-edit-color]');
+
     const capture = () => {
+      if (!form) return;
       const data = new FormData(form);
       state.title = String(data.get('title') || '').trim();
       state.description = String(data.get('description') || '').trim();
-      state.color = String(data.get('color') || state.color || '#777A7D');
     };
 
     form?.addEventListener('input', capture);
     form?.addEventListener('change', capture);
-    root.querySelector('[data-event-edit-time]')?.addEventListener('click', () => {
+
+    timeButton?.addEventListener('click', () => {
       capture();
       openTimeRangeAction({
         from: state.from,
         to: state.to,
         title: 'Время события',
+        validate: (range) => validateEditSelection(state, range),
         onSave: ({ from, to }) => {
-          state.from = from;
-          state.to = to;
-          renderEdit();
+          openColorPickerAction({
+            value: state.color,
+            title: 'Цвет события',
+            confirm: true,
+            onSelect: (color) => {
+              state.from = from;
+              state.to = to;
+              state.color = color;
+              if (timeButton) timeButton.textContent = timeLabel(state.from, state.to);
+              if (colorMark) colorMark.style.background = state.color;
+            },
+          });
         },
       });
     });
-    root.querySelector('[data-event-edit-cancel]')?.addEventListener('click', renderRead);
+
+    editLayer.querySelector('[data-event-edit-cancel]')?.addEventListener('click', () => editLayer.v2Close?.());
 
     form?.addEventListener('submit', async (domEvent) => {
       domEvent.preventDefault();
@@ -197,32 +259,7 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
         openNotice({ title: 'Событие', message: 'Укажите название события.' });
         return;
       }
-      if (!timeRangeValid(state.from, state.to)) {
-        openNotice({ title: 'Событие', message: 'Проверьте время события.' });
-        return;
-      }
-
-      if (customActions) {
-        if (typeof customActions.validate === 'function') {
-          const availability = await customActions.validate({ ...state, excludeId: eventId });
-          if (availability && availability.ok === false) {
-            openNotice({ title: 'Событие', message: unavailable(availability.reason) });
-            return;
-          }
-        }
-      } else {
-        const availability = checkTimeAvailability({
-          date: state.date,
-          workplaceId: state.workplaceId,
-          from: state.from,
-          to: state.to,
-          excludeId: eventId,
-        });
-        if (!availability.ok) {
-          openNotice({ title: 'Событие', message: unavailable(availability.reason) });
-          return;
-        }
-      }
+      if (!(await validateEditSelection(state))) return;
 
       const submit = form.querySelector('[type="submit"]');
       if (submit) submit.disabled = true;
@@ -235,6 +272,7 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
             from: state.from,
             to: state.to,
           });
+          editLayer.v2Close?.();
           renderRead();
         } catch (error) {
           openNotice({
@@ -255,6 +293,7 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
       });
       try {
         await flushBusinessPersistence();
+        editLayer.v2Close?.();
         renderRead();
       } catch (error) {
         updateEvent(eventId, before);
@@ -265,7 +304,9 @@ export function openEventView(eventOrId, { onClose = () => {}, eventActions = nu
         if (submit?.isConnected) submit.disabled = false;
       }
     });
-  };
+
+    return editLayer;
+  }
 
   renderRead();
   return layer;
