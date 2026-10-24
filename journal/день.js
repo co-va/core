@@ -486,7 +486,6 @@ export function renderJournalDay(root, {
         await openUsage(usage, rerender);
         return;
       }
-      if (minuteState.state !== 'free') return;
 
       const { openJournalCreation } = await import('./creation-flow.js');
       openJournalCreation({
