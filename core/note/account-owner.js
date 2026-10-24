@@ -1,4 +1,4 @@
-import { API_BASE } from '../../environment.js';
+import { API_BASE } from '../environment.js';
 import { getAccountToken } from '../account/index.js';
 import { NOTE_DEFAULT_COLOR } from './data.js';
 
