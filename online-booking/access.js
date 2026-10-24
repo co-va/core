@@ -156,7 +156,7 @@ function renderAccountEntry(root, state) {
   initPasswordFields(root);
   const authForm = root.querySelector('[data-access-entry-form]');
   root.querySelector('[data-access-auth-close]')?.addEventListener('click', () => {
-    if (state.entry === 'account-booking' && exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId })) return;
+    if (state.entry === 'account-booking' && exitBookingContext(state, { tab: 'journal' })) return;
     renderWelcome(root, state);
   });
   root.querySelector('[data-access-register]')?.addEventListener('click', async () => {
@@ -465,7 +465,7 @@ function startBookingFlow(root, state) {
     provider,
     onCancel: () => {
       if (state.entry === 'account-booking') {
-        exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId });
+        exitBookingContext(state, { tab: 'journal' });
       }
     },
     onCreated: (record) => {

@@ -2,6 +2,7 @@
   "id": "/",
   "name": "Запись",
   "short_name": "Запись",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#2F3338",
