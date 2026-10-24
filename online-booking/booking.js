@@ -496,7 +496,7 @@ function backFromFirstBookingStep(root, state) {
   state.repeatSelection = null;
   if (state.account) {
     exitBookingContext(state, {
-      tab: state.bookingOrigin === 'profile' ? 'contact-detail' : 'home',
+      tab: state.bookingOrigin === 'profile' ? 'contact-detail' : 'journal',
       tenantId: state.tenantId,
     });
     return;
