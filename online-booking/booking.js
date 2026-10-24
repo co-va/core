@@ -196,7 +196,7 @@ function renderLegalSticker(root, state) {
       tenantId: state.tenantId,
     });
     else if (state.account && state.identityDestination === 'booking') exitBookingContext(state, {
-      tab: 'home',
+      tab: 'journal',
       tenantId: state.tenantId,
     });
     else renderAccountDetails(root, state);
