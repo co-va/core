@@ -98,7 +98,7 @@ import { modal, mountModal } from '/ui/modals/index.js';
 const result=document.querySelector('#result');
 const fail=(message)=>{throw new Error(message)};
 const ok=(condition,message)=>{if(!condition)fail(message)};
-const frame=()=>new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+const frame=()=>new Promise((resolve)=>setTimeout(resolve,25));
 try{
   const host=document.querySelector('#host');
   host.innerHTML=v2Shell({
