@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}*{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<div id="host"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import { v2Shell } from '/ui/v2/shell.js';
+import { renderJournalDay } from '/journal/день.js';
+import { loadAccountEvents } from '/core/event/account-owner.js';
+
+const host = document.querySelector('#host');
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (value) => {
+  stage = value;
+  result.textContent = `running: ${value}`;
+  document.documentElement.dataset.journalAccountEventRuntimeStage = value;
+};
+const ok = (condition, message) => { if (!condition) failures.push(`${stage}: ${message}`); };
+const wait = (ms = 100) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const click = (node) => node?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers:{ 'Content-Type':'application/json' } });
+window.addEventListener('error', (event) => failures.push(`${stage}: window error: ${event.error?.message || event.message}`));
+window.addEventListener('unhandledrejection', (event) => failures.push(`${stage}: rejection: ${event.reason?.message || event.reason || 'unknown'}`));
+
+const regularDate = '2026-11-20';
+const earlyDate = '2026-11-21';
+const lateDate = '2026-11-22';
+const createDate = '2026-11-23';
+let serverEvents = [
+  { id:'account-event-regular', ownerType:'account', ownerId:'runtime-account', context:{scope:'account'}, date:regularDate, from:'10:00', to:'11:00', title:'Личное событие', description:'', color:'#777A7D', workplaceId:'', createdAt:'2026-11-01T00:00:00.000Z', updatedAt:'2026-11-01T00:00:00.000Z' },
+  { id:'account-event-early', ownerType:'account', ownerId:'runtime-account', context:{scope:'account'}, date:earlyDate, from:'07:15', to:'08:00', title:'Раннее событие', description:'', color:'#777A7D', workplaceId:'', createdAt:'2026-11-01T00:00:00.000Z', updatedAt:'2026-11-01T00:00:00.000Z' },
+  { id:'account-event-late', ownerType:'account', ownerId:'runtime-account', context:{scope:'account'}, date:lateDate, from:'22:30', to:'23:45', title:'Позднее событие', description:'', color:'#777A7D', workplaceId:'', createdAt:'2026-11-01T00:00:00.000Z', updatedAt:'2026-11-01T00:00:00.000Z' },
+];
+let putCount = 0;
+let deleteCount = 0;
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (input, options = {}) => {
+  const url = new URL(typeof input === 'string' ? input : input.url, location.origin);
+  const method = String(options.method || input?.method || 'GET').toUpperCase();
+  if (url.pathname === '/online-booking/account/events' && method === 'GET') return json(serverEvents);
+  const match = url.pathname.match(/^\/online-booking\/account\/events\/([^/]+)$/);
+  if (match && method === 'PUT') {
+    putCount += 1;
+    const body = JSON.parse(String(options.body || '{}'));
+    const event = { ...body.event, id:decodeURIComponent(match[1]), ownerType:'account', ownerId:'runtime-account', context:{...(body.event?.context || {}), scope:'account'}, workplaceId:'', updatedAt:new Date().toISOString() };
+    const index = serverEvents.findIndex((item) => item.id === event.id);
+    if (index >= 0) serverEvents[index] = event; else serverEvents.push(event);
+    return json(event);
+  }
+  if (match && method === 'DELETE') {
+    deleteCount += 1;
+    const id = decodeURIComponent(match[1]);
+    serverEvents = serverEvents.filter((item) => item.id !== id);
+    return json({ ok:true });
+  }
+  return nativeFetch(input, options);
+};
+localStorage.setItem('book.account.token', 'runtime-account-token');
+await loadAccountEvents({ force:true });
+
+function mountDay(day) {
+  host.innerHTML = v2Shell({ body:'<div data-runtime-day></div>', className:'v2-app--workspace' });
+  const app = host.querySelector('[data-v2-app]');
+  const root = app.querySelector('[data-runtime-day]');
+  const dispose = renderJournalDay(root, { context:'account', records:() => [], date:new Date(`${day}T12:00:00`) }) || (() => {});
+  return { app, root, dispose };
+}
+function range(mounted) {
+  const node = mounted.root.querySelector('[data-time-timeline]');
+  return [node?.dataset.timeFrom || '', node?.dataset.timeTo || ''];
+}
+
+mark('existing-event');
+let mounted = mountDay(regularDate);
+await wait();
+ok(Boolean(mounted.root.querySelector('[data-journal-usage="account-event-regular"]')), 'existing Account Event is not rendered in Shared Z');
+ok(range(mounted)[0] === '09:00' && range(mounted)[1] === '23:00', 'regular Event changed neutral Account range');
+mounted.dispose();
+
+mark('early-event');
+mounted = mountDay(earlyDate);
+await wait();
+ok(range(mounted)[0] === '07:15' && range(mounted)[1] === '23:00', 'early Event did not expand Account timeline');
+mounted.dispose();
+
+mark('late-event');
+mounted = mountDay(lateDate);
+await wait();
+ok(range(mounted)[0] === '09:00' && range(mounted)[1] === '23:45', 'late Event did not expand Account timeline');
+mounted.dispose();
+
+mark('creation-owner');
+mounted = mountDay(createDate);
+await wait();
+const slot = mounted.root.querySelector('[data-time-slot-from="09:00"]') || mounted.root.querySelector('[data-time-slot-from]');
+ok(Boolean(slot), 'empty Account day has no Shared time slot');
+click(slot);
+await wait();
+ok(Boolean(mounted.app.querySelector('[data-record-creation-flow]')), 'slot did not open existing Shared creation owner');
+ok(Boolean(mounted.app.querySelector('[data-view="record"]')), 'Shared creation owner lost Record mode');
+ok(Boolean(mounted.app.querySelector('[data-view="event"]')), 'Shared creation owner has no Event mode');
+ok(!mounted.app.querySelector('[data-view="note"]'), 'Note mode leaked into Event task');
+click(mounted.app.querySelector('[data-view="event"]'));
+await wait();
+const createForm = mounted.app.querySelector('[data-event-create-form]');
+ok(Boolean(createForm), 'Shared Event creation UI did not open');
+const title = createForm?.querySelector('[name="title"]');
+if (title) {
+  title.value = 'Созданное событие';
+  title.dispatchEvent(new Event('input', { bubbles:true }));
+  title.dispatchEvent(new Event('change', { bubbles:true }));
+}
+click(mounted.app.querySelector('[data-event-create]'));
+await wait(220);
+ok(putCount === 1, `Account Event create made ${putCount} PUT requests instead of 1`);
+const created = serverEvents.find((item) => item.title === 'Созданное событие');
+ok(Boolean(created), 'created Event was not persisted through Account owner');
+ok(created?.workplaceId === '', 'Account Event persisted a workplaceId');
+ok(created?.context?.scope === 'account', 'Account Event persisted outside account scope');
+ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${created?.id || ''}"]`)), 'created Event did not appear in Shared Z');
+
+mark('persistence-reload');
+await loadAccountEvents({ force:true });
+mounted.dispose();
+mounted = mountDay(createDate);
+await wait();
+ok(Boolean(mounted.root.querySelector(`[data-journal-usage="${created?.id || ''}"]`)), 'persisted Event disappeared after Account Event reload');
+
+mark('shared-event-view-edit');
+click(mounted.root.querySelector(`[data-journal-usage="${created?.id || ''}"]`));
+await wait();
+const eventLayer = mounted.app.querySelector('[data-v2-z-layer].event-view-z');
+ok(Boolean(eventLayer), 'Account Event did not open existing Shared Event View');
+click(eventLayer?.querySelector('[data-event-edit]'));
+await wait();
+const editForm = eventLayer?.querySelector('[data-event-edit-form]');
+const editTitle = editForm?.querySelector('[name="title"]');
+if (editTitle) {
+  editTitle.value = 'Изменённое событие';
+  editTitle.dispatchEvent(new Event('input', { bubbles:true }));
+}
+editForm?.dispatchEvent(new Event('submit', { bubbles:true, cancelable:true }));
+await wait(180);
+ok(putCount === 2, 'Shared Event edit did not use Account owner persistence');
+ok(serverEvents.some((item) => item.id === created?.id && item.title === 'Изменённое событие'), 'edited Account Event was not persisted');
+ok(!eventLayer?.querySelector('[data-event-notes]'), 'Note action leaked into Account Event before Note task');
+
+mark('shared-event-view-delete');
+click(eventLayer?.querySelector('[data-event-delete]'));
+await wait();
+click(document.querySelector('[data-event-delete-confirm]'));
+await wait(180);
+ok(deleteCount === 1, 'Shared Event delete did not use Account owner persistence');
+ok(!serverEvents.some((item) => item.id === created?.id), 'deleted Account Event remains in persistence');
+ok(!mounted.root.querySelector(`[data-journal-usage="${created?.id || ''}"]`), 'deleted Account Event remains in Shared Z');
+
+mounted.dispose();
+window.fetch = nativeFetch;
+if (failures.length) {
+  document.documentElement.dataset.journalAccountEventRuntime = 'fail';
+  result.textContent = failures.join('\n');
+} else {
+  document.documentElement.dataset.journalAccountEventRuntime = 'pass';
+  result.textContent = 'Account Shared Event runtime passed';
+}
+</script>
+</body>
+</html>

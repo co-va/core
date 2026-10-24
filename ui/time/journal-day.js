@@ -106,10 +106,9 @@ function aggregateTimeline(columns = [], { day = '', usageRenderer = usageMarkup
   }).filter(Boolean);
   if (!prepared.length) return '';
 
-  const allUsages = prepared.flatMap((column) => column.usages);
   const { start, end } = timelineRange({
     workRanges: prepared.map((column) => ({ from: column.from, to: column.to })),
-    usages: allUsages,
+    usages: [],
     day,
     neutralBaseline,
   });
@@ -123,8 +122,11 @@ function aggregateTimeline(columns = [], { day = '', usageRenderer = usageMarkup
     const usages = column.usages.map((usage) => {
       const segment = usageSegment(usage, day);
       if (!segment) return '';
-      const usageTop = ((segment.start - start) / total) * 100;
-      const usageHeight = ((segment.end - segment.start) / total) * 100;
+      const visibleStart = Math.max(segment.start, column.start);
+      const visibleEnd = Math.min(segment.end, column.end);
+      if (visibleEnd <= visibleStart) return '';
+      const usageTop = ((visibleStart - start) / total) * 100;
+      const usageHeight = ((visibleEnd - visibleStart) / total) * 100;
       const markup = usageRenderer === usageMarkup
         ? usageMarkup(usage, { interactive: false })
         : renderUsage(usage, { interactive: false }, usageRenderer);
@@ -144,13 +146,16 @@ export function journalDayTimeline({
   day = '',
   renderUsage: usageRenderer = usageMarkup,
   neutralBaseline = null,
+  clipUsagesToWorkRange = false,
 } = {}) {
   if (Array.isArray(columns) && columns.length) return aggregateTimeline(columns, { day, usageRenderer, neutralBaseline });
   const workStart = timeToMinutes(from), workEnd = timeToMinutes(to);
   if (workStart == null || workEnd == null || workEnd <= workStart) return '';
 
   const values = Array.isArray(usages) ? usages : [];
-  const { start, end } = timelineRange({ workRanges: [{ from, to }], usages: values, day, neutralBaseline });
+  const naturalRange = timelineRange({ workRanges: [{ from, to }], usages: values, day, neutralBaseline });
+  const start = clipUsagesToWorkRange ? workStart : naturalRange.start;
+  const end = clipUsagesToWorkRange ? workEnd : naturalRange.end;
   const total = end - start;
   const overlays = values.map((usage) => {
     const segment = usageSegment(usage, day);

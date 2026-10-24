@@ -1,4 +1,4 @@
-import { getEventsForDay, removeEventsForDay } from '../core/event/index.js';
+import { getEventsForDay } from '../core/event/index.js';
 import { getRecordsForDay } from '../core/record/index.js';
 import { timeToMinutes } from '../core/time/index.js';
 
@@ -26,15 +26,14 @@ export function getJournalTimeUsages({ date, workplaceId } = {}) {
     ...record, type: 'record', rigidity: 'hard', sourceId: String(record?.id || ''), from: String(record?.from || ''), to: String(record?.to || ''),
   }));
   const events = [
-    ...getEventsForDay(day, workplace),
-    ...(previousDay ? getEventsForDay(previousDay, workplace).filter(crossesMidnight) : []),
+    ...getEventsForDay(day),
+    ...(previousDay ? getEventsForDay(previousDay).filter(crossesMidnight) : []),
   ].map((item) => ({
     ...item, type: 'event', rigidity: 'soft', sourceId: String(item?.id || ''), from: String(item?.from || ''), to: String(item?.to || ''),
   }));
   return [...records, ...events];
 }
 
-export function releaseJournalSoftTimeUsages({ date, workplaceId, operation = 'remove' } = {}) {
-  if (operation !== 'remove') return 0;
-  return removeEventsForDay(workplaceId, date);
+export function releaseJournalSoftTimeUsages() {
+  return 0;
 }

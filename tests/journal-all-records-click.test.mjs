@@ -21,8 +21,8 @@ assert.doesNotMatch(journalSource, /activeView === 'day' \|\| activeView === 'li
 assert.doesNotMatch(journalSource, /activeView === 'list' \|\| activeView === 'month'\) renderView/, 'Day must not be excluded from finance refresh');
 assert.match(daySource, /openRecordView\(record, \{ onClose: rerender \}\)/, 'Day must rerender after Record View closes so cancelled records disappear from the timeline');
 assert.match(daySource, /journalDayTimeline\(\{ columns, day: dayDate \}\)/, 'Aggregate Journal Day must give Shared Timeline the visible date without a neutral baseline');
-assert.match(daySource, /journalDayTimeline\(\{ from: time\.from, to: time\.to, usages, day: dayDate \}\)/, 'Professional Journal Day must pass its Work Schedule without a neutral baseline');
-assert.match(daySource, /if \(!workingDay\) \{[\s\S]*?timelineRoot\.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день<\/div>';[\s\S]*?return;[\s\S]*?\}/, 'Professional day off must keep the existing Timeline Выходной день state while Y remains mounted');
+assert.match(daySource, /journalDayTimeline\(\{[\s\S]*?from: time\.from,[\s\S]*?to: time\.to,[\s\S]*?usages,[\s\S]*?day: dayDate,[\s\S]*?clipUsagesToWorkRange: true,[\s\S]*?\}\)/, 'Professional Journal Day must clip profile Event projection to its Work Schedule field');
+assert.match(daySource, /if \(!workingDay\) \{[\s\S]*?timelineRoot\.innerHTML = '<div class="time-day-state" aria-disabled="true">Выходной день<\/div>';[\s\S]*?return dispose;[\s\S]*?\}/, 'Professional day off must keep the existing Timeline Выходной день state while Y remains mounted');
 assert.match(daySource, /if \(usage\?\.type === 'record'\)[\s\S]*openExistingRecord\(usage, rerender\)/, 'Record usage must still open the existing Record View');
 assert.match(daySource, /if \(usage\?\.type === 'event'\)[\s\S]*openEventView\(usage, \{ onClose: rerender \}\)/, 'Event usage must open the Event View');
 assert.match(daySource, /onUsageClick: \(\{ usageId \}\) => \{[\s\S]*?const usage = usageById\.get\(String\(usageId \|\| ''\)\);[\s\S]*?void openUsage\(usage, rerender\);[\s\S]*?\}/, 'Professional usage click must keep using the existing openUsage path while allowing Y time highlighting');
@@ -61,6 +61,17 @@ const professionalUsages = journalDayTimeline({
 });
 assert.match(professionalUsages, /data-journal-usage="record-1"/, 'Existing Record must still render inside professional Work Schedule');
 assert.match(professionalUsages, /data-journal-usage="event-1"/, 'Existing Event must render inside professional Work Schedule');
+
+const clippedProfessionalEvent = journalDayTimeline({
+  from: '10:30',
+  to: '18:00',
+  day: '2026-10-22',
+  clipUsagesToWorkRange: true,
+  usages: [{ id: 'event-clipped', sourceId: 'event-clipped', date: '2026-10-22', type: 'event', from: '09:30', to: '11:00', title: 'Частичное событие' }],
+});
+assert.match(clippedProfessionalEvent, /data-time-from="10:30"/, 'Profile Event must not expand a professional field before Work Schedule');
+assert.match(clippedProfessionalEvent, /data-time-to="18:00"/, 'Profile Event must not expand a professional field after Work Schedule');
+assert.match(clippedProfessionalEvent, /data-journal-usage="event-clipped"/, 'The intersecting part of a profile Event must remain visible in the professional field');
 
 const early = journalDayTimeline({
   from: '10:00',

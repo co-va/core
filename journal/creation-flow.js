@@ -10,64 +10,93 @@ const JOURNAL_CREATE_MODES = [
 ];
 
 export function openJournalCreation({
+  context = 'professional',
   date = '',
   workplaceId = '',
   timeHint = '',
   surfaceRoot = null,
   bodyRoot = null,
+  eventActions = null,
+  onRecordRequest = null,
   onCreated = () => {},
   onCancel = () => {},
 } = {}) {
   const owner = openRecordCreationOwner({ onCancel, surfaceRoot, bodyRoot });
   if (!owner) return null;
 
-  const context = { date, workplaceId, timeHint };
+  const accountMode = String(context || '').trim().toLowerCase() === 'account';
+  const modes = accountMode ? JOURNAL_CREATE_MODES.filter((mode) => mode.id !== 'note') : JOURNAL_CREATE_MODES;
+  const flowContext = { date, workplaceId: accountMode ? '' : workplaceId, timeHint };
   let activeMode = 'record';
   let recordFlow = null;
   let eventFlow = null;
   let noteFlow = null;
 
+  const renderAccountRecord = () => {
+    const view = owner.render({
+      step: 'record',
+      title: false,
+      body: '<div class="form-grid"></div>',
+      action: { label: 'Записаться', data: 'data-account-journal-record-create' },
+    });
+    view?.action?.addEventListener('click', () => {
+      owner.commit?.();
+      onRecordRequest?.({ date: String(date || '').slice(0, 10), from: String(timeHint || '') });
+    });
+  };
+
+  const renderActiveMode = () => {
+    if (activeMode === 'event') {
+      if (!eventFlow) eventFlow = createJournalEventFlow({ owner, ...flowContext, eventActions, onCreated });
+      else eventFlow.resume();
+      return;
+    }
+
+    if (activeMode === 'note') {
+      if (!noteFlow) noteFlow = createJournalNoteFlow({ owner, ...flowContext, onCreated });
+      else noteFlow.resume();
+      return;
+    }
+
+    if (accountMode) {
+      renderAccountRecord();
+      return;
+    }
+    recordFlow?.resumeRecord?.();
+  };
+
   const renderModeSwitch = () => {
     const host = owner.setShellHeader(viewNavigation({
-      views: JOURNAL_CREATE_MODES,
+      views: modes,
       activeView: activeMode,
       className: 'segment-control--two',
       ariaLabel: 'Режим Journal',
     }));
     initViewNavigation(host, {
-      views: JOURNAL_CREATE_MODES,
+      views: modes,
       activeView: activeMode,
       onChange: (mode) => {
         if (mode === activeMode) return;
         activeMode = mode;
         renderModeSwitch();
-
-        if (activeMode === 'event') {
-          if (!eventFlow) eventFlow = createJournalEventFlow({ owner, ...context, onCreated });
-          else eventFlow.resume();
-          return;
-        }
-
-        if (activeMode === 'note') {
-          if (!noteFlow) noteFlow = createJournalNoteFlow({ owner, ...context, onCreated });
-          else noteFlow.resume();
-          return;
-        }
-
-        recordFlow?.resumeRecord?.();
+        renderActiveMode();
       },
     });
   };
 
   renderModeSwitch();
-  recordFlow = openRecords({
-    context: 'journal',
-    date,
-    workplaceId,
-    timeHint,
-    professionalActions: true,
-    creationOwner: owner,
-    onCreated,
-  });
+  if (accountMode) {
+    renderAccountRecord();
+  } else {
+    recordFlow = openRecords({
+      context: 'journal',
+      date,
+      workplaceId,
+      timeHint,
+      professionalActions: true,
+      creationOwner: owner,
+      onCreated,
+    });
+  }
   return owner;
 }

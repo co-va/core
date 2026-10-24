@@ -59,6 +59,9 @@ window.fetch = (input, init = {}) => {
       ],
     }), { status:200, headers:{ 'Content-Type':'application/json' } }));
   }
+  if (path.endsWith('/online-booking/account/events')) {
+    return Promise.resolve(new Response('[]', { status:200, headers:{ 'Content-Type':'application/json' } }));
+  }
   return nativeFetch(input, init);
 };
 await loadBookAccess();
@@ -249,14 +252,24 @@ ok(!mounted.root.querySelector(`[data-journal-usage="${professionalRecord.id}"]`
 
 mark('account-free-slot');
 const slot = mounted.root.querySelector('[data-time-slot-from]');
-ok(Boolean(slot), 'account Shared timeline has no slot surface to verify inert creation behavior');
+ok(Boolean(slot), 'account Shared timeline has no slot surface');
 slot?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
-ok(!document.querySelector('[data-record-creation],[data-journal-creation]'), 'account free slot started professional creation flow');
+const accountCreation = mounted.app.querySelector('[data-record-creation-flow]');
+ok(Boolean(accountCreation), 'account free slot did not open Shared creation owner');
+ok(Boolean(mounted.app.querySelector('[data-view="record"]')), 'account Shared creation owner lost Record mode');
+ok(Boolean(mounted.app.querySelector('[data-view="event"]')), 'account Shared creation owner lost Event mode');
+ok(!mounted.app.querySelector('[data-view="note"]'), 'Note mode leaked before Note task');
 ok(!document.querySelector('[data-modal]'), 'account free slot opened a professional modal');
+const recordAction = accountCreation?.querySelector('[data-account-journal-record-create]');
+ok(Boolean(recordAction), 'account Shared Record mode lost booking action');
+recordAction?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait();
+ok(!mounted.app.querySelector('[data-record-creation-flow]'), 'Shared creation owner did not restore Journal after Record commit');
 
 mark('account-record-open');
-accountPlaque?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+const restoredAccountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
+restoredAccountPlaque?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 recordLayer = mounted.app.querySelector('[data-v2-z-layer].record-view-z');
 ok(Boolean(recordLayer), 'account Day Record click did not open Shared Record View');
