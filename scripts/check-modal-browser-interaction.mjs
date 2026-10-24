@@ -58,9 +58,9 @@ for (const [name, engine, contextOptions] of [
       assert.ok(before > 0, `${name}: no modal to close`);
       const top = page.locator('[data-modal]').last();
       if (contextOptions.hasTouch) {
-        const dismiss = top.locator('[data-v2-z-dismiss]');
-        await dismiss.waitFor();
-        await dismiss.tap();
+        const sheet = await top.locator('.v2-layer').boundingBox();
+        assert.ok(sheet, `${name}: missing modal sheet`);
+        await page.touchscreen.tap(sheet.x + sheet.width / 2, Math.max(1, sheet.y - 20));
       } else {
         const zone = await top.locator('[data-v2-layer-gesture-zone]').boundingBox();
         assert.ok(zone, `${name}: missing swipe strip`);
