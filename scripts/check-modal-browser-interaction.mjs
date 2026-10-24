@@ -103,6 +103,35 @@ for (const [name, engine, contextOptions] of [
     assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: settings handoff left an extra modal`);
     const checkbox = '[data-service-workplace="test-space"]';
     const checkboxPoints = await targetPoints(checkbox);
+    if (!checkboxPoints.every((point) => point.hit)) {
+      const diagnostic = await page.locator(checkbox).evaluate((node) => {
+        const rect = (value) => value ? ({ left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height }) : null;
+        const r = node.getBoundingClientRect();
+        const label = node.closest('label');
+        const sheet = node.closest('.v2-layer');
+        const zone = sheet?.querySelector('[data-v2-layer-gesture-zone]');
+        const samples = [3, r.height / 2, r.height - 3].map((dy) => {
+          const x = r.left + r.width / 2;
+          const y = r.top + dy;
+          const hit = document.elementFromPoint(x, y);
+          return {
+            x, y,
+            tag: hit?.tagName || '',
+            className: typeof hit?.className === 'string' ? hit.className : '',
+            data: hit ? [...hit.attributes].filter((attr) => attr.name.startsWith('data-')).map((attr) => `${attr.name}=${attr.value}`) : [],
+          };
+        });
+        return {
+          checkbox: rect(r),
+          label: rect(label?.getBoundingClientRect()),
+          sheet: rect(sheet?.getBoundingClientRect()),
+          zone: rect(zone?.getBoundingClientRect()),
+          paddingTop: sheet ? getComputedStyle(sheet).paddingTop : '',
+          samples,
+        };
+      });
+      console.error(`${name}: workplace checkbox diagnostic ${JSON.stringify(diagnostic)}`);
+    }
     assert.ok(checkboxPoints.every((point) => point.hit), `${name}: workplace checkbox obscured`);
     await activate(checkboxPoints[1]);
     assert.equal(await page.locator('[data-test-selection]').textContent(), '1', `${name}: selection did not update`);
