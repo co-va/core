@@ -374,7 +374,13 @@ export function renderJournalDay(root, {
   const usages = withFinancialState(getTimeUsagesForScope({ date: dayDate, workplaceId }));
   const usageById = new Map(usages.map((usage) => [String(usage?.sourceId || usage?.id || ''), usage]));
 
-  timelineRoot.innerHTML = journalDayTimeline({ from: time.from, to: time.to, usages, day: dayDate });
+  timelineRoot.innerHTML = journalDayTimeline({
+    from: time.from,
+    to: time.to,
+    usages,
+    day: dayDate,
+    clipUsagesToWorkRange: true,
+  });
 
   initJournalDayTimeline(timelineRoot, {
     onWorkFieldClick: () => onWorkplaceFieldClick(workplaceId),
