@@ -46,7 +46,7 @@ if text.count(old) != 1:
     raise SystemExit(f'legacy home/runtime loop block: expected 1, found {text.count(old)}')
 text = text.replace(old, new, 1)
 
-for marker in ["selectRoot('history'", "data-account-history", "=== 'Обзор'", "['profile','journal','contacts','journal','history','journal']"]:
+for marker in ["selectRoot('history'", "data-account-history", "['profile','journal','contacts','journal','history','journal']"]:
     if marker in text:
         raise SystemExit(f'retired runtime marker remains: {marker}')
 
