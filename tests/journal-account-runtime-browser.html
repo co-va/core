@@ -59,6 +59,9 @@ window.fetch = (input, init = {}) => {
       ],
     }), { status:200, headers:{ 'Content-Type':'application/json' } }));
   }
+  if (path.endsWith('/online-booking/account/events')) {
+    return Promise.resolve(new Response('[]', { status:200, headers:{ 'Content-Type':'application/json' } }));
+  }
   return nativeFetch(input, init);
 };
 await loadBookAccess();
@@ -229,13 +232,13 @@ mounted = mountJournal({
   initialView:'day',
   initialDate:new Date('2026-11-12T12:00:00'),
 });
-await wait();
+await wait(120);
 ok(mounted.root.dataset.journalContext === 'account', 'Journal did not enter account context');
 ok(Boolean(mounted.root.querySelector('[data-journal-day-context="account"]')), 'existing Day renderer did not receive account context');
 const accountTimeline = mounted.root.querySelector('[data-time-timeline]');
 ok(Boolean(accountTimeline), 'account Day did not use Shared journalDayTimeline');
-ok(accountTimeline?.dataset.timeFrom === '09:00' && accountTimeline?.dataset.timeTo === '23:00', 'account Day timeline does not keep base 09:00–23:00 grid');
-const accountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
+ok(accountTimeline?.dataset.timeFrom === '00:00' && accountTimeline?.dataset.timeTo === '23:59', 'account Day is not a full personal day');
+let accountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
 ok(Boolean(accountPlaque?.classList.contains('journal-record')), 'account Record did not use existing Record plaque');
 ok(flatText(accountPlaque).includes('Иван Relationship'), 'account Day plaque does not present professional identity');
 ok(accountPlaque?.dataset.journalUsage === accountRecords[0].id, 'account Day record is not mapped to canonical Record id');
@@ -248,14 +251,21 @@ ok(!flatText(mounted.root).includes('Внутреннее событие profess
 ok(!mounted.root.querySelector(`[data-journal-usage="${professionalRecord.id}"]`), 'professional Record leaked into account Day');
 
 mark('account-free-slot');
-const slot = mounted.root.querySelector('[data-time-slot-from]');
-ok(Boolean(slot), 'account Shared timeline has no slot surface to verify inert creation behavior');
+const slot = mounted.root.querySelector('[data-time-slot-from="18:00"]') || mounted.root.querySelector('[data-time-slot-from]');
+ok(Boolean(slot), 'account Shared timeline has no active personal slot');
 slot?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
-ok(!document.querySelector('[data-record-creation],[data-journal-creation]'), 'account free slot started professional creation flow');
-ok(!document.querySelector('[data-modal]'), 'account free slot opened a professional modal');
+const actionX = document.querySelector('[data-v2-x-role="action"]');
+ok(Boolean(actionX), 'account free slot did not open Shared action X');
+ok(Boolean(actionX?.querySelector('[data-account-day-event]')), 'action X has no Event action');
+ok(Boolean(actionX?.querySelector('[data-account-day-note]')), 'action X has no Note action');
+ok(Boolean(actionX?.querySelector('[data-account-day-booking]')), 'action X has no Booking action');
+ok(!document.querySelector('[data-journal-creation]'), 'account free slot started old Journal creation flow');
+actionX?.v2Close?.();
+await wait();
 
 mark('account-record-open');
+accountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
 accountPlaque?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait();
 recordLayer = mounted.app.querySelector('[data-v2-z-layer].record-view-z');
