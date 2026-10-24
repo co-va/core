@@ -32,6 +32,18 @@ for (const [name, engine, contextOptions] of [
         return { x, y, hit: Boolean(hit && (hit === node || node.contains(hit))) };
       });
     });
+    const waitForOwnedTargetPoints = async (selector) => {
+      await page.waitForFunction((value) => {
+        const node = document.querySelector(value);
+        if (!node) return false;
+        const r = node.getBoundingClientRect();
+        return [3, r.height / 2, r.height - 3].every((dy) => {
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + dy);
+          return Boolean(hit && (hit === node || node.contains(hit)));
+        });
+      }, selector, { timeout: 2000 });
+      return targetPoints(selector);
+    };
     const activate = async (point) => {
       if (contextOptions.hasTouch) await page.touchscreen.tap(point.x, point.y);
       else await page.mouse.click(point.x, point.y);
@@ -102,36 +114,7 @@ for (const [name, engine, contextOptions] of [
     await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: settings handoff left an extra modal`);
     const checkbox = '[data-service-workplace="test-space"]';
-    const checkboxPoints = await targetPoints(checkbox);
-    if (!checkboxPoints.every((point) => point.hit)) {
-      const diagnostic = await page.locator(checkbox).evaluate((node) => {
-        const rect = (value) => value ? ({ left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height }) : null;
-        const r = node.getBoundingClientRect();
-        const label = node.closest('label');
-        const sheet = node.closest('.v2-layer');
-        const zone = sheet?.querySelector('[data-v2-layer-gesture-zone]');
-        const samples = [3, r.height / 2, r.height - 3].map((dy) => {
-          const x = r.left + r.width / 2;
-          const y = r.top + dy;
-          const hit = document.elementFromPoint(x, y);
-          return {
-            x, y,
-            tag: hit?.tagName || '',
-            className: typeof hit?.className === 'string' ? hit.className : '',
-            data: hit ? [...hit.attributes].filter((attr) => attr.name.startsWith('data-')).map((attr) => `${attr.name}=${attr.value}`) : [],
-          };
-        });
-        return {
-          checkbox: rect(r),
-          label: rect(label?.getBoundingClientRect()),
-          sheet: rect(sheet?.getBoundingClientRect()),
-          zone: rect(zone?.getBoundingClientRect()),
-          paddingTop: sheet ? getComputedStyle(sheet).paddingTop : '',
-          samples,
-        };
-      });
-      console.error(`${name}: workplace checkbox diagnostic ${JSON.stringify(diagnostic)}`);
-    }
+    const checkboxPoints = await waitForOwnedTargetPoints(checkbox);
     assert.ok(checkboxPoints.every((point) => point.hit), `${name}: workplace checkbox obscured`);
     await activate(checkboxPoints[1]);
     assert.equal(await page.locator('[data-test-selection]').textContent(), '1', `${name}: selection did not update`);
