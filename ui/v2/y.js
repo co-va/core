@@ -12,6 +12,7 @@ export function setV2Y(root, content = '') {
   host.innerHTML = html;
   const active = Boolean(html.trim());
   host.hidden = !active;
+  host.style.paddingBottom = active ? '12px' : '';
   app.classList.toggle('has-v2-y', active);
   return host;
 }
