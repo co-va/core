@@ -32,15 +32,15 @@ import {
   resolveNoteTarget,
 } from './note-target.js';
 
-function normalizeTargetForDate(state) {
+function normalizeTargetForDate(state, targetSource = null) {
   const current = noteTargetValue(state);
   if (!current) return;
 
-  const target = resolveNoteTarget(state);
+  const target = resolveNoteTarget(state, { source: targetSource });
   const targetDate = String(target?.entity?.date || '').slice(0, 10);
   if (targetDate && targetDate === String(state.date || '').slice(0, 10)) return;
 
-  const allowed = new Set(noteTargetOptions(state.date).map((option) => String(option.value || '')));
+  const allowed = new Set(noteTargetOptions(state.date, { source: targetSource }).map((option) => String(option.value || '')));
   if (allowed.has(current)) return;
   state.targetType = '';
   state.targetId = '';
@@ -50,9 +50,18 @@ export function openNoteView(noteOrId, {
   onClose = () => {},
   onSaved = () => {},
   onDeleted = () => {},
+  noteActions = null,
+  targetSource = null,
 } = {}) {
+  const customActions = noteActions
+    && typeof noteActions.read === 'function'
+    && typeof noteActions.update === 'function'
+    && typeof noteActions.remove === 'function'
+    ? noteActions
+    : null;
   const noteId = String(typeof noteOrId === 'object' ? noteOrId?.id : noteOrId || '');
-  let current = readNote(noteId);
+  const readCurrent = () => customActions ? customActions.read(noteId) : readNote(noteId);
+  let current = readCurrent();
   if (!current) return null;
 
   const layer = mountModal(document.body, modal('<div data-note-view-host></div>', {
@@ -75,16 +84,16 @@ export function openNoteView(noteOrId, {
   const host = () => layer.querySelector('[data-note-view-host]');
 
   const renderRead = () => {
-    current = readNote(noteId);
+    current = readCurrent();
     const root = host();
     if (!root || !current) return;
-    root.innerHTML = `${noteDetail(current, { targetLabel: noteTargetLabel(current) })}
+    root.innerHTML = `${noteDetail(current, { targetLabel: noteTargetLabel(current, { source: targetSource }) })}
       ${actionBlock(button('Изменить', { data: 'data-note-view-edit' }))}`;
     root.querySelector('[data-note-view-edit]')?.addEventListener('click', renderEdit);
   };
 
   const renderEdit = () => {
-    current = readNote(noteId);
+    current = readCurrent();
     const root = host();
     if (!root || !current) return;
 
@@ -94,11 +103,11 @@ export function openNoteView(noteOrId, {
         ? { ...current.context }
         : {},
     };
-    normalizeTargetForDate(state);
+    normalizeTargetForDate(state, targetSource);
     const before = { ...current };
 
     const renderForm = () => {
-      normalizeTargetForDate(state);
+      normalizeTargetForDate(state, targetSource);
       root.innerHTML = `<form class="form-grid" data-note-edit-form>
         ${datePicker({ label: 'Дата', name: 'date', value: state.date, required: true, allowClear: false })}
         <div class="time-range-fields">
@@ -109,7 +118,7 @@ export function openNoteView(noteOrId, {
           label: 'Прикрепить к',
           name: 'target',
           value: noteTargetValue(state),
-          options: noteTargetOptions(state.date, { includeNote: state }),
+          options: noteTargetOptions(state.date, { includeNote: state, source: targetSource }),
           aria: 'Прикрепить заметку',
         })}
         ${field({ label: 'Наименование', name: 'title', value: state.title })}
@@ -145,7 +154,7 @@ export function openNoteView(noteOrId, {
         const previousDate = state.date;
         capture();
         if (event.target?.name === 'date' && state.date !== previousDate) {
-          normalizeTargetForDate(state);
+          normalizeTargetForDate(state, targetSource);
           renderForm();
         }
       });
@@ -153,7 +162,7 @@ export function openNoteView(noteOrId, {
       form?.addEventListener('submit', async (event) => {
         event.preventDefault();
         capture();
-        normalizeTargetForDate(state);
+        normalizeTargetForDate(state, targetSource);
         if (!state.date) {
           openNotice({ title: 'Заметка', message: 'Укажите дату заметки.' });
           return;
@@ -165,9 +174,8 @@ export function openNoteView(noteOrId, {
 
         const submit = form.querySelector('[type="submit"]');
         if (submit) submit.disabled = true;
-        const context = noteContextWithTarget(state.context, state.targetType, state.targetId);
-        const updated = updateNote(noteId, {
-          context,
+        const patch = {
+          context: noteContextWithTarget(state.context, state.targetType, state.targetId, { source: targetSource }),
           date: state.date,
           from: state.from,
           to: state.to,
@@ -176,7 +184,26 @@ export function openNoteView(noteOrId, {
           title: state.title,
           text: state.text,
           color: state.color,
-        });
+        };
+
+        if (customActions) {
+          try {
+            const updated = await customActions.update(noteId, patch);
+            if (!updated) throw new Error('Не удалось сохранить заметку.');
+            current = updated;
+            onSaved?.(updated);
+            renderRead();
+          } catch (error) {
+            openNotice({
+              title: 'Не удалось сохранить заметку',
+              message: String(error?.message || 'Сервер не подтвердил изменения.'),
+            });
+            if (submit?.isConnected) submit.disabled = false;
+          }
+          return;
+        }
+
+        const updated = updateNote(noteId, patch);
         if (!updated) {
           if (submit) submit.disabled = false;
           openNotice({ title: 'Заметка', message: 'Не удалось сохранить заметку.' });
@@ -201,8 +228,29 @@ export function openNoteView(noteOrId, {
       root.querySelector('[data-note-edit-delete]')?.addEventListener('click', async (event) => {
         const submit = event.currentTarget;
         submit.disabled = true;
-        const snapshot = readNote(noteId);
-        if (!snapshot || !removeNote(noteId)) {
+        const snapshot = readCurrent();
+        if (!snapshot) {
+          submit.disabled = false;
+          return;
+        }
+
+        if (customActions) {
+          try {
+            const removed = await customActions.remove(noteId);
+            if (!removed) throw new Error('Не удалось удалить заметку.');
+            onDeleted?.(snapshot);
+            layer.v2Close?.();
+          } catch (error) {
+            openNotice({
+              title: 'Не удалось удалить заметку',
+              message: String(error?.message || 'Сервер не подтвердил удаление.'),
+            });
+            if (submit.isConnected) submit.disabled = false;
+          }
+          return;
+        }
+
+        if (!removeNote(noteId)) {
           submit.disabled = false;
           return;
         }

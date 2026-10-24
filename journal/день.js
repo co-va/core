@@ -19,12 +19,21 @@ import { getTimeUsagesForScope, getTimeAvailabilityAt } from '../core/time/index
 import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { getNotesForDay } from '../core/note/index.js';
 import {
+  accountNoteActions,
+  accountNotesLoaded,
+  getAccountNote,
+  getAccountNotesForDay,
+  loadAccountNotes,
+} from '../core/note/account-owner.js';
+import {
   accountEventActions,
   accountEventsLoaded,
+  getAccountEvent,
   getAccountEvents,
   loadAccountEvents,
 } from '../core/event/account-owner.js';
 import { createJournalEventFlow } from './event-create.js';
+import { createJournalNoteFlow } from './note-create.js';
 import { noteTargetLabel, noteVisibleForWorkplace, resolveNoteTarget } from './note-target.js';
 
 function dateKey(date) {
@@ -139,7 +148,7 @@ async function openUsage(usage, rerender = () => {}) {
   }
 }
 
-function openAccountDayAction({ root, date, from, onCreated = () => {} } = {}) {
+function openAccountDayAction({ root, date, from, noteActions = null, targetSource = null, onCreated = () => {} } = {}) {
   const content = `<div class="modal-actions">
     ${button('Событие', { variant: 'secondary', data: 'data-account-day-event' })}
     ${button('Заметка', { variant: 'secondary', data: 'data-account-day-note' })}
@@ -160,6 +169,19 @@ function openAccountDayAction({ root, date, from, onCreated = () => {} } = {}) {
 
   layer.querySelector('[data-account-day-note]')?.addEventListener('click', () => {
     layer.v2Close?.();
+    const owner = openRecordCreationOwner({
+      surfaceRoot: root.closest('[data-v2-z],[data-v2-z-layer]'),
+      bodyRoot: root,
+    });
+    if (!owner) return;
+    owner.setShellHeader('<div class="record-creation-step-title">Заметка</div>');
+    createJournalNoteFlow({
+      owner,
+      date,
+      noteActions,
+      targetSource,
+      onCreated,
+    });
   });
 
   layer.querySelector('[data-account-day-event]')?.addEventListener('click', () => {
@@ -238,12 +260,54 @@ export function renderJournalDay(root, {
         if (root.isConnected) rerender();
       }).catch(() => {});
     }
+    if (!accountNotesLoaded()) {
+      void loadAccountNotes().then(() => {
+        if (root.isConnected) rerender();
+      }).catch(() => {});
+    }
 
-    const accountRecords = readRecords(records)
+    const allAccountRecords = readRecords(records);
+    const accountRecords = allAccountRecords
       .filter((record) => String(record?.date || '').slice(0, 10) === dayDate)
       .filter((record) => String(record?.status || '').toLowerCase() !== 'cancelled');
     const accountEvents = getAccountEvents()
       .filter((event) => String(event?.date || '').slice(0, 10) === dayDate);
+    const accountTargetSource = {
+      readRecord: (id) => {
+        const record = allAccountRecords.find((item) => recordId(item) === String(id || '')) || null;
+        return record ? accountUsage(record, resolveRecordContext) : null;
+      },
+      recordsForDay: (targetDate) => allAccountRecords
+        .filter((record) => String(record?.date || '').slice(0, 10) === String(targetDate || '').slice(0, 10))
+        .map((record) => accountUsage(record, resolveRecordContext)),
+      readEvent: (id) => getAccountEvent(id),
+      eventsForDay: (targetDate) => getAccountEvents()
+        .filter((event) => String(event?.date || '').slice(0, 10) === String(targetDate || '').slice(0, 10))
+        .map(accountEventUsage),
+    };
+    const accountNotes = getAccountNotesForDay(dayDate);
+    const renderAccountY = () => {
+      const yRoot = setV2Y(root, noteReels(accountNotes, {
+        activeTime,
+        targetLabel: (note) => noteTargetLabel(note, { source: accountTargetSource }),
+      }));
+      if (!yRoot || yRoot.hidden) return;
+      initNoteReels(yRoot, {
+        onOpen: async ({ noteId }) => {
+          const note = getAccountNote(noteId);
+          if (!note) return;
+          const { openNoteView } = await import('./note-view.js');
+          openNoteView(note, {
+            noteActions: accountNoteActions,
+            targetSource: accountTargetSource,
+            onSaved: rerender,
+            onDeleted: rerender,
+          });
+        },
+      });
+    };
+    renderAccountY();
+
     const usages = [
       ...accountRecords.map((record) => accountUsage(record, resolveRecordContext)),
       ...accountEvents.map(accountEventUsage),
@@ -269,7 +333,14 @@ export function renderJournalDay(root, {
         if (record) void openAccountRecord(record, resolveRecordContext, rerender);
       },
       onSlotClick: ({ from }) => {
-        openAccountDayAction({ root, date: dayDate, from, onCreated: rerender });
+        openAccountDayAction({
+          root,
+          date: dayDate,
+          from,
+          noteActions: accountNoteActions,
+          targetSource: accountTargetSource,
+          onCreated: rerender,
+        });
       },
     });
     return dispose;
