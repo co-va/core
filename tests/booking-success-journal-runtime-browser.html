@@ -128,6 +128,7 @@ window.fetch = async (input, options = {}) => {
   }
   if (path === '/online-booking/account/personal-accounts' && method === 'GET') return json([]);
   if (path === '/online-booking/account/deposits' && method === 'GET') return json([]);
+  if (path === '/online-booking/account/events' && method === 'GET') return json([]);
 
   if (path === `/online-booking/${tenantId}/context` && method === 'GET') return json(bookingContext);
   if (path === `/online-booking/${tenantId}/account/me` && method === 'GET') return json(account);

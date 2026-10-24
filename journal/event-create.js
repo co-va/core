@@ -16,6 +16,12 @@ function availabilityMessage(reason = '') {
   return 'Проверьте время события.';
 }
 
+function timeRangeValid(from, to) {
+  const start = timeToMinutes(from);
+  const end = timeToMinutes(to);
+  return start != null && end != null && end > start;
+}
+
 function growDescription(form) {
   const textarea = form?.elements?.namedItem?.('description');
   if (!(textarea instanceof HTMLTextAreaElement)) return;
@@ -30,8 +36,9 @@ function growDescription(form) {
   resize();
 }
 
-export function createJournalEventFlow({ owner, date, workplaceId, timeHint = '', onCreated = () => {} } = {}) {
+export function createJournalEventFlow({ owner, date, workplaceId, timeHint = '', eventActions = null, onCreated = () => {} } = {}) {
   if (!owner) return null;
+  const customActions = eventActions && typeof eventActions.create === 'function' ? eventActions : null;
   const state = {
     date: String(date || '').slice(0, 10),
     workplaceId: String(workplaceId || ''),
@@ -78,10 +85,42 @@ export function createJournalEventFlow({ owner, date, workplaceId, timeHint = ''
     view.action?.addEventListener('click', async (domEvent) => {
       capture(view.body);
       if (!state.title) { openNotice({ title: 'Событие', message: 'Укажите название события.' }); return; }
-      const availability = checkTimeAvailability({ date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to });
-      if (!availability.ok) { openNotice({ title: 'Событие', message: availabilityMessage(availability.reason) }); return; }
+      if (!timeRangeValid(state.from, state.to)) {
+        openNotice({ title: 'Событие', message: 'Проверьте время события.' });
+        return;
+      }
+      if (!customActions) {
+        const availability = checkTimeAvailability({ date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to });
+        if (!availability.ok) { openNotice({ title: 'Событие', message: availabilityMessage(availability.reason) }); return; }
+      } else if (typeof customActions.validate === 'function') {
+        const availability = await customActions.validate({ ...state });
+        if (availability && availability.ok === false) {
+          openNotice({ title: 'Событие', message: availabilityMessage(availability.reason) });
+          return;
+        }
+      }
+
       const submit = domEvent.currentTarget;
       submit.disabled = true;
+      if (customActions) {
+        try {
+          const created = await customActions.create({
+            date: state.date,
+            from: state.from,
+            to: state.to,
+            title: state.title,
+            description: state.description,
+            color: state.color,
+          });
+          owner.commit?.();
+          onCreated?.(created);
+        } catch (error) {
+          openNotice({ title: 'Не удалось создать событие', message: String(error?.message || 'Сервер не подтвердил сохранение.') });
+          if (submit.isConnected) submit.disabled = false;
+        }
+        return;
+      }
+
       const created = createEvent({ ownerType: 'tenant', context: { scope: 'professional' }, date: state.date, workplaceId: state.workplaceId, from: state.from, to: state.to, title: state.title, description: state.description, color: state.color });
       try {
         await flushBusinessPersistence();

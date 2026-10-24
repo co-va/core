@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}
+    *{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<div id="host"></div>
+<pre id="result">pending</pre>
+<script type="module">
+import { v2Shell } from '/ui/v2/shell.js';
+import { renderJournalDay } from '/journal/день.js';
+
+const host = document.querySelector('#host');
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (name) => {
+  stage = name;
+  result.textContent = 'running: ' + name;
+  document.documentElement.dataset.journalAccountActionXRuntimeStage = name;
+};
+const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
+const wait = (ms = 80) => new Promise((resolve) => window.setTimeout(resolve, ms));
+window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
+window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
+
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (input, options = {}) => {
+  const url = String(input || '');
+  if (url.includes('/online-booking/account/events')) {
+    if (String(options.method || 'GET').toUpperCase() === 'GET') {
+      return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  return originalFetch(input, options);
+};
+
+host.innerHTML = v2Shell({ body:'<div data-runtime-root></div>', className:'v2-app--workspace' });
+const root = host.querySelector('[data-runtime-root]');
+let contactsRequests = 0;
+window.addEventListener('cova:account-journal-open-contacts', () => { contactsRequests += 1; });
+
+const mount = () => renderJournalDay(root, {
+  context:'account',
+  records:() => [],
+  date:new Date('2026-11-12T12:00:00'),
+}) || (() => {});
+let dispose = mount();
+await wait(140);
+
+function slotAt(time) {
+  return root.querySelector(`[data-time-slot-from="${time}"]`);
+}
+function currentX() {
+  return document.querySelector('[data-v2-x-role="action"]');
+}
+function clickSlot(time = '18:00') {
+  const slot = slotAt(time);
+  ok(Boolean(slot), `слот ${time} не кликабелен`);
+  slot?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+}
+
+mark('visible-field');
+const timeline = root.querySelector('[data-time-timeline]');
+ok(timeline?.dataset.timeFrom === '09:00', 'Account Day не начинается видимо с 09:00');
+ok(timeline?.dataset.timeTo === '23:00', 'Account Day не заканчивается видимо в 23:00');
+ok(!slotAt('00:00'), 'скрытая часть 00:00–09:00 стала видимой без факта');
+ok(Boolean(slotAt('18:00')), 'видимое поле неактивно');
+ok(!slotAt('23:30'), 'скрытая часть после 23:00 стала видимой без факта');
+
+mark('x-actions');
+clickSlot('18:00');
+await wait();
+let x = currentX();
+ok(Boolean(x), 'нажатие по полю не открыло Shared X');
+ok(x?.dataset.v2XRole === 'action', 'X не использует action role');
+const eventButton = x?.querySelector('[data-account-day-event]');
+const noteButton = x?.querySelector('[data-account-day-note]');
+const bookingButton = x?.querySelector('[data-account-day-booking]');
+ok(Boolean(eventButton), 'нет кнопки «Событие»');
+ok(Boolean(noteButton), 'нет кнопки «Заметка»');
+ok(Boolean(bookingButton), 'нет кнопки «Записаться»');
+ok(eventButton?.classList.contains('ui-button--secondary'), '«Событие» не secondary');
+ok(noteButton?.classList.contains('ui-button--secondary'), '«Заметка» не secondary');
+ok(!bookingButton?.classList.contains('ui-button--secondary'), '«Записаться» не primary');
+const actions = [...(x?.querySelectorAll('.modal-actions .ui-button') || [])];
+ok(actions.at(-1) === bookingButton, '«Записаться» не нижняя кнопка X');
+
+mark('booking-to-contacts');
+bookingButton?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+await wait();
+ok(contactsRequests === 1, '«Записаться» не передало управление существующим Контактам');
+ok(!currentX(), 'X не закрылся после «Записаться»');
+ok(!root.querySelector('[data-record-creation-flow]'), '«Записаться» запустило отдельный creation-flow');
+
+mark('note-idle');
+clickSlot('12:00');
+await wait();
+x = currentX();
+x?.querySelector('[data-account-day-note]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+await wait();
+ok(!currentX(), 'холостая «Заметка» не закрыла X');
+ok(!root.querySelector('[data-record-creation-flow]'), 'холостая «Заметка» создала creation-flow');
+
+mark('event-shared-flow');
+clickSlot('18:00');
+await wait();
+x = currentX();
+x?.querySelector('[data-account-day-event]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+await wait();
+ok(!currentX(), 'X не закрылся перед Event');
+ok(Boolean(root.querySelector('[data-event-create-form]')), '«Событие» не открыло Shared Event creation');
+ok(root.dataset.recordCreationStep === 'event', 'Shared owner не находится на Event step');
+ok(String(host.textContent || '').includes('Событие'), 'Shared Event не имеет заголовка «Событие»');
+ok(!root.querySelector('[data-account-day-booking]'), 'X-действия остались внутри Event UI');
+
+dispose();
+window.fetch = originalFetch;
+
+if (failures.length) {
+  result.textContent = failures.join('\n');
+  document.documentElement.dataset.journalAccountActionXRuntime = 'fail';
+} else {
+  result.textContent = 'PASS';
+  document.documentElement.dataset.journalAccountActionXRuntime = 'pass';
+}
+</script>
+</body>
+</html>
