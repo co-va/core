@@ -13,7 +13,7 @@ function syncV2ZStackInteraction(app, host) {
     surface.inert = blocked;
     surface.classList.toggle('is-v2-obscured', blocked);
     const dismiss = surface.querySelector(':scope > [data-v2-z-header] > [data-v2-z-dismiss], :scope > [data-v2-q-header] > [data-v2-z-dismiss]');
-    if (dismiss) dismiss.hidden = blocked || surface.dataset.v2Dismissible === 'false';
+    if (dismiss) dismiss.hidden = blocked || (surface !== base && surface.dataset.v2Dismissible === 'false');
   });
 }
 

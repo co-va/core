@@ -20,9 +20,9 @@ export function v2Shell({
     <div class="v2-y-host" data-v2-y-host hidden></div>
     <div class="v2-app__stage">
       ${feDeck}
-      <div class="v2-front" data-v2-front>
+      <div class="v2-front" data-v2-front style="width:calc(100% + 24px);height:calc(100% + 24px)">
         <main class="v2-z" ${zData} data-v2-dismissible="false">
-${v2ZFrame(body, { dismiss: false })}
+${v2ZFrame(body)}
 </main>
       </div>
       <div class="v2-edge-swipe-zone" data-v2-edge-swipe aria-hidden="true"></div>
