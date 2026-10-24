@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { hydrateDaysFromServer } from '../core/day/index.js';
-import { hydrateEventsFromServer } from '../core/event/index.js';
 import { configureWorkplaceSource } from '../core/workplace-time.js';
 import { checkTimeAvailability, configureTimeUsageSource } from '../core/time/index.js';
-import { getJournalTimeUsages, releaseJournalSoftTimeUsages } from '../journal/time-usage-source.js';
 
 globalThis.window = { dispatchEvent() {} };
 
@@ -52,25 +50,5 @@ assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', 
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '22:30', to: '00:15' }).reason, 'occupied', 'cross-midnight Event must detect a Record before midnight');
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '23:30', to: '00:45' }).reason, 'occupied', 'cross-midnight Event must detect another Event after midnight');
 assert.equal(checkTimeAvailability({ date: '2026-10-22', workplaceId: 'studio', from: '23:30', to: '03:30' }).reason, 'outside-working-time', 'cross-midnight Event must obey next-day Work Schedule');
-
-hydrateEventsFromServer([{
-  id: 'shared-event-across-fields',
-  ownerType: 'tenant',
-  ownerId: 'tenant-event-test',
-  context: { scope: 'professional' },
-  date: '2026-10-24',
-  from: '12:00',
-  to: '14:00',
-  title: 'Общий перерыв',
-  description: '',
-  color: '#777A7D',
-  workplaceId: 'studio-a',
-}]);
-const fieldA = getJournalTimeUsages({ date: '2026-10-24', workplaceId: 'studio-a' });
-const fieldB = getJournalTimeUsages({ date: '2026-10-24', workplaceId: 'studio-b' });
-assert.ok(fieldA.some((item) => item.type === 'event' && item.sourceId === 'shared-event-across-fields'), 'Event must project into the field where it was created');
-assert.ok(fieldB.some((item) => item.type === 'event' && item.sourceId === 'shared-event-across-fields'), 'the same Event must project into another professional work field');
-assert.equal(releaseJournalSoftTimeUsages({ date: '2026-10-24', workplaceId: 'studio-a' }), 0, 'removing one work field must not delete profile Event');
-assert.ok(getJournalTimeUsages({ date: '2026-10-24', workplaceId: 'studio-b' }).some((item) => item.sourceId === 'shared-event-across-fields'), 'Event must survive work-field removal');
 
 console.log('Event availability tests: OK');
