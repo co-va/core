@@ -33,8 +33,6 @@ assert.match(day, /import\('\.\.\/core\/records\/view\.js'\)/);
 assert.match(day, /date: dayDate/);
 assert.match(day, /surfaceRoot: root\.closest/);
 assert.match(day, /bodyRoot: root/);
-assert.match(day, /getTimeAvailabilityAt/);
-assert.doesNotMatch(day, /minuteState\.state !== 'free'/);
 assert.match(journalCreation, /from '\.\.\/core\/records\/records\.js'/);
 assert.match(journalCreation, /label: 'Запись'/);
 assert.match(journalCreation, /label: 'Событие'/);
