@@ -41,8 +41,9 @@ assert.match(journalCreation, /openRecordCreationOwner\(\{ onCancel, surfaceRoot
 assert.match(journalCreation, /recordFlow\?\.resumeRecord\?\.\(\)/);
 assert.match(eventCreation, /createEvent/);
 assert.match(eventCreation, /timeHint/);
-assert.match(eventCreation, /timePicker/);
-assert.doesNotMatch(eventCreation, /openTimeRangeAction/);
+assert.match(eventCreation, /openTimeRangeAction/);
+assert.match(eventCreation, /checkTimeAvailability/);
+assert.doesNotMatch(eventCreation, /timePicker\(/);
 assert.doesNotMatch(records, /createEvent/);
 assert.doesNotMatch(records, /JOURNAL_MODES/);
 assert.doesNotMatch(records, /allowBreak/);
