@@ -57,14 +57,20 @@ for (const [name, engine, contextOptions] of [
       const before = await page.locator('[data-modal]').count();
       assert.ok(before > 0, `${name}: no modal to close`);
       const top = page.locator('[data-modal]').last();
-      const zone = await top.locator('[data-v2-layer-gesture-zone]').boundingBox();
-      assert.ok(zone, `${name}: missing swipe strip`);
-      const x = zone.x + zone.width / 2;
-      const y = zone.y + zone.height / 2;
-      await page.mouse.move(x, y);
-      await page.mouse.down();
-      await page.mouse.move(x, y + 100, { steps: 10 });
-      await page.mouse.up();
+      if (contextOptions.hasTouch) {
+        const dismiss = top.locator('[data-v2-z-dismiss]');
+        await dismiss.waitFor();
+        await dismiss.tap();
+      } else {
+        const zone = await top.locator('[data-v2-layer-gesture-zone]').boundingBox();
+        assert.ok(zone, `${name}: missing swipe strip`);
+        const x = zone.x + zone.width / 2;
+        const y = zone.y + zone.height / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x, y + 100, { steps: 10 });
+        await page.mouse.up();
+      }
       await page.waitForFunction((expected) => document.querySelectorAll('[data-modal]').length === expected, before - 1);
     };
     const tapOrClick = async (locator) => {
