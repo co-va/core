@@ -26,9 +26,11 @@ if (/from ['"]\.\.\/day\.js['"]|isTimeRangeAvailable|getTimeUsages|getJournalBre
 if (/break-service|createJournalBreak|createEvent|removeEvent|updateEvent/.test(recordFlow)) fail('core/records/records.js', 'Records must not own Event/Break commands.');
 
 if (!/from ['"]\.\.\/core\/time\/index\.js['"]/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must ask Core Availability.');
-if (!/checkTimeAvailability/.test(eventCreation) || !/timePicker\(\{ label: 'С'/.test(eventCreation) || !/timePicker\(\{ label: 'До'/.test(eventCreation) || !/initTimePickers/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must use canonical Availability and shared Time UI.');
-if (/openTimeRangeAction/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must render the two canonical shared timePicker fields directly in Z.');
+if (!/checkTimeAvailability/.test(eventCreation) || !/openTimeRangeAction/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must use canonical Availability and the Shared С/До range X.');
+if (/timePicker\(\{ label: 'С'|timePicker\(\{ label: 'До'|initTimePickers/.test(eventCreation)) fail('journal/event-create.js', 'Event creation must not embed a local/direct С/До picker; Shared Time owns the range X.');
 if (!/checkTimeAvailability/.test(eventView) || !/excludeId: eventId/.test(eventView)) fail('journal/event-view.js', 'Event View edits must use canonical Availability with excludeId.');
+if (!/openTimeRangeAction/.test(eventView)) fail('journal/event-view.js', 'Event View edits must reuse the Shared С/До range X.');
+if (/timePicker\(\{ label: 'С'|timePicker\(\{ label: 'До'|initTimePickers/.test(eventView)) fail('journal/event-view.js', 'Event View edits must not embed a second time editor.');
 if (!/queueEventUpsert/.test(eventData) || !/queueEventDelete/.test(eventData)) fail('core/event/data.js', 'Event data must use server-backed persistence.');
 if (!/getEventsForDay/.test(eventRead)) fail('core/event/read.js', 'Event read model must own day projection.');
 if (!/createEvent/.test(eventService) || !/updateEvent/.test(eventService) || !/removeEvent/.test(eventService)) fail('core/event/service.js', 'Event service must own Event commands.');
@@ -52,15 +54,15 @@ if (!/getDayDraftScheduleConflicts/.test(dayEditor)) fail('timetable/day-editor.
 if (/rangesOverlap/.test(dayEditor)) fail('timetable/day-editor.js', 'Timetable Day Editor must not implement its own overlap algorithm');
 
 if (!/export function openTimePickerAction/.test(sharedTime) || !/return openPicker\(\{/.test(sharedTime)) fail('ui/time/index.js', 'Shared Time must expose one canonical direct time-picker action over the existing wheel owner.');
-if (!/export function openTimeRangeAction/.test(sharedTime)) fail('ui/time/index.js', 'Shared Time must own the work-time range action.');
-if (/time-range-title/.test(sharedTime)) fail('ui/time/index.js', 'Work-time range must not use one shared С - до title; each box owns its own label.');
-if (!/time-range-fields/.test(sharedTime) || !/timePicker\(\{ label: 'С', name: 'from'/.test(sharedTime) || !/timePicker\(\{ label: 'До', name: 'to'/.test(sharedTime)) fail('ui/time/index.js', 'Work-time range must reuse the existing Shared timePicker twice on one row.');
+if (!/export function openTimeRangeAction/.test(sharedTime)) fail('ui/time/index.js', 'Shared Time must own the canonical time-range action.');
+if (/time-range-title/.test(sharedTime)) fail('ui/time/index.js', 'Shared time range must not use one shared С - до title; each box owns its own label.');
+if (!/time-range-fields/.test(sharedTime) || !/timePicker\(\{ label: 'С', name: 'from'/.test(sharedTime) || !/timePicker\(\{ label: 'До', name: 'to'/.test(sharedTime)) fail('ui/time/index.js', 'Shared time range must reuse the existing Shared timePicker twice on one row.');
 if (/type="time"/.test(sharedTime)) fail('ui/time/index.js', 'Shared Time range must never fall back to native input[type=time].');
-if (!/initTimePickers\(layer\)/.test(sharedTime)) fail('ui/time/index.js', 'Work-time range boxes must open the canonical Shared time wheel modal.');
+if (!/initTimePickers\(layer\)/.test(sharedTime)) fail('ui/time/index.js', 'Shared time-range boxes must open the canonical Shared time wheel modal.');
 if (!/modal\(content,\{variant:'x'/.test(sharedTime) || !/className:'modal--time-picker-sheet'/.test(sharedTime)) fail('ui/time/index.js', 'Canonical time selection must use Shared X, not S, technical or native picker.');
 if (/modal\(content,\{variant:'s'/.test(sharedTime) || /variant:'technical'/.test(sharedTime)) fail('ui/time/index.js', 'Canonical time selection must never use S or technical modal.');
-if (!/\.time-range-fields\{display:grid;grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/.test(sharedTimeCss)) fail('ui/time/time.css', 'Work-time range boxes must stay in one horizontal row.');
-if (/\.time-range-fields \.time-picker__label\{display:none\}/.test(sharedTimeCss)) fail('ui/time/time.css', 'Work-time range must keep С and До visible above their own boxes.');
+if (!/\.time-range-fields\{display:grid;grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/.test(sharedTimeCss)) fail('ui/time/time.css', 'Shared time-range boxes must stay in one horizontal row.');
+if (/\.time-range-fields \.time-picker__label\{display:none\}/.test(sharedTimeCss)) fail('ui/time/time.css', 'Shared time range must keep С and До visible above their own boxes.');
 
 if (errors.length) {
   console.error('time UI ownership check: FAILED');

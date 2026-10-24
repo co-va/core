@@ -1,5 +1,6 @@
-import { escapeHtml } from '../utils/escape-html.js';
 import { modal, mountModal } from '../modals/index.js';
+import { button } from '../buttons/index.js';
+import { escapeHtml } from '../utils/escape-html.js';
 
 export const COLOR_PALETTE = Object.freeze([
   '#FFFF00', '#FF1111', '#111111', '#777A7D', '#2C2A28', '#817A73', '#D7D1CA',
@@ -49,19 +50,39 @@ export function initColorPickers(root, colors = COLOR_PALETTE) {
   });
 }
 
-
-export function openColorPickerAction({ value = '', title = 'Выбор цвета', onSelect = () => {} } = {}) {
+export function openColorPickerAction({
+  value = '',
+  title = 'Выбор цвета',
+  confirm = false,
+  onSelect = () => {},
+} = {}) {
   const selected = exactHex(value);
+  let next = selected || COLOR_PALETTE[0];
   const palette = COLOR_PALETTE.map((color) => `<button type="button" class="color-picker__option ${color === selected ? 'is-selected' : ''}" data-shared-color-option="${escapeHtml(color)}" aria-label="Цвет ${escapeHtml(color)}"><span style="background:${escapeHtml(color)}"></span></button>`).join('');
-  const layer = mountModal(document.body, modal(`<div class="color-picker__palette" data-color-palette>${palette}</div>`, {
+  const content = `<div class="color-picker__palette" data-color-palette>${palette}</div>${confirm ? button('Сохранить', { data: 'data-shared-color-save' }) : ''}`;
+  const layer = mountModal(document.body, modal(content, {
     variant: 'x',
     title,
     className: 'modal--color-sheet',
   }));
+
+  const selectOption = (option) => {
+    next = option.dataset.sharedColorOption || COLOR_PALETTE[0];
+    layer?.querySelectorAll('[data-shared-color-option]').forEach((item) => {
+      item.classList.toggle('is-selected', item === option);
+    });
+  };
+
   layer?.querySelectorAll('[data-shared-color-option]').forEach((option) => option.addEventListener('click', () => {
-    const next = option.dataset.sharedColorOption || COLOR_PALETTE[0];
+    selectOption(option);
+    if (confirm) return;
     layer.v2Close?.();
     onSelect(next);
   }));
+
+  layer?.querySelector('[data-shared-color-save]')?.addEventListener('click', () => {
+    layer.v2Close?.();
+    onSelect(next);
+  });
   return layer;
 }

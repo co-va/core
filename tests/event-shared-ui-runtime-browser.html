@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:780px;--visual-vw:390px}
+    html,body{margin:0;width:390px;height:780px}
+    *{box-sizing:border-box}
+  </style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<div id="surface" data-v2-workspace-surface></div>
+<pre id="result">pending</pre>
+<script type="module">
+import { openRecordCreationOwner } from '/ui/ui.js';
+import { v2Shell } from '/ui/v2/shell.js';
+import { createJournalEventFlow } from '/journal/event-create.js';
+import { openEventView } from '/journal/event-view.js';
+import { createEvent, removeEvent } from '/core/event/index.js';
+
+const surface = document.querySelector('#surface');
+surface.innerHTML = v2Shell({ body:'<div data-event-runtime-root></div>', className:'v2-app--workspace' });
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (name) => {
+  stage = name;
+  result.textContent = 'running: ' + name;
+  document.documentElement.dataset.eventSharedUiRuntimeStage = name;
+};
+const ok = (condition, message) => { if (!condition) failures.push(stage + ': ' + message); };
+const wait = (ms = 80) => new Promise((resolve) => window.setTimeout(resolve, ms));
+window.addEventListener('error', (event) => failures.push(stage + ': window error: ' + (event.error?.message || event.message)));
+window.addEventListener('unhandledrejection', (event) => failures.push(stage + ': rejection: ' + String(event.reason?.message || event.reason || 'unknown')));
+
+try {
+  mark('professional-create-q');
+  const owner = openRecordCreationOwner();
+  ok(Boolean(owner), 'Shared creation Q has no v2 owner');
+  createJournalEventFlow({
+    owner,
+    date: '2026-11-12',
+    workplaceId: '',
+    timeHint: '10:00',
+  });
+  await wait();
+  const createForm = document.querySelector('[data-event-create-form]');
+  ok(Boolean(createForm), 'Shared Event create form did not open');
+  ok(Boolean(createForm?.querySelector('[name="title"]')), 'Event create has no name field');
+  ok(Boolean(createForm?.querySelector('[name="description"]')), 'Event create has no description field');
+  ok(Boolean(createForm?.querySelector('[data-event-create-time]')), 'Event create has no shared time action');
+  ok(!createForm?.querySelector('[data-time-picker]'), 'S/Do are still embedded directly in Event Q');
+  ok(!createForm?.querySelector('[data-color-picker]'), 'color picker is still embedded directly in Event Q');
+  createForm?.querySelector('[data-event-create-time]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+  await wait();
+  ok(Boolean(document.querySelector('[data-shared-time-range-form]')), 'Event time action did not open Shared S/Do X');
+  document.querySelector('[data-shared-time-range-form]')?.closest('[data-v2-layer]')?.v2Close?.();
+  owner?.close?.();
+  await wait();
+
+  mark('professional-view');
+  const event = createEvent({
+    ownerType: 'tenant',
+    context: { scope: 'professional' },
+    date: '2026-11-12',
+    workplaceId: '',
+    from: '10:00',
+    to: '10:30',
+    title: 'Встреча',
+    description: 'Первая строка\nВторая строка',
+    color: '#777A7D',
+  });
+  const view = openEventView(event.id);
+  await wait();
+  const viewHost = view?.querySelector('[data-event-view-host]');
+  const headerText = view?.querySelector('[data-v2-z-header-content]')?.textContent || '';
+  ok(Boolean(viewHost), 'Event View did not open');
+  ok(headerText.includes('Встреча'), 'Event title is not used as View header');
+  ok(!viewHost?.querySelector('h2'), 'Event title is duplicated in View body');
+  ok((viewHost?.textContent || '').includes('2026-11-12'), 'Event View has no date');
+  ok((viewHost?.textContent || '').includes('С 10:00 — До 10:30'), 'Event View has no readable time range');
+  ok((viewHost?.textContent || '').includes('Первая строка'), 'Event description is not readable');
+  ok(Boolean(viewHost?.querySelector('.color-picker__swatch')), 'Event View has no color mark');
+  ok(Boolean(viewHost?.querySelector('[data-event-edit]')), 'Event View has no edit action');
+  ok(Boolean(viewHost?.querySelector('[data-event-delete]')), 'Event View has no delete action');
+
+  mark('professional-edit-q');
+  viewHost?.querySelector('[data-event-edit]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+  await wait();
+  const editForm = document.querySelector('[data-event-edit-form]');
+  ok(Boolean(editForm), 'Edit did not open Event Q');
+  ok(Boolean(editForm?.querySelector('[name="title"]')), 'Edit Q has no name field');
+  ok(Boolean(editForm?.querySelector('[name="description"]')), 'Edit Q has no description field');
+  ok(Boolean(editForm?.querySelector('[data-event-edit-time]')), 'Edit Q has no shared time action');
+  ok(!editForm?.querySelector('[data-time-picker]'), 'Edit Q still embeds S/Do directly');
+  ok(!editForm?.querySelector('[data-color-picker]'), 'Edit Q still embeds color picker directly');
+  const editButtons = [...(editForm?.querySelectorAll('.modal-actions .ui-button') || [])];
+  ok(editButtons[0]?.matches('[data-event-edit-cancel]'), 'secondary Cancel is not above Save');
+  ok(editButtons.at(-1)?.type === 'submit', 'primary Save is not the lower action');
+  editForm?.querySelector('[data-event-edit-time]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+  await wait();
+  ok(Boolean(document.querySelector('[data-shared-time-range-form]')), 'Edit time did not open Shared S/Do X');
+
+  document.querySelector('[data-shared-time-range-form]')?.closest('[data-v2-layer]')?.v2Close?.();
+  document.querySelector('[data-event-edit-form]')?.closest('[data-v2-layer]')?.v2Close?.();
+  view?.v2Close?.();
+  removeEvent(event.id);
+} catch (error) {
+  failures.push(stage + ': exception: ' + String(error?.stack || error?.message || error));
+}
+
+if (failures.length) {
+  result.textContent = failures.join('\n');
+  document.documentElement.dataset.eventSharedUiRuntime = 'fail';
+} else {
+  result.textContent = 'PASS';
+  document.documentElement.dataset.eventSharedUiRuntime = 'pass';
+}
+</script>
+</body>
+</html>

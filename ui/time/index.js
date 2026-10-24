@@ -169,7 +169,13 @@ export function openTimePickerAction({
   });
 }
 
-export function openTimeRangeAction({ from = '09:00', to = '18:00', title = 'График работы', onSave = () => {} } = {}) {
+export function openTimeRangeAction({
+  from = '09:00',
+  to = '18:00',
+  title = 'График работы',
+  validate = null,
+  onSave = () => {},
+} = {}) {
   const content = `<form class="form-grid" data-shared-time-range-form>
     <div class="time-range-fields">
       ${timePicker({ label: 'С', name: 'from', value: text(from) })}
@@ -186,11 +192,15 @@ export function openTimeRangeAction({ from = '09:00', to = '18:00', title = 'Г�
   if (!layer) return null;
   initTimePickers(layer);
   const form = layer.querySelector('[data-shared-time-range-form]');
-  form?.addEventListener('submit', (event) => {
+  form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(form);
     const nextFrom = text(data.get('from'));
     const nextTo = text(data.get('to'));
+    if (typeof validate === 'function') {
+      const accepted = await validate({ from: nextFrom, to: nextTo });
+      if (accepted === false) return;
+    }
     layer.v2Close?.();
     onSave({ from: nextFrom, to: nextTo });
   });
