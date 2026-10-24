@@ -121,4 +121,70 @@ export class EventService {
     await this.prisma.event.delete({ where: { id } });
     return { ok: true };
   }
+
+  async listOwned(ownerType: string, ownerId: string) {
+    const rows = await this.prisma.event.findMany({
+      where: { ownerType, ownerId, tenantId: null },
+      orderBy: [{ date: 'asc' }, { from: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map(eventPayload);
+  }
+
+  async getOwned(ownerType: string, ownerId: string, id: string) {
+    const row = await this.prisma.event.findFirst({
+      where: { id, ownerType, ownerId, tenantId: null },
+    });
+    if (!row) throw new NotFoundException('Событие не найдено');
+    return eventPayload(row);
+  }
+
+  async upsertOwned(ownerType: string, ownerId: string, id: string, body: unknown) {
+    const source = objectValue(body);
+    const input = objectValue(source.event) as EventInput;
+    const eventId = text(id);
+    if (!eventId || (text(input.id) && text(input.id) !== eventId)) throw new BadRequestException('Некорректный id события');
+    const title = text(input.title);
+    if (!title) throw new BadRequestException('Укажите название события');
+
+    const existing = await this.prisma.event.findFirst({
+      where: { id: eventId, ownerType, ownerId, tenantId: null },
+    });
+    if (!existing) {
+      const conflicting = await this.prisma.event.findUnique({ where: { id: eventId } });
+      if (conflicting) throw new BadRequestException('Некорректный id события');
+    }
+
+    const createdAtCandidate = text(input.createdAt);
+    const createdAt = existing?.createdAt
+      || (createdAtCandidate && !Number.isNaN(new Date(createdAtCandidate).getTime()) ? new Date(createdAtCandidate) : new Date());
+    const context = { ...objectValue(input.context), scope: 'account' } as Prisma.InputJsonValue;
+    const data = {
+      tenantId: null,
+      ownerType,
+      ownerId,
+      context,
+      date: date(input.date),
+      from: time(input.from),
+      to: time(input.to),
+      title,
+      description: text(input.description),
+      color: text(input.color) || '#777A7D',
+      workplaceId: '',
+      createdAt,
+    };
+
+    const row = existing
+      ? await this.prisma.event.update({ where: { id: eventId }, data })
+      : await this.prisma.event.create({ data: { id: eventId, ...data } });
+    return eventPayload(row);
+  }
+
+  async removeOwned(ownerType: string, ownerId: string, id: string) {
+    const row = await this.prisma.event.findFirst({
+      where: { id, ownerType, ownerId, tenantId: null },
+    });
+    if (!row) return { ok: true };
+    await this.prisma.event.delete({ where: { id } });
+    return { ok: true };
+  }
 }
