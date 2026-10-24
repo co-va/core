@@ -20,6 +20,13 @@ function contentType(filePath) {
   return 'application/octet-stream';
 }
 
+const userEntryHtml = fs.readFileSync('user.html', 'utf8');
+assert.match(
+  userEntryHtml,
+  /href="ui\/note\/note\.css"/,
+  'End-user entry must load the same Shared Note stylesheet as the professional app',
+);
+
 const binary = browserBinary();
 if (!binary) {
   if (process.env.CI) assert.fail('Chromium-compatible browser is required for Account Journal Note regression');
