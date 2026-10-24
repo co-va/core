@@ -1,7 +1,7 @@
-/* Root Z always keeps its thin, visible Shared Header, even when it currently has no screen rows. */
+/* Root Z keeps only the compact Shared Header footprint required by its affordance. */
 [data-v2-z-header]:has(> [data-v2-z-header-content]:empty){
-  min-height:40px!important;
-  padding-bottom:8px!important;
+  min-height:28px!important;
+  padding-bottom:0!important;
   background:var(--v2-white,#fff)!important;
 }
 
@@ -13,7 +13,7 @@
   box-shadow:none!important;
 }
 
-/* Empty Q does not need a visible header strip: keep only the shared dismiss affordance. */
+/* Empty Q keeps only the same compact Shared affordance footprint. */
 [data-v2-q-header]:has(> [data-v2-q-header-content]:empty){
   min-height:28px!important;
   padding-bottom:0!important;
@@ -21,7 +21,7 @@
 }
 
 [data-v2-q-header]:has(> [data-v2-q-header-content]:empty) > [data-v2-z-dismiss]{
-  margin-top:2px!important;
+  margin-top:0!important;
   margin-bottom:2px!important;
 }
 

@@ -1,12 +1,14 @@
 import { v2ZDismissAffordance } from './z-affordance.js';
 
+const Z_VIEWPORT_OVERSCAN = '24px';
+
 const Z_HEADER_STYLE = [
   'position:relative',
   'z-index:20',
   'box-sizing:border-box',
-  'min-height:40px',
+  'min-height:28px',
   'margin:0 -18px',
-  'padding:0 18px 8px 0',
+  'padding:0 18px 0 0',
   'display:flex',
   'flex:0 0 auto',
   'flex-direction:column',
@@ -48,15 +50,21 @@ const Z_BODY_SECTION_STYLE = [
 const Z_BODY_KINDS = new Set(['content', 'full', 'list']);
 const Z_HEADER_OWNER_BOUND = new WeakSet();
 
+function visibleWorkAreaStyle(style, kind = 'z') {
+  return kind === 'z' ? `${style};margin-right:${Z_VIEWPORT_OVERSCAN}` : style;
+}
+
 function surfaceHeader(content = '', { kind = 'z', dismiss = true } = {}) {
   const data = kind === 'q' ? 'data-v2-q-header' : 'data-v2-z-header';
   const contentData = kind === 'q' ? 'data-v2-q-header-content' : 'data-v2-z-header-content';
-  return `<div ${data} style="${Z_HEADER_STYLE}">${dismiss ? v2ZDismissAffordance() : ''}<div ${contentData} style="${Z_HEADER_CONTENT_STYLE}">${content}</div></div>`;
+  const contentStyle = visibleWorkAreaStyle(Z_HEADER_CONTENT_STYLE, kind);
+  return `<div ${data} style="${Z_HEADER_STYLE}">${dismiss ? v2ZDismissAffordance() : ''}<div ${contentData} style="${contentStyle}">${content}</div></div>`;
 }
 
 function surfaceBody(content = '', { kind = 'z' } = {}) {
   const data = kind === 'q' ? 'data-v2-q-body' : 'data-v2-z-body';
-  return `<div ${data} style="${Z_BODY_STYLE}">${content}</div>`;
+  const bodyStyle = visibleWorkAreaStyle(Z_BODY_STYLE, kind);
+  return `<div ${data} style="${bodyStyle}">${content}</div>`;
 }
 
 export function v2ZHeader(content = '') {

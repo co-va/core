@@ -85,13 +85,19 @@ expect(!workspaceHeader.includes('hideD'), 'Surface Header context must never ex
 expect(!appearanceQ.includes('hideD'), 'Q surfaces must never request suppression of Header D.');
 
 expect(zLayout.includes("return `${v2QHeader(header)}${v2QBody(content)}`;"), 'Every Q must keep the same Shared Header + Body frame as Z.');
+expect(
+  zLayout.includes("const Z_VIEWPORT_OVERSCAN = '24px';")
+    && zLayout.includes("kind === 'z'")
+    && zLayout.includes('margin-right:${Z_VIEWPORT_OVERSCAN}'),
+  'Shared Z work content must compensate the 24px technical right overscan while Q remains unchanged.',
+);
 expect(zLayout.includes('bindV2ZHeaderOwner(root)') && zLayout.includes('root.replaceChildren = (...children) => {') && zLayout.includes('clearV2ZHeaderRows(root);'), 'Screen-scoped Z Header rows must be cleared when their owner surface is replaced.');
 expect(
   surfaceHeaderCss.includes('[data-v2-z-header]:has(> [data-v2-z-header-content]:empty)')
-    && surfaceHeaderCss.includes('min-height:40px!important')
     && surfaceHeaderCss.includes('[data-v2-q-header]:has(> [data-v2-q-header-content]:empty)')
-    && surfaceHeaderCss.includes('min-height:28px!important'),
-  'Empty root Z Header must remain thin and visible while an empty Q Header collapses to the affordance-only state.',
+    && (surfaceHeaderCss.match(/min-height:28px!important/g) || []).length >= 2
+    && (surfaceHeaderCss.match(/padding-bottom:0!important/g) || []).length >= 2,
+  'Empty Shared Z and Q Headers must use the same compact affordance-only geometry without extra white bands.',
 );
 expect(zAffordance.includes('drop-shadow('), 'Shared Z/Q dismiss affordance must remain visibly separated from the surface.');
 expect(zAffordance.includes('[data-v2-q-header] > [data-v2-z-dismiss]'), 'Shared dismiss affordance must work in Q as well as Z.');
