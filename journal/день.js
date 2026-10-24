@@ -252,8 +252,8 @@ export function renderJournalDay(root, {
     const eventById = new Map(accountEvents.map((event) => [String(event?.id || ''), event]).filter(([id]) => Boolean(id)));
 
     timelineRoot.innerHTML = journalDayTimeline({
-      from: '00:00',
-      to: '23:59',
+      from: '09:00',
+      to: '23:00',
       usages,
       day: dayDate,
     });
