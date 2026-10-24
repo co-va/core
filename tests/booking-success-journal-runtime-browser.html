@@ -175,7 +175,7 @@ mark('start-booking');
 await import('/online-booking/user-entry.js?booking-success-journal-runtime=1');
 await wait(220);
 ok(Boolean(document.querySelector('[data-record-creation-flow]')), 'end-user booking did not start in existing Shared Record creation flow');
-ok(Boolean(document.querySelector('.account-contact-detail-z')), 'Contacts professional context was not preserved beneath booking before success');
+ok(!document.querySelector('.account-contact-detail-z'), 'account booking pre-rendered Contact detail before booking');
 
 mark('date');
 const dateButton = document.querySelector(`[data-calendar-date="${bookingDate}"]`);
