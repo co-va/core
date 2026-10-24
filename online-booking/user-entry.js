@@ -180,6 +180,10 @@ async function renderAccessRoute(route) {
 window.addEventListener('resize', syncViewport, { passive: true });
 window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 window.visualViewport?.addEventListener('scroll', syncViewport, { passive: true });
+window.addEventListener('cova:account-journal-open-contacts', () => {
+  history.replaceState({}, '', '/');
+  void renderGlobalClientRoot({ tab: 'contacts' });
+});
 
 syncViewport();
 const accountBooking = accountBookingRoute();
