@@ -237,7 +237,7 @@ ok(mounted.root.dataset.journalContext === 'account', 'Journal did not enter acc
 ok(Boolean(mounted.root.querySelector('[data-journal-day-context="account"]')), 'existing Day renderer did not receive account context');
 const accountTimeline = mounted.root.querySelector('[data-time-timeline]');
 ok(Boolean(accountTimeline), 'account Day did not use Shared journalDayTimeline');
-ok(accountTimeline?.dataset.timeFrom === '00:00' && accountTimeline?.dataset.timeTo === '23:59', 'account Day is not a full personal day');
+ok(accountTimeline?.dataset.timeFrom === '09:00' && accountTimeline?.dataset.timeTo === '23:00', 'account Day does not keep visible 09:00–23:00 baseline');
 let accountPlaque = mounted.root.querySelector(`[data-journal-usage="${accountRecords[0].id}"]`);
 ok(Boolean(accountPlaque?.classList.contains('journal-record')), 'account Record did not use existing Record plaque');
 ok(flatText(accountPlaque).includes('Иван Relationship'), 'account Day plaque does not present professional identity');
