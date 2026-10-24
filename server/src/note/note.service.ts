@@ -221,4 +221,99 @@ export class NoteService {
     await this.prisma.note.delete({ where: { id: row.id } });
     return { ok: true };
   }
+
+  async listOwned(ownerType: string, ownerId: string) {
+    const rows = await this.prisma.note.findMany({
+      where: { ownerType, ownerId, tenantId: null },
+      orderBy: [{ date: 'asc' }, { from: 'asc' }, { to: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map(notePayload);
+  }
+
+  async getOwned(ownerType: string, ownerId: string, id: string) {
+    const row = await this.prisma.note.findFirst({
+      where: { id, ownerType, ownerId, tenantId: null },
+    });
+    if (!row) throw new NotFoundException('Заметка не найдена');
+    return notePayload(row);
+  }
+
+  async upsertOwned(ownerType: string, ownerId: string, id: string, body: unknown) {
+    const source = objectValue(body);
+    const input = objectValue(source.note) as NoteInput;
+    const noteId = stringValue(id);
+    if (!ownerType || !ownerId || !noteId || (stringValue(input.id) && stringValue(input.id) !== noteId)) {
+      throw new BadRequestException('Некорректный id заметки');
+    }
+    if (stringValue(input.ownerType) && stringValue(input.ownerType) !== ownerType) {
+      throw new BadRequestException('Некорректный владелец заметки');
+    }
+    if (stringValue(input.ownerId) && stringValue(input.ownerId) !== ownerId) {
+      throw new BadRequestException('Некорректный владелец заметки');
+    }
+
+    const existingById = await this.prisma.note.findUnique({ where: { id: noteId } });
+    if (existingById && (
+      existingById.tenantId !== null
+      || existingById.ownerType !== ownerType
+      || existingById.ownerId !== ownerId
+    )) {
+      throw new NotFoundException('Заметка не найдена');
+    }
+
+    const date = dateValue(input.date);
+    const from = optionalTime(input.from);
+    const to = optionalTime(input.to);
+    const targetType = stringValue(input.targetType);
+    const targetId = stringValue(input.targetId);
+    if ((targetType || targetId) && (!targetType || !targetId || (targetType !== 'record' && targetType !== 'event'))) {
+      throw new BadRequestException('Некорректная связь заметки');
+    }
+    const title = stringValue(input.title);
+    const noteText = stringValue(input.text);
+    if (!title && !noteText) {
+      throw new BadRequestException('Укажите наименование или текст заметки');
+    }
+
+    const context = {
+      ...objectValue(input.context),
+      scope: 'account',
+    } as Prisma.InputJsonValue;
+    const createdAtCandidate = stringValue(input.createdAt);
+    const createdAt = existingById?.createdAt
+      || (createdAtCandidate && !Number.isNaN(new Date(createdAtCandidate).getTime())
+        ? new Date(createdAtCandidate)
+        : new Date());
+    const data = {
+      tenantId: null,
+      ownerType,
+      ownerId,
+      context,
+      date,
+      from,
+      to,
+      targetType: targetType === 'record' || targetType === 'event' ? targetType : '',
+      targetId: targetType === 'record' || targetType === 'event' ? targetId : '',
+      title,
+      text: noteText,
+      color: colorValue(input.color),
+      createdAt,
+    };
+
+    const row = existingById
+      ? await this.prisma.note.update({ where: { id: noteId }, data })
+      : await this.prisma.note.create({ data: { id: noteId, ...data } });
+    return notePayload(row);
+  }
+
+  async removeOwned(ownerType: string, ownerId: string, id: string) {
+    const row = await this.prisma.note.findFirst({
+      where: { id, ownerType, ownerId, tenantId: null },
+      select: { id: true },
+    });
+    if (!row) return { ok: true };
+    await this.prisma.note.delete({ where: { id: row.id } });
+    return { ok: true };
+  }
+
 }

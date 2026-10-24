@@ -8,7 +8,7 @@ function personName(person = {}) {
 function recordOption(record = {}, label = 'Запись') {
   const time = String(record?.from || '');
   return {
-    value: `record:${String(record?.id || '')}`,
+    value: `record:${String(record?.id || record?.sourceId || '')}`,
     label,
     meta: [time, personName(record?.person)].filter(Boolean).join(' · '),
   };
@@ -17,7 +17,7 @@ function recordOption(record = {}, label = 'Запись') {
 function eventOption(event = {}, label = 'Событие') {
   const time = String(event?.from || '');
   return {
-    value: `event:${String(event?.id || '')}`,
+    value: `event:${String(event?.id || event?.sourceId || '')}`,
     label,
     meta: [time, String(event?.title || 'Событие')].filter(Boolean).join(' · '),
     indicatorColor: String(event?.color || ''),
@@ -40,7 +40,7 @@ function targetSnapshot(target = null) {
   if (target.type === 'record') {
     return {
       type: 'record',
-      id: String(entity?.id || ''),
+      id: String(entity?.id || entity?.sourceId || ''),
       date: String(entity?.date || '').slice(0, 10),
       from: String(entity?.from || '').slice(0, 5),
       to: String(entity?.to || '').slice(0, 5),
@@ -51,7 +51,7 @@ function targetSnapshot(target = null) {
   }
   return {
     type: 'event',
-    id: String(entity?.id || ''),
+    id: String(entity?.id || entity?.sourceId || ''),
     date: String(entity?.date || '').slice(0, 10),
     from: String(entity?.from || '').slice(0, 5),
     to: String(entity?.to || '').slice(0, 5),
@@ -70,24 +70,34 @@ function storedTargetSnapshot(note = {}) {
   return { ...snapshot, type, id };
 }
 
-function liveTarget(type = '', id = '') {
+function recordsForDay(date, source = null) {
+  if (typeof source?.recordsForDay === 'function') return source.recordsForDay(date) || [];
+  return getRecordsForDay(date, '');
+}
+
+function eventsForDay(date, source = null) {
+  if (typeof source?.eventsForDay === 'function') return source.eventsForDay(date) || [];
+  return getEventsForDay(date, '');
+}
+
+function liveTarget(type = '', id = '', source = null) {
   if (!id) return null;
   if (type === 'record') {
-    const record = getRecord(id);
+    const record = typeof source?.readRecord === 'function' ? source.readRecord(id) : getRecord(id);
     return record ? { type: 'record', entity: record, historical: false, deleted: false } : null;
   }
   if (type === 'event') {
-    const event = readEvent(id);
+    const event = typeof source?.readEvent === 'function' ? source.readEvent(id) : readEvent(id);
     return event ? { type: 'event', entity: event, historical: false, deleted: false } : null;
   }
   return null;
 }
 
-export function noteTargetSnapshot(targetType = '', targetId = '') {
-  return targetSnapshot(liveTarget(targetType, targetId));
+export function noteTargetSnapshot(targetType = '', targetId = '', { source = null } = {}) {
+  return targetSnapshot(liveTarget(targetType, targetId, source));
 }
 
-export function noteContextWithTarget(context = {}, targetType = '', targetId = '') {
+export function noteContextWithTarget(context = {}, targetType = '', targetId = '', { source = null } = {}) {
   const next = context && typeof context === 'object' && !Array.isArray(context) ? { ...context } : {};
   const type = targetType === 'record' || targetType === 'event' ? String(targetType) : '';
   const id = type ? String(targetId || '') : '';
@@ -96,7 +106,7 @@ export function noteContextWithTarget(context = {}, targetType = '', targetId = 
     return next;
   }
 
-  const snapshot = noteTargetSnapshot(type, id);
+  const snapshot = noteTargetSnapshot(type, id, { source });
   if (snapshot) {
     next.targetSnapshot = snapshot;
     return next;
@@ -109,16 +119,16 @@ export function noteContextWithTarget(context = {}, targetType = '', targetId = 
   return next;
 }
 
-export function noteTargetOptions(date, { includeNote = null } = {}) {
+export function noteTargetOptions(date, { includeNote = null, source = null } = {}) {
   const options = [
     { value: '', label: 'Не прикреплено' },
-    ...getRecordsForDay(date, '').filter((record) => record?.status !== 'cancelled').map((record) => recordOption(record)),
-    ...getEventsForDay(date, '').map((event) => eventOption(event)),
+    ...recordsForDay(date, source).filter((record) => record?.status !== 'cancelled').map((record) => recordOption(record)),
+    ...eventsForDay(date, source).map((event) => eventOption(event)),
   ];
 
   const currentValue = noteTargetValue(includeNote || {});
   if (!currentValue || options.some((option) => String(option.value || '') === currentValue)) return options;
-  const target = resolveNoteTarget(includeNote || {});
+  const target = resolveNoteTarget(includeNote || {}, { source });
   if (!target) return options;
   if (target.type === 'record') {
     const label = target.deleted
@@ -148,14 +158,14 @@ export function noteTargetValue(note = {}) {
   return type && id ? `${type}:${id}` : '';
 }
 
-export function resolveNoteTarget(note = {}) {
+export function resolveNoteTarget(note = {}, { source = null } = {}) {
   const type = note?.targetType === 'record' || note?.targetType === 'event'
     ? String(note.targetType)
     : '';
   const id = String(note?.targetId || '');
   if (!type || !id) return null;
 
-  const live = liveTarget(type, id);
+  const live = liveTarget(type, id, source);
   if (live) return live;
 
   const snapshot = storedTargetSnapshot(note);
@@ -164,8 +174,8 @@ export function resolveNoteTarget(note = {}) {
     : null;
 }
 
-export function noteTargetLabel(note = {}) {
-  const target = resolveNoteTarget(note);
+export function noteTargetLabel(note = {}, { source = null } = {}) {
+  const target = resolveNoteTarget(note, { source });
   if (!target) return '';
   if (target.type === 'record') {
     const status = target.deleted

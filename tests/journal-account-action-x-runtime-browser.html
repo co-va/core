@@ -22,6 +22,8 @@ const host = document.querySelector('#host');
 const result = document.querySelector('#result');
 const failures = [];
 let stage = 'boot';
+let accountNotes = [];
+let accountNoteWrites = 0;
 const mark = (name) => {
   stage = name;
   result.textContent = 'running: ' + name;
@@ -40,6 +42,25 @@ window.fetch = async (input, options = {}) => {
       return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  if (url.includes('/online-booking/account/notes')) {
+    const method = String(options.method || 'GET').toUpperCase();
+    if (method === 'GET') {
+      return new Response(JSON.stringify(accountNotes), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (method === 'PUT') {
+      const note = JSON.parse(String(options.body || '{}')).note || {};
+      const index = accountNotes.findIndex((item) => item.id === note.id);
+      if (index >= 0) accountNotes[index] = note;
+      else accountNotes.push(note);
+      accountNoteWrites += 1;
+      return new Response(JSON.stringify(note), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (method === 'DELETE') {
+      const id = decodeURIComponent(url.split('/').pop() || '');
+      accountNotes = accountNotes.filter((item) => item.id !== id);
+      return new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
   }
   return originalFetch(input, options);
 };
@@ -102,14 +123,34 @@ ok(contactsRequests === 1, '«Записаться» не передало уп�
 ok(!currentX(), 'X не закрылся после «Записаться»');
 ok(!root.querySelector('[data-record-creation-flow]'), '«Записаться» запустило отдельный creation-flow');
 
-mark('note-idle');
+mark('note-shared-flow');
 clickSlot('12:00');
 await wait();
 x = currentX();
 x?.querySelector('[data-account-day-note]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
 await wait();
-ok(!currentX(), 'холостая «Заметка» не закрыла X');
-ok(!root.querySelector('[data-record-creation-flow]'), 'холостая «Заметка» создала creation-flow');
+ok(!currentX(), 'X не закрылся перед Note');
+const noteForm = root.querySelector('[data-note-create-form]');
+ok(Boolean(noteForm), '«Заметка» не открыла Shared Note creation');
+ok(root.dataset.recordCreationStep === 'note', 'Shared owner не находится на Note step');
+ok(String(host.textContent || '').includes('Заметка'), 'Shared Note не имеет заголовка «Заметка»');
+ok(Boolean(noteForm?.querySelector('[name="date"]')), 'Shared Note потеряла поле даты');
+ok(Boolean(noteForm?.querySelector('[name="from"]')), 'Shared Note потеряла поле «С»');
+ok(Boolean(noteForm?.querySelector('[name="to"]')), 'Shared Note потеряла поле «До»');
+ok(Boolean(noteForm?.querySelector('[name="target"]')), 'Shared Note потеряла «Прикрепить к»');
+ok(Boolean(noteForm?.querySelector('[name="title"]')), 'Shared Note потеряла «Наименование»');
+ok(Boolean(noteForm?.querySelector('[name="text"]')), 'Shared Note потеряла «Текст»');
+const noteTitle = noteForm?.querySelector('[name="title"]');
+if (noteTitle) {
+  noteTitle.value = 'Личная заметка';
+  noteTitle.dispatchEvent(new Event('input', { bubbles:true }));
+}
+root.querySelector('[data-note-create]')?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
+await wait(180);
+ok(accountNoteWrites === 1, 'Shared Note не сохранилась через account owner');
+const createdNote = host.querySelector('[data-note-reel]');
+ok(Boolean(createdNote), 'созданная Account Note не появилась в Shared Y');
+ok(String(createdNote?.textContent || '').includes('Личная заметка'), 'Shared Y показывает не созданную Account Note');
 
 mark('event-shared-flow');
 clickSlot('18:00');
