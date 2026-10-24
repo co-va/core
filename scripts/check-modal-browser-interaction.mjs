@@ -32,6 +32,18 @@ for (const [name, engine, contextOptions] of [
         return { x, y, hit: Boolean(hit && (hit === node || node.contains(hit))) };
       });
     });
+    const waitForOwnedTargetPoints = async (selector) => {
+      await page.waitForFunction((value) => {
+        const node = document.querySelector(value);
+        if (!node) return false;
+        const r = node.getBoundingClientRect();
+        return [3, r.height / 2, r.height - 3].every((dy) => {
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + dy);
+          return Boolean(hit && (hit === node || node.contains(hit)));
+        });
+      }, selector, { timeout: 2000 });
+      return targetPoints(selector);
+    };
     const activate = async (point) => {
       if (contextOptions.hasTouch) await page.touchscreen.tap(point.x, point.y);
       else await page.mouse.click(point.x, point.y);
@@ -102,7 +114,7 @@ for (const [name, engine, contextOptions] of [
     await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: settings handoff left an extra modal`);
     const checkbox = '[data-service-workplace="test-space"]';
-    const checkboxPoints = await targetPoints(checkbox);
+    const checkboxPoints = await waitForOwnedTargetPoints(checkbox);
     assert.ok(checkboxPoints.every((point) => point.hit), `${name}: workplace checkbox obscured`);
     await activate(checkboxPoints[1]);
     assert.equal(await page.locator('[data-test-selection]').textContent(), '1', `${name}: selection did not update`);
