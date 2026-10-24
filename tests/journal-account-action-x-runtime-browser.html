@@ -69,13 +69,13 @@ function clickSlot(time = '18:00') {
   slot?.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true }));
 }
 
-mark('personal-field');
+mark('visible-field');
 const timeline = root.querySelector('[data-time-timeline]');
-ok(timeline?.dataset.timeFrom === '00:00', 'Account Day не начинается в 00:00');
-ok(timeline?.dataset.timeTo === '23:59', 'Account Day не заканчивается в 23:59');
-ok(Boolean(slotAt('00:00')), 'начало личного дня неактивно');
-ok(Boolean(slotAt('18:00')), 'середина личного дня неактивна');
-ok(Boolean(slotAt('23:30')), 'конец личного дня неактивен');
+ok(timeline?.dataset.timeFrom === '09:00', 'Account Day не начинается видимо с 09:00');
+ok(timeline?.dataset.timeTo === '23:00', 'Account Day не заканчивается видимо в 23:00');
+ok(!slotAt('00:00'), 'скрытая часть 00:00–09:00 стала видимой без факта');
+ok(Boolean(slotAt('18:00')), 'видимое поле неактивно');
+ok(!slotAt('23:30'), 'скрытая часть после 23:00 стала видимой без факта');
 
 mark('x-actions');
 clickSlot('18:00');
