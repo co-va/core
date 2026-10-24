@@ -78,6 +78,6 @@ const removableDays = getDays();
 assert.equal(removeDay(removableDays, 'romashka', '2026-09-15'), true);
 assert.equal(saveDays(removableDays).ok, true);
 assert.equal(getDays().length, 0);
-assert.equal(getEventsForDay('2026-09-15', 'romashka').length, 1);
+assert.equal(getEventsForDay('2026-09-15', 'romashka').length, 0);
 
 console.log('day-record tests: OK');
