@@ -1,0 +1,38 @@
+name: Apply Account FEZ regression cleanup
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-account-fez-test-cleanup-staging
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, 'Bootstrap Account FEZ regression cleanup')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Update Account FEZ regression expectations
+        run: python3 scripts/apply-account-fez-test-cleanup.py
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit regression update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Executor"
+          git config user.email "actions@users.noreply.github.com"
+          git add tests/booking-account-ui.test.mjs
+          git diff --cached --check
+          git commit -m "Update Account FEZ regression expectations"
+          git push origin HEAD:staging
