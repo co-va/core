@@ -26,6 +26,12 @@ jobs:
       - name: Apply Account Note patch
         run: python3 scripts/apply-account-note.py
 
+      - name: Keep bootstrap out of implementation commit
+        shell: bash
+        run: |
+          git restore .github/workflows/check.yml
+          git restore .github/workflows/apply-account-note.yml
+
       - name: Validate diff
         run: git diff --check
 
