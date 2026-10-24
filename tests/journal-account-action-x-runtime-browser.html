@@ -119,7 +119,7 @@ x?.querySelector('[data-account-day-event]')?.dispatchEvent(new MouseEvent('clic
 await wait();
 ok(!currentX(), 'X не закрылся перед Event');
 ok(Boolean(root.querySelector('[data-event-create-form]')), '«Событие» не открыло Shared Event creation');
-ok(root.querySelector('[data-record-creation-step]')?.dataset.recordCreationStep === 'event', 'Shared owner не находится на Event step');
+ok(root.dataset.recordCreationStep === 'event', 'Shared owner не находится на Event step');
 ok(String(host.textContent || '').includes('Событие'), 'Shared Event не имеет заголовка «Событие»');
 ok(!root.querySelector('[data-account-day-booking]'), 'X-действия остались внутри Event UI');
 
