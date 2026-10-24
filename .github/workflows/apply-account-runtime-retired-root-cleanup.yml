@@ -1,0 +1,38 @@
+name: Apply Account runtime retired root cleanup
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-account-runtime-retired-root-cleanup-staging
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, 'Bootstrap Account runtime retired root cleanup')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Update Account runtime regression
+        run: python3 scripts/apply-account-runtime-retired-root-cleanup.py
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit runtime regression update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI Executor"
+          git config user.email "actions@users.noreply.github.com"
+          git add tests/account-shell-runtime-browser.html
+          git diff --cached --check
+          git commit -m "Update Account runtime retired root regression"
+          git push origin HEAD:staging
