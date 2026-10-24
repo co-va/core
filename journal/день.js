@@ -198,6 +198,14 @@ export function renderJournalDay(root, {
         const record = recordById.get(String(usageId || ''));
         if (record) void openAccountRecord(record, resolveRecordContext, rerender);
       },
+      onSlotClick: ({ from }) => {
+        window.dispatchEvent(new CustomEvent('cova:account-journal-booking-request', {
+          detail: {
+            date: dayDate,
+            from: String(from || ''),
+          },
+        }));
+      },
     });
     return dispose;
   }

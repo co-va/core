@@ -1,4 +1,4 @@
-import { getBookingContext, getGlobalAccountRecords, resolveBookingPublicRoute } from '../core/account/index.js';
+import { getBookingContext, getGlobalAccountRecords, getGlobalAccountRelationships, resolveBookingPublicRoute } from '../core/account/index.js';
 import { procedurePricingForWorkplace } from '../core/service/procedures/selection.js';
 import { openRecordConfirmationNotice } from '../ui/record/confirmation-notice.js';
 import { renderGlobalClient } from './booking.js';
@@ -7,6 +7,55 @@ import { startAccountRuntime } from './account-runtime.js';
 
 const app = document.querySelector('#app');
 let disposeView = () => {};
+let journalBookingIntent = null;
+
+function normalizeJournalBookingDetail(detail = {}) {
+  return {
+    date: String(detail?.date || '').slice(0, 10),
+    from: String(detail?.from || '').slice(0, 5),
+  };
+}
+
+async function startJournalAccountBooking(tenantId, detail = {}) {
+  const tenant = String(tenantId || '').trim();
+  if (!tenant) return;
+  const intent = normalizeJournalBookingDetail(detail);
+  journalBookingIntent = null;
+  await renderAccessRoute({
+    tenantId: tenant,
+    entry: 'account-booking',
+    journalDate: intent.date,
+    journalTime: intent.from,
+  });
+}
+
+async function handleJournalBookingRequest(event) {
+  const intent = normalizeJournalBookingDetail(event?.detail || {});
+  const relationships = await getGlobalAccountRelationships().catch(() => []);
+  const available = (Array.isArray(relationships) ? relationships : [])
+    .filter((relationship) => String(relationship?.tenantId || '').trim());
+
+  if (available.length === 1) {
+    await startJournalAccountBooking(available[0].tenantId, intent);
+    return;
+  }
+
+  journalBookingIntent = intent;
+  await renderGlobalClientRoot({ tab: 'contacts' });
+}
+
+function handleJournalBookingContactSelection(event) {
+  if (!journalBookingIntent) return;
+  const node = event.target?.closest?.('[data-global-relationship]');
+  const tenantId = String(node?.dataset?.globalRelationship || '').trim();
+  if (!tenantId) return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const intent = journalBookingIntent;
+  journalBookingIntent = null;
+  void startJournalAccountBooking(tenantId, intent);
+}
 
 function syncViewport() {
   const vv = window.visualViewport;
@@ -177,6 +226,10 @@ async function renderAccessRoute(route) {
   syncViewport();
 }
 
+window.addEventListener('cova:account-journal-booking-request', (event) => {
+  void handleJournalBookingRequest(event);
+});
+document.addEventListener('click', handleJournalBookingContactSelection, true);
 window.addEventListener('resize', syncViewport, { passive: true });
 window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 window.visualViewport?.addEventListener('scroll', syncViewport, { passive: true });
