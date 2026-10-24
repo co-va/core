@@ -235,15 +235,6 @@ await selectRoot('journal',15);
 ok(shell() === initialShell, 'Contacts → Journal rebuilt the whole account shell');
 ok(Boolean(root.querySelector('[data-account-journal-root] [data-journal-usage="' + accountRecord.id + '"]')), 'Contacts → Journal lost account Record');
 
-await edgeOpen(6);
-await selectRoot('history',16);
-ok(shell() === initialShell, 'history navigation rebuilt the whole account shell');
-ok(Boolean(root.querySelector('[data-account-history]')), 'History root stopped rendering account history');
-
-await edgeOpen(7);
-await selectRoot('journal',17);
-ok(shell() === initialShell, 'History → Journal rebuilt the whole account shell');
-
 mark('messenger-return-root');
 root.querySelector('[data-account-open-chat-root]')?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
 await wait(140);
@@ -257,17 +248,18 @@ ok(state.accountTab === 'journal', 'Messenger return did not preserve Journal Ac
 ok(state.accountDeckActive === 'journal', 'Messenger return lost Journal deck root');
 ok(Boolean(root.querySelector('[data-account-journal-root]')), 'Messenger return did not restore Journal DOM');
 
-mark('legacy-booking-home');
+mark('retired-home-fallback');
 state.accountTab = 'home';
 state.accountDeckActive = 'journal';
 state.accountDeckOpen = false;
 await renderGlobalAccount(root,state,callbacks);
 await wait(120);
-ok(root.querySelector('[data-v2-header] .v2-header__title')?.textContent.trim() === 'Обзор', 'Explicit legacy home no longer renders Overview; booking return changed inside PR3');
-ok(!root.querySelector('[data-account-journal-root]'), 'Explicit legacy home was redirected to Journal; PR4 leaked into PR3');
+ok(root.querySelector('[data-v2-header] .v2-header__title')?.textContent.trim() === 'Журнал', 'Retired home state must fall back to Journal');
+ok(Boolean(root.querySelector('[data-account-journal-root]')), 'Retired home state did not fall back to Journal');
+state.accountTab = 'journal';
 
 // Repeat visible-root navigation to expose handler accumulation after the migration.
-for (const [index,id] of ['profile','journal','contacts','journal','history','journal'].entries()) {
+for (const [index,id] of ['profile','journal','contacts','journal','profile','journal'].entries()) {
   await edgeOpen(30 + index);
   await selectRoot(id,50 + index);
   ok(ownerCount() === 1, 'owner accumulation after repeated navigation to ' + id);

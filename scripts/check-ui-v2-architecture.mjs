@@ -274,7 +274,7 @@ expect(css.includes('.v2-z .entity-card{transform:translateY(-2px)') && css.incl
 expect(/\.v2-z\{[\s\S]*?touch-action:auto/.test(css) && /\.v2-edge-swipe-zone\{[\s\S]*?width:36px;[\s\S]*?pointer-events:none;[\s\S]*?touch-action:none/.test(css) && css.includes('.v2-edge-swipe-zone.is-active{pointer-events:auto}'), 'Z must keep native vertical/horizontal inner scrolling while only an actively retained 36px screen-edge owner may intercept return navigation.');
 expect(ui.includes('function retainV2EdgeHost(host)') && ui.includes("host.dataset.v2EdgeOwners") && ui.includes("host.classList.add('is-active')") && ui.includes("host.classList.remove('is-active')"), 'Shared edge zone must be reference-counted so inactive screens never keep a dead touch strip.');
 expect(ui.includes("retainV2EdgeHost(bindZ && edgeHost?.matches?.('[data-v2-edge-swipe]') ? edgeHost : null)"), 'Workspace edge zone must stay inactive whenever bindZ is false.');
-expect(account.includes('GLOBAL_ACCOUNT_ROOTS') && account.includes("id: 'profile', label: 'Профиль'") && account.includes("id: 'journal', label: 'Журнал'") && account.includes("id: 'contacts', label: 'Контакты'") && account.includes("id: 'history', label: 'История'") && account.includes('initV2WorkspaceInteraction(root') && account.includes('GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)'), 'Changing the active end-user F folder must route through the Shared workspace owner and immediately change Z to the selected Profile / Journal / Contacts / History face.');
+expect(account.includes('GLOBAL_ACCOUNT_ROOTS') && account.includes("id: 'profile', label: 'Профиль'") && account.includes("id: 'journal', label: 'Журнал'") && account.includes("id: 'contacts', label: 'Контакты'") && !account.includes("id: 'history', label: 'История'") && account.includes('initV2WorkspaceInteraction(root') && account.includes('GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)'), 'Changing the active end-user F folder must route through the Shared workspace owner and immediately change Z to the selected Profile / Journal / Contacts face.');
 expect(accountMobileCss.includes('background:var(--v2-base)'), 'Public booking shell safe area must continue the H base.');
 expect(core.includes("setThemeColor('#2F3338')") && core.includes("setThemeColor('#F5F5F3')"), 'Public booking must tint browser chrome to H and restore the workspace theme afterwards.');
 expect(booking.includes('documentTile(') && booking.includes('documentTiles(') && booking.includes('openDocumentViewer(') && booking.includes('v2Sticker({') && !booking.includes('v2LegalCards(') && !booking.includes('v2Document('), 'Legal checkpoint may use the Shared U container but every document inside it must use the canonical Document UI and viewer.');
@@ -430,10 +430,10 @@ expect(account.includes('v2CardDeck(GLOBAL_ACCOUNT_ROOTS') && account.includes("
 expect(account.includes("id: 'profile', label: 'Профиль'")
   && account.includes("id: 'journal', label: 'Журнал'")
   && account.includes("id: 'contacts', label: 'Контакты'")
-  && account.includes("id: 'history', label: 'История'")
+  && !account.includes("id: 'history', label: 'История'")
   && !account.includes("id: 'home', label: 'Обзор'")
   && !account.includes("id: 'representatives'"),
-  'End-user F owner must expose exactly Profile / Journal / Contacts / History and no legacy Overview/two-folder deck.');
+  'End-user F owner must expose exactly Profile / Journal / Contacts and no retired History/Overview/two-folder deck.');
 expect(account.includes('initV2WorkspaceInteraction(root'), 'End-user F/E/Z interaction must use the single Shared workspace owner.');
 expect(!account.includes('initV2DeckSwipe(root') && !account.includes('function bindRootSwipe') && !account.includes('function bindDeck('), 'End-user account must not re-own F/Z gesture binding beside the Shared workspace owner.');
 expect(core.includes('initV2WorkspaceInteraction(shell') && !core.includes('initV2DeckSwipe(rootDeckNode') && !core.includes('initV2Swipe(z'), 'Professional workspace must consume the same Shared workspace interaction owner as the end-user account.');

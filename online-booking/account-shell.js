@@ -32,7 +32,6 @@ import {
   v2ListEntry,
   v2CardDeck,
   v2Header,
-  v2HorizontalRail,
   v2V,
   setV2V,
   clearV2V,
@@ -40,7 +39,6 @@ import {
   openNotice,
   page,
   shortDateTime,
-  v2RailCard,
   v2Section,
   v2Shell,
   v2ZLayer,
@@ -113,17 +111,6 @@ function requestMoment(request = {}) {
   return `${String(request.date || '').slice(0, 10)}T${String(request.from || '00:00').padStart(5, '0')}`;
 }
 
-function nowMoment() {
-  const now = new Date();
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  return `${date}T${time}`;
-}
-
-function isCancelled(request = {}) {
-  return String(request.status || '').toLowerCase() === 'cancelled';
-}
-
 const ACTION_STATUS_LABELS = Object.freeze({
   booked: 'Записался',
   rescheduled: 'Перенёс',
@@ -166,30 +153,6 @@ function workplaceName(state, request = {}) {
     || 'Пространство';
 }
 
-function historyEntry(request, index) {
-  const procedures = requestProcedures(request).slice(0, 3).map((item) => ({ value: item?.name || 'Процедура', strong: true }));
-  while (procedures.length < 3) procedures.push({ value: '' });
-  const pricing = requestPricing(request);
-  const finance = financeStatus(request);
-  return v2ListEntry({
-    columns: [
-      procedures,
-      [
-        { value: actionStatus(request), strong: true },
-        { value: formatDate(request.date), strong: true },
-        { value: request.from || '', strong: true },
-      ],
-      [
-        { value: money(pricing.total), strong: true },
-        { value: finance.label, strong: true },
-        { value: finance.extra, strong: true },
-      ],
-    ],
-    data: `data-account-history="${index}"`,
-    aria: `Открыть запись ${formatDate(request.date)} ${request.from || ''}`,
-  });
-}
-
 function historyDetailBody(state, request) {
   const pricing = requestPricing(request);
   const payment = requestPayment(request);
@@ -210,21 +173,6 @@ function historyDetailBody(state, request) {
     items: requestProcedures(request).map((item) => ({ label: item?.name || 'Процедура', value: money(item?.cost || 0) })),
     totals,
   });
-}
-
-function selectHistoryRequest(state, request, returnTab = 'history') {
-  state.accountHistoryRequestId = String(request?.id || '');
-  state.accountHistoryRequestMoment = requestMoment(request);
-  state.accountHistoryReturn = returnTab;
-  state.accountTab = 'history-detail';
-  state.accountDeckOpen = false;
-}
-
-function currentHistoryRequest(state) {
-  const rows = Array.isArray(state.accountRecords) ? state.accountRecords : [];
-  return rows.find((request) => String(request?.id || '') === String(state.accountHistoryRequestId || ''))
-    || rows.find((request) => requestMoment(request) === String(state.accountHistoryRequestMoment || ''))
-    || null;
 }
 
 function notificationMessages(feed = {}) {
@@ -266,36 +214,16 @@ function accountPhoto(state) {
   return String(profile.photo || '');
 }
 
-function futureRequests(requests = []) {
-  const now = nowMoment();
-  return (Array.isArray(requests) ? requests : [])
-    .filter((request) => !isCancelled(request) && requestMoment(request) >= now)
-    .sort((a, b) => requestMoment(a).localeCompare(requestMoment(b)));
-}
-
-function visitCard(state, request, index) {
-  const procedures = requestProcedures(request).map((item) => item?.name || '').filter(Boolean).join(', ');
-  return v2RailCard({
-    title: workplaceName(state, request),
-    subtitle: procedures || 'Визит',
-    meta: `${formatDate(request.date)} · ${request.from || ''}`,
-    data: `data-account-upcoming="${index}"`,
-    aria: `Открыть визит ${formatDate(request.date)} ${request.from || ''}`,
-  });
-}
-
 const GLOBAL_ACCOUNT_ROOTS = Object.freeze([
   { id: 'profile', label: 'Профиль' },
   { id: 'journal', label: 'Журнал' },
   { id: 'contacts', label: 'Контакты' },
-  { id: 'history', label: 'История' },
 ]);
 
 function accountRootForTab(state) {
   if (state.accountTab === 'profile' || state.accountTab === 'profile-settings') return 'profile';
   if (state.accountTab === 'journal') return 'journal';
   if (state.accountTab === 'contacts' || state.accountTab === 'contact-detail') return 'contacts';
-  if (state.accountTab === 'history' || state.accountTab === 'history-detail') return 'history';
   return 'journal';
 }
 
@@ -814,14 +742,6 @@ async function renderGlobalProfileSettings(root, state, handlers) {
   openGlobalProfileSettingsMenu(state, handlers);
 }
 
-function globalHomeHeader(state) {
-  return v2Header({
-    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
-    b: 'Обзор',
-    d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
-  });
-}
-
 function accountInvestments(state, status = '') {
   const rows = [];
   for (const relationship of Array.isArray(state.relationships) ? state.relationships : []) {
@@ -1086,29 +1006,6 @@ async function renderGlobalJournal(root, state, handlers) {
   }
   bindWorkspaceInteraction(root, state, handlers);
   bindGlobalChatButton(root, state, handlers);
-}
-
-async function renderGlobalHome(root, state, handlers) {
-  const requests = futureRequests(state.accountRecords || []);
-  const upcoming = requests.length
-    ? v2HorizontalRail(requests.map((request, index) => visitCard(state, request, index)).join(''))
-    : emptyState('Предстоящих визитов нет', 'Новые записи появятся здесь.');
-
-  renderV2Shell(root, state, {
-    header: globalHomeHeader(state),
-    v: { data: 'data-account-profile-settings', aria: 'Настройки профиля' },
-    body: v2Section('Предстоящие визиты', upcoming),
-  });
-  bindWorkspaceInteraction(root, state, handlers);
-  bindGlobalProfileSettingsEntry(root, state, handlers);
-  bindGlobalChatButton(root, state, handlers);
-  root.querySelectorAll('[data-account-upcoming]').forEach((node) => node.addEventListener('click', () => {
-    const request = requests[Number(node.dataset.accountUpcoming)];
-    if (!request) return;
-    selectHistoryRequest(state, request, 'home');
-    state.accountDeckActive = 'history';
-    void handlers.render();
-  }));
 }
 
 function relationshipSearchText(relationship = {}) {
@@ -1617,94 +1514,6 @@ async function renderGlobalContactDetail(root, state, handlers) {
   bindAccountInvestments(layer, root, state, handlers, acceptedInvestments, pendingInvestments, showContactHeader);
 }
 
-async function renderGlobalHistory(root, state, handlers) {
-  const requests = (Array.isArray(state.accountRecords) ? state.accountRecords : [])
-    .slice()
-    .sort((a, b) => requestMoment(a).localeCompare(requestMoment(b)));
-  const header = v2Header({
-    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state), disabled: true },
-    b: 'История',
-    d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
-  });
-  renderV2Shell(root, state, {
-    header,
-    body: requests.length
-      ? v2ListEntries(requests.map((request, index) => historyEntry(request, index)))
-      : emptyState('История пока пустая', 'Здесь появятся ваши записи и визиты.'),
-  });
-  bindWorkspaceInteraction(root, state, handlers);
-  bindGlobalChatButton(root, state, handlers);
-  root.querySelectorAll('[data-account-history]').forEach((node) => node.addEventListener('click', () => {
-    const request = requests[Number(node.dataset.accountHistory)];
-    if (!request) return;
-    selectHistoryRequest(state, request, 'history');
-    state.accountDeckActive = 'history';
-    void handlers.render();
-  }));
-}
-
-async function renderGlobalHistoryDetail(root, state, handlers) {
-  const request = currentHistoryRequest(state);
-  if (!request) {
-    state.accountTab = state.accountHistoryReturn === 'contact-detail' ? 'contact-detail' : (state.accountHistoryReturn === 'home' ? 'home' : 'history');
-    state.accountDeckActive = accountRootForTab(state);
-    await handlers.render();
-    return;
-  }
-
-  const tenantId = String(request?.tenantId || '');
-  const relationship = (Array.isArray(state.relationships) ? state.relationships : [])
-    .find((item) => String(item?.tenantId || '') === tenantId);
-  const title = relationshipTitle(relationship || {});
-  const profile = relationship?.context?.profile || {};
-  const canRepeat = requestProcedures(request).length > 0;
-
-  const header = v2Header({
-    a: { kind: 'avatar', label: title, image: String(profile.photo || '') },
-    b: workplaceName(state, request),
-    d: { kind: 'chat', data: 'data-global-history-chat', aria: 'Чат' },
-  });
-  const body = `${historyDetailBody(state, request)}${canRepeat ? actionBlock(button('Записаться', {
-    data: 'data-global-history-repeat',
-    aria: 'Записаться снова',
-  })) : ''}`;
-
-  renderV2Shell(root, state, {
-    header,
-    v: { data: 'data-global-history-contact-settings', aria: 'Настройки' },
-    body,
-  });
-
-  bindWorkspaceInteraction(root, state, handlers, {
-    onZRight: () => {
-      const returnTab = state.accountHistoryReturn || 'history';
-      state.accountTab = returnTab;
-      state.accountDeckActive = accountRootForTab(state);
-      state.accountHistoryRequestId = '';
-      state.accountHistoryRequestMoment = '';
-      void handlers.render();
-    },
-  });
-
-  root.querySelector('[data-global-history-contact-settings]')?.addEventListener('click', () => {
-    if (!tenantId) return;
-    const layer = mountModal(document.body, modal(settingsPanel([
-      { label: 'Согласия', data: 'data-global-history-consents' },
-    ]), { variant: 'q', title: 'Настройки' }));
-    layer?.querySelector('[data-global-history-consents]')?.addEventListener('click', () => {
-      layer.remove();
-      void openAccountConsentSettings(state, { tenantId });
-    });
-  });
-  root.querySelector('[data-global-history-repeat]')?.addEventListener('click', () => handlers.onStartBooking?.(tenantId, request));
-  root.querySelector('[data-global-history-chat]')?.addEventListener('click', () => {
-    state.accountSelectedChatTenantId = tenantId;
-    state.accountTab = 'messages';
-    state.accountDeckOpen = false;
-    void handlers.render();
-  });
-}
-
 export async function renderGlobalAccount(root, state, callbacks = {}) {
   state.globalAccount = true;
   state.accountTab ||= 'journal';
@@ -1725,8 +1534,5 @@ export async function renderGlobalAccount(root, state, callbacks = {}) {
   if (state.accountTab === 'journal') return renderGlobalJournal(root, state, handlers);
   if (state.accountTab === 'contact-detail') return renderGlobalContactDetail(root, state, handlers);
   if (state.accountTab === 'contacts') return renderGlobalContacts(root, state, handlers);
-  if (state.accountTab === 'history-detail') return renderGlobalHistoryDetail(root, state, handlers);
-  if (state.accountTab === 'history') return renderGlobalHistory(root, state, handlers);
-  if (state.accountTab === 'home') return renderGlobalHome(root, state, handlers);
   return renderGlobalJournal(root, state, handlers);
 }
