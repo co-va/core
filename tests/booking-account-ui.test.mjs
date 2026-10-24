@@ -274,8 +274,8 @@ assert.match(accountShell, /openAccountPasswordSettings/);
 assert.match(accountShell, /openAccountConsentSettings/);
 assert.match(accountShell, /mountModal\(document\.body, modal/);
 assert.doesNotMatch(accountShell, /mountV2Layer\(|v2Layer\(/);
-assert.match(accountShell, /async function renderGlobalHistoryDetail/);
-assert.match(accountShell, /actionBlock\(button\('Записаться', \{[\s\S]*?data: 'data-global-history-repeat'/);
+assert.doesNotMatch(accountShell, /async function renderGlobalHistoryDetail/, 'Standalone History detail renderer must stay physically absent.');
+assert.doesNotMatch(accountShell, /data-global-history-repeat/, 'Standalone History repeat action must stay physically absent; repeat booking is contact-scoped.');
 assert.match(accountShell, /state\.accountSelectedChatTenantId/);
 const rootChatBlock = accountShell.slice(
   accountShell.indexOf('function bindGlobalChatButton'),
