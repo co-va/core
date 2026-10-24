@@ -19,19 +19,20 @@ assert.doesNotMatch(recordFlow, /listAvailableEndTimes|createEvent|break-service
 assert.doesNotMatch(recordFlow, /isTimeRangeAvailable|getTimeUsages|getJournalBreaks|getRecords\(|getDayTime|getDay\(/);
 assert.doesNotMatch(recordFlow, /from ['"]\.\.\/day\.js['"]/);
 
-// Event creation uses canonical Availability with the two shared Time picker fields directly in Z.
+// Event creation uses canonical Availability and the single Shared С/До X owner.
 assert.match(eventCreation, /checkTimeAvailability/);
-assert.match(eventCreation, /timePicker\(\{ label: 'С'/);
-assert.match(eventCreation, /timePicker\(\{ label: 'До'/);
-assert.match(eventCreation, /initTimePickers/);
-assert.doesNotMatch(eventCreation, /openTimeRangeAction/);
+assert.match(eventCreation, /openTimeRangeAction/);
+assert.doesNotMatch(eventCreation, /timePicker\(\{ label: 'С'/);
+assert.doesNotMatch(eventCreation, /timePicker\(\{ label: 'До'/);
+assert.doesNotMatch(eventCreation, /initTimePickers/);
 assert.match(eventCreation, /createEvent/);
 assert.doesNotMatch(eventCreation, /isTimeRangeAvailable|getTimeUsages|getRecordsForDay|getJournalBreaks|listAvailableEndTimes/);
 
-// Event View edits the same Event through canonical Availability and excludeId.
+// Event View edits the same Event through canonical Availability and the same Shared range X.
 assert.match(eventView, /checkTimeAvailability/);
 assert.match(eventView, /excludeId: eventId/);
 assert.match(eventView, /openTimeRangeAction/);
+assert.doesNotMatch(eventView, /timePicker\(\{ label: 'С'|timePicker\(\{ label: 'До'|initTimePickers/);
 assert.doesNotMatch(eventView, /isTimeRangeAvailable|getTimeUsages|getRecordsForDay|getJournalBreaks/);
 
 // Record View must not own a second Record time/edit flow.
