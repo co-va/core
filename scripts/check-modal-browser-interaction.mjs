@@ -32,6 +32,18 @@ for (const [name, engine, contextOptions] of [
         return { x, y, hit: Boolean(hit && (hit === node || node.contains(hit))) };
       });
     });
+    const waitForOwnedTargetPoints = async (selector) => {
+      await page.waitForFunction((value) => {
+        const node = document.querySelector(value);
+        if (!node) return false;
+        const r = node.getBoundingClientRect();
+        return [3, r.height / 2, r.height - 3].every((dy) => {
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + dy);
+          return Boolean(hit && (hit === node || node.contains(hit)));
+        });
+      }, selector, { timeout: 2000 });
+      return targetPoints(selector);
+    };
     const activate = async (point) => {
       if (contextOptions.hasTouch) await page.touchscreen.tap(point.x, point.y);
       else await page.mouse.click(point.x, point.y);
@@ -45,14 +57,20 @@ for (const [name, engine, contextOptions] of [
       const before = await page.locator('[data-modal]').count();
       assert.ok(before > 0, `${name}: no modal to close`);
       const top = page.locator('[data-modal]').last();
-      const zone = await top.locator('[data-v2-layer-gesture-zone]').boundingBox();
-      assert.ok(zone, `${name}: missing swipe strip`);
-      const x = zone.x + zone.width / 2;
-      const y = zone.y + zone.height / 2;
-      await page.mouse.move(x, y);
-      await page.mouse.down();
-      await page.mouse.move(x, y + 100, { steps: 10 });
-      await page.mouse.up();
+      if (contextOptions.hasTouch) {
+        const sheet = await top.locator('.v2-layer').boundingBox();
+        assert.ok(sheet, `${name}: missing modal sheet`);
+        await page.touchscreen.tap(sheet.x + sheet.width / 2, Math.max(1, sheet.y - 20));
+      } else {
+        const zone = await top.locator('[data-v2-layer-gesture-zone]').boundingBox();
+        assert.ok(zone, `${name}: missing swipe strip`);
+        const x = zone.x + zone.width / 2;
+        const y = zone.y + zone.height / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x, y + 100, { steps: 10 });
+        await page.mouse.up();
+      }
       await page.waitForFunction((expected) => document.querySelectorAll('[data-modal]').length === expected, before - 1);
     };
     const tapOrClick = async (locator) => {
@@ -102,7 +120,7 @@ for (const [name, engine, contextOptions] of [
     await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-modal]').count(), 1, `${name}: settings handoff left an extra modal`);
     const checkbox = '[data-service-workplace="test-space"]';
-    const checkboxPoints = await targetPoints(checkbox);
+    const checkboxPoints = await waitForOwnedTargetPoints(checkbox);
     assert.ok(checkboxPoints.every((point) => point.hit), `${name}: workplace checkbox obscured`);
     await activate(checkboxPoints[1]);
     assert.equal(await page.locator('[data-test-selection]').textContent(), '1', `${name}: selection did not update`);
