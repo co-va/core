@@ -147,10 +147,11 @@ assert.match(accountShell, /v2Header\(\{/);
 assert.match(accountShell, /v2Shell\(\{/);
 assert.match(accountShell, /v2CardDeck\(GLOBAL_ACCOUNT_ROOTS/);
 assert.match(accountShell, /v2Section\(/);
-assert.match(accountShell, /v2HorizontalRail\(/);
+assert.doesNotMatch(accountShell, /v2HorizontalRail\(/, 'Retired Overview rail must stay physically absent from the end-user account shell.');
 assert.match(accountShell, /entityVisualCard\(\{/);
 assert.match(accountShell, /data-account-deck-item/);
-assert.match(accountShell, /GLOBAL_ACCOUNT_ROOTS = Object\.freeze\(\[[\s\S]*?id: 'profile', label: 'Профиль'[\s\S]*?id: 'journal', label: 'Журнал'[\s\S]*?id: 'contacts', label: 'Контакты'[\s\S]*?id: 'history', label: 'История'/);
+assert.match(accountShell, /GLOBAL_ACCOUNT_ROOTS = Object\.freeze\(\[[\s\S]*?id: 'profile', label: 'Профиль'[\s\S]*?id: 'journal', label: 'Журнал'[\s\S]*?id: 'contacts', label: 'Контакты'/);
+assert.doesNotMatch(accountShell, /id: 'history', label: 'История'/, 'Standalone History root must stay physically absent.');
 assert.doesNotMatch(accountShell, /GLOBAL_ACCOUNT_ROOTS = Object\.freeze\(\[[\s\S]*?id: 'home', label: 'Обзор'/);
 assert.match(accountShell, /async function renderGlobalProfile\(/);
 assert.match(accountShell, /async function renderGlobalProfileSettings\(/);
@@ -185,7 +186,7 @@ assert.doesNotMatch(accountShell, /label: 'Личные данные', data: 'da
 assert.match(accountShell, /async function renderGlobalContacts\(/);
 assert.match(accountShell, /async function renderGlobalContactDetail\(/);
 assert.match(accountShell, /state\.accountTab = 'contact-detail'/);
-assert.match(accountShell, /async function renderGlobalHistoryDetail\(/);
+assert.doesNotMatch(accountShell, /async function renderGlobalHistoryDetail\(/, 'Standalone History detail renderer must stay physically absent.');
 assert.doesNotMatch(accountShell, /onOpenRelationship: callbacks\.onOpenRelationship/);
 const relationshipCardBlock = accountShell.slice(
   accountShell.indexOf('function relationshipCard'),
@@ -210,13 +211,13 @@ assert.doesNotMatch(contactsBlock, /CONTACT_PROFILE_CARD_APPEARANCE|entity-card-
 
 const contactDetailBlock = accountShell.slice(
   accountShell.indexOf('function confirmDeleteGlobalContact'),
-  accountShell.indexOf('async function renderGlobalHistory'),
+  accountShell.indexOf('export async function renderGlobalAccount'),
 );
 assert.match(contactDetailBlock, /mountV2ZLayer\(root, v2ZLayer\([\s\S]*stack:\s*true/, 'Contact profile must open as stacked Z over Contacts Z1');
 assert.match(contactDetailBlock, /v2Section\('Пространства'/);
 const contactProfileBlock = accountShell.slice(
   accountShell.indexOf('async function renderGlobalContactDetail'),
-  accountShell.indexOf('async function renderGlobalHistory'),
+  accountShell.indexOf('export async function renderGlobalAccount'),
 );
 assert.doesNotMatch(contactProfileBlock, /v2Section\('История'/);
 assert.match(contactProfileBlock, /v2Section\('Программы'/);
@@ -245,17 +246,12 @@ assert.doesNotMatch(accountShell, /async function renderRepresentatives\(/);
 assert.doesNotMatch(accountShell, /async function renderRepresentative\(/);
 assert.doesNotMatch(accountShell, /async function renderHistory\(/);
 assert.doesNotMatch(accountShell, /async function renderMessages\(/);
-assert.doesNotMatch(accountShell, /label: 'Обзор'\s*\},\s*\{ id: 'history'/);
-assert.match(accountShell, /async function renderGlobalHome\([\s\S]*?futureRequests\(state\.accountRecords \|\| \[\]\)/);
+assert.doesNotMatch(accountShell, /id: 'home', label: 'Обзор'/, 'Standalone Overview root must stay physically absent.');
+assert.doesNotMatch(accountShell, /async function renderGlobalHome\(/, 'Standalone Overview renderer must stay physically absent.');
 assert.match(accountShell, /async function renderGlobalContacts\([\s\S]*?const relationships = Array\.isArray\(state\.relationships\)/);
-assert.match(accountShell, /async function renderGlobalHistory\([\s\S]*?state\.accountRecords/);
-const globalHomeBlock = accountShell.slice(
-  accountShell.indexOf('async function renderGlobalHome'),
-  accountShell.indexOf('function contactsBody'),
-);
-assert.doesNotMatch(globalHomeBlock, /relationshipCard\(/);
-assert.doesNotMatch(globalHomeBlock, /v2Section\('Инвестиции'/);
-assert.doesNotMatch(globalHomeBlock, /v2Section\('Предложения инвестиций'/);
+assert.doesNotMatch(accountShell, /async function renderGlobalHistory\(/, 'Standalone History renderer must stay physically absent.');
+assert.doesNotMatch(accountShell, /state\.accountTab === 'home'|state\.accountTab === 'history'|state\.accountTab === 'history-detail'/, 'Retired Overview/History routes must stay physically absent.');
+assert.doesNotMatch(booking, /tab:\s*'home'|\? 'contact-detail' : 'home'/, 'Booking must not route back to retired Overview.');
 assert.doesNotMatch(accountShell, /accountBottomNavigation/);
 assert.doesNotMatch(accountShell, /bindBottomNavigation/);
 assert.match(accountShell, /mountChatThread\(/);
