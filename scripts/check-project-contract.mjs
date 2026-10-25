@@ -125,6 +125,35 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
   if (!alphabet.includes('`ui/ui.js`')) failures.push('ui/ui.js: UI facade is missing from UI_ALPHABET.md');
 }
 
+const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
+const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
+const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
+const userHtml = fs.readFileSync(path.join(root, 'user.html'), 'utf8');
+
+for (const [name, source] of [
+  ['core/runtime/business-state.js', businessStartupSource],
+  ['core/runtime/auxiliary-state.js', auxiliaryStartupSource],
+]) {
+  if (/payload\s*\(\s*await\s+apiRequest\s*\(/.test(source)) {
+    failures.push(`${name}: startup apiRequest must start before Promise.all; inline await serializes network requests`);
+  }
+}
+
+if (!/let\s+allDepositsRequest\s*=\s*null/.test(depositStartupSource)
+  || !/if\s*\(\s*!allDepositsRequest\s*\)/.test(depositStartupSource)
+  || !/return\s+allDepositsRequest/.test(depositStartupSource)) {
+  failures.push('core/loyalty/deposit/data.js: concurrent deposit hydration must be coalesced');
+}
+
+for (const [name, source] of [
+  ['index.html', mainHtml],
+  ['user.html', userHtml],
+]) {
+  if (!source.includes('data-startup-loading') || !source.includes('v2-sticker-screen')) {
+    failures.push(`${name}: initial app shell must render Shared loading state before async startup`);
+  }
+}
+
 const branch = String(
   process.env.GITHUB_EVENT_NAME === 'pull_request'
     ? process.env.GITHUB_BASE_REF || ''
