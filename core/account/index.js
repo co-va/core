@@ -513,3 +513,80 @@ export async function bindAccountTelegramEntry(tenantId, token) {
     'Не удалось привязать Telegram',
   );
 }
+
+export async function getAccountNotifications(tenantId) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/notifications`, { tenantId, auth: true }),
+    'Не удалось загрузить уведомления',
+  );
+}
+
+export async function markAccountNotificationRead(tenantId, notificationId) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/notifications/${encodeURIComponent(notificationId)}/read`, {
+      tenantId,
+      auth: true,
+      method: 'POST',
+    }),
+    'Не удалось открыть уведомление',
+  );
+}
+
+export async function getAccountChat(tenantId) {
+  const payload = await jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/chat`, { tenantId, auth: true }),
+    'Не удалось загрузить чат',
+  );
+  await getGlobalAccountUnreadSummary().catch(() => null);
+  return payload;
+}
+
+export async function getAccountChatSettings(tenantId) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/chat/settings`, { tenantId, auth: true }),
+    'Не удалось загрузить настройки чата',
+  );
+}
+
+export async function sendAccountChatMessage(tenantId, body, attachments = []) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/chat/messages`, {
+      tenantId,
+      auth: true,
+      method: 'POST',
+      body: JSON.stringify({ body: String(body || '').trim(), attachments: Array.isArray(attachments) ? attachments : [] }),
+    }),
+    'Не удалось отправить сообщение',
+  );
+}
+
+export async function getWebPushConfiguration(tenantId) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/config`, { tenantId, auth: true }),
+    'Не удалось проверить Push',
+  );
+}
+
+export async function saveWebPushSubscription(tenantId, subscription) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/subscription`, {
+      tenantId,
+      auth: true,
+      method: 'PUT',
+      body: JSON.stringify({ subscription }),
+    }),
+    'Не удалось подключить Push',
+  );
+}
+
+export async function deleteWebPushSubscription(tenantId, endpoint) {
+  return jsonResponse(
+    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/subscription`, {
+      tenantId,
+      auth: true,
+      method: 'DELETE',
+      body: JSON.stringify({ endpoint: String(endpoint || '') }),
+    }),
+    'Не удалось отключить Push',
+  );
+}
