@@ -125,8 +125,10 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
   if (!alphabet.includes('`ui/ui.js`')) failures.push('ui/ui.js: UI facade is missing from UI_ALPHABET.md');
 }
 
+const coreSource = fs.readFileSync(path.join(root, 'core.js'), 'utf8');
 const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
+const documentArchiveSource = fs.readFileSync(path.join(root, 'core/runtime/tenant-document-archive.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
 const userEntrySource = fs.readFileSync(path.join(root, 'online-booking/user-entry.js'), 'utf8');
 const bookingAccessSource = fs.readFileSync(path.join(root, 'online-booking/access.js'), 'utf8');
@@ -135,23 +137,38 @@ const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payme
 const businessControllerSource = fs.readFileSync(path.join(root, 'server/src/business-state/business-state.controller.ts'), 'utf8');
 const userHtml = fs.readFileSync(path.join(root, 'user.html'), 'utf8');
 
-for (const [name, source] of [
-  ['core/runtime/business-state.js', businessStartupSource],
-  ['core/runtime/auxiliary-state.js', auxiliaryStartupSource],
-]) {
-  if (/payload\s*\(\s*await\s+apiRequest\s*\(/.test(source)) {
-    failures.push(`${name}: startup apiRequest must start before Promise.all; inline await serializes network requests`);
-  }
-  if (/await\s+loadAllDeposits\s*\(/.test(source)
-    || /Promise\.all\s*\([\s\S]{0,500}(?:loadAllDeposits\s*\(|depositsRequest)/.test(source)) {
-    failures.push(`${name}: deposit hydration must not block the first Journal render`);
-  }
+const authenticatedStart = coreSource.slice(
+  coreSource.indexOf('async function renderAuthenticated'),
+  coreSource.indexOf('function renderPasswordResetRequest'),
+);
+if (authenticatedStart.includes('loadTenantDocumentArchive()')
+  || authenticatedStart.includes('loadAuxiliaryState()')
+  || authenticatedStart.includes('scheduleRknGuideSync()')) {
+  failures.push('core.js: first Journal render must not start documents, auxiliary state, or RKN document sync');
+}
+if (!authenticatedStart.includes('loadFinanceState()')) {
+  failures.push('core.js: Journal startup must load finance without loading auxiliary state');
+}
+if (!coreSource.includes('async function ensureWorkspaceState(section)')
+  || !coreSource.includes('await loadAuxiliaryState()')
+  || !coreSource.includes('await loadTenantDocumentArchive()')) {
+  failures.push('core.js: non-Journal data must load on demand from the existing workspace render path');
+}
+if (!auxiliaryStartupSource.includes('export function loadFinanceState()')
+  || !auxiliaryStartupSource.includes('export function loadAuxiliaryState()')) {
+  failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separate owners');
+}
+if (businessStartupSource.includes('loadAllDeposits(') || auxiliaryStartupSource.includes('loadAllDeposits(')) {
+  failures.push('startup runtime: deposits must not load during authenticated startup');
+}
+if (!documentArchiveSource.includes('return initialArchiveLoad;')) {
+  failures.push('tenant document archive: on-demand load must be awaitable by the section that requested it');
 }
 
 if (!/let\s+allDepositsRequest\s*=\s*null/.test(depositStartupSource)
   || !/if\s*\(\s*!allDepositsRequest\s*\)/.test(depositStartupSource)
   || !/return\s+allDepositsRequest/.test(depositStartupSource)) {
-  failures.push('core/loyalty/deposit/data.js: concurrent deposit hydration must be coalesced');
+  failures.push('core/loyalty/deposit/data.js: duplicate deposit reads must share one in-flight request');
 }
 
 for (const [name, source] of [
