@@ -1,6 +1,5 @@
 import { apiRequest } from '../auth.js';
 import { hydrateCashEntitiesFromServer, hydrateFinanceFromServer, hydrateWalletsFromServer } from '../finance/index.js';
-import { loadAllDeposits } from '../loyalty/deposit/data.js';
 import { hydrateProductsFromServer } from '../../core/service/products/data.js';
 import { hydrateTagsFromServer } from '../../settings/tags/data.js';
 import { hydrateCardAppearanceTemplates } from '../card-appearance-templates.js';
@@ -30,18 +29,14 @@ function hydrateAuxiliary(remote) {
 }
 
 export async function loadAuxiliaryState() {
-  const auxiliaryRequest = apiRequest('/auxiliary-state')
-    .then((response) => payload(response, 'Не удалось загрузить связанные данные'));
-  const financeRequest = apiRequest('/finance')
-    .then((response) => payload(response, 'Не удалось загрузить Финансы'));
-
-  void loadAllDeposits()
-    .catch((error) => console.error('Deferred deposit hydration failed', error));
-
-  const finance = await financeRequest;
+  const financeResponse = await apiRequest('/finance');
+  const finance = await payload(financeResponse, 'Не удалось загрузить Финансы');
   hydrateFinanceFromServer(finance);
-  void auxiliaryRequest
+
+  void apiRequest('/auxiliary-state')
+    .then((response) => payload(response, 'Не удалось загрузить связанные данные'))
     .then(hydrateAuxiliary)
     .catch((error) => console.error('Deferred auxiliary state load failed', error));
+
   return finance;
 }
