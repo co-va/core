@@ -11,11 +11,9 @@ export function inventoryNavigationItems() {
 
 export async function renderInventorySection(root, section = 'stock') {
   const target = INVENTORY_NAVIGATION.some((item) => item.id === section) ? section : 'stock';
-  const [{ renderInventory }, { enhanceInventoryExcel }] = await Promise.all([
-    import('./inventory.js'),
-    import('./excel-v2.js'),
-  ]);
+  const { renderInventory } = await import('./inventory.js');
   const cleanup = await renderInventory(root, target);
+  const { enhanceInventoryExcel } = await import('./excel-v2.js');
   enhanceInventoryExcel(root, target);
   return cleanup;
 }
