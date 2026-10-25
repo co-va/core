@@ -4,7 +4,14 @@ import { PrismaService } from '../prisma.service';
 
 const DEMO_DAYS = 14;
 
-type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED';
+type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED';
+
+type CommercialPaidState = {
+  startsAt: Date | null;
+  endsAt: Date | null;
+  expired: boolean;
+  paidCapabilityKeys: Set<string>;
+};
 
 export type ResolvedCapability = {
   key: string;
@@ -23,6 +30,9 @@ export type ResolvedTenantAccess = {
   demoExpiresAt: string;
   liveRequestedAt: string;
   liveApprovedAt: string;
+  paidAccessStartsAt: string;
+  paidAccessEndsAt: string;
+  paidAccessExpired: boolean;
   plan: { id: string; key: string; name: string } | null;
   capabilityOrder: string[];
   capabilities: ResolvedCapability[];
@@ -248,6 +258,51 @@ export class SaasAccessService {
     });
   }
 
+  private async commercialPaidState(tenantId: string): Promise<CommercialPaidState> {
+    const [terms] = await this.prisma.$queryRawUnsafe<Array<{ paidAccessStartsAt: Date | null; paidAccessEndsAt: Date | null }>>(
+      `SELECT "paidAccessStartsAt","paidAccessEndsAt" FROM "CommercialTenantTerms" WHERE "tenantId"=$1 LIMIT 1`,
+      tenantId,
+    );
+    const startsAt = terms?.paidAccessStartsAt || null;
+    const endsAt = terms?.paidAccessEndsAt || null;
+    const expired = Boolean(endsAt && endsAt.getTime() <= Date.now());
+    if (!expired) return { startsAt, endsAt, expired: false, paidCapabilityKeys: new Set() };
+
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ capabilityKey: string }>>(
+      `WITH RECURSIVE
+       free_products("id") AS (
+         SELECT "id" FROM "CommercialProduct" WHERE "isActive"=true AND "isSaleable"=true AND "isFree"=true
+         UNION
+         SELECT inclusion."childProductId"
+         FROM "CommercialProductInclusion" inclusion
+         JOIN free_products parent ON parent."id"=inclusion."parentProductId"
+       ),
+       paid_products("id") AS (
+         SELECT "id" FROM "CommercialProduct" WHERE "isActive"=true AND "isSaleable"=true AND "isFree"=false
+         UNION
+         SELECT inclusion."childProductId"
+         FROM "CommercialProductInclusion" inclusion
+         JOIN paid_products parent ON parent."id"=inclusion."parentProductId"
+       ),
+       free_capabilities AS (
+         SELECT DISTINCT link."capabilityKey" FROM "CommercialProductCapability" link JOIN free_products product ON product."id"=link."productId"
+       ),
+       paid_capabilities AS (
+         SELECT DISTINCT link."capabilityKey" FROM "CommercialProductCapability" link JOIN paid_products product ON product."id"=link."productId"
+       )
+       SELECT paid."capabilityKey"
+       FROM paid_capabilities paid
+       LEFT JOIN free_capabilities free ON free."capabilityKey"=paid."capabilityKey"
+       WHERE free."capabilityKey" IS NULL`,
+    );
+    return {
+      startsAt,
+      endsAt,
+      expired: true,
+      paidCapabilityKeys: new Set(rows.map((row) => row.capabilityKey)),
+    };
+  }
+
   async resolveCapability(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {
     const capability = await this.prisma.capability.findUnique({
       where: { key: capabilityKey },
@@ -299,6 +354,11 @@ export class SaasAccessService {
       return this.demoValue(capability.key, capability.valueType);
     }
     if (this.demoExpired(access)) return this.demoExpiredValue(capability.key, capability.valueType);
+
+    const commercialPaid = await this.commercialPaidState(tenantId);
+    if (!access.isOwnerBook && access.commercialMode === 'LIVE' && commercialPaid.expired && commercialPaid.paidCapabilityKeys.has(capability.key)) {
+      return this.commercialExpiredValue(capability.key, capability.valueType);
+    }
 
     if (capability.valueType === CapabilityValueType.BOOLEAN) {
       if (override && override.enabled !== null) {
@@ -390,6 +450,7 @@ export class SaasAccessService {
       throw new NotFoundException('Состояние рабочего пространства не настроено');
     }
 
+    const commercialPaid = await this.commercialPaidState(tenantId);
     const planValues = new Map(access.plan?.capabilityValues.map((value) => [value.capabilityId, value]) || []);
     const overrides = new Map(access.overrides.map((value) => [value.capabilityId, value]));
     const customOrder = new Map(access.capabilityOrder.map((value, index) => [value.capabilityId, index]));
@@ -424,6 +485,10 @@ export class SaasAccessService {
         return this.demoValue(capability.key, capability.valueType);
       }
       if (this.demoExpired(access)) return this.demoExpiredValue(capability.key, capability.valueType);
+
+      if (!access.isOwnerBook && access.commercialMode === 'LIVE' && commercialPaid.expired && commercialPaid.paidCapabilityKeys.has(capability.key)) {
+        return this.commercialExpiredValue(capability.key, capability.valueType);
+      }
 
       if (capability.valueType === CapabilityValueType.BOOLEAN) {
         if (override && override.enabled !== null) {
@@ -495,6 +560,9 @@ export class SaasAccessService {
       demoExpiresAt: access.demoExpiresAt?.toISOString() || '',
       liveRequestedAt: access.liveRequestedAt?.toISOString() || '',
       liveApprovedAt: access.liveApprovedAt?.toISOString() || '',
+      paidAccessStartsAt: commercialPaid.startsAt?.toISOString() || '',
+      paidAccessEndsAt: commercialPaid.endsAt?.toISOString() || '',
+      paidAccessExpired: commercialPaid.expired,
       plan: access.plan ? { id: access.plan.id, key: access.plan.key, name: access.plan.name } : null,
       capabilityOrder: capabilities.map((capability) => capability.key),
       capabilities: resolved,
@@ -524,6 +592,13 @@ export class SaasAccessService {
       return { key, valueType, enabled: false, limit: null, source: 'DEMO_EXPIRED' };
     }
     return { key, valueType, enabled: null, limit: 0, source: 'DEMO_EXPIRED' };
+  }
+
+  private commercialExpiredValue(key: string, valueType: CapabilityValueType): ResolvedCapability {
+    if (valueType === CapabilityValueType.BOOLEAN) {
+      return { key, valueType, enabled: false, limit: null, source: 'COMMERCIAL_EXPIRED' };
+    }
+    return { key, valueType, enabled: null, limit: 0, source: 'COMMERCIAL_EXPIRED' };
   }
 
   private ownerValue(key: string, valueType: CapabilityValueType): ResolvedCapability {
