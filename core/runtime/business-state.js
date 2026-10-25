@@ -26,21 +26,15 @@ async function payload(response, fallback) {
 
 export async function loadBusinessState() {
   setBusinessServerReady(false);
-
-  const businessResponse = await apiRequest('/business-state');
-  const remote = await payload(businessResponse, 'Не удалось загрузить People, UEI и Записи');
-  const eventsResponse = await apiRequest('/events');
-  const events = await payload(eventsResponse, 'Не удалось загрузить события');
-  const notesResponse = await apiRequest('/notes');
-  const notes = await payload(notesResponse, 'Не удалось загрузить заметки');
-
+  const response = await apiRequest('/business-state/journal');
+  const remote = await payload(response, 'Не удалось загрузить данные Журнала');
   hydratePeopleFromServer(Array.isArray(remote.people) ? clone(remote.people) : []);
   hydrateUEIFromServer(normalizeUEI(remote.uei));
   hydrateRecordStateFromServer({
     records: Array.isArray(remote.records) ? clone(remote.records) : [],
     recordEvents: Array.isArray(remote.recordEvents) ? clone(remote.recordEvents) : [],
   });
-  hydrateEventsFromServer(Array.isArray(events) ? clone(events) : []);
-  hydrateNotesFromServer(Array.isArray(notes) ? clone(notes) : []);
+  hydrateEventsFromServer(Array.isArray(remote.events) ? clone(remote.events) : []);
+  hydrateNotesFromServer(Array.isArray(remote.notes) ? clone(remote.notes) : []);
   setBusinessServerReady(true);
 }
