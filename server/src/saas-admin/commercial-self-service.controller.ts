@@ -152,7 +152,7 @@ export class CommercialSelfServiceController {
       discountPercent: current.terms.discountPercent,
       freeForever: current.terms.freeForever,
       freeUntil: current.terms.freeUntil,
-    }, null);
+    }, null, false);
 
     const orders = await this.commercial.createOrderSnapshot(tenantId, null) as CommercialOrder[];
     const order = orders[0] || null;
@@ -168,6 +168,7 @@ export class CommercialSelfServiceController {
       };
     }
 
+    await this.commercial.applySelectedCapabilities(tenantId);
     const transition = await this.access.requestLive(tenantId, platformAccountId);
     return {
       requiresPayment: false,
