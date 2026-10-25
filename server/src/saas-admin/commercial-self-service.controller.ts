@@ -35,7 +35,7 @@ function normalizedSelection(products: CatalogProduct[], requested: string[]) {
 
   // Текущие бесплатные дополнительные инструменты входят в LIVE автоматически.
   for (const product of products) {
-    if (product.priceMinor === 0) selected.add(product.key);
+    if (product.isFree) selected.add(product.key);
   }
 
   const descendants = (key: string, target = new Set<string>()) => {
@@ -78,7 +78,7 @@ export class CommercialSelfServiceController {
     return {
       ...commercial,
       baseProducts: catalogProducts
-        .filter((product) => product.isActive && !product.isSaleable && product.priceMinor === 0)
+        .filter((product) => product.isActive && !product.isSaleable && product.isFree)
         .map((product) => ({
           key: product.key,
           name: product.name,
@@ -91,7 +91,7 @@ export class CommercialSelfServiceController {
           ...product,
           description: source?.description || '',
           includedProductKeys: (source?.includedProducts || []).map((item) => item.key),
-          selected: Boolean(product.selected || product.priceMinor === 0),
+          selected: Boolean(product.selected || source?.isFree),
           includedProducts: source?.includedProducts || [],
         };
       }),
