@@ -70,14 +70,14 @@ function pendingContent(commercial) {
   return `
     <div class="modal-title">
       <h2>Ожидает оплаты</h2>
-      <p>Сумма зафиксирована. LIVE включится после подтверждения оплаты и отправки чека.</p>
+      <p>Бесплатный LIVE уже работает. Оплаченные инструменты включатся после подтверждения оплаты и отправки чека.</p>
     </div>
     ${v2Section('Счёт', `
       <div><strong>${escapeHtml(rubles(order.totalMinor || commercial.quote?.totalMinor || 0))}</strong></div>
-      <p>Оплата выполняется по полученным реквизитам. После оплаты администратор сформирует чек в «Мой налог» и отправит его на ваш email.</p>
+      <p>Счёт отправлен на email. Пока оплата подтверждается, можно продолжать работать в бесплатном LIVE.</p>
     `)}
     <p class="form-error" data-commercial-error></p>
-    ${actionBlock(button('Проверить оплату', { data:'data-commercial-check' }))}
+    ${actionBlock(button('Продолжить работать', { data:'data-commercial-check' }))}
   `;
 }
 
@@ -122,9 +122,9 @@ function bindPendingFlow(layer, finish) {
         });
         return;
       }
-      if (error) error.textContent = 'Оплата ещё не подтверждена.';
+      if (error) error.textContent = 'Не удалось открыть бесплатный LIVE.';
     } catch (checkError) {
-      if (error) error.textContent = checkError instanceof Error ? checkError.message : 'Не удалось проверить оплату';
+      if (error) error.textContent = checkError instanceof Error ? checkError.message : 'Не удалось проверить LIVE';
     } finally {
       if (control.isConnected) control.disabled = false;
     }
@@ -167,11 +167,11 @@ function bindSelectionFlow(layer, commercial, finish) {
     const summaryNode = layer.querySelector('[data-commercial-summary]');
     const confirmNode = layer.querySelector('[data-commercial-confirm]');
     if (totalNode) totalNode.textContent = rubles(total);
-    if (confirmNode) confirmNode.textContent = total > 0 ? 'Выставить счёт' : 'Начать LIVE';
+    if (confirmNode) confirmNode.textContent = total > 0 ? 'Начать LIVE · получить счёт' : 'Начать LIVE';
     if (summaryNode) {
       const paidCount = directKeys.filter((key) => !byKey.get(key)?.isFree).length;
       summaryNode.textContent = paidCount
-        ? `Выбрано дополнительных инструментов: ${paidCount}. После подтверждения сумма будет зафиксирована в счёте.`
+        ? `Выбрано дополнительных инструментов: ${paidCount}. Бесплатный LIVE включится сразу, счёт придёт на email, платные инструменты — после оплаты.`
         : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.';
     }
   };
@@ -196,6 +196,11 @@ function bindSelectionFlow(layer, commercial, finish) {
         method:'POST',
         body:JSON.stringify({ productKeys: directSelection(products, manualSelected) }),
       });
+      if (payload?.requiresPayment && payload?.access?.commercialMode === 'LIVE') {
+        layer.v2Close?.();
+        finish(payload);
+        return;
+      }
       if (payload?.requiresPayment) {
         const current = payload.commercial || commercial;
         current.order = payload.order || current.order;
