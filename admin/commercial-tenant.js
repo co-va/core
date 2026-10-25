@@ -27,6 +27,17 @@ function moment(value) {
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
+function accessPeriodText(commercial) {
+  const terms = commercial?.terms || {};
+  if (terms.freeForever || Number(terms.discountPercent || 0) >= 100) return 'Бесплатный доступ: без срока.';
+  const freeUntil = new Date(terms.freeUntil || 0).getTime();
+  if (Number.isFinite(freeUntil) && freeUntil >= Date.now()) return `Бесплатный доступ до: ${moment(terms.freeUntil)}.`;
+  if (terms.paidAccessEndsAt) {
+    return `Платные инструменты: ${moment(terms.paidAccessStartsAt)} — ${moment(terms.paidAccessEndsAt)}.`;
+  }
+  return 'Платный период: не активирован.';
+}
+
 async function request(path = '', options = {}) {
   const response = await apiRequest(`/saas-admin/commercial-tenants${path}`, options);
   const payload = await response.json().catch(() => ({}));
@@ -54,11 +65,11 @@ function receiptAction(order) {
       : order.receiptFileName
         ? `Файл: ${escapeHtml(order.receiptFileName)}`
         : '';
-    return `<div class="admin-service-note">Оплата: ${escapeHtml(moment(order.paidAt))}<br>Чек отправлен: ${escapeHtml(moment(order.receiptSentAt))} · ${escapeHtml(order.receiptSentTo || '')}${receipt ? `<br>${receipt}` : ''}</div>`;
+    return `<div class="admin-service-note">Оплата: ${escapeHtml(moment(order.paidAt))}<br>Чек отправлен: ${escapeHtml(moment(order.receiptSentAt))} · ${escapeHtml(order.receiptSentTo || '')}${order.accessEndsAt ? `<br>Платные инструменты до: ${escapeHtml(moment(order.accessEndsAt))}` : ''}${receipt ? `<br>${receipt}` : ''}</div>`;
   }
   const label = status === 'PENDING'
-    ? 'Оплата получена · отправить чек · включить LIVE'
-    : 'Повторить отправку чека · включить LIVE';
+    ? 'Оплата получена · отправить чек · включить платные инструменты'
+    : 'Повторить отправку чека';
   return `
     <label class="admin-field">
       <span>PDF / фото / скрин чека</span>
@@ -154,7 +165,8 @@ function bindOrderActions(section, tenantId) {
         bindOrderActions(section, tenantId);
         if (message) {
           const sentTo = result?.receipt?.sentTo ? ` на ${result.receipt.sentTo}` : '';
-          message.textContent = `Оплата подтверждена. Чек отправлен${sentTo}. LIVE включён.`;
+          const paidUntil = result?.access?.paidAccessEndsAt ? ` до ${moment(result.access.paidAccessEndsAt)}` : '';
+          message.textContent = `Оплата подтверждена. Чек отправлен${sentTo}. Платные инструменты включены${paidUntil}.`;
         }
       } catch (error) {
         if (message) {
@@ -201,7 +213,7 @@ async function enhanceDrawer(drawer, tenantId) {
         <span>Скидка <strong data-commercial-tenant-effective-discount>${escapeHtml(commercial.quote?.effectiveDiscountPercent || 0)}%</strong></span>
         <span>Итого <strong data-commercial-tenant-total>${escapeHtml(rubles(commercial.quote?.totalMinor))}</strong></span>
       </div>
-      <p class="admin-service-note">Начало платного периода: ${escapeHtml(moment(commercial.terms?.livePaidStartsAt))}</p>
+      <p class="admin-service-note">${escapeHtml(accessPeriodText(commercial))}</p>
       <div class="admin-inline-actions">
         <button type="button" class="admin-button" data-commercial-tenant-save>Сохранить условия</button>
         <button type="button" class="admin-button secondary" data-commercial-tenant-order>Зафиксировать расчёт</button>
