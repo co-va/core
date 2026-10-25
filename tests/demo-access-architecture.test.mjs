@@ -9,6 +9,7 @@ const accessController = source('server/src/saas-access/saas-access.controller.t
 const coreAccess = source('core/access.js');
 const commercialFlow = source('core/commercial-flow.js');
 const commercialSelfService = source('server/src/saas-admin/commercial-self-service.controller.ts');
+const commercialTenant = source('server/src/saas-admin/commercial-tenant.service.ts');
 const registrationDocuments = source('server/src/document-registry/registration-document.service.ts');
 const invitation = source('server/src/tenant-invitation/tenant-invitation.service.ts');
 const profile = source('core/profile/profile.js');
@@ -55,16 +56,18 @@ assert.match(commercialFlow, /\/saas-commercial\/confirm-live/);
 assert.match(commercialFlow, /Переход в LIVE/);
 assert.match(commercialFlow, /Дополнительные инструменты/);
 assert.match(commercialFlow, /Тариф/);
-assert.match(commercialFlow, /priceMinor \|\| 0\) === 0/);
+assert.match(commercialFlow, /product\.isFree/);
 assert.match(commercialFlow, /selectedDescendants/);
 assert.match(commercialFlow, /directSelection/);
 
 assert.match(commercialSelfService, /@Controller\('saas-commercial'\)/);
 assert.match(commercialSelfService, /@Post\('confirm-live'\)/);
-assert.match(commercialSelfService, /product\.priceMinor === 0/);
+assert.match(commercialSelfService, /product\.isFree/);
 assert.match(commercialSelfService, /includedProducts/);
 assert.match(commercialSelfService, /createOrderSnapshot/);
 assert.match(commercialSelfService, /requestLive\(tenantId, platformAccountId\)/);
+assert.match(commercialTenant, /product\.isFree \? 0/);
+assert.match(commercialTenant, /effectivePriceMinor = product\.isFree \? 0 : product\.priceMinor/);
 
 assert.match(registrationDocuments, /requiredForRegistration/);
 assert.match(registrationDocuments, /marketing-consent/);
