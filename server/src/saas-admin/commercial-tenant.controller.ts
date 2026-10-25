@@ -37,4 +37,19 @@ export class CommercialTenantController {
   orders(@Param('tenantId') tenantId: string) {
     return this.commercial.orderHistory(tenantId);
   }
+
+  @Post(':tenantId/orders/:orderId/complete-payment')
+  completePayment(
+    @Req() request: AdminRequest,
+    @Param('tenantId') tenantId: string,
+    @Param('orderId') orderId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.commercial.completeManualPayment(
+      tenantId,
+      orderId,
+      body?.receiptUrl,
+      request.platformAdminId!,
+    );
+  }
 }
