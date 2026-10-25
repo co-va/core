@@ -39,8 +39,30 @@ function eventLabel(type) {
     TENANT_COMMERCIAL_TERMS_UPDATED: 'Изменены условия пользователя',
     COMMERCIAL_ORDER_CREATED: 'Зафиксирован расчёт',
     PAYMENT_RECORDED: 'Зафиксирована оплата',
+    COMMERCIAL_RECEIPT_SENT: 'Чек отправлен',
     LIVE_PAID_PERIOD_STARTED: 'Начался платный период',
   })[type] || type;
+}
+
+function receiptAction(order) {
+  const totalMinor = Number(order.totalMinor || 0);
+  const status = String(order.status || '');
+  if (totalMinor <= 0 || (status !== 'PENDING' && status !== 'PAID')) return '';
+  if (order.receiptSentAt) {
+    const receipt = order.receiptUrl
+      ? `<a href="${escapeHtml(order.receiptUrl)}" target="_blank" rel="noopener noreferrer">Открыть чек</a>`
+      : '';
+    return `<div class="admin-service-note">Оплата: ${escapeHtml(moment(order.paidAt))}<br>Чек отправлен: ${escapeHtml(moment(order.receiptSentAt))} · ${escapeHtml(order.receiptSentTo || '')}${receipt ? `<br>${receipt}` : ''}</div>`;
+  }
+  const label = status === 'PENDING'
+    ? 'Оплата получена · отправить чек · включить LIVE'
+    : 'Повторить отправку чека · включить LIVE';
+  return `
+    <label class="admin-field">
+      <span>Ссылка на чек из «Мой налог»</span>
+      <input type="url" inputmode="url" placeholder="https://..." value="${escapeHtml(order.receiptUrl || '')}" data-commercial-receipt-url="${escapeHtml(order.id)}">
+    </label>
+    <button type="button" class="admin-button" data-commercial-complete-payment="${escapeHtml(order.id)}">${escapeHtml(label)}</button>`;
 }
 
 function orderRows(orders) {
@@ -48,7 +70,11 @@ function orderRows(orders) {
   return `<div class="commercial-tenant-history">${orders.slice(0, 8).map((order) => `
     <div class="commercial-tenant-history-row">
       <span>${escapeHtml(moment(order.createdAt))}</span>
-      <div><strong>${escapeHtml(order.status)}</strong><div>${escapeHtml(rubles(order.subtotalMinor))} → ${escapeHtml(rubles(order.totalMinor))}</div></div>
+      <div>
+        <strong>${escapeHtml(order.status)}</strong>
+        <div>${escapeHtml(rubles(order.subtotalMinor))} → ${escapeHtml(rubles(order.totalMinor))}</div>
+        ${receiptAction(order)}
+      </div>
     </div>`).join('')}</div>`;
 }
 
@@ -84,6 +110,43 @@ function updateQuote(section) {
   if (subtotalNode) subtotalNode.textContent = rubles(subtotal);
   if (discountNode) discountNode.textContent = `${effective}%`;
   if (totalNode) totalNode.textContent = rubles(total);
+}
+
+function bindOrderActions(section, tenantId) {
+  section.querySelectorAll('[data-commercial-complete-payment]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const orderId = String(button.dataset.commercialCompletePayment || '');
+      const input = section.querySelector(`[data-commercial-receipt-url="${CSS.escape(orderId)}"]`);
+      const receiptUrl = String(input?.value || '').trim();
+      const message = section.querySelector('[data-commercial-tenant-message]');
+      button.disabled = true;
+      if (message) {
+        message.textContent = '';
+        message.classList.remove('error');
+      }
+      try {
+        const result = await request(`/${encodeURIComponent(tenantId)}/orders/${encodeURIComponent(orderId)}/complete-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receiptUrl }),
+        });
+        const orders = await request(`/${encodeURIComponent(tenantId)}/orders`);
+        const host = section.querySelector('[data-commercial-tenant-orders]');
+        if (host) host.innerHTML = orderRows(orders);
+        bindOrderActions(section, tenantId);
+        if (message) {
+          const sentTo = result?.receipt?.sentTo ? ` на ${result.receipt.sentTo}` : '';
+          message.textContent = `Оплата подтверждена. Чек отправлен${sentTo}. LIVE включён.`;
+        }
+      } catch (error) {
+        if (message) {
+          message.textContent = error instanceof Error ? error.message : 'Не удалось завершить оплату';
+          message.classList.add('error');
+        }
+        button.disabled = false;
+      }
+    });
+  });
 }
 
 async function enhanceDrawer(drawer, tenantId) {
@@ -126,7 +189,7 @@ async function enhanceDrawer(drawer, tenantId) {
         <button type="button" class="admin-button secondary" data-commercial-tenant-order>Зафиксировать расчёт</button>
       </div>
       <p class="admin-inline-message" data-commercial-tenant-message></p>
-      <details class="commercial-tenant-details"><summary>Расчёты и покупки</summary><div data-commercial-tenant-orders>${orderRows(orders)}</div></details>
+      <details class="commercial-tenant-details" open><summary>Расчёты и покупки</summary><div data-commercial-tenant-orders>${orderRows(orders)}</div></details>
       <details class="commercial-tenant-details"><summary>История действий</summary>${auditRows(commercial.audit)}</details>`;
 
     section.querySelectorAll('[data-commercial-tenant-product]').forEach((button) => {
@@ -192,6 +255,7 @@ async function enhanceDrawer(drawer, tenantId) {
       try {
         const ordersUpdated = await request(`/${encodeURIComponent(tenantId)}/orders`, { method: 'POST' });
         section.querySelector('[data-commercial-tenant-orders]').innerHTML = orderRows(ordersUpdated);
+        bindOrderActions(section, tenantId);
         message.textContent = 'Расчёт зафиксирован в истории.';
       } catch (error) {
         message.textContent = error instanceof Error ? error.message : 'Не удалось зафиксировать расчёт';
@@ -200,6 +264,8 @@ async function enhanceDrawer(drawer, tenantId) {
         button.disabled = false;
       }
     });
+
+    bindOrderActions(section, tenantId);
   } catch (error) {
     section.innerHTML = `<h4>Коммерческие условия</h4><p class="admin-error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
   }
