@@ -192,16 +192,21 @@ export class PlatformNoticeService {
       select: { platformAccountId: true },
     });
     if (!membership) return null;
-    return this.prisma.platformNotice.create({
+    const sourceMetadata = input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
+      ? input.metadata as Record<string, unknown>
+      : {};
+    const notice = await this.prisma.platformNotice.create({
       data: {
         tenantId,
         platformAccountId: membership.platformAccountId,
         type: input.type,
         title: input.title,
         body: input.body || '',
-        metadata: json(input.metadata),
+        metadata: json({ url: '/', ...sourceMetadata }),
       },
     });
+    await this.dispatchPush(membership.platformAccountId, notice).catch(() => ({ sent: 0, failed: 0 }));
+    return notice;
   }
 
   async pushToTenantOwner(

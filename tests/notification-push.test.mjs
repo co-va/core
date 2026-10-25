@@ -113,6 +113,8 @@ assert.match(platformPushMigration, /PlatformPushSubscription/);
 assert.match(platformPushMigration, /PlatformAccount/);
 assert.match(platformNoticeService, /createForTenantOwner/);
 assert.match(platformNoticeService, /webpush\.sendNotification/);
+assert.match(platformNoticeService, /metadata: json\(\{ url: '\/', \.\.\.sourceMetadata \}\)/);
+assert.match(platformNoticeService, /dispatchPush\(membership\.platformAccountId, notice\)\.catch/);
 assert.match(platformNoticeController, /push\/configuration/);
 assert.match(platformNoticeController, /push\/subscription/);
 assert.match(platformNoticeController, /@Get\('push\/subscription'\)/);
@@ -122,6 +124,14 @@ assert.match(platformNoticesUi, /platform-notices\/push\/subscription\?endpoint=
 assert.match(platformNoticesUi, /enablePlatformPush/);
 assert.match(platformNoticesUi, /disablePlatformPush/);
 assert.match(platformNoticesUi, /intervalMs = 15_000/);
+assert.match(platformNoticesUi, /data-platform-push-enable/);
+assert.match(platformNoticesUi, /Уведомления на телефоне/);
+assert.match(platformNoticesUi, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
+const enablePushSource = platformNoticesUi.slice(
+  platformNoticesUi.indexOf('export async function enablePlatformPush'),
+  platformNoticesUi.indexOf('export async function disablePlatformPush'),
+);
+assert.ok(enablePushSource.indexOf('Notification.requestPermission()') < enablePushSource.indexOf('platformPushConfiguration()'), 'Push permission must be requested from the direct user gesture before async configuration work');
 assert.match(onlineBookingModule, /PlatformNoticeModule/);
 assert.match(onlineBookingController, /PlatformNoticeService/);
 assert.match(onlineBookingController, /createForTenantOwner\(tenantId/);
