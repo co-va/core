@@ -129,6 +129,7 @@ const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/busi
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
 const userEntrySource = fs.readFileSync(path.join(root, 'online-booking/user-entry.js'), 'utf8');
+const bookingAccessSource = fs.readFileSync(path.join(root, 'online-booking/access.js'), 'utf8');
 const recordServiceSource = fs.readFileSync(path.join(root, 'core/record/service.js'), 'utf8');
 const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payment.js'), 'utf8');
 const businessControllerSource = fs.readFileSync(path.join(root, 'server/src/business-state/business-state.controller.ts'), 'utf8');
@@ -167,6 +168,12 @@ if (!userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-deta
 }
 if (!userEntrySource.includes('data-startup-loading')) {
   failures.push('online-booking/user-entry.js: public booking route must keep visible Shared loading feedback during hydration');
+}
+
+if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")
+  || !bookingAccessSource.includes("action.dataset.bookingBusy = 'true'")
+  || !bookingAccessSource.includes("action.setAttribute('aria-busy', 'true')")) {
+  failures.push('online-booking/access.js: booking confirmation must react immediately and reject duplicate submission while the request is pending');
 }
 
 if (!recordServiceSource.includes("apiRequest('/business-state/records')")
