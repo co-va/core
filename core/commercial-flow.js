@@ -163,6 +163,9 @@ export function openCommercialLiveFlow({ required = false } = {}) {
 
   activeFlow = (async () => {
     const commercial = await request('/me');
+    if (!commercial?.tenantId || !Array.isArray(commercial.products) || !commercial.quote) {
+      throw new Error('Коммерческий каталог временно недоступен');
+    }
     return new Promise((resolve) => {
       const layer = mountModal(document.body, modal(content(commercial), {
         variant:'q',
