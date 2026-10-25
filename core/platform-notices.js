@@ -106,7 +106,7 @@ function noticeModal(item) {
 
 export function startPlatformNotices({
   onAccessChanged = async () => {},
-  intervalMs = 60_000,
+  intervalMs = 15_000,
 } = {}) {
   let disposed = false;
   let busy = false;

@@ -5,6 +5,7 @@ import { CommunicationService } from '../communication/communication.service';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { NotificationService } from '../notification/notification.service';
 import { WebPushService } from '../notification/web-push.service';
+import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { AccountGuard } from './account.guard';
 import { BookingPdnConsentGuard } from './booking-pdn-consent.guard';
 import { PersonIdentityService } from './person-identity.service';
@@ -19,6 +20,7 @@ export class OnlineBookingController {
     private readonly booking: OnlineBookingService,
     private readonly accountDocuments: AccountDocumentService,
     private readonly notifications: NotificationService,
+    private readonly platformNotices: PlatformNoticeService,
     private readonly communications: CommunicationService,
     private readonly webPush: WebPushService,
     private readonly personIdentity: PersonIdentityService,
@@ -349,15 +351,33 @@ export class OnlineBookingController {
   async createRequest(@Param('tenantId') tenantId: string, @Req() request: AccountRequest, @Body() body: Record<string, any>) {
     const accountId = request.accountAuth!.accountId;
     const created = await this.booking.createRequest(tenantId, accountId, body || {});
+    const recordId = String((created as any)?.recordId || '');
+    const date = String((created as any)?.date || '').slice(0, 10);
+    const time = String((created as any)?.from || '');
+    const workplaceKey = String((created as any)?.workplaceKey || '');
+
+    await this.platformNotices.createForTenantOwner(tenantId, {
+      type: 'BOOKING_CREATED',
+      title: 'Новая запись',
+      body: `Запись на ${date} в ${time}.`,
+      metadata: {
+        recordId,
+        date,
+        time,
+        workplaceKey,
+        source: 'online-booking',
+      },
+    }).catch(() => null);
+
     await this.notifications.createEventForPerson(tenantId, { accountId }, {
       type: 'booking.created',
       entityType: 'record',
-      entityId: String((created as any)?.recordId || ''),
+      entityId: recordId,
       context: {
-        date: String((created as any)?.date || '').slice(0, 10),
-        time: String((created as any)?.from || ''),
-        workplace: String((created as any)?.workplaceKey || ''),
-        record: { id: String((created as any)?.recordId || '') },
+        date,
+        time,
+        workplace: workplaceKey,
+        record: { id: recordId },
       },
     });
     return created;

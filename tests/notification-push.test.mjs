@@ -22,6 +22,8 @@ const enabledMigration = fs.readFileSync('server/prisma/migrations/2026100612300
 const platformNoticeService = fs.readFileSync('server/src/platform-notice/platform-notice.service.ts', 'utf8');
 const platformNoticeController = fs.readFileSync('server/src/platform-notice/platform-notice.controller.ts', 'utf8');
 const platformPushMigration = fs.readFileSync('server/prisma/migrations/20260922173000_platform_push_subscription/migration.sql', 'utf8');
+const onlineBookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
+const onlineBookingModule = fs.readFileSync('server/src/online-booking/online-booking.module.ts', 'utf8');
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const platformNoticesUi = fs.readFileSync('core/platform-notices.js', 'utf8');
 
@@ -109,7 +111,7 @@ assert.match(templateMigration, /bodyTemplate/);
 
 assert.match(platformPushMigration, /PlatformPushSubscription/);
 assert.match(platformPushMigration, /PlatformAccount/);
-assert.match(platformNoticeService, /createForPlatformAdmins/);
+assert.match(platformNoticeService, /createForTenantOwner/);
 assert.match(platformNoticeService, /webpush\.sendNotification/);
 assert.match(platformNoticeController, /push\/configuration/);
 assert.match(platformNoticeController, /push\/subscription/);
@@ -119,6 +121,13 @@ assert.match(platformNoticesUi, /getPlatformPushState/);
 assert.match(platformNoticesUi, /platform-notices\/push\/subscription\?endpoint=/);
 assert.match(platformNoticesUi, /enablePlatformPush/);
 assert.match(platformNoticesUi, /disablePlatformPush/);
+assert.match(platformNoticesUi, /intervalMs = 15_000/);
+assert.match(onlineBookingModule, /PlatformNoticeModule/);
+assert.match(onlineBookingController, /PlatformNoticeService/);
+assert.match(onlineBookingController, /createForTenantOwner\(tenantId/);
+assert.match(onlineBookingController, /type: 'BOOKING_CREATED'/);
+assert.match(onlineBookingController, /source: 'online-booking'/);
+assert.match(onlineBookingController, /createForTenantOwner[\s\S]*?\.catch\(\(\) => null\)/);
 assert.match(adminUi, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
 assert.match(adminUi, /Notification\.requestPermission/);
 assert.match(adminUi, /data-enable-admin-push/);
