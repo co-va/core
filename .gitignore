@@ -13,3 +13,7 @@ server/dist/
 .staging-data/
 *.log
 .DS_Store
+
+# Local task scope gate
+.task-scope.json
+.task-scope.lock
