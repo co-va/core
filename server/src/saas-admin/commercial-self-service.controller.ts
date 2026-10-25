@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { CommercialCatalogService } from './commercial-catalog.service';
+import { CommercialInvoiceService } from './commercial-invoice.service';
 import { CommercialTenantService } from './commercial-tenant.service';
 
 type AuthenticatedRequest = Request & {
@@ -26,6 +27,7 @@ type CommercialOrder = Record<string, unknown> & {
   id?: string;
   status?: string;
   totalMinor?: number;
+  currency?: string;
   receiptUrl?: string;
   receiptSentAt?: string;
 };
@@ -81,6 +83,7 @@ export class CommercialSelfServiceController {
     private readonly commercial: CommercialTenantService,
     private readonly catalog: CommercialCatalogService,
     private readonly access: SaasAccessService,
+    private readonly invoice: CommercialInvoiceService,
   ) {}
 
   private async snapshot(tenantId: string) {
@@ -118,6 +121,31 @@ export class CommercialSelfServiceController {
     };
   }
 
+  private async stageFreeLiveSelection(
+    tenantId: string,
+    current: Awaited<ReturnType<CommercialTenantService['getTenantCommercial']>>,
+    selectable: CatalogProduct[],
+    selectedKeys: string[],
+  ) {
+    const freeKeys = selectable.filter((product) => product.isFree).map((product) => product.key);
+    const terms = {
+      discountPercent: current.terms.discountPercent,
+      freeForever: current.terms.freeForever,
+      freeUntil: current.terms.freeUntil,
+    };
+
+    // Сначала применяем только бесплатные возможности, затем возвращаем выбранный
+    // коммерческий состав без активации платных capability до подтверждения оплаты.
+    await this.commercial.updateTenantCommercial(tenantId, {
+      ...terms,
+      productKeys: freeKeys,
+    }, null, true);
+    await this.commercial.updateTenantCommercial(tenantId, {
+      ...terms,
+      productKeys: selectedKeys,
+    }, null, false);
+  }
+
   @Get('me')
   me(@Req() request: AuthenticatedRequest) {
     return this.snapshot(request.auth!.tenantId);
@@ -130,46 +158,55 @@ export class CommercialSelfServiceController {
   ) {
     const tenantId = request.auth!.tenantId;
     const platformAccountId = request.auth!.platformAccountId;
-    const existingOrders = await this.commercial.orderHistory(tenantId) as CommercialOrder[];
+    const [current, catalog, existingOrders, currentAccess] = await Promise.all([
+      this.commercial.getTenantCommercial(tenantId),
+      this.catalog.catalog(),
+      this.commercial.orderHistory(tenantId) as Promise<CommercialOrder[]>,
+      this.access.resolveTenantAccess(tenantId),
+    ]);
+    const selectable = ((Array.isArray(catalog.products) ? catalog.products : []) as CatalogProduct[])
+      .filter((product) => product.isActive && product.isSaleable);
     const pending = existingOrders.find((order) => order.status === 'PENDING');
+
     if (pending) {
+      const selectedKeys = current.products.filter((product) => product.selected).map((product) => product.key);
+      await this.stageFreeLiveSelection(tenantId, current, selectable, selectedKeys);
+      const access = currentAccess.commercialMode === 'LIVE'
+        ? await this.access.resolveTenantAccess(tenantId)
+        : (await this.access.requestLive(tenantId, platformAccountId)).access;
+      const invoice = await this.invoice.sendPendingInvoice(tenantId, pending);
       return {
         requiresPayment: true,
-        access: await this.access.resolveTenantAccess(tenantId),
+        access,
         commercial: await this.snapshot(tenantId),
         order: pending,
+        invoice,
       };
     }
 
-    const current = await this.commercial.getTenantCommercial(tenantId);
-    const catalog = await this.catalog.catalog();
-    const selectable = ((Array.isArray(catalog.products) ? catalog.products : []) as CatalogProduct[])
-      .filter((product) => product.isActive && product.isSaleable);
     const selectedKeys = normalizedSelection(selectable, productKeys(body.productKeys));
-
-    await this.commercial.updateTenantCommercial(tenantId, {
-      productKeys: selectedKeys,
-      discountPercent: current.terms.discountPercent,
-      freeForever: current.terms.freeForever,
-      freeUntil: current.terms.freeUntil,
-    }, null, false);
+    await this.stageFreeLiveSelection(tenantId, current, selectable, selectedKeys);
 
     const orders = await this.commercial.createOrderSnapshot(tenantId, null) as CommercialOrder[];
     const order = orders[0] || null;
     const requiresPayment = Boolean(order && order.status === 'PENDING' && Number(order.totalMinor || 0) > 0);
 
+    if (!requiresPayment) {
+      await this.commercial.applySelectedCapabilities(tenantId);
+    }
+    const transition = await this.access.requestLive(tenantId, platformAccountId);
+
     if (requiresPayment) {
-      const commercial = await this.snapshot(tenantId);
+      const invoice = await this.invoice.sendPendingInvoice(tenantId, order);
       return {
         requiresPayment: true,
-        access: commercial.access,
-        commercial,
+        access: transition.access,
+        commercial: await this.snapshot(tenantId),
         order,
+        invoice,
       };
     }
 
-    await this.commercial.applySelectedCapabilities(tenantId);
-    const transition = await this.access.requestLive(tenantId, platformAccountId);
     return {
       requiresPayment: false,
       access: transition.access,
