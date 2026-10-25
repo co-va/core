@@ -253,7 +253,7 @@ export function openProfileAppearanceQ(root,{onSaved=null,navigateBack=()=>{},op
 function openProfileSettings(root,navigateBack,options={}){
   const p=getProfile();
   const access=getBookAccess();
-  const demoActions=access?.commercialMode==='DEMO'?[
+  const commercialActions=access?.commercialMode==='DEMO'?[
     {id:'demo-status',label:demoRemainingText(access),disabled:true},
     {
       id:'live-request',
@@ -268,10 +268,23 @@ function openProfileSettings(root,navigateBack,options={}){
         }
       },
     },
+  ]:access?.commercialMode==='LIVE'?[
+    {
+      id:'live-tools',
+      label:'LIVE · инструменты',
+      onSelect:async()=>{
+        try{
+          await requestLiveMode({manage:true});
+          await loadBookAccess();
+        }catch(error){
+          showProfileError(error instanceof Error?error.message:'Не удалось открыть инструменты LIVE');
+        }
+      },
+    },
   ]:[];
   return openSharedProfileSettingsMenu({
     actions:[
-      ...demoActions,
+      ...commercialActions,
       {id:'appearance',label:'Вид',onSelect:()=>openProfileAppearanceQ(root,{navigateBack,options})},
       {id:'password',label:'Изменить пароль',onSelect:()=>openSharedPasswordAction({onSubmit:({currentPassword,newPassword})=>changePassword(currentPassword,newPassword)})},
       {id:'controls',label:'Согласия / Уведомления',onSelect:()=>import('./account-controls.js').then(({openAccountControlsModal})=>openAccountControlsModal())},

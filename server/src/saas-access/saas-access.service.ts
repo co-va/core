@@ -259,13 +259,25 @@ export class SaasAccessService {
   }
 
   private async commercialPaidState(tenantId: string): Promise<CommercialPaidState> {
-    const [terms] = await this.prisma.$queryRawUnsafe<Array<{ paidAccessStartsAt: Date | null; paidAccessEndsAt: Date | null }>>(
-      `SELECT "paidAccessStartsAt","paidAccessEndsAt" FROM "CommercialTenantTerms" WHERE "tenantId"=$1 LIMIT 1`,
+    const [terms] = await this.prisma.$queryRawUnsafe<Array<{
+      paidAccessStartsAt: Date | null;
+      paidAccessEndsAt: Date | null;
+      discountPercent: number;
+      freeForever: boolean;
+      freeUntil: Date | null;
+    }>>(
+      `SELECT "paidAccessStartsAt","paidAccessEndsAt","discountPercent","freeForever","freeUntil" FROM "CommercialTenantTerms" WHERE "tenantId"=$1 LIMIT 1`,
       tenantId,
     );
     const startsAt = terms?.paidAccessStartsAt || null;
     const endsAt = terms?.paidAccessEndsAt || null;
-    const expired = Boolean(endsAt && endsAt.getTime() <= Date.now());
+    const now = Date.now();
+    const complimentary = Boolean(
+      terms?.freeForever
+      || Number(terms?.discountPercent || 0) >= 100
+      || (terms?.freeUntil && terms.freeUntil.getTime() >= now),
+    );
+    const expired = !complimentary && Boolean(endsAt && endsAt.getTime() <= now);
     if (!expired) return { startsAt, endsAt, expired: false, paidCapabilityKeys: new Set() };
 
     const rows = await this.prisma.$queryRawUnsafe<Array<{ capabilityKey: string }>>(

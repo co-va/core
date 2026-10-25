@@ -28,6 +28,8 @@ type TermsRow = {
   freeForever: boolean;
   freeUntil: Date | null;
   livePaidStartsAt: Date | null;
+  paidAccessStartsAt: Date | null;
+  paidAccessEndsAt: Date | null;
   updatedByAdminId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -213,11 +215,15 @@ export class CommercialTenantService {
     const access = accessRows[0] || null;
     return {
       tenantId,
+      configured: Boolean(terms || selectedRows.length),
+      selfServiceManaged: Boolean(terms && !terms.updatedByAdminId),
       terms: {
         discountPercent: terms?.discountPercent || 0,
         freeForever: terms?.freeForever || false,
         freeUntil: terms?.freeUntil?.toISOString() || '',
         livePaidStartsAt: terms?.livePaidStartsAt?.toISOString() || access?.liveApprovedAt?.toISOString() || '',
+        paidAccessStartsAt: terms?.paidAccessStartsAt?.toISOString() || '',
+        paidAccessEndsAt: terms?.paidAccessEndsAt?.toISOString() || '',
       },
       quote,
       access,

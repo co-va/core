@@ -41,6 +41,18 @@ function directSelection(products, manualSelected) {
   return [...manualSelected].filter((key) => !included.has(key));
 }
 
+function sameSelection(left = [], right = []) {
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function paidPeriodActive(commercial) {
+  if (commercial?.access?.paidAccessExpired === true) return false;
+  const endsAt = new Date(commercial?.access?.paidAccessEndsAt || 0).getTime();
+  return Number.isFinite(endsAt) && endsAt > Date.now();
+}
+
 function baseList(products = []) {
   if (!products.length) return '<p>Базовый набор включён в LIVE.</p>';
   return checkList(products.map((product) => ({
@@ -81,27 +93,56 @@ function pendingContent(commercial) {
   `;
 }
 
+function protectedGrantContent() {
+  return `
+    <div class="modal-title">
+      <h2>Индивидуальный доступ</h2>
+      <p>Этот LIVE был выдан отдельно от подписки. Текущие бесплатные инструменты сохраняются без изменений и не будут отключены новым коммерческим контуром.</p>
+    </div>
+    ${v2Section('Доступ', '<p>Оплата и срок 30 дней к этому индивидуальному доступу не применяются. Изменить его может администратор.</p>')}
+    ${actionBlock(button('Продолжить работать', { data:'data-commercial-protected-close' }))}
+  `;
+}
+
 function selectionContent(commercial) {
   const products = Array.isArray(commercial.products) ? commercial.products : [];
   const baseProducts = Array.isArray(commercial.baseProducts) ? commercial.baseProducts : [];
   const renewal = commercial?.access?.paidAccessExpired === true;
+  const alreadyLive = commercial?.access?.commercialMode === 'LIVE';
+  const activePaid = paidPeriodActive(commercial);
+  const title = renewal ? 'Продление платного доступа' : (alreadyLive ? 'Инструменты LIVE' : 'Переход в LIVE');
+  const description = renewal
+    ? 'Платный период завершён. Бесплатный LIVE продолжает работать. Выберите инструменты на следующие 30 дней.'
+    : alreadyLive
+      ? 'Бесплатный LIVE уже работает. Здесь можно добавить платные инструменты.'
+      : 'Базовый набор уже входит. Дополнительные инструменты можно добавить сейчас.';
+  const summary = activePaid
+    ? 'Текущий оплаченный набор действует до указанной даты. Можно добавить инструменты; оплата продлит платный период ещё на 30 дней.'
+    : renewal
+      ? 'Выберите платные инструменты для следующего периода на 30 дней.'
+      : alreadyLive
+        ? 'Если ничего не менять, текущий доступ останется как есть.'
+        : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.';
   return `
     <div class="modal-title">
-      <h2>${renewal ? 'Продление платного доступа' : 'Переход в LIVE'}</h2>
-      <p>${renewal ? 'Платный период завершён. Бесплатный LIVE продолжает работать. Выберите инструменты на следующие 30 дней.' : 'Базовый набор уже входит. Дополнительные инструменты можно добавить сейчас.'}</p>
+      <h2>${title}</h2>
+      <p>${description}</p>
     </div>
     ${v2Section('Базовый набор', baseList(baseProducts))}
     ${v2Section('Дополнительные инструменты', productList(products))}
     ${v2Section('Тариф', `
       <div><strong data-commercial-total>${escapeHtml(rubles(commercial.quote?.totalMinor || 0))}</strong></div>
-      <p data-commercial-summary>${renewal ? 'Выберите платные инструменты для следующего периода на 30 дней.' : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.'}</p>
+      <p data-commercial-summary>${summary}</p>
     `)}
     <p class="form-error" data-commercial-error></p>
-    ${actionBlock(button(renewal ? 'Продлить на 30 дней' : 'Начать LIVE', { data:'data-commercial-confirm' }))}
+    ${actionBlock(button(renewal ? 'Продлить на 30 дней' : (alreadyLive ? 'Готово' : 'Начать LIVE'), { data:'data-commercial-confirm' }))}
   `;
 }
 
-function content(commercial) {
+function content(commercial, { manage = false } = {}) {
+  if (manage && commercial?.access?.commercialMode === 'LIVE' && commercial?.selfServiceManaged !== true) {
+    return protectedGrantContent();
+  }
   if (commercial?.order?.status === 'PENDING') return pendingContent(commercial);
   return selectionContent(commercial);
 }
@@ -132,6 +173,13 @@ function bindPendingFlow(layer, finish) {
   });
 }
 
+function bindProtectedGrantFlow(layer, commercial, finish) {
+  layer.querySelector('[data-commercial-protected-close]')?.addEventListener('click', () => {
+    layer.v2Close?.();
+    finish({ access: commercial.access, commercial, order: commercial.order || null, protectedGrant:true });
+  });
+}
+
 function bindSelectionFlow(layer, commercial, finish) {
   const products = Array.isArray(commercial.products) ? commercial.products : [];
   const byKey = new Map(products.map((product) => [product.key, product]));
@@ -139,6 +187,10 @@ function bindSelectionFlow(layer, commercial, finish) {
   for (const product of products) {
     if (product.isFree) manualSelected.add(product.key);
   }
+  const initialDirectKeys = directSelection(products, manualSelected);
+  const renewal = commercial?.access?.paidAccessExpired === true;
+  const alreadyLive = commercial?.access?.commercialMode === 'LIVE';
+  const activePaid = paidPeriodActive(commercial);
 
   initCheckList(layer);
 
@@ -149,8 +201,9 @@ function bindSelectionFlow(layer, commercial, finish) {
       if (!input) continue;
       const free = Boolean(product.isFree);
       const inherited = included.has(product.key);
+      const lockedPaid = activePaid && Boolean(product.selected) && !free;
       input.checked = free || inherited || manualSelected.has(product.key);
-      input.disabled = free || inherited;
+      input.disabled = free || inherited || lockedPaid;
       const row = input.closest('.ui-check-list__item');
       row?.classList.toggle('is-checked', input.checked);
       const mark = row?.querySelector('.ui-check-list__mark');
@@ -158,6 +211,7 @@ function bindSelectionFlow(layer, commercial, finish) {
     }
 
     const directKeys = directSelection(products, manualSelected);
+    const changed = !sameSelection(directKeys, initialDirectKeys);
     const subtotal = directKeys.reduce((sum, key) => {
       const product = byKey.get(key);
       return sum + (product?.isFree ? 0 : Math.max(0, Number(product?.priceMinor || 0)));
@@ -168,12 +222,26 @@ function bindSelectionFlow(layer, commercial, finish) {
     const summaryNode = layer.querySelector('[data-commercial-summary]');
     const confirmNode = layer.querySelector('[data-commercial-confirm]');
     if (totalNode) totalNode.textContent = rubles(total);
-    if (confirmNode) confirmNode.textContent = total > 0 ? 'Получить счёт · 30 дней' : (commercial?.access?.paidAccessExpired ? 'Оставить бесплатный LIVE' : 'Начать LIVE');
+    if (confirmNode) {
+      confirmNode.textContent = alreadyLive && !renewal && !changed
+        ? 'Готово'
+        : total > 0
+          ? 'Получить счёт · 30 дней'
+          : (renewal ? 'Оставить бесплатный LIVE' : (alreadyLive ? 'Сохранить инструменты' : 'Начать LIVE'));
+    }
     if (summaryNode) {
       const paidCount = directKeys.filter((key) => !byKey.get(key)?.isFree).length;
-      summaryNode.textContent = paidCount
-        ? `Выбрано дополнительных инструментов: ${paidCount}. Оплата открывает их на 30 дней. Бесплатный LIVE работает без ограничения этого периода.`
-        : 'Бесплатный LIVE продолжает работать без оплаты.';
+      if (alreadyLive && !renewal && !changed) {
+        summaryNode.textContent = activePaid && commercial?.access?.paidAccessEndsAt
+          ? `Текущий оплаченный набор действует до ${new Intl.DateTimeFormat('ru-RU').format(new Date(commercial.access.paidAccessEndsAt))}.`
+          : 'Текущий LIVE остаётся без изменений.';
+      } else if (paidCount) {
+        summaryNode.textContent = activePaid
+          ? `Выбрано дополнительных инструментов: ${paidCount}. Оплата добавит их и продлит платный период ещё на 30 дней.`
+          : `Выбрано дополнительных инструментов: ${paidCount}. Оплата открывает их на 30 дней. Бесплатный LIVE работает без ограничения этого периода.`;
+      } else {
+        summaryNode.textContent = 'Бесплатный LIVE продолжает работать без оплаты.';
+      }
     }
   };
 
@@ -190,12 +258,18 @@ function bindSelectionFlow(layer, commercial, finish) {
   layer.querySelector('[data-commercial-confirm]')?.addEventListener('click', async (event) => {
     const control = event.currentTarget;
     const error = layer.querySelector('[data-commercial-error]');
+    const directKeys = directSelection(products, manualSelected);
+    if (alreadyLive && !renewal && sameSelection(directKeys, initialDirectKeys)) {
+      layer.v2Close?.();
+      finish({ access: commercial.access, commercial, order: commercial.order || null, unchanged:true });
+      return;
+    }
     control.disabled = true;
     if (error) error.textContent = '';
     try {
       const payload = await request('/confirm-live', {
         method:'POST',
-        body:JSON.stringify({ productKeys: directSelection(products, manualSelected) }),
+        body:JSON.stringify({ productKeys: directKeys }),
       });
       if (payload?.requiresPayment && payload?.access?.commercialMode === 'LIVE') {
         layer.v2Close?.();
@@ -222,7 +296,11 @@ function bindSelectionFlow(layer, commercial, finish) {
   sync();
 }
 
-function bindFlow(layer, commercial, finish) {
+function bindFlow(layer, commercial, finish, { manage = false } = {}) {
+  if (manage && commercial?.access?.commercialMode === 'LIVE' && commercial?.selfServiceManaged !== true) {
+    bindProtectedGrantFlow(layer, commercial, finish);
+    return;
+  }
   if (commercial?.order?.status === 'PENDING') {
     bindPendingFlow(layer, finish);
     return;
@@ -230,7 +308,7 @@ function bindFlow(layer, commercial, finish) {
   bindSelectionFlow(layer, commercial, finish);
 }
 
-export function openCommercialLiveFlow({ required = false } = {}) {
+export function openCommercialLiveFlow({ required = false, manage = false } = {}) {
   if (activeFlow) return activeFlow;
 
   activeFlow = (async () => {
@@ -238,11 +316,11 @@ export function openCommercialLiveFlow({ required = false } = {}) {
     if (!commercial?.tenantId || !Array.isArray(commercial.products) || !commercial.quote) {
       throw new Error('Коммерческий каталог временно недоступен');
     }
-    if (commercial?.access?.commercialMode === 'LIVE' && commercial?.access?.paidAccessExpired !== true) {
+    if (commercial?.access?.commercialMode === 'LIVE' && commercial?.access?.paidAccessExpired !== true && !manage) {
       return { access: commercial.access, commercial, order: commercial.order || null };
     }
     return new Promise((resolve) => {
-      const layer = mountModal(document.body, modal(content(commercial), {
+      const layer = mountModal(document.body, modal(content(commercial, { manage }), {
         variant:'q',
         title:'LIVE',
         surface:'app',
@@ -258,7 +336,7 @@ export function openCommercialLiveFlow({ required = false } = {}) {
       } else {
         close?.addEventListener('click', () => resolve({ cancelled:true }), { once:true });
       }
-      bindFlow(layer, commercial, resolve);
+      bindFlow(layer, commercial, resolve, { manage });
     });
   })().finally(() => {
     activeFlow = null;
