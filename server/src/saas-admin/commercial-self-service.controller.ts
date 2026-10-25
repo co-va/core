@@ -121,9 +121,9 @@ export class CommercialSelfServiceController {
       discountPercent: current.terms.discountPercent,
       freeForever: current.terms.freeForever,
       freeUntil: current.terms.freeUntil,
-    }, null as unknown as string);
+    }, null);
 
-    const orders = await this.commercial.createOrderSnapshot(tenantId, null as unknown as string);
+    const orders = await this.commercial.createOrderSnapshot(tenantId, null);
     const transition = await this.access.requestLive(tenantId, platformAccountId);
 
     return {
