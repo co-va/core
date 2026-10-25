@@ -34,13 +34,11 @@ export async function loadAuxiliaryState() {
     .then((response) => payload(response, 'Не удалось загрузить связанные данные'));
   const financeRequest = apiRequest('/finance')
     .then((response) => payload(response, 'Не удалось загрузить Финансы'));
-  const depositsRequest = loadAllDeposits();
 
-  const [finance] = await Promise.all([
-    financeRequest,
-    depositsRequest,
-  ]);
+  void loadAllDeposits()
+    .catch((error) => console.error('Deferred deposit hydration failed', error));
 
+  const finance = await financeRequest;
   hydrateFinanceFromServer(finance);
   void auxiliaryRequest
     .then(hydrateAuxiliary)
