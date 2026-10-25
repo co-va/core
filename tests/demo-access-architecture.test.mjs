@@ -7,6 +7,8 @@ const core = source('core.js');
 const access = source('server/src/saas-access/saas-access.service.ts');
 const accessController = source('server/src/saas-access/saas-access.controller.ts');
 const coreAccess = source('core/access.js');
+const commercialFlow = source('core/commercial-flow.js');
+const commercialSelfService = source('server/src/saas-admin/commercial-self-service.controller.ts');
 const registrationDocuments = source('server/src/document-registry/registration-document.service.ts');
 const invitation = source('server/src/tenant-invitation/tenant-invitation.service.ts');
 const profile = source('core/profile/profile.js');
@@ -44,8 +46,25 @@ assert.match(accessController, /@Post\('requests\/live'\)/);
 assert.doesNotMatch(adminController, /demo\/extend/);
 
 assert.match(coreAccess, /requestLiveMode/);
-assert.match(coreAccess, /\/saas-access\/requests\/live/);
-assert.match(coreAccess, /payload\?\.access/);
+assert.match(coreAccess, /openCommercialLiveFlow/);
+assert.doesNotMatch(coreAccess, /\/saas-access\/requests\/live/);
+assert.match(coreAccess, /demoExpired/);
+assert.match(coreAccess, /required:true/);
+
+assert.match(commercialFlow, /\/saas-commercial\/confirm-live/);
+assert.match(commercialFlow, /Переход в LIVE/);
+assert.match(commercialFlow, /Дополнительные инструменты/);
+assert.match(commercialFlow, /Тариф/);
+assert.match(commercialFlow, /priceMinor \|\| 0\) === 0/);
+assert.match(commercialFlow, /selectedDescendants/);
+assert.match(commercialFlow, /directSelection/);
+
+assert.match(commercialSelfService, /@Controller\('saas-commercial'\)/);
+assert.match(commercialSelfService, /@Post\('confirm-live'\)/);
+assert.match(commercialSelfService, /product\.priceMinor === 0/);
+assert.match(commercialSelfService, /includedProducts/);
+assert.match(commercialSelfService, /createOrderSnapshot/);
+assert.match(commercialSelfService, /requestLive\(tenantId, platformAccountId\)/);
 
 assert.match(registrationDocuments, /requiredForRegistration/);
 assert.match(registrationDocuments, /marketing-consent/);
@@ -124,4 +143,4 @@ assert.match(recovery, /firstRunCleanupMigration/);
 assert.match(recovery, /return 43/);
 assert.match(dockerfile, /migrate resolve --rolled-back 20260930143000_remove_first_run_runtime/);
 
-console.log('Profile-first DEMO entry, self-service LIVE transition, assigned-tool and migration recovery contract: OK');
+console.log('Profile-first DEMO entry, commercial selection before LIVE, assigned-tool and migration recovery contract: OK');
