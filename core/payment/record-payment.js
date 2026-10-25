@@ -230,7 +230,8 @@ async function openPaymentEntry(record, onCompleted = () => {}) {
   const settlement = settlementForRecord(current);
   const state = paymentStateForRecord(current);
   const recordId = String(current.id);
-  if (state.fullyPaid || paymentInFlightRecords.has(recordId) || paymentEntryOpeningRecords.has(recordId)) return null;
+  if (state.fullyPaid || paymentInFlightRecords.has(recordId)) return null;
+  if (paymentEntryOpeningRecords.has(recordId)) return null;
 
   const total = Math.max(0, Number(settlement?.planTotal || 0) - Number(state?.paidTotal || 0));
   const gratuityOnly = total <= 0.009 && Number(settlement?.serviceTotal || 0) > 0.009;
@@ -250,12 +251,12 @@ async function openPaymentEntry(record, onCompleted = () => {}) {
   let deposits = [];
   let personalAccount = null;
   try {
-    if (!gratuityOnly) {
-      [deposits, personalAccount] = await Promise.all([
+    [deposits, personalAccount] = gratuityOnly
+      ? [[], null]
+      : await Promise.all([
         depositsForRecord(current),
         personalAccountForRecord(current, settlement, total),
       ]);
-    }
   } finally {
     paymentEntryOpeningRecords.delete(recordId);
   }
