@@ -13,6 +13,7 @@ const commercialSelfService = source('server/src/saas-admin/commercial-self-serv
 const commercialTenant = source('server/src/saas-admin/commercial-tenant.service.ts');
 const commercialTenantController = source('server/src/saas-admin/commercial-tenant.controller.ts');
 const commercialReceipt = source('server/src/saas-admin/commercial-receipt.service.ts');
+const commercialInvoice = source('server/src/saas-admin/commercial-invoice.service.ts');
 const transactionalEmail = source('server/src/transactional-email/transactional-email.service.ts');
 const adminCommercial = source('admin/commercial-tenant.js');
 const registrationDocuments = source('server/src/document-registry/registration-document.service.ts');
@@ -29,6 +30,7 @@ const receiptFileMigration = source('server/prisma/migrations/20261025093000_com
 const cleanupMigration = source('server/prisma/migrations/20260930143000_remove_first_run_runtime/migration.sql');
 const recovery = source('server/scripts/recover-failed-prelaunch-migration.mjs');
 const dockerfile = source('Dockerfile');
+const envExample = source('server/.env.example');
 
 assert.match(core, /loadBookAccess\(\)/);
 assert.match(core, /const freshDemo = getBookAccess\(\)\.commercialMode === 'DEMO' && !getBookAccess\(\)\.demoActivatedAt/);
@@ -66,15 +68,35 @@ assert.match(commercialFlow, /Тариф/);
 assert.match(commercialFlow, /product\.isFree/);
 assert.match(commercialFlow, /selectedDescendants/);
 assert.match(commercialFlow, /directSelection/);
+assert.match(commercialFlow, /Начать LIVE · получить счёт/);
+assert.match(commercialFlow, /payload\?\.requiresPayment && payload\?\.access\?\.commercialMode === 'LIVE'/);
+assert.match(commercialFlow, /Бесплатный LIVE уже работает/);
 
 assert.match(commercialSelfService, /@Controller\('saas-commercial'\)/);
 assert.match(commercialSelfService, /@Post\('confirm-live'\)/);
 assert.match(commercialSelfService, /product\.isFree/);
 assert.match(commercialSelfService, /includedProducts/);
 assert.match(commercialSelfService, /createOrderSnapshot/);
+assert.match(commercialSelfService, /stageFreeLiveSelection/);
+assert.match(commercialSelfService, /const freeKeys = selectable\.filter\(\(product\) => product\.isFree\)/);
+assert.match(commercialSelfService, /productKeys: freeKeys[\s\S]*null, true/);
+assert.match(commercialSelfService, /productKeys: selectedKeys[\s\S]*null, false/);
 assert.match(commercialSelfService, /requestLive\(tenantId, platformAccountId\)/);
+assert.match(commercialSelfService, /sendPendingInvoice/);
+const paidTransitionIndex = commercialSelfService.lastIndexOf('const transition = await this.access.requestLive');
+const paidInvoiceIndex = commercialSelfService.lastIndexOf('const invoice = await this.invoice.sendPendingInvoice');
+assert.ok(paidTransitionIndex >= 0 && paidInvoiceIndex > paidTransitionIndex);
 assert.match(commercialTenant, /product\.isFree \? 0/);
 assert.match(commercialTenant, /effectivePriceMinor = product\.isFree \? 0 : product\.priceMinor/);
+
+assert.match(commercialInvoice, /COMMERCIAL_PAYMENT_INSTRUCTIONS/);
+assert.match(commercialInvoice, /COMMERCIAL_PAYMENT_URL/);
+assert.match(commercialInvoice, /COMMERCIAL_INVOICE_SENT/);
+assert.match(commercialInvoice, /COMMERCIAL_INVOICE_SEND_FAILED/);
+assert.match(commercialInvoice, /Бесплатный LIVE уже включён/);
+assert.match(commercialInvoice, /createForPlatformAdmins/);
+assert.match(envExample, /COMMERCIAL_PAYMENT_INSTRUCTIONS=/);
+assert.match(envExample, /COMMERCIAL_PAYMENT_URL=/);
 
 assert.match(commercialTenantController, /FileInterceptor\('receiptFile'/);
 assert.match(commercialTenantController, /completeFilePayment/);
@@ -172,4 +194,4 @@ assert.match(recovery, /firstRunCleanupMigration/);
 assert.match(recovery, /return 43/);
 assert.match(dockerfile, /migrate resolve --rolled-back 20260930143000_remove_first_run_runtime/);
 
-console.log('Profile-first DEMO, paid receipt delivery before LIVE, assigned-tool and migration recovery contract: OK');
+console.log('Profile-first DEMO, free LIVE before paid tools, invoice/receipt delivery and migration recovery contract: OK');
