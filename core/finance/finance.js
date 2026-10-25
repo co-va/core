@@ -24,17 +24,14 @@ export function financeNavigationItems() {
     }));
 }
 
-export async function renderFinanceSection(root, section = 'cash', options = {}) {
+export function renderFinanceSection(root, section = 'cash', options = {}) {
   if (section === 'dds') {
-    const { renderDDS } = await import('./dds/index.js');
-    return renderDDS(root);
+    return import('./dds/index.js').then(({ renderDDS }) => renderDDS(root));
   }
   if (section === 'z-report') {
-    const { renderZReport } = await import('./z-report/index.js');
-    return renderZReport(root);
+    return import('./z-report/index.js').then(({ renderZReport }) => renderZReport(root));
   }
-  const { renderWallets } = await import('./cash/cash.js');
-  return renderWallets(root, options);
+  return import('./cash/cash.js').then(({ renderWallets }) => renderWallets(root, options));
 }
 
 export { renderFinanceSection as render };
