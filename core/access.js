@@ -10,10 +10,14 @@ let currentAccess = {
   demoExpiresAt: '',
   liveRequestedAt: '',
   liveApprovedAt: '',
+  paidAccessStartsAt: '',
+  paidAccessEndsAt: '',
+  paidAccessExpired: false,
   plan: null,
   capabilities: [],
 };
 let capabilityMap = new Map();
+let renewalPromptOpened = false;
 
 function applyAccess(value) {
   currentAccess = value && typeof value === 'object' ? value : currentAccess;
@@ -27,10 +31,26 @@ function demoExpired(access) {
   return Number.isFinite(expiresAt) && expiresAt <= Date.now();
 }
 
+function paidAccessExpired(access) {
+  return access?.commercialMode === 'LIVE' && access?.paidAccessExpired === true;
+}
+
 function openRequiredLiveFlowIfNeeded(access) {
   if (!demoExpired(access)) return;
   queueMicrotask(() => {
     void openCommercialLiveFlow({ required:true })
+      .then((payload) => {
+        if (payload?.access) applyAccess(payload.access);
+      })
+      .catch(() => undefined);
+  });
+}
+
+function openRenewalFlowIfNeeded(access) {
+  if (!paidAccessExpired(access) || renewalPromptOpened) return;
+  renewalPromptOpened = true;
+  queueMicrotask(() => {
+    void openCommercialLiveFlow({ required:false })
       .then((payload) => {
         if (payload?.access) applyAccess(payload.access);
       })
@@ -60,6 +80,7 @@ export async function loadBookAccess() {
   if (!response.ok) throw new Error(payload?.message || 'Не удалось загрузить доступы');
   const access = applyAccess(payload);
   openRequiredLiveFlowIfNeeded(access);
+  openRenewalFlowIfNeeded(access);
   return access;
 }
 
