@@ -52,7 +52,8 @@ assert.doesNotMatch(coreAccess, /\/saas-access\/requests\/live/);
 assert.match(coreAccess, /demoExpired/);
 assert.match(coreAccess, /required:true/);
 
-assert.match(commercialFlow, /\/saas-commercial\/confirm-live/);
+assert.match(commercialFlow, /saas-commercial/);
+assert.match(commercialFlow, /request\('\/confirm-live'/);
 assert.match(commercialFlow, /Переход в LIVE/);
 assert.match(commercialFlow, /Дополнительные инструменты/);
 assert.match(commercialFlow, /Тариф/);
