@@ -1,9 +1,14 @@
 import { ALL_WORKPLACES_ID, emptyState, escapeHtml, v2ListEntries, v2ListEntry, shortDate } from '../ui/ui.js';
 import { getWorkplaces } from '../core/workplace-time.js';
-import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
+import { getRecordPaymentState, recordAmountDue } from '../core/finance/settlement.js';
 import { getRecords } from '../core/record/index.js';
 import { isRecordCompletedSide, recordActivityTime, recordAppointmentTime, recordVisualState } from '../core/record/index.js';
-import { openRecordView } from '../core/records/view.js';
+
+let recordViewModulePromise = null;
+function loadRecordViewModule() {
+  recordViewModulePromise ||= import('../core/records/view.js');
+  return recordViewModulePromise;
+}
 
 function journalContext(value = 'professional') {
   return String(value || '').trim().toLowerCase() === 'account' ? 'account' : 'professional';
@@ -139,9 +144,10 @@ function scrollToFocus(root, selector) {
 function bindRecordClicks(root, records, { contextName, resolveRecordContext }) {
   if (typeof root?.querySelectorAll !== 'function') return;
   const byId = new Map(records.map((record) => [recordId(record), record]).filter(([id]) => Boolean(id)));
-  root.querySelectorAll('[data-journal-list-record]').forEach((node) => node.addEventListener('click', () => {
+  root.querySelectorAll('[data-journal-list-record]').forEach((node) => node.addEventListener('click', async () => {
     const record = byId.get(String(node.dataset.journalListRecord || ''));
     if (!record) return;
+    const { openRecordView } = await loadRecordViewModule();
     if (contextName === 'account') {
       const presentation = typeof resolveRecordContext === 'function' ? (resolveRecordContext(record) || {}) : {};
       openRecordView(record, { context: 'account', professional: presentation?.professional || null });
