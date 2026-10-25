@@ -68,8 +68,8 @@ export async function activateBookDemo() {
   return applyAccess(payload);
 }
 
-export async function requestLiveMode() {
-  const payload = await openCommercialLiveFlow({ required:false });
+export async function requestLiveMode({ manage = false } = {}) {
+  const payload = await openCommercialLiveFlow({ required:false, manage });
   if (payload?.access) applyAccess(payload.access);
   return payload;
 }
