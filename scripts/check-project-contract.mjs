@@ -162,8 +162,8 @@ for (const [name, source] of [
   }
 }
 
-if (userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-detail'")) {
-  failures.push('online-booking/user-entry.js: public booking route must not preload the full account UI before booking');
+if (!userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-detail', tenantId: route.tenantId })")) {
+  failures.push('online-booking/user-entry.js: account booking must preserve the professional Contacts context beneath Shared Record creation');
 }
 if (!userEntrySource.includes('data-startup-loading')) {
   failures.push('online-booking/user-entry.js: public booking route must keep visible Shared loading feedback during hydration');
