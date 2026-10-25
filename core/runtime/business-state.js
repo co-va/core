@@ -5,7 +5,6 @@ import { hydrateRecordStateFromServer } from '../record/index.js';
 import { hydrateEventsFromServer } from '../event/index.js';
 import { hydrateNotesFromServer } from '../note/index.js';
 import { hydratePeopleFromServer } from '../people/data.js';
-import { loadAllDeposits } from '../loyalty/deposit/data.js';
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -28,21 +27,12 @@ async function payload(response, fallback) {
 export async function loadBusinessState() {
   setBusinessServerReady(false);
 
-  const businessRequest = apiRequest('/business-state')
-    .then((response) => payload(response, 'Не удалось загрузить People, UEI и Записи'));
-  const eventsRequest = apiRequest('/events')
-    .then((response) => payload(response, 'Не удалось загрузить события'));
-  const notesRequest = apiRequest('/notes')
-    .then((response) => payload(response, 'Не удалось загрузить заметки'));
-
-  void loadAllDeposits()
-    .catch((error) => console.error('Deferred deposit hydration failed', error));
-
-  const [remote, events, notes] = await Promise.all([
-    businessRequest,
-    eventsRequest,
-    notesRequest,
-  ]);
+  const businessResponse = await apiRequest('/business-state');
+  const remote = await payload(businessResponse, 'Не удалось загрузить People, UEI и Записи');
+  const eventsResponse = await apiRequest('/events');
+  const events = await payload(eventsResponse, 'Не удалось загрузить события');
+  const notesResponse = await apiRequest('/notes');
+  const notes = await payload(notesResponse, 'Не удалось загрузить заметки');
 
   hydratePeopleFromServer(Array.isArray(remote.people) ? clone(remote.people) : []);
   hydrateUEIFromServer(normalizeUEI(remote.uei));
