@@ -41,7 +41,12 @@ persistence.setBusinessServerReady(true);
 
 const recordWrite = persistence.queueRecordUpsert({ id: 'record-1' }, 0);
 const recordEventWrite = persistence.queueRecordEventUpsert({ id: 'record-event-1', recordId: 'record-1' }, 0);
-const noteWrite = persistence.queueNoteUpsert({ id: 'note-1' });
+const independentNoteWrite = persistence.queueNoteUpsert({ id: 'note-1' });
+const linkedNoteWrite = persistence.queueNoteUpsert({
+  id: 'note-2',
+  targetType: 'record',
+  targetId: 'record-1',
+});
 
 await waitFor(() => calls.includes('/notes/note-1'));
 assert.equal(
@@ -49,7 +54,12 @@ assert.equal(
   false,
   'RecordEvent must not overtake its Record in the same record lane',
 );
-await noteWrite;
+assert.equal(
+  calls.includes('/notes/note-2'),
+  false,
+  'A Note linked to a pending Record must wait for that Record lane',
+);
+await independentNoteWrite;
 
 let flushCompleted = false;
 const flush = persistence.flushBusinessPersistence({ timeoutMs: 2000 }).then(() => {
@@ -59,13 +69,15 @@ await new Promise((resolve) => setTimeout(resolve, 10));
 assert.equal(flushCompleted, false, 'flush must wait for every active lane');
 
 releaseRecord?.();
-await Promise.all([recordWrite, recordEventWrite, flush]);
+await Promise.all([recordWrite, recordEventWrite, linkedNoteWrite, flush]);
 
 const recordIndex = calls.indexOf('/business-state/records/record-1');
 const eventIndex = calls.indexOf('/business-state/record-events/record-event-1');
-const noteIndex = calls.indexOf('/notes/note-1');
+const independentNoteIndex = calls.indexOf('/notes/note-1');
+const linkedNoteIndex = calls.indexOf('/notes/note-2');
 assert.ok(recordIndex >= 0 && eventIndex > recordIndex, 'RecordEvent must be sent after Record');
-assert.ok(noteIndex >= 0 && noteIndex < eventIndex, 'Independent Note lane must not wait behind the Record lane');
+assert.ok(independentNoteIndex >= 0 && independentNoteIndex < eventIndex, 'Independent Note lane must not wait behind the Record lane');
+assert.ok(linkedNoteIndex > eventIndex, 'Linked Note must wait until the target Record lane is idle');
 assert.equal(flushCompleted, true, 'flush must resolve after all lanes are idle');
 
 delete globalThis.__businessPersistenceApiRequest;
