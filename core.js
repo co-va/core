@@ -14,7 +14,7 @@ import { loadProfileState } from './core/profile/runtime.js';
 import { loadBusinessState } from './core/runtime/business-state.js';
 import { loadOperationalState } from './core/runtime/operational-state.js';
 import { ensureRknGuide, loadTenantDocumentArchive, refreshTenantDocumentArchive } from './core/runtime/tenant-document-archive.js';
-import { loadAuxiliaryState } from './core/runtime/auxiliary-state.js';
+import { loadAuxiliaryState, loadFinanceState } from './core/runtime/auxiliary-state.js';
 import { getJournalTimeUsages, releaseJournalSoftTimeUsages } from './journal/time-usage-source.js';
 import { configureWorkplaceSource } from './core/workplace-time.js';
 import { configureTimeUsageSource, configureSoftTimeUsageReleaseSource } from './core/time/index.js';
@@ -435,8 +435,22 @@ function syncWorkspaceHeader(surface) {
   });
 }
 
-function renderActiveWorkspaceSurface(surface) {
+async function ensureWorkspaceState(section) {
+  const secondary = section === 'finance' || section === 'settings' ? ensureSecondary(section) : '';
+  const needsAuxiliary = section === 'people'
+    || section === 'loyalty'
+    || section === 'service'
+    || (section === 'finance' && secondary === 'cash')
+    || (section === 'settings' && secondary === 'tags');
+  if (needsAuxiliary) await loadAuxiliaryState();
+  if (section === 'people' || (section === 'settings' && secondary === 'documents')) {
+    await loadTenantDocumentArchive();
+  }
+}
+
+async function renderActiveWorkspaceSurface(surface) {
   const section = state.activeSection;
+  await ensureWorkspaceState(section);
   const openNavigation = () => setNavigationOpen(true);
   if (section === 'people') return renderPeople(surface, {
     onDirectChat: (personKey) => navigate('chat', { navigationOpen: false, chatPersonKey: personKey }),
@@ -653,8 +667,7 @@ async function renderAuthenticated(account = authenticatedAccount) {
     profileReady,
     loadBusinessState(),
     loadOperationalState(),
-    profileReady.then(() => loadTenantDocumentArchive()),
-    loadAuxiliaryState(),
+    loadFinanceState(),
     loadBookAccess(),
   ]);
   if (getBookAccess().status === 'SUSPENDED') {
@@ -674,7 +687,6 @@ async function renderAuthenticated(account = authenticatedAccount) {
   if (state.activeSection !== 'chat') state.lastRootSection = state.activeSection;
   history.replaceState({}, '', `#${state.activeSection}`);
   renderWorkspace();
-  scheduleRknGuideSync();
   startRegularPlatformNotices();
 }
 
