@@ -1,7 +1,5 @@
 import { apiRequest } from '../auth.js';
-import { hydrateFinanceFromServer } from '../finance/data.js';
-import { hydrateWalletsFromServer } from '../finance/cash/data.js';
-import { hydrateCashEntitiesFromServer } from '../finance/cash/entities.js';
+import { hydrateCashEntitiesFromServer, hydrateFinanceFromServer, hydrateWalletsFromServer } from '../finance/index.js';
 import { hydrateProductsFromServer } from '../../core/service/products/data.js';
 import { hydrateTagsFromServer } from '../../settings/tags/data.js';
 import { hydrateCardAppearanceTemplates } from '../card-appearance-templates.js';
