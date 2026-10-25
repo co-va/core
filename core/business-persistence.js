@@ -6,6 +6,7 @@ let pendingPermanentError = null;
 const laneQueues = new Map();
 const runningLanes = new Set();
 const idleWaiters = [];
+const laneIdleWaiters = new Map();
 const completedMutationScopes = new Set();
 
 function sleep(ms) {
@@ -61,6 +62,11 @@ function laneQueue(lane) {
   return laneQueues.get(key);
 }
 
+function laneHasPending(lane) {
+  const key = String(lane || 'business');
+  return runningLanes.has(key) || Boolean(laneQueues.get(key)?.length);
+}
+
 function hasPendingWrites() {
   if (runningLanes.size) return true;
   return [...laneQueues.values()].some((items) => items.length);
@@ -69,6 +75,32 @@ function hasPendingWrites() {
 function resolveIdle() {
   if (hasPendingWrites()) return;
   while (idleWaiters.length) idleWaiters.shift()?.();
+}
+
+function resolveLaneIdle(lane) {
+  const key = String(lane || 'business');
+  if (laneHasPending(key)) return;
+  const waiters = laneIdleWaiters.get(key) || [];
+  laneIdleWaiters.delete(key);
+  while (waiters.length) waiters.shift()?.();
+}
+
+function waitForLaneIdle(lane) {
+  const key = String(lane || 'business');
+  if (!laneHasPending(key)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const waiters = laneIdleWaiters.get(key) || [];
+    waiters.push(resolve);
+    laneIdleWaiters.set(key, waiters);
+  });
+}
+
+async function waitForDependencies(item, ownLane) {
+  const dependencies = [...new Set((Array.isArray(item?.dependencies) ? item.dependencies : [])
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== ownLane))];
+  if (!dependencies.length) return;
+  await Promise.all(dependencies.map((lane) => waitForLaneIdle(lane)));
 }
 
 async function send(item) {
@@ -118,6 +150,7 @@ async function runLane(lane) {
   const items = laneQueue(key);
   if (!items.length) {
     laneQueues.delete(key);
+    resolveLaneIdle(key);
     resolveIdle();
     return;
   }
@@ -126,6 +159,8 @@ async function runLane(lane) {
   try {
     while (serverReady && items.length) {
       const item = items[0];
+      await waitForDependencies(item, key);
+      if (!serverReady) break;
       try {
         const result = await send(item);
         items.shift();
@@ -148,6 +183,7 @@ async function runLane(lane) {
   } finally {
     runningLanes.delete(key);
     if (!items.length) laneQueues.delete(key);
+    resolveLaneIdle(key);
     resolveIdle();
     if (!hasPendingWrites()) reportCompletedMutationBatch();
     if (serverReady && items.length) void runLane(key);
@@ -161,11 +197,11 @@ function runPendingLanes() {
   }
 }
 
-function enqueue(lane, path, options, fallbackMessage) {
+function enqueue(lane, path, options, fallbackMessage, dependencies = []) {
   if (!serverReady) return Promise.resolve();
   let resolve;
   const done = new Promise((doneResolve) => { resolve = doneResolve; });
-  laneQueue(lane).push({ path, options, fallbackMessage, resolve });
+  laneQueue(lane).push({ path, options, fallbackMessage, dependencies, resolve });
   void runLane(lane);
   return done;
 }
@@ -173,6 +209,25 @@ function enqueue(lane, path, options, fallbackMessage) {
 function recordLane(recordId) {
   const id = String(recordId || '').trim();
   return id ? `record:${id}` : 'records';
+}
+
+function eventLane(eventId) {
+  const id = String(eventId || '').trim();
+  return id ? `event:${id}` : 'events';
+}
+
+function noteLane(noteId) {
+  const id = String(noteId || '').trim();
+  return id ? `note:${id}` : 'notes';
+}
+
+function noteDependencies(note = {}) {
+  const targetType = String(note?.targetType || '').trim();
+  const targetId = String(note?.targetId || '').trim();
+  if (!targetId) return [];
+  if (targetType === 'record') return [recordLane(targetId)];
+  if (targetType === 'event') return [eventLane(targetId)];
+  return [];
 }
 
 export function setBusinessServerReady(value) {
@@ -228,28 +283,28 @@ export function queueRecordDelete(id) {
 export function queueEventUpsert(event) {
   const id = String(event?.id || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue('events', `/events/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ event }) }, 'Не удалось сохранить событие на сервере');
+  return enqueue(eventLane(id), `/events/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ event }) }, 'Не удалось сохранить событие на сервере');
 }
 
 export function queueEventDelete(id) {
   const eventId = String(id || '').trim();
   if (!eventId) return Promise.resolve();
-  return enqueue('events', `/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }, 'Не удалось удалить событие на сервере');
+  return enqueue(eventLane(eventId), `/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }, 'Не удалось удалить событие на сервере');
 }
 
 export function queueNoteUpsert(note) {
   const id = String(note?.id || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue('notes', `/notes/${encodeURIComponent(id)}`, {
+  return enqueue(noteLane(id), `/notes/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify({ note }),
-  }, 'Не удалось сохранить заметку на сервере');
+  }, 'Не удалось сохранить заметку на сервере', noteDependencies(note));
 }
 
 export function queueNoteDelete(id) {
   const noteId = String(id || '').trim();
   if (!noteId) return Promise.resolve();
-  return enqueue('notes', `/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }, 'Не удалось удалить заметку на сервере');
+  return enqueue(noteLane(noteId), `/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }, 'Не удалось удалить заметку на сервере');
 }
 
 export function queueRecordEventUpsert(event, position = 0) {
