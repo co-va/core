@@ -57,7 +57,7 @@ function productList(products = []) {
   return checkList(products.map((product) => ({
     value: product.key,
     label: product.name,
-    secondary: product.priceMinor === 0
+    secondary: product.isFree
       ? 'Сейчас бесплатно · включено'
       : `${rubles(product.priceMinor)}${product.includedProducts?.length ? ` · включает ${product.includedProducts.map((item) => item.name).join(', ')}` : ''}`,
     checked: Boolean(product.selected),
@@ -89,7 +89,7 @@ function bindFlow(layer, commercial, finish) {
   const byKey = new Map(products.map((product) => [product.key, product]));
   const manualSelected = new Set(products.filter((product) => product.selected).map((product) => product.key));
   for (const product of products) {
-    if (Number(product.priceMinor || 0) === 0) manualSelected.add(product.key);
+    if (product.isFree) manualSelected.add(product.key);
   }
 
   initCheckList(layer);
@@ -99,7 +99,7 @@ function bindFlow(layer, commercial, finish) {
     for (const product of products) {
       const input = layer.querySelector(`[data-commercial-product="${CSS.escape(product.key)}"]`);
       if (!input) continue;
-      const free = Number(product.priceMinor || 0) === 0;
+      const free = Boolean(product.isFree);
       const inherited = included.has(product.key);
       input.checked = free || inherited || manualSelected.has(product.key);
       input.disabled = free || inherited;
@@ -110,16 +110,19 @@ function bindFlow(layer, commercial, finish) {
     }
 
     const directKeys = directSelection(products, manualSelected);
-    const subtotal = directKeys.reduce((sum, key) => sum + Math.max(0, Number(byKey.get(key)?.priceMinor || 0)), 0);
+    const subtotal = directKeys.reduce((sum, key) => {
+      const product = byKey.get(key);
+      return sum + (product?.isFree ? 0 : Math.max(0, Number(product?.priceMinor || 0)));
+    }, 0);
     const discount = effectiveDiscount(commercial.terms || {});
     const total = Math.max(0, subtotal - Math.round(subtotal * discount / 100));
     const totalNode = layer.querySelector('[data-commercial-total]');
     const summaryNode = layer.querySelector('[data-commercial-summary]');
     if (totalNode) totalNode.textContent = rubles(total);
     if (summaryNode) {
-      const paidCount = directKeys.filter((key) => Number(byKey.get(key)?.priceMinor || 0) > 0).length;
+      const paidCount = directKeys.filter((key) => !byKey.get(key)?.isFree).length;
       summaryNode.textContent = paidCount
-        ? `Выбрано платных инструментов: ${paidCount}. Итоговый тариф пересчитывается из текущего каталога.`
+        ? `Выбрано дополнительных инструментов: ${paidCount}. Тариф рассчитан по текущему каталогу.`
         : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.';
     }
   };
