@@ -256,12 +256,7 @@ async function renderAccessRoute(route) {
   disposeView();
   setThemeColor('#2F3338');
   app.classList.add('app-shell--booking');
-
-  if (route.entry === 'account-booking') {
-    await renderGlobalClientRoot({ tab: 'contact-detail', tenantId: route.tenantId });
-  } else {
-    app.innerHTML = '<main class="booking-content" id="app-content"></main>';
-  }
+  app.innerHTML = '<main class="booking-content" id="app-content"></main>';
 
   const disposeRuntime = await startAccountRuntime(route);
   let recordCreationCommitted = false;
