@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { PrismaService } from '../prisma.service';
@@ -151,6 +152,48 @@ export class CommercialTenantService {
     };
   }
 
+  private async applyCapabilitySelection(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    products: ProductRow[],
+    inclusions: InclusionRow[],
+    capabilityLinks: CapabilityLink[],
+    selectedIds: Set<string>,
+  ) {
+    const expandedIds = this.expandSelectedProductIds(selectedIds, inclusions);
+    const managedCapabilityKeys = [...new Set(capabilityLinks
+      .filter((link) => products.some((product) => product.id === link.productId && product.isSaleable))
+      .map((link) => link.capabilityKey))];
+    const enabledCapabilityKeys = new Set(capabilityLinks
+      .filter((link) => expandedIds.has(link.productId))
+      .map((link) => link.capabilityKey));
+    if (!managedCapabilityKeys.length) return;
+
+    const capabilityRows = await tx.$queryRawUnsafe<Array<{ id: string; key: string; valueType: string }>>(
+      `SELECT "id","key","valueType"::text AS "valueType" FROM "Capability" WHERE "key" = ANY($1::text[])`, managedCapabilityKeys,
+    );
+    for (const capability of capabilityRows) {
+      if (capability.valueType !== 'BOOLEAN') continue;
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "TenantCapabilityOverride" ("id","tenantId","capabilityId","enabled","limit","createdAt","updatedAt")
+         VALUES ($1,$2,$3,$4,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT ("tenantId","capabilityId") DO UPDATE SET "enabled"=EXCLUDED."enabled","limit"=NULL,"updatedAt"=CURRENT_TIMESTAMP`,
+        randomUUID(), tenantId, capability.id, enabledCapabilityKeys.has(capability.key),
+      );
+    }
+  }
+
+  async applySelectedCapabilities(tenantId: string) {
+    const { products, inclusions, capabilityLinks } = await this.productGraph();
+    const selectedRows = await this.prisma.$queryRawUnsafe<Array<{ productId: string }>>(
+      `SELECT "productId" FROM "CommercialTenantProduct" WHERE "tenantId"=$1`, tenantId,
+    );
+    const selectedIds = new Set(selectedRows.map((row) => row.productId));
+    await this.prisma.$transaction((tx) => this.applyCapabilitySelection(
+      tx, tenantId, products, inclusions, capabilityLinks, selectedIds,
+    ));
+  }
+
   async getTenantCommercial(tenantId: string) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
     if (!tenant) throw new NotFoundException('Пользователь не найден');
@@ -187,7 +230,12 @@ export class CommercialTenantService {
     };
   }
 
-  async updateTenantCommercial(tenantId: string, input: Record<string, unknown>, actorAdminId: string | null) {
+  async updateTenantCommercial(
+    tenantId: string,
+    input: Record<string, unknown>,
+    actorAdminId: string | null,
+    applyCapabilities = true,
+  ) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
     if (!tenant) throw new NotFoundException('Пользователь не найден');
     const { products, inclusions, capabilityLinks } = await this.productGraph();
@@ -200,7 +248,6 @@ export class CommercialTenantService {
     }
     const selectedProducts = selectedKeys.map((key) => selectable.get(key)!);
     const selectedIds = new Set(selectedProducts.map((product) => product.id));
-    const expandedIds = this.expandSelectedProductIds(selectedIds, inclusions);
     const discountPercent = discount(input.discountPercent);
     const freeForever = input.freeForever === true;
     const freeUntil = freeForever ? null : optionalDate(input.freeUntil);
@@ -222,26 +269,8 @@ export class CommercialTenantService {
           tenantId, product.id,
         );
       }
-
-      const managedCapabilityKeys = [...new Set(capabilityLinks
-        .filter((link) => products.some((product) => product.id === link.productId && product.isSaleable))
-        .map((link) => link.capabilityKey))];
-      const enabledCapabilityKeys = new Set(capabilityLinks
-        .filter((link) => expandedIds.has(link.productId))
-        .map((link) => link.capabilityKey));
-      if (managedCapabilityKeys.length) {
-        const capabilityRows = await tx.$queryRawUnsafe<Array<{ id: string; key: string; valueType: string }>>(
-          `SELECT "id","key","valueType"::text AS "valueType" FROM "Capability" WHERE "key" = ANY($1::text[])`, managedCapabilityKeys,
-        );
-        for (const capability of capabilityRows) {
-          if (capability.valueType !== 'BOOLEAN') continue;
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "TenantCapabilityOverride" ("id","tenantId","capabilityId","enabled","limit","createdAt","updatedAt")
-             VALUES ($1,$2,$3,$4,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-             ON CONFLICT ("tenantId","capabilityId") DO UPDATE SET "enabled"=EXCLUDED."enabled","limit"=NULL,"updatedAt"=CURRENT_TIMESTAMP`,
-            randomUUID(), tenantId, capability.id, enabledCapabilityKeys.has(capability.key),
-          );
-        }
+      if (applyCapabilities) {
+        await this.applyCapabilitySelection(tx, tenantId, products, inclusions, capabilityLinks, selectedIds);
       }
     });
 
@@ -252,6 +281,7 @@ export class CommercialTenantService {
       freeForever,
       freeUntil: freeUntil?.toISOString() || '',
       quote,
+      capabilitiesApplied: applyCapabilities,
     });
     return this.getTenantCommercial(tenantId);
   }
@@ -401,7 +431,7 @@ export class CommercialTenantService {
         title: 'Чек и LIVE готовы',
         body: 'Оплата подтверждена. Чек из «Мой налог» доступен по ссылке.',
         metadata: { orderId, url: receiptUrl },
-      });
+      }).catch(() => null);
       await this.noticeService.pushToTenantOwner(tenantId, {
         type: 'COMMERCIAL_RECEIPT_READY',
         title: 'Чек и LIVE готовы',
@@ -410,8 +440,10 @@ export class CommercialTenantService {
       }).catch(() => ({ sent: 0, failed: 0 }));
     }
 
+    await this.applySelectedCapabilities(tenantId);
     const beforeAccess = await this.accessService.resolveTenantAccess(tenantId);
-    const access = await this.accessService.setCommercialMode(tenantId, 'LIVE', actorAdminId);
+    await this.accessService.setCommercialMode(tenantId, 'LIVE', actorAdminId);
+    const access = await this.accessService.resolveTenantAccess(tenantId);
     if (beforeAccess.commercialMode !== 'LIVE') {
       await this.audit(actorAdminId, tenantId, 'LIVE_PAID_PERIOD_STARTED', 'ORDER', orderId, {
         paidAt: paidAt.toISOString(),
