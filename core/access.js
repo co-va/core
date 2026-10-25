@@ -1,4 +1,5 @@
 import { apiRequest } from './auth.js';
+import { openCommercialLiveFlow } from './commercial-flow.js';
 
 let currentAccess = {
   tenantId: '',
@@ -20,6 +21,23 @@ function applyAccess(value) {
   return currentAccess;
 }
 
+function demoExpired(access) {
+  if (access?.commercialMode !== 'DEMO' || !access?.demoActivatedAt || !access?.demoExpiresAt) return false;
+  const expiresAt = new Date(access.demoExpiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
+function openRequiredLiveFlowIfNeeded(access) {
+  if (!demoExpired(access)) return;
+  queueMicrotask(() => {
+    void openCommercialLiveFlow({ required:true })
+      .then((payload) => {
+        if (payload?.access) applyAccess(payload.access);
+      })
+      .catch(() => undefined);
+  });
+}
+
 export async function activateBookDemo() {
   const response = await apiRequest('/saas-access/demo/activate', {
     method: 'POST',
@@ -31,12 +49,7 @@ export async function activateBookDemo() {
 }
 
 export async function requestLiveMode() {
-  const response = await apiRequest('/saas-access/requests/live', {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.message || 'Не удалось перейти в LIVE');
+  const payload = await openCommercialLiveFlow({ required:false });
   if (payload?.access) applyAccess(payload.access);
   return payload;
 }
@@ -45,7 +58,9 @@ export async function loadBookAccess() {
   const response = await apiRequest('/saas-access/me');
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.message || 'Не удалось загрузить доступы');
-  return applyAccess(payload);
+  const access = applyAccess(payload);
+  openRequiredLiveFlowIfNeeded(access);
+  return access;
 }
 
 export function getBookAccess() {

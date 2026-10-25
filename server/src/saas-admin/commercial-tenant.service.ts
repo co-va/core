@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { PrismaService } from '../prisma.service';
+import { SaasAccessService } from '../saas-access/saas-access.service';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
 import { CommercialCatalogService } from './commercial-catalog.service';
 
 type ProductRow = {
@@ -29,8 +33,38 @@ type TermsRow = {
   updatedAt: Date;
 };
 
+type OrderRow = {
+  id: string;
+  tenantId: string;
+  status: string;
+  totalMinor: number;
+  currency: string;
+  paidAt: Date | null;
+  receiptUrl: string;
+  receiptSentAt: Date | null;
+  receiptSentTo: string;
+  receiptMessageId: string;
+};
+
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function html(value: unknown) {
+  return text(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+  }[char] || char));
+}
+
+function receiptLink(value: unknown) {
+  const source = text(value);
+  try {
+    const url = new URL(source);
+    if (url.protocol !== 'https:') throw new Error('protocol');
+    return url.toString();
+  } catch {
+    throw new BadRequestException('Нужна корректная https-ссылка на чек из «Мой налог»');
+  }
 }
 
 function discount(value: unknown) {
@@ -53,6 +87,9 @@ export class CommercialTenantService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly catalogService: CommercialCatalogService,
+    private readonly accessService: SaasAccessService,
+    private readonly emailService: TransactionalEmailService,
+    private readonly noticeService: PlatformNoticeService,
   ) {}
 
   private async audit(actorAdminId: string | null, tenantId: string, eventType: string, entityType: string, entityId: string, metadata: unknown = {}) {
@@ -95,7 +132,10 @@ export class CommercialTenantService {
 
   private quote(products: ProductRow[], selectedProductIds: Set<string>, terms: Pick<TermsRow, 'discountPercent' | 'freeForever' | 'freeUntil'> | null) {
     const selected = products.filter((product) => selectedProductIds.has(product.id));
-    const subtotalMinor = selected.reduce((sum, product) => sum + Math.max(0, Number(product.priceMinor || 0)), 0);
+    const subtotalMinor = selected.reduce(
+      (sum, product) => sum + (product.isFree ? 0 : Math.max(0, Number(product.priceMinor || 0))),
+      0,
+    );
     const now = Date.now();
     const freeUntilActive = Boolean(terms?.freeUntil && terms.freeUntil.getTime() >= now);
     const effectiveDiscountPercent = terms?.freeForever || freeUntilActive ? 100 : Number(terms?.discountPercent || 0);
@@ -110,6 +150,48 @@ export class CommercialTenantService {
       freeForever: Boolean(terms?.freeForever),
       freeUntil: terms?.freeUntil?.toISOString() || '',
     };
+  }
+
+  private async applyCapabilitySelection(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    products: ProductRow[],
+    inclusions: InclusionRow[],
+    capabilityLinks: CapabilityLink[],
+    selectedIds: Set<string>,
+  ) {
+    const expandedIds = this.expandSelectedProductIds(selectedIds, inclusions);
+    const managedCapabilityKeys = [...new Set(capabilityLinks
+      .filter((link) => products.some((product) => product.id === link.productId && product.isSaleable))
+      .map((link) => link.capabilityKey))];
+    const enabledCapabilityKeys = new Set(capabilityLinks
+      .filter((link) => expandedIds.has(link.productId))
+      .map((link) => link.capabilityKey));
+    if (!managedCapabilityKeys.length) return;
+
+    const capabilityRows = await tx.$queryRawUnsafe<Array<{ id: string; key: string; valueType: string }>>(
+      `SELECT "id","key","valueType"::text AS "valueType" FROM "Capability" WHERE "key" = ANY($1::text[])`, managedCapabilityKeys,
+    );
+    for (const capability of capabilityRows) {
+      if (capability.valueType !== 'BOOLEAN') continue;
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "TenantCapabilityOverride" ("id","tenantId","capabilityId","enabled","limit","createdAt","updatedAt")
+         VALUES ($1,$2,$3,$4,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT ("tenantId","capabilityId") DO UPDATE SET "enabled"=EXCLUDED."enabled","limit"=NULL,"updatedAt"=CURRENT_TIMESTAMP`,
+        randomUUID(), tenantId, capability.id, enabledCapabilityKeys.has(capability.key),
+      );
+    }
+  }
+
+  async applySelectedCapabilities(tenantId: string) {
+    const { products, inclusions, capabilityLinks } = await this.productGraph();
+    const selectedRows = await this.prisma.$queryRawUnsafe<Array<{ productId: string }>>(
+      `SELECT "productId" FROM "CommercialTenantProduct" WHERE "tenantId"=$1`, tenantId,
+    );
+    const selectedIds = new Set(selectedRows.map((row) => row.productId));
+    await this.prisma.$transaction((tx) => this.applyCapabilitySelection(
+      tx, tenantId, products, inclusions, capabilityLinks, selectedIds,
+    ));
   }
 
   async getTenantCommercial(tenantId: string) {
@@ -148,7 +230,12 @@ export class CommercialTenantService {
     };
   }
 
-  async updateTenantCommercial(tenantId: string, input: Record<string, unknown>, actorAdminId: string) {
+  async updateTenantCommercial(
+    tenantId: string,
+    input: Record<string, unknown>,
+    actorAdminId: string | null,
+    applyCapabilities = true,
+  ) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
     if (!tenant) throw new NotFoundException('Пользователь не найден');
     const { products, inclusions, capabilityLinks } = await this.productGraph();
@@ -161,7 +248,6 @@ export class CommercialTenantService {
     }
     const selectedProducts = selectedKeys.map((key) => selectable.get(key)!);
     const selectedIds = new Set(selectedProducts.map((product) => product.id));
-    const expandedIds = this.expandSelectedProductIds(selectedIds, inclusions);
     const discountPercent = discount(input.discountPercent);
     const freeForever = input.freeForever === true;
     const freeUntil = freeForever ? null : optionalDate(input.freeUntil);
@@ -183,26 +269,8 @@ export class CommercialTenantService {
           tenantId, product.id,
         );
       }
-
-      const managedCapabilityKeys = [...new Set(capabilityLinks
-        .filter((link) => products.some((product) => product.id === link.productId && product.isSaleable))
-        .map((link) => link.capabilityKey))];
-      const enabledCapabilityKeys = new Set(capabilityLinks
-        .filter((link) => expandedIds.has(link.productId))
-        .map((link) => link.capabilityKey));
-      if (managedCapabilityKeys.length) {
-        const capabilityRows = await tx.$queryRawUnsafe<Array<{ id: string; key: string; valueType: string }>>(
-          `SELECT "id","key","valueType"::text AS "valueType" FROM "Capability" WHERE "key" = ANY($1::text[])`, managedCapabilityKeys,
-        );
-        for (const capability of capabilityRows) {
-          if (capability.valueType !== 'BOOLEAN') continue;
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "TenantCapabilityOverride" ("id","tenantId","capabilityId","enabled","limit","createdAt","updatedAt")
-             VALUES ($1,$2,$3,$4,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-             ON CONFLICT ("tenantId","capabilityId") DO UPDATE SET "enabled"=EXCLUDED."enabled","limit"=NULL,"updatedAt"=CURRENT_TIMESTAMP`,
-            randomUUID(), tenantId, capability.id, enabledCapabilityKeys.has(capability.key),
-          );
-        }
+      if (applyCapabilities) {
+        await this.applyCapabilitySelection(tx, tenantId, products, inclusions, capabilityLinks, selectedIds);
       }
     });
 
@@ -213,11 +281,18 @@ export class CommercialTenantService {
       freeForever,
       freeUntil: freeUntil?.toISOString() || '',
       quote,
+      capabilitiesApplied: applyCapabilities,
     });
     return this.getTenantCommercial(tenantId);
   }
 
-  async createOrderSnapshot(tenantId: string, actorAdminId: string) {
+  async createOrderSnapshot(tenantId: string, actorAdminId: string | null) {
+    const [pending] = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "CommercialOrder" WHERE "tenantId"=$1 AND "status"='PENDING' ORDER BY "createdAt" DESC LIMIT 1`,
+      tenantId,
+    );
+    if (pending) return this.orderHistory(tenantId);
+
     const commercial = await this.getTenantCommercial(tenantId);
     const selected = commercial.products.filter((product) => product.selected);
     const [publication] = await this.prisma.$queryRawUnsafe<Array<{ version: number }>>(
@@ -234,9 +309,10 @@ export class CommercialTenantService {
         publication?.version || null, commercial.terms.livePaidStartsAt ? new Date(commercial.terms.livePaidStartsAt) : null, actorAdminId,
       );
       for (const product of selected) {
+        const effectivePriceMinor = product.isFree ? 0 : product.priceMinor;
         await tx.$executeRawUnsafe(
           `INSERT INTO "CommercialOrderItem" ("id","orderId","productKey","productName","priceMinor","quantity","totalMinor","snapshot") VALUES ($1,$2,$3,$4,$5,1,$5,$6::jsonb)`,
-          randomUUID(), id, product.key, product.name, product.priceMinor, JSON.stringify(product),
+          randomUUID(), id, product.key, product.name, effectivePriceMinor, JSON.stringify(product),
         );
       }
     });
@@ -249,6 +325,143 @@ export class CommercialTenantService {
       catalogVersion: publication?.version || null,
     });
     return this.orderHistory(tenantId);
+  }
+
+  async completeManualPayment(tenantId: string, orderIdValue: unknown, receiptUrlValue: unknown, actorAdminId: string) {
+    const orderId = text(orderIdValue);
+    const receiptUrl = receiptLink(receiptUrlValue);
+    const [order] = await this.prisma.$queryRawUnsafe<OrderRow[]>(
+      `SELECT "id","tenantId","status","totalMinor","currency","paidAt","receiptUrl","receiptSentAt","receiptSentTo","receiptMessageId"
+       FROM "CommercialOrder" WHERE "id"=$1 AND "tenantId"=$2 LIMIT 1`,
+      orderId, tenantId,
+    );
+    if (!order) throw new NotFoundException('Коммерческий счёт не найден');
+    if (order.totalMinor <= 0) throw new BadRequestException('Для тарифа 0 ₽ ручная оплата не требуется');
+    if (!['PENDING', 'PAID'].includes(order.status)) throw new BadRequestException('Этот счёт нельзя подтвердить как оплаченный');
+    if (order.receiptSentAt && order.receiptUrl && order.receiptUrl !== receiptUrl) {
+      throw new BadRequestException('Чек уже был отправлен. Его ссылку нельзя заменить');
+    }
+
+    const owner = await this.prisma.membership.findFirst({
+      where: { tenantId, role: 'OWNER' },
+      orderBy: { createdAt: 'asc' },
+      include: { account: true, tenant: true },
+    });
+    if (!owner?.account?.email) throw new BadRequestException('У владельца нет email для отправки чека');
+
+    const paidAt = order.paidAt || new Date();
+    let paymentRecorded = false;
+    if (order.status === 'PENDING') {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(
+          `UPDATE "CommercialOrder"
+           SET "status"='PAID',"paidAt"=$1,"receiptUrl"=$2,"updatedAt"=CURRENT_TIMESTAMP
+           WHERE "id"=$3 AND "tenantId"=$4 AND "status"='PENDING'`,
+          paidAt, receiptUrl, orderId, tenantId,
+        );
+        const [existingPayment] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT "id" FROM "CommercialPayment" WHERE "orderId"=$1 AND "provider"='MANUAL' AND "status"='SUCCEEDED' LIMIT 1`,
+          orderId,
+        );
+        if (!existingPayment) {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "CommercialPayment" ("id","orderId","provider","providerPaymentId","status","amountMinor","currency","walletKey","occurredAt","createdAt","updatedAt")
+             VALUES ($1,$2,'MANUAL',$3,'SUCCEEDED',$4,$5,'',$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+            randomUUID(), orderId, `manual:${orderId}`, order.totalMinor, order.currency, paidAt,
+          );
+          paymentRecorded = true;
+        }
+        await tx.$executeRawUnsafe(
+          `UPDATE "CommercialTenantTerms"
+           SET "livePaidStartsAt"=COALESCE("livePaidStartsAt",$1),"updatedAt"=CURRENT_TIMESTAMP
+           WHERE "tenantId"=$2`,
+          paidAt, tenantId,
+        );
+      });
+    } else if (!order.receiptSentAt && order.receiptUrl !== receiptUrl) {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "CommercialOrder" SET "receiptUrl"=$1,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$2 AND "tenantId"=$3`,
+        receiptUrl, orderId, tenantId,
+      );
+    }
+
+    if (paymentRecorded) {
+      await this.audit(actorAdminId, tenantId, 'PAYMENT_RECORDED', 'ORDER', orderId, {
+        provider: 'MANUAL',
+        amountMinor: order.totalMinor,
+        currency: order.currency,
+        paidAt: paidAt.toISOString(),
+      });
+    }
+
+    const [deliveryState] = await this.prisma.$queryRawUnsafe<OrderRow[]>(
+      `SELECT "id","tenantId","status","totalMinor","currency","paidAt","receiptUrl","receiptSentAt","receiptSentTo","receiptMessageId"
+       FROM "CommercialOrder" WHERE "id"=$1 AND "tenantId"=$2 LIMIT 1`,
+      orderId, tenantId,
+    );
+
+    let sentNow = false;
+    let messageId = deliveryState?.receiptMessageId || '';
+    if (!deliveryState?.receiptSentAt) {
+      const email = owner.account.email.trim().toLowerCase();
+      const title = text(owner.tenant.name) || 'LIVE';
+      const result = await this.emailService.send({
+        to: email,
+        toName: title,
+        subject: 'Чек об оплате LIVE',
+        tag: 'commercial-live-receipt',
+        text: `Оплата ${order.totalMinor / 100} ${order.currency} подтверждена. Чек: ${receiptUrl}`,
+        html: `<p>Оплата тарифа LIVE подтверждена.</p><p><strong>${html((order.totalMinor / 100).toLocaleString('ru-RU'))} ${html(order.currency)}</strong></p><p><a href="${html(receiptUrl)}">Открыть чек из «Мой налог»</a></p>`,
+      });
+      messageId = result.messageId;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "CommercialOrder"
+         SET "receiptUrl"=$1,"receiptSentAt"=CURRENT_TIMESTAMP,"receiptSentTo"=$2,"receiptMessageId"=$3,"updatedAt"=CURRENT_TIMESTAMP
+         WHERE "id"=$4 AND "tenantId"=$5`,
+        receiptUrl, email, messageId, orderId, tenantId,
+      );
+      sentNow = true;
+      await this.audit(actorAdminId, tenantId, 'COMMERCIAL_RECEIPT_SENT', 'ORDER', orderId, {
+        receiptUrl,
+        sentTo: email,
+        messageId,
+      });
+      await this.noticeService.createForTenantOwner(tenantId, {
+        type: 'COMMERCIAL_RECEIPT_READY',
+        title: 'Чек и LIVE готовы',
+        body: 'Оплата подтверждена. Чек из «Мой налог» доступен по ссылке.',
+        metadata: { orderId, url: receiptUrl },
+      }).catch(() => null);
+      await this.noticeService.pushToTenantOwner(tenantId, {
+        type: 'COMMERCIAL_RECEIPT_READY',
+        title: 'Чек и LIVE готовы',
+        body: 'Оплата подтверждена. Откройте чек.',
+        metadata: { orderId, url: receiptUrl },
+      }).catch(() => ({ sent: 0, failed: 0 }));
+    }
+
+    await this.applySelectedCapabilities(tenantId);
+    const beforeAccess = await this.accessService.resolveTenantAccess(tenantId);
+    await this.accessService.setCommercialMode(tenantId, 'LIVE', actorAdminId);
+    const access = await this.accessService.resolveTenantAccess(tenantId);
+    if (beforeAccess.commercialMode !== 'LIVE') {
+      await this.audit(actorAdminId, tenantId, 'LIVE_PAID_PERIOD_STARTED', 'ORDER', orderId, {
+        paidAt: paidAt.toISOString(),
+        receiptSent: true,
+      });
+    }
+
+    const orders = await this.orderHistory(tenantId);
+    return {
+      access,
+      order: orders.find((item) => item.id === orderId) || null,
+      receipt: {
+        url: receiptUrl,
+        sentTo: owner.account.email.trim().toLowerCase(),
+        sentNow,
+        messageId,
+      },
+    };
   }
 
   async orderHistory(tenantId: string) {

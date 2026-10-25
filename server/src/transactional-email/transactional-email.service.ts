@@ -1,6 +1,12 @@
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
+type TransactionalEmailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+};
+
 type TransactionalEmailInput = {
   to: string;
   toName?: string;
@@ -8,6 +14,7 @@ type TransactionalEmailInput = {
   html: string;
   text?: string;
   tag?: string;
+  attachments?: TransactionalEmailAttachment[];
 };
 
 function errorMessage(error: unknown) {
@@ -103,6 +110,11 @@ export class TransactionalEmailService {
         html: input.html,
         text: input.text,
         headers: input.tag ? { 'X-Message-Tag': input.tag } : undefined,
+        attachments: input.attachments?.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          contentType: attachment.contentType,
+        })),
       });
 
       if (!result.messageId) throw new BadGatewayException('Cloud Postbox не вернул идентификатор письма');

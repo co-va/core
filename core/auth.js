@@ -34,8 +34,9 @@ export function clearAuthToken() {
 export async function apiRequest(path, options = {}) {
   const token = getAuthToken();
   const headers = new Headers(options.headers || {});
+  const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  if (options.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (options.body != null && !multipart && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   return fetch(`${API_BASE}${path}`, { ...options, headers });
 }
 
@@ -56,9 +57,8 @@ export async function login(email, password) {
 }
 
 export async function requestPasswordReset(email) {
-  const response = await fetch(`${API_BASE}/auth/password-reset/request`, {
+  const response = await apiRequest('/auth/password-reset/request', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, surface: 'app' }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -69,7 +69,6 @@ export async function requestPasswordReset(email) {
 export async function getCurrentAccount() {
   const token = getAuthToken();
   if (!token) return null;
-
   const response = await apiRequest('/auth/me');
 
   if (response.status === 401) {
