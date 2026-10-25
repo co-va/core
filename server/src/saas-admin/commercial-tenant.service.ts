@@ -95,7 +95,10 @@ export class CommercialTenantService {
 
   private quote(products: ProductRow[], selectedProductIds: Set<string>, terms: Pick<TermsRow, 'discountPercent' | 'freeForever' | 'freeUntil'> | null) {
     const selected = products.filter((product) => selectedProductIds.has(product.id));
-    const subtotalMinor = selected.reduce((sum, product) => sum + Math.max(0, Number(product.priceMinor || 0)), 0);
+    const subtotalMinor = selected.reduce(
+      (sum, product) => sum + (product.isFree ? 0 : Math.max(0, Number(product.priceMinor || 0))),
+      0,
+    );
     const now = Date.now();
     const freeUntilActive = Boolean(terms?.freeUntil && terms.freeUntil.getTime() >= now);
     const effectiveDiscountPercent = terms?.freeForever || freeUntilActive ? 100 : Number(terms?.discountPercent || 0);
@@ -148,7 +151,7 @@ export class CommercialTenantService {
     };
   }
 
-  async updateTenantCommercial(tenantId: string, input: Record<string, unknown>, actorAdminId: string) {
+  async updateTenantCommercial(tenantId: string, input: Record<string, unknown>, actorAdminId: string | null) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
     if (!tenant) throw new NotFoundException('Пользователь не найден');
     const { products, inclusions, capabilityLinks } = await this.productGraph();
@@ -217,7 +220,7 @@ export class CommercialTenantService {
     return this.getTenantCommercial(tenantId);
   }
 
-  async createOrderSnapshot(tenantId: string, actorAdminId: string) {
+  async createOrderSnapshot(tenantId: string, actorAdminId: string | null) {
     const commercial = await this.getTenantCommercial(tenantId);
     const selected = commercial.products.filter((product) => product.selected);
     const [publication] = await this.prisma.$queryRawUnsafe<Array<{ version: number }>>(
@@ -234,9 +237,10 @@ export class CommercialTenantService {
         publication?.version || null, commercial.terms.livePaidStartsAt ? new Date(commercial.terms.livePaidStartsAt) : null, actorAdminId,
       );
       for (const product of selected) {
+        const effectivePriceMinor = product.isFree ? 0 : product.priceMinor;
         await tx.$executeRawUnsafe(
           `INSERT INTO "CommercialOrderItem" ("id","orderId","productKey","productName","priceMinor","quantity","totalMinor","snapshot") VALUES ($1,$2,$3,$4,$5,1,$5,$6::jsonb)`,
-          randomUUID(), id, product.key, product.name, product.priceMinor, JSON.stringify(product),
+          randomUUID(), id, product.key, product.name, effectivePriceMinor, JSON.stringify(product),
         );
       }
     });
