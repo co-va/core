@@ -34,13 +34,14 @@ export async function loadBusinessState() {
     .then((response) => payload(response, 'Не удалось загрузить события'));
   const notesRequest = apiRequest('/notes')
     .then((response) => payload(response, 'Не удалось загрузить заметки'));
-  const depositsRequest = loadAllDeposits();
+
+  void loadAllDeposits()
+    .catch((error) => console.error('Deferred deposit hydration failed', error));
 
   const [remote, events, notes] = await Promise.all([
     businessRequest,
     eventsRequest,
     notesRequest,
-    depositsRequest,
   ]);
 
   hydratePeopleFromServer(Array.isArray(remote.people) ? clone(remote.people) : []);
