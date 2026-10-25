@@ -22,6 +22,14 @@ type CatalogProduct = {
   includedProducts?: Array<{ key: string; name: string; type: string }>;
 };
 
+type CommercialOrder = Record<string, unknown> & {
+  id?: string;
+  status?: string;
+  totalMinor?: number;
+  receiptUrl?: string;
+  receiptSentAt?: string;
+};
+
 function productKeys(value: unknown) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
@@ -58,6 +66,14 @@ function normalizedSelection(products: CatalogProduct[], requested: string[]) {
   return [...selected];
 }
 
+function currentOrder(orders: CommercialOrder[]) {
+  if (!Array.isArray(orders) || !orders.length) return null;
+  return orders.find((order) => order.status === 'PENDING')
+    || orders.find((order) => order.status === 'PAID' && order.receiptUrl)
+    || orders[0]
+    || null;
+}
+
 @Controller('saas-commercial')
 @UseGuards(JwtAuthGuard)
 export class CommercialSelfServiceController {
@@ -68,15 +84,19 @@ export class CommercialSelfServiceController {
   ) {}
 
   private async snapshot(tenantId: string) {
-    const [commercial, catalog] = await Promise.all([
+    const [commercial, catalog, orders, access] = await Promise.all([
       this.commercial.getTenantCommercial(tenantId),
       this.catalog.catalog(),
+      this.commercial.orderHistory(tenantId),
+      this.access.resolveTenantAccess(tenantId),
     ]);
     const catalogProducts = (Array.isArray(catalog.products) ? catalog.products : []) as CatalogProduct[];
     const byKey = new Map(catalogProducts.map((product) => [product.key, product]));
 
     return {
       ...commercial,
+      access,
+      order: currentOrder(orders as CommercialOrder[]),
       baseProducts: catalogProducts
         .filter((product) => product.isActive && !product.isSaleable && product.isFree)
         .map((product) => ({
@@ -110,6 +130,17 @@ export class CommercialSelfServiceController {
   ) {
     const tenantId = request.auth!.tenantId;
     const platformAccountId = request.auth!.platformAccountId;
+    const existingOrders = await this.commercial.orderHistory(tenantId) as CommercialOrder[];
+    const pending = existingOrders.find((order) => order.status === 'PENDING');
+    if (pending) {
+      return {
+        requiresPayment: true,
+        access: await this.access.resolveTenantAccess(tenantId),
+        commercial: await this.snapshot(tenantId),
+        order: pending,
+      };
+    }
+
     const current = await this.commercial.getTenantCommercial(tenantId);
     const catalog = await this.catalog.catalog();
     const selectable = ((Array.isArray(catalog.products) ? catalog.products : []) as CatalogProduct[])
@@ -123,13 +154,26 @@ export class CommercialSelfServiceController {
       freeUntil: current.terms.freeUntil,
     }, null);
 
-    const orders = await this.commercial.createOrderSnapshot(tenantId, null);
-    const transition = await this.access.requestLive(tenantId, platformAccountId);
+    const orders = await this.commercial.createOrderSnapshot(tenantId, null) as CommercialOrder[];
+    const order = orders[0] || null;
+    const requiresPayment = Boolean(order && order.status === 'PENDING' && Number(order.totalMinor || 0) > 0);
 
+    if (requiresPayment) {
+      const commercial = await this.snapshot(tenantId);
+      return {
+        requiresPayment: true,
+        access: commercial.access,
+        commercial,
+        order,
+      };
+    }
+
+    const transition = await this.access.requestLive(tenantId, platformAccountId);
     return {
+      requiresPayment: false,
       access: transition.access,
       commercial: await this.snapshot(tenantId),
-      order: Array.isArray(orders) ? orders[0] || null : null,
+      order,
     };
   }
 }
