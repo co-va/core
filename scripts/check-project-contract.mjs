@@ -128,6 +128,10 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
 const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
+const userEntrySource = fs.readFileSync(path.join(root, 'online-booking/user-entry.js'), 'utf8');
+const recordServiceSource = fs.readFileSync(path.join(root, 'core/record/service.js'), 'utf8');
+const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payment.js'), 'utf8');
+const businessControllerSource = fs.readFileSync(path.join(root, 'server/src/business-state/business-state.controller.ts'), 'utf8');
 const userHtml = fs.readFileSync(path.join(root, 'user.html'), 'utf8');
 
 for (const [name, source] of [
@@ -136,6 +140,10 @@ for (const [name, source] of [
 ]) {
   if (/payload\s*\(\s*await\s+apiRequest\s*\(/.test(source)) {
     failures.push(`${name}: startup apiRequest must start before Promise.all; inline await serializes network requests`);
+  }
+  if (/await\s+loadAllDeposits\s*\(/.test(source)
+    || /Promise\.all\s*\([\s\S]{0,500}(?:loadAllDeposits\s*\(|depositsRequest)/.test(source)) {
+    failures.push(`${name}: deposit hydration must not block the first Journal render`);
   }
 }
 
@@ -152,6 +160,27 @@ for (const [name, source] of [
   if (!source.includes('data-startup-loading') || !source.includes('v2-sticker-screen')) {
     failures.push(`${name}: initial app shell must render Shared loading state before async startup`);
   }
+}
+
+if (userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-detail'")) {
+  failures.push('online-booking/user-entry.js: public booking route must not preload the full account UI before booking');
+}
+if (!userEntrySource.includes('data-startup-loading')) {
+  failures.push('online-booking/user-entry.js: public booking route must keep visible Shared loading feedback during hydration');
+}
+
+if (!recordServiceSource.includes("apiRequest('/business-state/records')")
+  || recordServiceSource.includes("const response = await apiRequest('/business-state');")) {
+  failures.push('core/record/service.js: record refresh must use the focused records endpoint, not the full business state');
+}
+if (!businessControllerSource.includes("@Get('records')")) {
+  failures.push('server business-state controller: focused records endpoint is required');
+}
+
+if (!paymentSource.includes('paymentEntryOpeningRecords')
+  || !paymentSource.includes("emptyState('Оплата', 'Загрузка…')")
+  || !paymentSource.includes("submit.textContent = 'Проводим…'")) {
+  failures.push('core/payment/record-payment.js: payment entry must respond immediately and prevent duplicate opening/submission');
 }
 
 const branch = String(
