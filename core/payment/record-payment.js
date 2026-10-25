@@ -2,6 +2,7 @@ import {
   actionBlock,
   button,
   datePicker,
+  emptyState,
   field,
   initDatePickers,
   initPaymentMethods,
@@ -37,6 +38,7 @@ import { readOnlyReceipt } from '../../ui/receipt/index.js';
 
 const money = (value) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value || 0)).replaceAll('\u00a0', ' ')} ₽`;
 const paymentInFlightRecords = new Set();
+const paymentEntryOpeningRecords = new Set();
 
 function personForRecord(record) {
   const source = record?.person || {};
@@ -229,28 +231,45 @@ async function openPaymentEntry(record, onCompleted = () => {}) {
   const state = paymentStateForRecord(current);
   const recordId = String(current.id);
   if (state.fullyPaid || paymentInFlightRecords.has(recordId)) return null;
+  if (paymentEntryOpeningRecords.has(recordId)) return null;
 
   const total = Math.max(0, Number(settlement?.planTotal || 0) - Number(state?.paidTotal || 0));
   const gratuityOnly = total <= 0.009 && Number(settlement?.serviceTotal || 0) > 0.009;
-  const [deposits, personalAccount] = gratuityOnly
-    ? [[], null]
-    : await Promise.all([
-      depositsForRecord(current),
-      personalAccountForRecord(current, settlement, total),
-    ]);
+  paymentEntryOpeningRecords.add(recordId);
 
   const layer = mountModal(document.body, modal(
     `<div class="compact-form record-payment-entry-x" data-record-payment-entry-host>
-      ${readOnlyReceipt({ totals: [{ label: 'К оплате', value: money(total), strong: true }] })}
-      ${paymentMethods({ wallets: getWallets(), deposits, personalAccount, total, showAction: false, showTotal: false })}
-      ${actionBlock(button(gratuityOnly ? 'Завершить' : 'Оплатить', { data: 'data-record-payment-entry-submit', disabled: !gratuityOnly }))}
+      ${emptyState('Оплата', 'Загрузка…')}
     </div>`,
     { variant: 'x', surface: 'app', title: 'Оплата', className: 'modal--form-sheet' },
   ));
-  if (!layer) return null;
+  if (!layer) {
+    paymentEntryOpeningRecords.delete(recordId);
+    return null;
+  }
 
+  let deposits = [];
+  let personalAccount = null;
+  try {
+    [deposits, personalAccount] = gratuityOnly
+      ? [[], null]
+      : await Promise.all([
+        depositsForRecord(current),
+        personalAccountForRecord(current, settlement, total),
+      ]);
+  } finally {
+    paymentEntryOpeningRecords.delete(recordId);
+  }
+
+  if (!layer.isConnected) return layer;
   const host = layer.querySelector('[data-record-payment-entry-host]');
-  const submit = host?.querySelector('[data-record-payment-entry-submit]');
+  if (!host) return layer;
+  host.innerHTML = `
+    ${readOnlyReceipt({ totals: [{ label: 'К оплате', value: money(total), strong: true }] })}
+    ${paymentMethods({ wallets: getWallets(), deposits, personalAccount, total, showAction: false, showTotal: false })}
+    ${actionBlock(button(gratuityOnly ? 'Завершить' : 'Оплатить', { data: 'data-record-payment-entry-submit', disabled: !gratuityOnly }))}`;
+
+  const submit = host.querySelector('[data-record-payment-entry-submit]');
   let allocationState = null;
 
   const syncPrimary = () => {
@@ -259,6 +278,7 @@ async function openPaymentEntry(record, onCompleted = () => {}) {
     const label = gratuityOnly && !hasMoney ? 'Завершить' : 'Оплатить';
     submit.textContent = label;
     submit.setAttribute('aria-label', label);
+    submit.removeAttribute('aria-busy');
     submit.disabled = hasMoney ? !allocationState?.valid : !gratuityOnly;
   };
 
@@ -275,6 +295,8 @@ async function openPaymentEntry(record, onCompleted = () => {}) {
     }
 
     submit.disabled = true;
+    submit.textContent = 'Проводим…';
+    submit.setAttribute('aria-busy', 'true');
     let completed = null;
     paymentInFlightRecords.add(recordId);
     try {
@@ -316,7 +338,7 @@ async function openPaymentEntry(record, onCompleted = () => {}) {
     onCompleted?.(completed);
   });
 
-  initPaymentMethods(host?.querySelector('[data-payment-methods]'), {
+  initPaymentMethods(host.querySelector('[data-payment-methods]'), {
     onChange: (next) => { allocationState = next; syncPrimary(); },
   });
   syncPrimary();

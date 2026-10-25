@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { EventService } from '../event/event.service';
+import { NoteService } from '../note/note.service';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PrismaService } from '../prisma.service';
 import { BusinessStateService } from './business-state.service';
@@ -30,6 +32,8 @@ function scheduleChanged(leftValue: unknown, rightValue: unknown) {
 export class BusinessStateController {
   constructor(
     private readonly businessState: BusinessStateService,
+    private readonly events: EventService,
+    private readonly notes: NoteService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationEventService,
   ) {}
@@ -58,6 +62,30 @@ export class BusinessStateController {
   @Get()
   get(@Req() request: AuthenticatedRequest) {
     return this.businessState.get(request.auth!.tenantId);
+  }
+
+  @Get('journal')
+  async journal(@Req() request: AuthenticatedRequest) {
+    const auth = request.auth!;
+    const [business, events, notes] = await Promise.all([
+      this.businessState.get(auth.tenantId),
+      this.events.list(auth.tenantId),
+      this.notes.listProfile(auth.tenantId, auth.platformAccountId),
+    ]);
+    return { ...business, events, notes };
+  }
+
+  @Get('records')
+  async records(@Req() request: AuthenticatedRequest) {
+    const tenantId = request.auth!.tenantId;
+    const [records, recordEvents] = await Promise.all([
+      this.prisma.record.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+      this.prisma.recordEvent.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+    ]);
+    return {
+      records: records.map((row) => objectValue(row.data)),
+      recordEvents: recordEvents.map((row) => objectValue(row.data)),
+    };
   }
 
   @Put('people/:key')

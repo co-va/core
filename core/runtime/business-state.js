@@ -5,7 +5,6 @@ import { hydrateRecordStateFromServer } from '../record/index.js';
 import { hydrateEventsFromServer } from '../event/index.js';
 import { hydrateNotesFromServer } from '../note/index.js';
 import { hydratePeopleFromServer } from '../people/data.js';
-import { loadAllDeposits } from '../loyalty/deposit/data.js';
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -27,19 +26,15 @@ async function payload(response, fallback) {
 
 export async function loadBusinessState() {
   setBusinessServerReady(false);
-  const [remote, events, notes] = await Promise.all([
-    payload(await apiRequest('/business-state'), 'Не удалось загрузить People, UEI и Записи'),
-    payload(await apiRequest('/events'), 'Не удалось загрузить события'),
-    payload(await apiRequest('/notes'), 'Не удалось загрузить заметки'),
-    loadAllDeposits(),
-  ]);
+  const response = await apiRequest('/business-state/journal');
+  const remote = await payload(response, 'Не удалось загрузить данные Журнала');
   hydratePeopleFromServer(Array.isArray(remote.people) ? clone(remote.people) : []);
   hydrateUEIFromServer(normalizeUEI(remote.uei));
   hydrateRecordStateFromServer({
     records: Array.isArray(remote.records) ? clone(remote.records) : [],
     recordEvents: Array.isArray(remote.recordEvents) ? clone(remote.recordEvents) : [],
   });
-  hydrateEventsFromServer(Array.isArray(events) ? clone(events) : []);
-  hydrateNotesFromServer(Array.isArray(notes) ? clone(notes) : []);
+  hydrateEventsFromServer(Array.isArray(remote.events) ? clone(remote.events) : []);
+  hydrateNotesFromServer(Array.isArray(remote.notes) ? clone(remote.notes) : []);
   setBusinessServerReady(true);
 }

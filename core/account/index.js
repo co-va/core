@@ -3,6 +3,8 @@ import { API_BASE } from '../environment.js';
 const ACCOUNT_TOKEN_KEY = 'book.account.token';
 const ACCOUNT_EMAIL_KEY = 'book.account.email';
 const ACCOUNT_UNREAD_KEY = '__VA_TOOLS_ACCOUNT_UNREAD__';
+let globalAccountCacheToken = '';
+let globalAccountCache = null;
 
 function unreadSnapshot() {
   if (typeof globalThis === 'undefined') return { total: 0, byTenant: {} };
@@ -71,6 +73,8 @@ export function getRememberedAccountEmail() {
 
 export function clearAccount() {
   localStorage.removeItem(ACCOUNT_TOKEN_KEY);
+  globalAccountCacheToken = '';
+  globalAccountCache = null;
   publishUnread({});
 }
 
@@ -131,6 +135,10 @@ function storeSession(_tenantId, payload) {
     publishUnread({});
   }
   if (payload?.account?.email) localStorage.setItem(ACCOUNT_EMAIL_KEY, payload.account.email);
+  if (payload?.account && payload?.accessToken) {
+    globalAccountCacheToken = String(payload.accessToken);
+    globalAccountCache = payload.account;
+  }
   return payload;
 }
 
@@ -197,16 +205,20 @@ export async function loginGlobalAccount(identifier, password) {
 export async function getGlobalAccount() {
   const token = getAccountToken('');
   if (!token) return null;
+  if (globalAccountCache && globalAccountCacheToken === token) return globalAccountCache;
   const response = await request('/online-booking/account/me', { auth: true });
   if (response.status === 401) {
     clearAccount('');
     return null;
   }
-  return jsonResponse(response, 'Не удалось открыть аккаунт');
+  const account = await jsonResponse(response, 'Не удалось открыть аккаунт');
+  globalAccountCacheToken = token;
+  globalAccountCache = account;
+  return account;
 }
 
 export async function updateGlobalAccount(data) {
-  return jsonResponse(
+  const account = await jsonResponse(
     await request('/online-booking/account/me', {
       auth: true,
       method: 'PUT',
@@ -214,6 +226,9 @@ export async function updateGlobalAccount(data) {
     }),
     'Не удалось обновить аккаунт',
   );
+  globalAccountCacheToken = getAccountToken('');
+  globalAccountCache = account;
+  return account;
 }
 
 export async function deleteGlobalAccount() {

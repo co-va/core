@@ -125,6 +125,99 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
   if (!alphabet.includes('`ui/ui.js`')) failures.push('ui/ui.js: UI facade is missing from UI_ALPHABET.md');
 }
 
+const coreSource = fs.readFileSync(path.join(root, 'core.js'), 'utf8');
+const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
+const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
+const documentArchiveSource = fs.readFileSync(path.join(root, 'core/runtime/tenant-document-archive.js'), 'utf8');
+const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
+const userEntrySource = fs.readFileSync(path.join(root, 'online-booking/user-entry.js'), 'utf8');
+const bookingAccessSource = fs.readFileSync(path.join(root, 'online-booking/access.js'), 'utf8');
+const recordServiceSource = fs.readFileSync(path.join(root, 'core/record/service.js'), 'utf8');
+const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payment.js'), 'utf8');
+const businessControllerSource = fs.readFileSync(path.join(root, 'server/src/business-state/business-state.controller.ts'), 'utf8');
+const userHtml = fs.readFileSync(path.join(root, 'user.html'), 'utf8');
+
+const authenticatedStart = coreSource.slice(
+  coreSource.indexOf('async function renderAuthenticated'),
+  coreSource.indexOf('function renderPasswordResetRequest'),
+);
+if (authenticatedStart.includes('loadTenantDocumentArchive()')
+  || authenticatedStart.includes('loadAuxiliaryState()')
+  || authenticatedStart.includes('scheduleRknGuideSync()')) {
+  failures.push('core.js: first Journal render must not start documents, auxiliary state, or RKN document sync');
+}
+if (!authenticatedStart.includes('loadFinanceState()')) {
+  failures.push('core.js: Journal startup must load finance without loading auxiliary state');
+}
+if (!coreSource.includes('async function ensureWorkspaceState(section)')
+  || !coreSource.includes('await loadAuxiliaryState()')
+  || !coreSource.includes('await loadTenantDocumentArchive()')) {
+  failures.push('core.js: non-Journal data must load on demand from the existing workspace render path');
+}
+if (!auxiliaryStartupSource.includes('export function loadFinanceState()')
+  || !auxiliaryStartupSource.includes('export function loadAuxiliaryState()')) {
+  failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separate owners');
+}
+if (businessStartupSource.includes('loadAllDeposits(') || auxiliaryStartupSource.includes('loadAllDeposits(')) {
+  failures.push('startup runtime: deposits must not load during authenticated startup');
+}
+if (!businessStartupSource.includes("apiRequest('/business-state/journal')")
+  || businessStartupSource.includes("apiRequest('/events')")
+  || businessStartupSource.includes("apiRequest('/notes')")) {
+  failures.push('core/runtime/business-state.js: Journal startup must use one canonical read request');
+}
+if (!businessControllerSource.includes("@Get('journal')")
+  || !businessControllerSource.includes('this.businessState.get(auth.tenantId)')
+  || !businessControllerSource.includes('this.events.list(auth.tenantId)')
+  || !businessControllerSource.includes('this.notes.listProfile(auth.tenantId, auth.platformAccountId)')) {
+  failures.push('server business-state controller: Journal projection must compose canonical BusinessState, Event and Note owners');
+}
+if (!documentArchiveSource.includes('return initialArchiveLoad;')) {
+  failures.push('tenant document archive: on-demand load must be awaitable by the section that requested it');
+}
+
+if (!/let\s+allDepositsRequest\s*=\s*null/.test(depositStartupSource)
+  || !/if\s*\(\s*!allDepositsRequest\s*\)/.test(depositStartupSource)
+  || !/return\s+allDepositsRequest/.test(depositStartupSource)) {
+  failures.push('core/loyalty/deposit/data.js: duplicate deposit reads must share one in-flight request');
+}
+
+for (const [name, source] of [
+  ['index.html', mainHtml],
+  ['user.html', userHtml],
+]) {
+  if (!source.includes('data-startup-loading') || !source.includes('v2-sticker-screen')) {
+    failures.push(`${name}: initial app shell must render Shared loading state before async startup`);
+  }
+}
+
+if (!userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-detail', tenantId: route.tenantId })")) {
+  failures.push('online-booking/user-entry.js: account booking must preserve the professional Contacts context beneath Shared Record creation');
+}
+if (!userEntrySource.includes('data-startup-loading')) {
+  failures.push('online-booking/user-entry.js: public booking route must keep visible Shared loading feedback during hydration');
+}
+
+if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")
+  || !bookingAccessSource.includes("action.dataset.bookingBusy = 'true'")
+  || !bookingAccessSource.includes("action.setAttribute('aria-busy', 'true')")) {
+  failures.push('online-booking/access.js: booking confirmation must react immediately and reject duplicate submission while the request is pending');
+}
+
+if (!recordServiceSource.includes("apiRequest('/business-state/records')")
+  || recordServiceSource.includes("const response = await apiRequest('/business-state');")) {
+  failures.push('core/record/service.js: record refresh must use the focused records endpoint, not the full business state');
+}
+if (!businessControllerSource.includes("@Get('records')")) {
+  failures.push('server business-state controller: focused records endpoint is required');
+}
+
+if (!paymentSource.includes('paymentEntryOpeningRecords')
+  || !paymentSource.includes("emptyState('Оплата', 'Загрузка…')")
+  || !paymentSource.includes("submit.textContent = 'Проводим…'")) {
+  failures.push('core/payment/record-payment.js: payment entry must respond immediately and prevent duplicate opening/submission');
+}
+
 const branch = String(
   process.env.GITHUB_EVENT_NAME === 'pull_request'
     ? process.env.GITHUB_BASE_REF || ''

@@ -3,6 +3,7 @@ import { describePriceConditionConflict, resolvePersonPriceCondition } from '../
 
 let programs = [];
 let deposits = [];
+let allDepositsRequest = null;
 
 function clone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
 function list(value){return Array.isArray(value)?value:[];}
@@ -97,8 +98,18 @@ export async function loadDepositPrograms(){
 }
 
 export async function loadAllDeposits(){
-  deposits=normalizeDeposits(await payload(await apiRequest('/loyalty/deposits'),'Не удалось загрузить депозиты'));
-  return getDepositInstances();
+  if(!allDepositsRequest){
+    allDepositsRequest=apiRequest('/loyalty/deposits')
+      .then((response)=>payload(response,'Не удалось загрузить депозиты'))
+      .then((remote)=>{
+        deposits=normalizeDeposits(remote);
+        return getDepositInstances();
+      })
+      .finally(()=>{
+        allDepositsRequest=null;
+      });
+  }
+  return allDepositsRequest;
 }
 
 export async function saveDepositPrograms(next=[]){
