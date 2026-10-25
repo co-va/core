@@ -161,6 +161,17 @@ if (!auxiliaryStartupSource.includes('export function loadFinanceState()')
 if (businessStartupSource.includes('loadAllDeposits(') || auxiliaryStartupSource.includes('loadAllDeposits(')) {
   failures.push('startup runtime: deposits must not load during authenticated startup');
 }
+if (!businessStartupSource.includes("apiRequest('/business-state/journal')")
+  || businessStartupSource.includes("apiRequest('/events')")
+  || businessStartupSource.includes("apiRequest('/notes')")) {
+  failures.push('core/runtime/business-state.js: Journal startup must use one canonical read request');
+}
+if (!businessControllerSource.includes("@Get('journal')")
+  || !businessControllerSource.includes('this.businessState.get(auth.tenantId)')
+  || !businessControllerSource.includes('this.events.list(auth.tenantId)')
+  || !businessControllerSource.includes('this.notes.listProfile(auth.tenantId, auth.platformAccountId)')) {
+  failures.push('server business-state controller: Journal projection must compose canonical BusinessState, Event and Note owners');
+}
 if (!documentArchiveSource.includes('return initialArchiveLoad;')) {
   failures.push('tenant document archive: on-demand load must be awaitable by the section that requested it');
 }
