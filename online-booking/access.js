@@ -439,12 +439,30 @@ function startBookingFlow(root, state) {
       return Math.max(0, subtotal * (1 - accountDiscount(state.account) / 100));
     },
     async create(recordsState) {
-      return createBookingRequest(state.tenantId, {
-        workplaceKey: recordsState.workplaceId,
-        date: recordsState.date,
-        from: recordsState.from,
-        procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')),
-      });
+      const action = document.querySelector('[data-records-confirm]');
+      const originalLabel = action?.textContent || 'Подтвердить';
+      if (action) {
+        if (action.dataset.bookingBusy === 'true') return null;
+        action.dataset.bookingBusy = 'true';
+        action.disabled = true;
+        action.setAttribute('aria-busy', 'true');
+        action.textContent = 'Записываем…';
+      }
+      try {
+        return await createBookingRequest(state.tenantId, {
+          workplaceKey: recordsState.workplaceId,
+          date: recordsState.date,
+          from: recordsState.from,
+          procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')),
+        });
+      } finally {
+        if (action?.isConnected) {
+          delete action.dataset.bookingBusy;
+          action.disabled = false;
+          action.removeAttribute('aria-busy');
+          action.textContent = originalLabel;
+        }
+      }
     },
     async onCreateError(error, recordsState, { renderTimes, renderConfirmation }) {
       await refreshContext(state).catch(() => {});
