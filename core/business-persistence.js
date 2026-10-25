@@ -1,10 +1,10 @@
 import { apiRequest } from './auth.js';
 
 let serverReady = false;
-let running = false;
 let lastError = null;
 let pendingPermanentError = null;
-const queue = [];
+const laneQueues = new Map();
+const runningLanes = new Set();
 const idleWaiters = [];
 const completedMutationScopes = new Set();
 
@@ -55,8 +55,19 @@ function reportCompletedMutationBatch() {
   }));
 }
 
+function laneQueue(lane) {
+  const key = String(lane || 'business');
+  if (!laneQueues.has(key)) laneQueues.set(key, []);
+  return laneQueues.get(key);
+}
+
+function hasPendingWrites() {
+  if (runningLanes.size) return true;
+  return [...laneQueues.values()].some((items) => items.length);
+}
+
 function resolveIdle() {
-  if (queue.length || running) return;
+  if (hasPendingWrites()) return;
   while (idleWaiters.length) idleWaiters.shift()?.();
 }
 
@@ -75,16 +86,16 @@ function failedRecordMutationId(item = null) {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
-function discardImmediateRecordEvents(recordId, error) {
+function discardImmediateRecordEvents(items, recordId, error) {
   const id = String(recordId || '');
-  if (!id) return;
-  while (queue.length) {
-    const next = queue[0];
+  if (!id || !Array.isArray(items)) return;
+  while (items.length) {
+    const next = items[0];
     const path = String(next?.path || '');
     const method = String(next?.options?.method || '').toUpperCase();
     const deleteEventsPath = `/business-state/records/${encodeURIComponent(id)}/events`;
     if (method === 'DELETE' && path === deleteEventsPath) {
-      queue.shift();
+      items.shift();
       next.resolve?.({ ok: false, error });
       continue;
     }
@@ -96,20 +107,28 @@ function discardImmediateRecordEvents(recordId, error) {
       eventRecordId = '';
     }
     if (eventRecordId !== id) break;
-    queue.shift();
+    items.shift();
     next.resolve?.({ ok: false, error });
   }
 }
 
-async function runQueue() {
-  if (running || !serverReady) return;
-  running = true;
+async function runLane(lane) {
+  const key = String(lane || 'business');
+  if (runningLanes.has(key) || !serverReady) return;
+  const items = laneQueue(key);
+  if (!items.length) {
+    laneQueues.delete(key);
+    resolveIdle();
+    return;
+  }
+
+  runningLanes.add(key);
   try {
-    while (serverReady && queue.length) {
-      const item = queue[0];
+    while (serverReady && items.length) {
+      const item = items[0];
       try {
         const result = await send(item);
-        queue.shift();
+        items.shift();
         lastError = null;
         item.resolve?.(result);
         markMutationCompleted(item.path);
@@ -117,35 +136,48 @@ async function runQueue() {
         reportError(error);
         const status = Number(error?.status) || 0;
         if (status >= 400 && status < 500) {
-          queue.shift();
-          pendingPermanentError = lastError;
+          items.shift();
+          if (!pendingPermanentError) pendingPermanentError = lastError;
           item.resolve?.({ ok: false, error: lastError });
-          discardImmediateRecordEvents(failedRecordMutationId(item), lastError);
+          discardImmediateRecordEvents(items, failedRecordMutationId(item), lastError);
           continue;
         }
         await sleep(1200);
       }
     }
   } finally {
-    running = false;
+    runningLanes.delete(key);
+    if (!items.length) laneQueues.delete(key);
     resolveIdle();
-    if (!queue.length) reportCompletedMutationBatch();
-    if (serverReady && queue.length) void runQueue();
+    if (!hasPendingWrites()) reportCompletedMutationBatch();
+    if (serverReady && items.length) void runLane(key);
   }
 }
 
-function enqueue(path, options, fallbackMessage) {
+function runPendingLanes() {
+  if (!serverReady) return;
+  for (const [lane, items] of laneQueues) {
+    if (items.length) void runLane(lane);
+  }
+}
+
+function enqueue(lane, path, options, fallbackMessage) {
   if (!serverReady) return Promise.resolve();
   let resolve;
   const done = new Promise((doneResolve) => { resolve = doneResolve; });
-  queue.push({ path, options, fallbackMessage, resolve });
-  void runQueue();
+  laneQueue(lane).push({ path, options, fallbackMessage, resolve });
+  void runLane(lane);
   return done;
+}
+
+function recordLane(recordId) {
+  const id = String(recordId || '').trim();
+  return id ? `record:${id}` : 'records';
 }
 
 export function setBusinessServerReady(value) {
   serverReady = Boolean(value);
-  if (serverReady) void runQueue();
+  if (serverReady) runPendingLanes();
 }
 
 export function isBusinessServerReady() {
@@ -159,7 +191,7 @@ export function getBusinessPersistenceError() {
 export function queuePersonUpsert(person, position = 0) {
   const key = String(person?.key || '').trim();
   if (!key) return Promise.resolve();
-  return enqueue(`/business-state/people/${encodeURIComponent(key)}`, {
+  return enqueue('identity', `/business-state/people/${encodeURIComponent(key)}`, {
     method: 'PUT',
     body: JSON.stringify({ person, position }),
   }, 'Не удалось сохранить человека на сервере');
@@ -168,11 +200,11 @@ export function queuePersonUpsert(person, position = 0) {
 export function queuePersonDelete(key) {
   const id = String(key || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue(`/business-state/people/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'Не удалось удалить человека на сервере');
+  return enqueue('identity', `/business-state/people/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'Не удалось удалить человека на сервере');
 }
 
 export function queueUEIStore(uei) {
-  return enqueue('/business-state/uei', {
+  return enqueue('identity', '/business-state/uei', {
     method: 'PUT',
     body: JSON.stringify({ uei }),
   }, 'Не удалось сохранить UEI на сервере');
@@ -181,7 +213,7 @@ export function queueUEIStore(uei) {
 export function queueRecordUpsert(record, position = 0) {
   const id = String(record?.id || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue(`/business-state/records/${encodeURIComponent(id)}`, {
+  return enqueue(recordLane(id), `/business-state/records/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify({ record, position }),
   }, 'Не удалось сохранить запись на сервере');
@@ -190,25 +222,25 @@ export function queueRecordUpsert(record, position = 0) {
 export function queueRecordDelete(id) {
   const recordId = String(id || '').trim();
   if (!recordId) return Promise.resolve();
-  return enqueue(`/business-state/records/${encodeURIComponent(recordId)}`, { method: 'DELETE' }, 'Не удалось удалить запись на сервере');
+  return enqueue(recordLane(recordId), `/business-state/records/${encodeURIComponent(recordId)}`, { method: 'DELETE' }, 'Не удалось удалить запись на сервере');
 }
 
 export function queueEventUpsert(event) {
   const id = String(event?.id || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue(`/events/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ event }) }, 'Не удалось сохранить событие на сервере');
+  return enqueue('events', `/events/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ event }) }, 'Не удалось сохранить событие на сервере');
 }
 
 export function queueEventDelete(id) {
   const eventId = String(id || '').trim();
   if (!eventId) return Promise.resolve();
-  return enqueue(`/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }, 'Не удалось удалить событие на сервере');
+  return enqueue('events', `/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }, 'Не удалось удалить событие на сервере');
 }
 
 export function queueNoteUpsert(note) {
   const id = String(note?.id || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue(`/notes/${encodeURIComponent(id)}`, {
+  return enqueue('notes', `/notes/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify({ note }),
   }, 'Не удалось сохранить заметку на сервере');
@@ -217,13 +249,14 @@ export function queueNoteUpsert(note) {
 export function queueNoteDelete(id) {
   const noteId = String(id || '').trim();
   if (!noteId) return Promise.resolve();
-  return enqueue(`/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }, 'Не удалось удалить заметку на сервере');
+  return enqueue('notes', `/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }, 'Не удалось удалить заметку на сервере');
 }
 
 export function queueRecordEventUpsert(event, position = 0) {
   const id = String(event?.id || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue(`/business-state/record-events/${encodeURIComponent(id)}`, {
+  const recordId = String(event?.recordId || '').trim();
+  return enqueue(recordLane(recordId), `/business-state/record-events/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify({ event, position }),
   }, 'Не удалось сохранить историю записи на сервере');
@@ -232,13 +265,13 @@ export function queueRecordEventUpsert(event, position = 0) {
 export function queueRecordEventsDelete(recordId) {
   const id = String(recordId || '').trim();
   if (!id) return Promise.resolve();
-  return enqueue(`/business-state/records/${encodeURIComponent(id)}/events`, { method: 'DELETE' }, 'Не удалось удалить историю записи на сервере');
+  return enqueue(recordLane(id), `/business-state/records/${encodeURIComponent(id)}/events`, { method: 'DELETE' }, 'Не удалось удалить историю записи на сервере');
 }
 
 export function queueDocumentDataset(dataset, value) {
   const name = String(dataset || '').trim();
   if (!name) return Promise.resolve();
-  return enqueue(`/tenant-document-archive/${encodeURIComponent(name)}`, {
+  return enqueue(`documents:${name}`, `/tenant-document-archive/${encodeURIComponent(name)}`, {
     method: 'PUT',
     body: JSON.stringify({ value }),
   }, 'Не удалось сохранить документы на сервере');
@@ -247,7 +280,7 @@ export function queueDocumentDataset(dataset, value) {
 export function queueOperationalDataset(dataset, value) {
   const key = String(dataset || '').trim();
   if (!key) return Promise.resolve();
-  return enqueue(`/business-state/operational/${encodeURIComponent(key)}`, {
+  return enqueue(`operational:${key}`, `/business-state/operational/${encodeURIComponent(key)}`, {
     method: 'PUT',
     body: JSON.stringify({ value }),
   }, 'Не удалось сохранить рабочие данные на сервере');
@@ -256,7 +289,7 @@ export function queueOperationalDataset(dataset, value) {
 export function queueAuxiliaryDataset(dataset, value) {
   const key = String(dataset || '').trim();
   if (!key) return Promise.resolve();
-  return enqueue(`/auxiliary-state/${encodeURIComponent(key)}`, {
+  return enqueue(`auxiliary:${key}`, `/auxiliary-state/${encodeURIComponent(key)}`, {
     method: 'PUT',
     body: JSON.stringify({ value }),
   }, 'Не удалось сохранить связанные данные на сервере');
@@ -264,7 +297,7 @@ export function queueAuxiliaryDataset(dataset, value) {
 
 export async function flushBusinessPersistence({ timeoutMs = 12000 } = {}) {
   if (!serverReady) return;
-  if (queue.length || running) {
+  if (hasPendingWrites()) {
     let timer;
     await Promise.race([
       new Promise((resolve) => {
