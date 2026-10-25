@@ -3,6 +3,8 @@ import { API_BASE } from '../environment.js';
 const ACCOUNT_TOKEN_KEY = 'book.account.token';
 const ACCOUNT_EMAIL_KEY = 'book.account.email';
 const ACCOUNT_UNREAD_KEY = '__VA_TOOLS_ACCOUNT_UNREAD__';
+let globalAccountCacheToken = '';
+let globalAccountCache = null;
 
 function unreadSnapshot() {
   if (typeof globalThis === 'undefined') return { total: 0, byTenant: {} };
@@ -71,6 +73,8 @@ export function getRememberedAccountEmail() {
 
 export function clearAccount() {
   localStorage.removeItem(ACCOUNT_TOKEN_KEY);
+  globalAccountCacheToken = '';
+  globalAccountCache = null;
   publishUnread({});
 }
 
@@ -131,6 +135,10 @@ function storeSession(_tenantId, payload) {
     publishUnread({});
   }
   if (payload?.account?.email) localStorage.setItem(ACCOUNT_EMAIL_KEY, payload.account.email);
+  if (payload?.account && payload?.accessToken) {
+    globalAccountCacheToken = String(payload.accessToken);
+    globalAccountCache = payload.account;
+  }
   return payload;
 }
 
@@ -197,16 +205,20 @@ export async function loginGlobalAccount(identifier, password) {
 export async function getGlobalAccount() {
   const token = getAccountToken('');
   if (!token) return null;
+  if (globalAccountCache && globalAccountCacheToken === token) return globalAccountCache;
   const response = await request('/online-booking/account/me', { auth: true });
   if (response.status === 401) {
     clearAccount('');
     return null;
   }
-  return jsonResponse(response, 'Не удалось открыть аккаунт');
+  const account = await jsonResponse(response, 'Не удалось открыть аккаунт');
+  globalAccountCacheToken = token;
+  globalAccountCache = account;
+  return account;
 }
 
 export async function updateGlobalAccount(data) {
-  return jsonResponse(
+  const account = await jsonResponse(
     await request('/online-booking/account/me', {
       auth: true,
       method: 'PUT',
@@ -214,6 +226,9 @@ export async function updateGlobalAccount(data) {
     }),
     'Не удалось обновить аккаунт',
   );
+  globalAccountCacheToken = getAccountToken('');
+  globalAccountCache = account;
+  return account;
 }
 
 export async function deleteGlobalAccount() {
@@ -496,82 +511,5 @@ export async function bindAccountTelegramEntry(tenantId, token) {
       body: JSON.stringify({ token: String(token || '').trim() }),
     }),
     'Не удалось привязать Telegram',
-  );
-}
-
-export async function getAccountNotifications(tenantId) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/notifications`, { tenantId, auth: true }),
-    'Не удалось загрузить уведомления',
-  );
-}
-
-export async function markAccountNotificationRead(tenantId, notificationId) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/notifications/${encodeURIComponent(notificationId)}/read`, {
-      tenantId,
-      auth: true,
-      method: 'POST',
-    }),
-    'Не удалось открыть уведомление',
-  );
-}
-
-export async function getAccountChat(tenantId) {
-  const payload = await jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/chat`, { tenantId, auth: true }),
-    'Не удалось загрузить чат',
-  );
-  await getGlobalAccountUnreadSummary().catch(() => null);
-  return payload;
-}
-
-export async function getAccountChatSettings(tenantId) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/chat/settings`, { tenantId, auth: true }),
-    'Не удалось загрузить настройки чата',
-  );
-}
-
-export async function sendAccountChatMessage(tenantId, body, attachments = []) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/chat/messages`, {
-      tenantId,
-      auth: true,
-      method: 'POST',
-      body: JSON.stringify({ body: String(body || '').trim(), attachments: Array.isArray(attachments) ? attachments : [] }),
-    }),
-    'Не удалось отправить сообщение',
-  );
-}
-
-export async function getWebPushConfiguration(tenantId) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/config`, { tenantId, auth: true }),
-    'Не удалось проверить Push',
-  );
-}
-
-export async function saveWebPushSubscription(tenantId, subscription) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/subscription`, {
-      tenantId,
-      auth: true,
-      method: 'PUT',
-      body: JSON.stringify({ subscription }),
-    }),
-    'Не удалось подключить Push',
-  );
-}
-
-export async function deleteWebPushSubscription(tenantId, endpoint) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/subscription`, {
-      tenantId,
-      auth: true,
-      method: 'DELETE',
-      body: JSON.stringify({ endpoint: String(endpoint || '') }),
-    }),
-    'Не удалось отключить Push',
   );
 }
