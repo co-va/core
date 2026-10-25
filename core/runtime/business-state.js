@@ -27,12 +27,22 @@ async function payload(response, fallback) {
 
 export async function loadBusinessState() {
   setBusinessServerReady(false);
+
+  const businessRequest = apiRequest('/business-state')
+    .then((response) => payload(response, 'Не удалось загрузить People, UEI и Записи'));
+  const eventsRequest = apiRequest('/events')
+    .then((response) => payload(response, 'Не удалось загрузить события'));
+  const notesRequest = apiRequest('/notes')
+    .then((response) => payload(response, 'Не удалось загрузить заметки'));
+  const depositsRequest = loadAllDeposits();
+
   const [remote, events, notes] = await Promise.all([
-    payload(await apiRequest('/business-state'), 'Не удалось загрузить People, UEI и Записи'),
-    payload(await apiRequest('/events'), 'Не удалось загрузить события'),
-    payload(await apiRequest('/notes'), 'Не удалось загрузить заметки'),
-    loadAllDeposits(),
+    businessRequest,
+    eventsRequest,
+    notesRequest,
+    depositsRequest,
   ]);
+
   hydratePeopleFromServer(Array.isArray(remote.people) ? clone(remote.people) : []);
   hydrateUEIFromServer(normalizeUEI(remote.uei));
   hydrateRecordStateFromServer({
