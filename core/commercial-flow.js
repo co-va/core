@@ -65,7 +65,23 @@ function productList(products = []) {
   })));
 }
 
-function content(commercial) {
+function pendingContent(commercial) {
+  const order = commercial.order || {};
+  return `
+    <div class="modal-title">
+      <h2>Ожидает оплаты</h2>
+      <p>Сумма зафиксирована. LIVE включится после подтверждения оплаты и отправки чека.</p>
+    </div>
+    ${v2Section('Счёт', `
+      <div><strong>${escapeHtml(rubles(order.totalMinor || commercial.quote?.totalMinor || 0))}</strong></div>
+      <p>Оплата выполняется по полученным реквизитам. После оплаты администратор сформирует чек в «Мой налог» и отправит его на ваш email.</p>
+    `)}
+    <p class="form-error" data-commercial-error></p>
+    ${actionBlock(button('Проверить оплату', { data:'data-commercial-check' }))}
+  `;
+}
+
+function selectionContent(commercial) {
   const products = Array.isArray(commercial.products) ? commercial.products : [];
   const baseProducts = Array.isArray(commercial.baseProducts) ? commercial.baseProducts : [];
   return `
@@ -84,7 +100,38 @@ function content(commercial) {
   `;
 }
 
-function bindFlow(layer, commercial, finish) {
+function content(commercial) {
+  if (commercial?.order?.status === 'PENDING') return pendingContent(commercial);
+  return selectionContent(commercial);
+}
+
+function bindPendingFlow(layer, finish) {
+  const control = layer.querySelector('[data-commercial-check]');
+  const error = layer.querySelector('[data-commercial-error]');
+  control?.addEventListener('click', async () => {
+    control.disabled = true;
+    if (error) error.textContent = '';
+    try {
+      const latest = await request('/me');
+      if (latest?.access?.commercialMode === 'LIVE') {
+        layer.v2Close?.();
+        finish({
+          access: latest.access,
+          commercial: latest,
+          order: latest.order || null,
+        });
+        return;
+      }
+      if (error) error.textContent = 'Оплата ещё не подтверждена.';
+    } catch (checkError) {
+      if (error) error.textContent = checkError instanceof Error ? checkError.message : 'Не удалось проверить оплату';
+    } finally {
+      if (control.isConnected) control.disabled = false;
+    }
+  });
+}
+
+function bindSelectionFlow(layer, commercial, finish) {
   const products = Array.isArray(commercial.products) ? commercial.products : [];
   const byKey = new Map(products.map((product) => [product.key, product]));
   const manualSelected = new Set(products.filter((product) => product.selected).map((product) => product.key));
@@ -118,11 +165,13 @@ function bindFlow(layer, commercial, finish) {
     const total = Math.max(0, subtotal - Math.round(subtotal * discount / 100));
     const totalNode = layer.querySelector('[data-commercial-total]');
     const summaryNode = layer.querySelector('[data-commercial-summary]');
+    const confirmNode = layer.querySelector('[data-commercial-confirm]');
     if (totalNode) totalNode.textContent = rubles(total);
+    if (confirmNode) confirmNode.textContent = total > 0 ? 'Выставить счёт' : 'Начать LIVE';
     if (summaryNode) {
       const paidCount = directKeys.filter((key) => !byKey.get(key)?.isFree).length;
       summaryNode.textContent = paidCount
-        ? `Выбрано дополнительных инструментов: ${paidCount}. Тариф рассчитан по текущему каталогу.`
+        ? `Выбрано дополнительных инструментов: ${paidCount}. После подтверждения сумма будет зафиксирована в счёте.`
         : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.';
     }
   };
@@ -147,6 +196,13 @@ function bindFlow(layer, commercial, finish) {
         method:'POST',
         body:JSON.stringify({ productKeys: directSelection(products, manualSelected) }),
       });
+      if (payload?.requiresPayment) {
+        const current = payload.commercial || commercial;
+        current.order = payload.order || current.order;
+        layer.innerHTML = pendingContent(current);
+        bindPendingFlow(layer, finish);
+        return;
+      }
       layer.v2Close?.();
       finish(payload);
     } catch (submitError) {
@@ -158,6 +214,14 @@ function bindFlow(layer, commercial, finish) {
   sync();
 }
 
+function bindFlow(layer, commercial, finish) {
+  if (commercial?.order?.status === 'PENDING') {
+    bindPendingFlow(layer, finish);
+    return;
+  }
+  bindSelectionFlow(layer, commercial, finish);
+}
+
 export function openCommercialLiveFlow({ required = false } = {}) {
   if (activeFlow) return activeFlow;
 
@@ -165,6 +229,9 @@ export function openCommercialLiveFlow({ required = false } = {}) {
     const commercial = await request('/me');
     if (!commercial?.tenantId || !Array.isArray(commercial.products) || !commercial.quote) {
       throw new Error('Коммерческий каталог временно недоступен');
+    }
+    if (commercial?.access?.commercialMode === 'LIVE') {
+      return { access: commercial.access, commercial, order: commercial.order || null };
     }
     return new Promise((resolve) => {
       const layer = mountModal(document.body, modal(content(commercial), {
