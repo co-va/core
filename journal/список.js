@@ -1,6 +1,6 @@
 import { ALL_WORKPLACES_ID, emptyState, escapeHtml, v2ListEntries, v2ListEntry, shortDate } from '../ui/ui.js';
 import { getWorkplaces } from '../core/workplace-time.js';
-import { getRecordPaymentState, recordAmountDue } from '../core/finance/settlement.js';
+import { getRecordPaymentState, recordAmountDue } from '../core/finance/index.js';
 import { getRecords } from '../core/record/index.js';
 import { isRecordCompletedSide, recordActivityTime, recordAppointmentTime, recordVisualState } from '../core/record/index.js';
 
