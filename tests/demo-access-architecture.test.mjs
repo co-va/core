@@ -58,6 +58,10 @@ assert.match(access, /paidAccessExpired/);
 assert.match(access, /commercialPaidState/);
 assert.match(access, /CommercialProductCapability/);
 assert.match(access, /commercialExpiredValue/);
+assert.match(access, /"discountPercent","freeForever","freeUntil"/);
+assert.match(access, /const complimentary = Boolean/);
+assert.match(access, /Number\(terms\?\.discountPercent \|\| 0\) >= 100/);
+assert.match(access, /const expired = !complimentary/);
 assert.match(paidPeriodMigration, /"paidAccessStartsAt"/);
 assert.match(paidPeriodMigration, /"paidAccessEndsAt"/);
 assert.match(paidPeriodMigration, /"accessStartsAt"/);
@@ -72,6 +76,8 @@ assert.doesNotMatch(adminController, /demo\/extend/);
 
 assert.match(coreAccess, /requestLiveMode/);
 assert.match(coreAccess, /openCommercialLiveFlow/);
+assert.match(coreAccess, /manage = false/);
+assert.match(coreAccess, /openCommercialLiveFlow\(\{ required:false, manage \}\)/);
 assert.doesNotMatch(coreAccess, /\/saas-access\/requests\/live/);
 assert.match(coreAccess, /demoExpired/);
 assert.match(coreAccess, /required:true/);
@@ -82,7 +88,13 @@ assert.match(coreAccess, /required:false/);
 assert.match(commercialFlow, /saas-commercial/);
 assert.match(commercialFlow, /request\('\/confirm-live'/);
 assert.match(commercialFlow, /Переход в LIVE/);
+assert.match(commercialFlow, /Инструменты LIVE/);
 assert.match(commercialFlow, /Продление платного доступа/);
+assert.match(commercialFlow, /Индивидуальный доступ/);
+assert.match(commercialFlow, /selfServiceManaged !== true/);
+assert.match(commercialFlow, /protectedGrant:true/);
+assert.match(commercialFlow, /sameSelection/);
+assert.match(commercialFlow, /lockedPaid/);
 assert.match(commercialFlow, /30 дней/);
 assert.match(commercialFlow, /Дополнительные инструменты/);
 assert.match(commercialFlow, /Тариф/);
@@ -92,7 +104,7 @@ assert.match(commercialFlow, /directSelection/);
 assert.match(commercialFlow, /Получить счёт · 30 дней/);
 assert.match(commercialFlow, /payload\?\.requiresPayment && payload\?\.access\?\.commercialMode === 'LIVE'/);
 assert.match(commercialFlow, /Бесплатный LIVE уже работает/);
-assert.match(commercialFlow, /commercial\?\.access\?\.commercialMode === 'LIVE' && commercial\?\.access\?\.paidAccessExpired !== true/);
+assert.match(commercialFlow, /commercial\?\.access\?\.commercialMode === 'LIVE' && commercial\?\.access\?\.paidAccessExpired !== true && !manage/);
 
 assert.match(commercialSelfService, /@Controller\('saas-commercial'\)/);
 assert.match(commercialSelfService, /@Post\('confirm-live'\)/);
@@ -110,6 +122,10 @@ const paidInvoiceIndex = commercialSelfService.lastIndexOf('const invoice = awai
 assert.ok(paidTransitionIndex >= 0 && paidInvoiceIndex > paidTransitionIndex);
 assert.match(commercialTenant, /product\.isFree \? 0/);
 assert.match(commercialTenant, /effectivePriceMinor = product\.isFree \? 0 : product\.priceMinor/);
+assert.match(commercialTenant, /configured: Boolean\(terms \|\| selectedRows\.length\)/);
+assert.match(commercialTenant, /selfServiceManaged: Boolean\(terms && !terms\.updatedByAdminId\)/);
+assert.match(commercialTenant, /paidAccessStartsAt: terms\?\.paidAccessStartsAt/);
+assert.match(commercialTenant, /paidAccessEndsAt: terms\?\.paidAccessEndsAt/);
 
 assert.match(commercialInvoice, /COMMERCIAL_PAYMENT_INSTRUCTIONS/);
 assert.match(commercialInvoice, /COMMERCIAL_PAYMENT_URL/);
@@ -133,6 +149,9 @@ assert.match(transactionalEmail, /attachments: input\.attachments/);
 assert.match(adminCommercial, /type="file"/);
 assert.match(adminCommercial, /new FormData\(\)/);
 assert.match(adminCommercial, /form\.append\('receiptFile'/);
+assert.match(adminCommercial, /paidAccessEndsAt/);
+assert.match(adminCommercial, /Платные инструменты включены/);
+assert.doesNotMatch(adminCommercial, /включить LIVE/);
 assert.match(auth, /options\.body instanceof FormData/);
 assert.match(receiptFileMigration, /"receiptKind"/);
 assert.match(receiptFileMigration, /"receiptFileSha256"/);
@@ -151,6 +170,8 @@ assert.match(invitation, /PlatformConsentEvent/);
 
 assert.match(profile, /DEMO · осталось/);
 assert.match(profile, /Запросить LIVE/);
+assert.match(profile, /LIVE · инструменты/);
+assert.match(profile, /requestLiveMode\(\{manage:true\}\)/);
 assert.match(profile, /requestLiveMode/);
 
 assert.match(invitation, /TOOL_CAPABILITY_KEYS/);
@@ -218,4 +239,4 @@ assert.match(recovery, /firstRunCleanupMigration/);
 assert.match(recovery, /return 43/);
 assert.match(dockerfile, /migrate resolve --rolled-back 20260930143000_remove_first_run_runtime/);
 
-console.log('Profile-first DEMO, free LIVE, 30-day paid access expiry/renewal, invoice/receipt delivery and migration recovery contract: OK');
+console.log('Profile-first DEMO, protected complimentary LIVE, self-service LIVE tool management, 30-day paid access expiry/renewal, invoice/receipt delivery and migration recovery contract: OK');
