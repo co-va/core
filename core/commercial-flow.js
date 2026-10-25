@@ -59,7 +59,7 @@ function productList(products = []) {
     label: product.name,
     secondary: product.isFree
       ? 'Сейчас бесплатно · включено'
-      : `${rubles(product.priceMinor)}${product.includedProducts?.length ? ` · включает ${product.includedProducts.map((item) => item.name).join(', ')}` : ''}`,
+      : `${rubles(product.priceMinor)} · 30 дней${product.includedProducts?.length ? ` · включает ${product.includedProducts.map((item) => item.name).join(', ')}` : ''}`,
     checked: Boolean(product.selected),
     data: `data-commercial-product="${escapeHtml(product.key)}"`,
   })));
@@ -70,7 +70,7 @@ function pendingContent(commercial) {
   return `
     <div class="modal-title">
       <h2>Ожидает оплаты</h2>
-      <p>Бесплатный LIVE уже работает. Оплаченные инструменты включатся после подтверждения оплаты и отправки чека.</p>
+      <p>Бесплатный LIVE уже работает. После подтверждения оплаты выбранные платные инструменты включатся на 30 дней.</p>
     </div>
     ${v2Section('Счёт', `
       <div><strong>${escapeHtml(rubles(order.totalMinor || commercial.quote?.totalMinor || 0))}</strong></div>
@@ -84,19 +84,20 @@ function pendingContent(commercial) {
 function selectionContent(commercial) {
   const products = Array.isArray(commercial.products) ? commercial.products : [];
   const baseProducts = Array.isArray(commercial.baseProducts) ? commercial.baseProducts : [];
+  const renewal = commercial?.access?.paidAccessExpired === true;
   return `
     <div class="modal-title">
-      <h2>Переход в LIVE</h2>
-      <p>Базовый набор уже входит. Дополнительные инструменты можно добавить сейчас.</p>
+      <h2>${renewal ? 'Продление платного доступа' : 'Переход в LIVE'}</h2>
+      <p>${renewal ? 'Платный период завершён. Бесплатный LIVE продолжает работать. Выберите инструменты на следующие 30 дней.' : 'Базовый набор уже входит. Дополнительные инструменты можно добавить сейчас.'}</p>
     </div>
     ${v2Section('Базовый набор', baseList(baseProducts))}
     ${v2Section('Дополнительные инструменты', productList(products))}
     ${v2Section('Тариф', `
       <div><strong data-commercial-total>${escapeHtml(rubles(commercial.quote?.totalMinor || 0))}</strong></div>
-      <p data-commercial-summary>Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.</p>
+      <p data-commercial-summary>${renewal ? 'Выберите платные инструменты для следующего периода на 30 дней.' : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.'}</p>
     `)}
     <p class="form-error" data-commercial-error></p>
-    ${actionBlock(button('Начать LIVE', { data:'data-commercial-confirm' }))}
+    ${actionBlock(button(renewal ? 'Продлить на 30 дней' : 'Начать LIVE', { data:'data-commercial-confirm' }))}
   `;
 }
 
@@ -167,12 +168,12 @@ function bindSelectionFlow(layer, commercial, finish) {
     const summaryNode = layer.querySelector('[data-commercial-summary]');
     const confirmNode = layer.querySelector('[data-commercial-confirm]');
     if (totalNode) totalNode.textContent = rubles(total);
-    if (confirmNode) confirmNode.textContent = total > 0 ? 'Начать LIVE · получить счёт' : 'Начать LIVE';
+    if (confirmNode) confirmNode.textContent = total > 0 ? 'Получить счёт · 30 дней' : (commercial?.access?.paidAccessExpired ? 'Оставить бесплатный LIVE' : 'Начать LIVE');
     if (summaryNode) {
       const paidCount = directKeys.filter((key) => !byKey.get(key)?.isFree).length;
       summaryNode.textContent = paidCount
-        ? `Выбрано дополнительных инструментов: ${paidCount}. Бесплатный LIVE включится сразу, счёт придёт на email, платные инструменты — после оплаты.`
-        : 'Можно начать LIVE с тарифом 0 ₽ и добавить платные инструменты позже.';
+        ? `Выбрано дополнительных инструментов: ${paidCount}. Оплата открывает их на 30 дней. Бесплатный LIVE работает без ограничения этого периода.`
+        : 'Бесплатный LIVE продолжает работать без оплаты.';
     }
   };
 
@@ -237,7 +238,7 @@ export function openCommercialLiveFlow({ required = false } = {}) {
     if (!commercial?.tenantId || !Array.isArray(commercial.products) || !commercial.quote) {
       throw new Error('Коммерческий каталог временно недоступен');
     }
-    if (commercial?.access?.commercialMode === 'LIVE') {
+    if (commercial?.access?.commercialMode === 'LIVE' && commercial?.access?.paidAccessExpired !== true) {
       return { access: commercial.access, commercial, order: commercial.order || null };
     }
     return new Promise((resolve) => {
