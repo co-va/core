@@ -1,12 +1,13 @@
 import { apiRequest } from './auth.js';
 import { button, escapeHtml, modal, mountModal } from '../ui/ui.js';
 
+let platformPushConfigurationCache = null;
+
 async function jsonResponse(response, fallback) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.message || fallback);
   return payload;
 }
-
 
 function decodeBase64Url(value) {
   const padding = '='.repeat((4 - (String(value || '').length % 4)) % 4);
@@ -24,7 +25,12 @@ function platformPushSupported() {
 }
 
 async function platformPushConfiguration() {
-  return jsonResponse(await apiRequest('/platform-notices/push/configuration'), 'Не удалось проверить Push');
+  if (platformPushConfigurationCache) return platformPushConfigurationCache;
+  platformPushConfigurationCache = await jsonResponse(
+    await apiRequest('/platform-notices/push/configuration'),
+    'Не удалось проверить Push',
+  );
+  return platformPushConfigurationCache;
 }
 
 export async function getPlatformPushState() {
@@ -48,10 +54,11 @@ export async function getPlatformPushState() {
 
 export async function enablePlatformPush() {
   if (!platformPushSupported()) return getPlatformPushState();
-  const configuration = await platformPushConfiguration();
-  if (!configuration?.enabled || !configuration?.publicKey) return getPlatformPushState();
   if (Notification.permission === 'default') await Notification.requestPermission();
   if (Notification.permission !== 'granted') return getPlatformPushState();
+
+  const configuration = await platformPushConfiguration();
+  if (!configuration?.enabled || !configuration?.publicKey) return getPlatformPushState();
 
   const registration = await navigator.serviceWorker.register('/service-worker.js', { scope:'/' });
   await navigator.serviceWorker.ready;
@@ -104,14 +111,77 @@ function noticeModal(item) {
   </div>`;
 }
 
+function pushSetupModal() {
+  return `<div class="modal-title">
+    <h2>Уведомления на телефоне</h2>
+    <p>Включите уведомления, чтобы узнавать о новых записях, даже когда приложение закрыто.</p>
+  </div>
+  <div class="modal-actions">
+    ${button('Включить', { data: 'data-platform-push-enable' })}
+    ${button('Не сейчас', { data: 'data-platform-push-later' })}
+  </div>
+  <div class="muted" data-platform-push-status aria-live="polite"></div>`;
+}
+
 export function startPlatformNotices({
   onAccessChanged = async () => {},
-  intervalMs = 60_000,
+  intervalMs = 15_000,
 } = {}) {
   let disposed = false;
   let busy = false;
   let timer = null;
+  let pushPromptShown = false;
+  let pushPromptAttempts = 0;
   const shown = new Set();
+
+  if (platformPushSupported()) {
+    void navigator.serviceWorker.register('/service-worker.js', { scope:'/' }).catch(() => undefined);
+  }
+
+  const offerPush = async () => {
+    if (disposed || pushPromptShown || pushPromptAttempts >= 4) return;
+    pushPromptAttempts += 1;
+    if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
+      window.setTimeout(() => void offerPush(), 1_500);
+      return;
+    }
+    try {
+      const state = await getPlatformPushState();
+      if (!state.supported || !state.enabled || state.subscribed || state.permission === 'denied') return;
+      pushPromptShown = true;
+      const layer = mountModal(document.body, modal(pushSetupModal(), {
+        title: 'Уведомления на телефоне',
+        variant: 's',
+        surface: 'app',
+      }));
+      if (!layer) return;
+      layer.dataset.platformPushSetupModal = 'true';
+      const enable = layer.querySelector('[data-platform-push-enable]');
+      const later = layer.querySelector('[data-platform-push-later]');
+      const status = layer.querySelector('[data-platform-push-status]');
+      later?.addEventListener('click', () => layer.remove());
+      enable?.addEventListener('click', async () => {
+        enable.disabled = true;
+        if (status) status.textContent = 'Включаем…';
+        try {
+          const next = await enablePlatformPush();
+          if (next?.subscribed) {
+            layer.remove();
+            return;
+          }
+          if (status) status.textContent = next?.permission === 'denied'
+            ? 'Уведомления запрещены в настройках устройства.'
+            : 'Не удалось включить уведомления на этом устройстве.';
+        } catch (error) {
+          if (status) status.textContent = error instanceof Error ? error.message : 'Не удалось включить уведомления.';
+        } finally {
+          if (enable.isConnected) enable.disabled = false;
+        }
+      });
+    } catch {
+      // Настройка Push не должна блокировать рабочий интерфейс.
+    }
+  };
 
   const showNext = async () => {
     if (disposed || busy || document.querySelector('[data-platform-notice-modal]')) return;
@@ -144,6 +214,7 @@ export function startPlatformNotices({
           await onAccessChanged(item).catch(() => undefined);
         }
         window.setTimeout(() => void showNext(), 60);
+        window.setTimeout(() => void offerPush(), 500);
       });
     } catch {
       // Системное уведомление не должно блокировать рабочий интерфейс.
@@ -153,6 +224,7 @@ export function startPlatformNotices({
   };
 
   void showNext();
+  window.setTimeout(() => void offerPush(), 800);
   timer = window.setInterval(() => void showNext(), Math.max(15_000, Number(intervalMs) || 60_000));
 
   return () => {
