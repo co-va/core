@@ -1,7 +1,4 @@
 import { canUseBookCapability } from '../access.js';
-import { renderWallets } from './cash/cash.js';
-import { renderDDS } from './dds/index.js';
-import { renderZReport } from './z-report/index.js';
 
 const FINANCE_NAVIGATION = [
   { id: 'cash', label: 'Касса', capability: 'finance.cash.access' },
@@ -27,9 +24,16 @@ export function financeNavigationItems() {
     }));
 }
 
-export function renderFinanceSection(root, section = 'cash', options = {}) {
-  if (section === 'dds') return renderDDS(root);
-  if (section === 'z-report') return renderZReport(root);
+export async function renderFinanceSection(root, section = 'cash', options = {}) {
+  if (section === 'dds') {
+    const { renderDDS } = await import('./dds/index.js');
+    return renderDDS(root);
+  }
+  if (section === 'z-report') {
+    const { renderZReport } = await import('./z-report/index.js');
+    return renderZReport(root);
+  }
+  const { renderWallets } = await import('./cash/cash.js');
   return renderWallets(root, options);
 }
 
