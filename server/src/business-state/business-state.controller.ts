@@ -60,6 +60,19 @@ export class BusinessStateController {
     return this.businessState.get(request.auth!.tenantId);
   }
 
+  @Get('records')
+  async records(@Req() request: AuthenticatedRequest) {
+    const tenantId = request.auth!.tenantId;
+    const [records, recordEvents] = await Promise.all([
+      this.prisma.record.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+      this.prisma.recordEvent.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+    ]);
+    return {
+      records: records.map((row) => objectValue(row.data)),
+      recordEvents: recordEvents.map((row) => objectValue(row.data)),
+    };
+  }
+
   @Put('people/:key')
   upsertPerson(@Req() request: AuthenticatedRequest, @Param('key') key: string, @Body() body: unknown) {
     return this.businessState.upsertPerson(request.auth!.tenantId, key, body);
