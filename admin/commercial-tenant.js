@@ -51,13 +51,20 @@ function receiptAction(order) {
   if (order.receiptSentAt) {
     const receipt = order.receiptUrl
       ? `<a href="${escapeHtml(order.receiptUrl)}" target="_blank" rel="noopener noreferrer">Открыть чек</a>`
-      : '';
+      : order.receiptFileName
+        ? `Файл: ${escapeHtml(order.receiptFileName)}`
+        : '';
     return `<div class="admin-service-note">Оплата: ${escapeHtml(moment(order.paidAt))}<br>Чек отправлен: ${escapeHtml(moment(order.receiptSentAt))} · ${escapeHtml(order.receiptSentTo || '')}${receipt ? `<br>${receipt}` : ''}</div>`;
   }
   const label = status === 'PENDING'
     ? 'Оплата получена · отправить чек · включить LIVE'
     : 'Повторить отправку чека · включить LIVE';
   return `
+    <label class="admin-field">
+      <span>PDF / фото / скрин чека</span>
+      <input type="file" accept="application/pdf,image/*" data-commercial-receipt-file="${escapeHtml(order.id)}">
+    </label>
+    <p class="admin-service-note">или</p>
     <label class="admin-field">
       <span>Ссылка на чек из «Мой налог»</span>
       <input type="url" inputmode="url" placeholder="https://..." value="${escapeHtml(order.receiptUrl || '')}" data-commercial-receipt-url="${escapeHtml(order.id)}">
@@ -116,8 +123,10 @@ function bindOrderActions(section, tenantId) {
   section.querySelectorAll('[data-commercial-complete-payment]').forEach((button) => {
     button.addEventListener('click', async () => {
       const orderId = String(button.dataset.commercialCompletePayment || '');
-      const input = section.querySelector(`[data-commercial-receipt-url="${CSS.escape(orderId)}"]`);
-      const receiptUrl = String(input?.value || '').trim();
+      const urlInput = section.querySelector(`[data-commercial-receipt-url="${CSS.escape(orderId)}"]`);
+      const fileInput = section.querySelector(`[data-commercial-receipt-file="${CSS.escape(orderId)}"]`);
+      const receiptUrl = String(urlInput?.value || '').trim();
+      const receiptFile = fileInput?.files?.[0] || null;
       const message = section.querySelector('[data-commercial-tenant-message]');
       button.disabled = true;
       if (message) {
@@ -125,11 +134,20 @@ function bindOrderActions(section, tenantId) {
         message.classList.remove('error');
       }
       try {
-        const result = await request(`/${encodeURIComponent(tenantId)}/orders/${encodeURIComponent(orderId)}/complete-payment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ receiptUrl }),
-        });
+        if (!receiptFile && !receiptUrl) throw new Error('Прикрепите PDF/фото чека или вставьте ссылку');
+        let options;
+        if (receiptFile) {
+          const form = new FormData();
+          form.append('receiptFile', receiptFile);
+          options = { method: 'POST', body: form };
+        } else {
+          options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ receiptUrl }),
+          };
+        }
+        const result = await request(`/${encodeURIComponent(tenantId)}/orders/${encodeURIComponent(orderId)}/complete-payment`, options);
         const orders = await request(`/${encodeURIComponent(tenantId)}/orders`);
         const host = section.querySelector('[data-commercial-tenant-orders]');
         if (host) host.innerHTML = orderRows(orders);
