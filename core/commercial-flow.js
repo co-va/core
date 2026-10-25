@@ -199,7 +199,9 @@ function bindSelectionFlow(layer, commercial, finish) {
       if (payload?.requiresPayment) {
         const current = payload.commercial || commercial;
         current.order = payload.order || current.order;
-        layer.innerHTML = pendingContent(current);
+        const body = layer.querySelector('[data-v2-q-body]');
+        if (!body) throw new Error('Не удалось открыть состояние оплаты');
+        body.innerHTML = pendingContent(current);
         bindPendingFlow(layer, finish);
         return;
       }
