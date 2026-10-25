@@ -108,10 +108,10 @@ export class CommercialInvoiceService {
       const result = await this.email.send({
         to: emailAddress,
         toName: displayName,
-        subject: `Счёт LIVE · ${amount} ${currency}`,
+        subject: `Счёт LIVE · 30 дней · ${amount} ${currency}`,
         tag: 'commercial-live-invoice',
-        text: `Счёт ${orderId}\nСумма: ${amount} ${currency}\n\nБесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.\n\n${paymentText}`,
-        html: `<p>Счёт <strong>${html(orderId)}</strong></p><p>Сумма: <strong>${html(amount)} ${html(currency)}</strong></p><p>Бесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.</p>${paymentHtml}`,
+        text: `Счёт ${orderId}\nСумма: ${amount} ${currency}\nПериод: 30 дней платного доступа после подтверждения оплаты.\n\nБесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.\n\n${paymentText}`,
+        html: `<p>Счёт <strong>${html(orderId)}</strong></p><p>Сумма: <strong>${html(amount)} ${html(currency)}</strong></p><p>Период: <strong>30 дней платного доступа</strong> после подтверждения оплаты.</p><p>Бесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.</p>${paymentHtml}`,
       });
 
       await this.audit(tenantId, 'COMMERCIAL_INVOICE_SENT', orderId, {
@@ -119,6 +119,7 @@ export class CommercialInvoiceService {
         messageId: result.messageId,
         amountMinor: totalMinor,
         currency,
+        paidAccessPeriodDays: 30,
         paymentUrlConfigured: Boolean(details.url),
         paymentInstructionsConfigured: Boolean(details.instructions),
       });
@@ -126,14 +127,14 @@ export class CommercialInvoiceService {
       await this.notices.createForTenantOwner(tenantId, {
         type: 'COMMERCIAL_INVOICE_SENT',
         title: 'Счёт отправлен · бесплатный LIVE работает',
-        body: `Счёт на ${amount} ${currency} отправлен на email. Платные инструменты включатся после оплаты.`,
-        metadata: { orderId, amountMinor: totalMinor, currency },
+        body: `Счёт на ${amount} ${currency} за 30 дней платного доступа отправлен на email. Платные инструменты включатся после оплаты.`,
+        metadata: { orderId, amountMinor: totalMinor, currency, paidAccessPeriodDays: 30 },
       }).catch(() => null);
       await this.notices.pushToTenantOwner(tenantId, {
         type: 'COMMERCIAL_INVOICE_SENT',
         title: 'Счёт отправлен · бесплатный LIVE работает',
-        body: `Счёт на ${amount} ${currency} отправлен на email.`,
-        metadata: { orderId },
+        body: `Счёт на ${amount} ${currency} за 30 дней отправлен на email.`,
+        metadata: { orderId, paidAccessPeriodDays: 30 },
       }).catch(() => ({ sent: 0, failed: 0 }));
 
       return {
