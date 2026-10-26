@@ -84,23 +84,23 @@ export class ProcedureService {
     return { minimum: 0, variable: hasPriceValue(cost.to), free: false };
   }
 
-  publicBookingCatalog(proceduresValue: unknown, workplaceIds: string[]) {
+  publicBookingCatalog(proceduresValue: unknown, workplaceIds: string[]): JsonObject[] {
     const allowed = new Set(workplaceIds.map(text).filter(Boolean));
-    return arrayValue(proceduresValue)
-      .map((value) => objectValue(value))
-      .map((procedure) => {
-        const workplaces = arrayValue(procedure.workplaces)
-          .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id)))
-          .map((assignment) => {
-            const workplaceId = text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id);
-            return {
-              ...objectValue(assignment),
-              bookingPrice: this.bookingPriceFor(procedure, workplaceId),
-            };
-          });
-        return workplaces.length ? { ...procedure, workplaces } : null;
-      })
-      .filter((procedure): procedure is JsonObject => Boolean(procedure));
+    const result: JsonObject[] = [];
+    for (const value of arrayValue(proceduresValue)) {
+      const procedure = objectValue(value);
+      const workplaces = arrayValue(procedure.workplaces)
+        .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id)))
+        .map((assignment) => {
+          const workplaceId = text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id);
+          return {
+            ...objectValue(assignment),
+            bookingPrice: this.bookingPriceFor(procedure, workplaceId),
+          };
+        });
+      if (workplaces.length) result.push({ ...procedure, workplaces });
+    }
+    return result;
   }
 
   private async catalogAt(tenantId: string, ids: string[], atValue: unknown) {
