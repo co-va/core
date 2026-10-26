@@ -4,9 +4,12 @@ import { readFileSync } from 'node:fs';
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 const policy = read('server/src/tenant-document-archive/consent-policy.service.ts');
+const archive = read('server/src/tenant-document-archive/tenant-document-archive.service.ts');
 const registry = read('server/src/document-registry/document-registry.service.ts');
 const guard = read('server/src/online-booking/booking-pdn-consent.guard.ts');
 const booking = read('server/src/online-booking/online-booking.service.ts');
+const bookingFlow = read('server/src/online-booking/booking-flow.service.ts');
+const bookingFlowController = read('server/src/online-booking/booking-flow.controller.ts');
 const notification = read('server/src/notification/notification.service.ts');
 const telegram = read('server/src/communication/telegram-bot.service.ts');
 const email = read('server/src/communication/email-channel.service.ts');
@@ -22,6 +25,13 @@ assert.match(policy, /const MARKETING_CONSENT_DOCUMENT_ID = 'messages-consent'/)
 assert.match(policy, /async hasActivePdnConsent\(/);
 assert.match(policy, /FROM "TenantConsentEvent"[\s\S]*"subjectType" = 'ACCOUNT'/);
 assert.match(policy, /async canSendMarketing\([\s\S]*MARKETING_CONSENT_DOCUMENT_ID/);
+assert.match(policy, /async updateCurrentContactConsent\(/, 'ConsentPolicy must own current contact consent updates');
+assert.match(policy, /consentState:[\s\S]*\[field\]: active/, 'ConsentPolicy must materialize the current flag on Person');
+assert.match(policy, /acceptContactPointConsent[\s\S]*updateCurrentContactConsent\([\s\S]*true/, 'accept must append history and activate current state');
+assert.match(policy, /revokeContactPointConsent[\s\S]*updateCurrentContactConsent\([\s\S]*false/, 'revoke must append history and deactivate current state');
+assert.match(archive, /consentInvalidations\(/);
+assert.match(archive, /invalidateCurrentConsentState\(/);
+assert.match(archive, /nextState\[field\] = false[\s\S]*consentState: nextState/, 'document version change must invalidate current state at update time');
 
 assert.match(policy, /async accountConsentState\(/);
 assert.doesNotMatch(policy, /async requiredConsentState\(/);
@@ -31,6 +41,16 @@ assert.doesNotMatch(guard, /state\.allowed/);
 
 assert.match(booking, /async createRequest[\s\S]*hasActivePdnConsent\(tenantId, accountId\)/);
 assert.doesNotMatch(booking, /async createRequest[\s\S]*requiredConsentState\(tenantId, accountId\)/);
+
+const publicStateMethod = bookingFlow.match(/async bookingState\([\s\S]*?\n  private async resolvePerson/)?.[0] || '';
+assert.match(publicStateMethod, /currentConsentState\(resolved\)/, 'Public Booking must read ready Person consent state');
+assert.match(publicStateMethod, /legalState,[\s\S]*active: legalState\.pdnActive/, 'Public Booking must return ready legalState and expose PDN active state directly');
+assert.match(publicStateMethod, /active: legalState\.marketingActive/);
+assert.doesNotMatch(publicStateMethod, /getContext|documents|documentVersion|contactPointConsentState|latestEvent/, 'Public Booking state must not derive current consent from documents/history');
+assert.doesNotMatch(bookingFlow, /documentVersion/, 'Public Booking must not carry document versions to determine current state');
+assert.doesNotMatch(bookingFlowController, /bookingState\(tenantId, booker\)|documentVersion|Версия согласия изменилась/, 'controller must not add a second consent/version guard');
+assert.match(bookingFlow, /if \(!state\.pdnActive\)[\s\S]*!fact\?\.accepted[\s\S]*ConflictException/, 'final Public Booking confirm must require PDN only when current state is inactive');
+assert.match(bookingFlow, /!state\.marketingActive && facts\.get\(MARKETING_CONSENT_DOCUMENT_ID\)\?\.accepted/, 'advertising consent must remain optional and separate');
 
 // Delivery contract: DIRECT / SERVICE / SYSTEM are operational messages and must not be gated by PDN consent.
 // Only MARKETING delivery checks the separate advertising/messages consent.

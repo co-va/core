@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 
 type JsonObject = Record<string, any>;
 type HistoryProcedureRow = { entityId: string; status: string; data: unknown };
+type BookingPrice = { minimum: number; variable: boolean; free: boolean };
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -16,6 +17,15 @@ function arrayValue(value: unknown): any[] {
 
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function priceNumber(value: unknown) {
+  const number = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
+function hasPriceValue(value: unknown) {
+  return value !== '' && value != null;
 }
 
 function historySnapshot(value: unknown) {
@@ -40,19 +50,57 @@ export class ProcedureService {
       .find((item) => text(item?.workplaceId ?? item?.key ?? item?.id) === workplaceId) || null;
   }
 
-  private costFor(procedure: JsonObject, workplaceId: string) {
+  private costSourceFor(procedure: JsonObject, workplaceId: string) {
     const assignment = this.assignmentFor(procedure, workplaceId);
     const assigned = assignment?.cost;
     const base = procedure?.cost;
     const hasAssigned = assigned && typeof assigned === 'object' && !assigned.free && (
-      assigned.amount !== '' && assigned.amount != null
-      || assigned.from !== '' && assigned.from != null
-      || assigned.to !== '' && assigned.to != null
+      hasPriceValue(assigned.amount)
+      || hasPriceValue(assigned.from)
+      || hasPriceValue(assigned.to)
     );
-    const cost = hasAssigned ? assigned : base;
+    return hasAssigned ? assigned : base;
+  }
+
+  private costFor(procedure: JsonObject, workplaceId: string) {
+    const cost = this.costSourceFor(procedure, workplaceId);
     if (cost == null || cost?.free) return '';
     if (typeof cost === 'number' || typeof cost === 'string') return cost;
     return cost.amount ?? cost.from ?? '';
+  }
+
+  private bookingPriceFor(procedure: JsonObject, workplaceId: string): BookingPrice {
+    const cost = this.costSourceFor(procedure, workplaceId);
+    if (cost == null || cost?.free) return { minimum: 0, variable: false, free: true };
+    if (typeof cost === 'number' || typeof cost === 'string') {
+      return { minimum: priceNumber(cost), variable: false, free: false };
+    }
+    if (hasPriceValue(cost.amount)) {
+      return { minimum: priceNumber(cost.amount), variable: false, free: false };
+    }
+    if (hasPriceValue(cost.from)) {
+      return { minimum: priceNumber(cost.from), variable: true, free: false };
+    }
+    return { minimum: 0, variable: hasPriceValue(cost.to), free: false };
+  }
+
+  publicBookingCatalog(proceduresValue: unknown, workplaceIds: string[]): JsonObject[] {
+    const allowed = new Set(workplaceIds.map(text).filter(Boolean));
+    const result: JsonObject[] = [];
+    for (const value of arrayValue(proceduresValue)) {
+      const procedure = objectValue(value);
+      const workplaces = arrayValue(procedure.workplaces)
+        .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id)))
+        .map((assignment) => {
+          const workplaceId = text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id);
+          return {
+            ...objectValue(assignment),
+            bookingPrice: this.bookingPriceFor(procedure, workplaceId),
+          };
+        });
+      if (workplaces.length) result.push({ ...procedure, workplaces });
+    }
+    return result;
   }
 
   private async catalogAt(tenantId: string, ids: string[], atValue: unknown) {

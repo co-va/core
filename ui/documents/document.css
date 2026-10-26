@@ -139,6 +139,7 @@ button.document-tile,.document-tile__open,.document-tile__toggle{cursor:pointer}
   border-radius:999px;
   padding:3px;
   background:#fff;
+  transition:background-color .16s ease,border-color .16s ease;
 }
 .document-tile__toggle span{
   display:block;
@@ -146,9 +147,10 @@ button.document-tile,.document-tile__open,.document-tile__toggle{cursor:pointer}
   height:16px;
   border-radius:50%;
   background:var(--v2-ink,#111);
-  transition:transform .16s ease;
+  transition:transform .16s ease,background-color .16s ease;
 }
-.document-tile__toggle.is-on span{transform:translateX(18px)}
+.document-tile__toggle.is-on{background:var(--v2-ink,#111);border-color:var(--v2-ink,#111)}
+.document-tile__toggle.is-on span{transform:translateX(18px);background:#fff}
 .document-tile__toggle:disabled{opacity:.45;cursor:default}
 .document-viewer-backdrop{background:#111!important}
 .v2-layer--technical.document-viewer-sheet{

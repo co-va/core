@@ -28,19 +28,18 @@ export function getBookingProcedures(context = {}, workplaceKey = '') {
     .filter((procedure) => procedureWorkplaceAssignment(procedure, workplaceKey));
 }
 
+export function bookingProcedurePrice(procedure = {}, workplaceKey = '') {
+  const price = procedureWorkplaceAssignment(procedure, workplaceKey)?.bookingPrice;
+  return {
+    minimum: Math.max(0, Number(price?.minimum || 0)),
+    variable: Boolean(price?.variable),
+    free: Boolean(price?.free),
+  };
+}
+
 export function bookingProcedureCost(procedure = {}, workplaceKey = '') {
-  const assignment = procedureWorkplaceAssignment(procedure, workplaceKey);
-  const assigned = assignment?.cost;
-  const base = procedure?.cost;
-  const hasAssigned = assigned && typeof assigned === 'object' && !assigned.free && (
-    assigned.amount !== '' && assigned.amount != null
-    || assigned.from !== '' && assigned.from != null
-    || assigned.to !== '' && assigned.to != null
-  );
-  const cost = hasAssigned ? assigned : base;
-  if (cost == null || cost?.free) return '';
-  if (typeof cost === 'number' || typeof cost === 'string') return cost;
-  return cost.amount ?? cost.from ?? '';
+  const price = bookingProcedurePrice(procedure, workplaceKey);
+  return price.free ? '' : price.minimum;
 }
 
 export function bookingSelection(context = {}, workplaceKey = '', ids = []) {
@@ -71,7 +70,7 @@ export function getBookingDayPlan(context = {}, workplaceKey = '', date = '') {
   const day = (Array.isArray(context.days) ? context.days : [])
     .find((item) => key(item?.workplaceId) === target && String(item?.date || '').slice(0, 10) === dayKey);
   if (!day) return null;
-  const workplace = getBookingWorkplace(context, target);
+  const workplace = getBookingWorkplace(context, workplaceKey);
   const from = String(day.from || workplace?.from || '');
   const to = String(day.to || workplace?.to || '');
   return from && to ? { from, to } : null;

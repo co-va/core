@@ -18,6 +18,9 @@ type BookingParticipant = {
   procedureIds: string[];
 };
 
+const PDN_CONSENT_DOCUMENT_ID = 'pdn-consent';
+const MARKETING_CONSENT_DOCUMENT_ID = 'messages-consent';
+
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
 }
@@ -75,6 +78,14 @@ function samePhone(left: unknown, right: unknown) {
   return Boolean(a && b && a === b);
 }
 
+function currentConsentState(person: unknown) {
+  const state = objectValue(objectValue(person).consentState);
+  return {
+    pdnActive: state.pdnActive === true,
+    marketingActive: state.marketingActive === true,
+  };
+}
+
 function normalizeParticipant(value: unknown, index: number): BookingParticipant {
   const source = objectValue(value);
   return {
@@ -87,13 +98,12 @@ function normalizeParticipant(value: unknown, index: number): BookingParticipant
 }
 
 function consentFacts(value: unknown) {
-  const facts = new Map<string, { documentId: string; documentVersion: number; accepted: boolean }>();
+  const facts = new Map<string, { documentId: string; accepted: boolean }>();
   for (const item of arrayValue(value)) {
     const documentId = text(item?.documentId);
     if (!documentId) continue;
     facts.set(documentId, {
       documentId,
-      documentVersion: Math.max(1, Number(item?.documentVersion || 1)),
       accepted: Boolean(item?.accepted),
     });
   }
@@ -121,33 +131,22 @@ export class BookingFlowService {
       .filter((person) => personPhones(person).some((value) => samePhone(value, phone)));
   }
 
+  private resolveKnownPerson(people: JsonObject[], nameValue: unknown) {
+    const exactName = text(nameValue).toLocaleLowerCase('ru-RU');
+    const named = exactName
+      ? people.filter((person) => text(person?.name).toLocaleLowerCase('ru-RU') === exactName)
+      : [];
+    return named.length === 1 ? named[0] : people.length === 1 ? people[0] : null;
+  }
+
   async bookingState(tenantId: string, input: unknown) {
     const source = objectValue(input);
     const phone = displayPhone(source.phone);
     if (!phone) throw new BadRequestException('Введите телефон полностью');
 
-    const context = await this.online.getContext(tenantId, '');
-    const documents = arrayValue(context?.documents).filter((document) => Boolean(document?.personConsent));
-    const [people, states] = await Promise.all([
-      this.personMatches(tenantId, phone),
-      Promise.all(documents.map(async (document) => {
-        const documentId = text(document?.id);
-        const state = await this.consentPolicy.contactPointConsentState(tenantId, 'PHONE', phone, documentId);
-        return {
-          documentId,
-          documentVersion: Math.max(1, Number(document?.version || 1)),
-          required: Boolean(document?.required) && documentId !== 'messages-consent',
-          marketing: documentId === 'messages-consent',
-          active: Boolean(state?.allowed),
-        };
-      })),
-    ]);
-
-    const exactName = text(source.name).toLocaleLowerCase('ru-RU');
-    const named = exactName
-      ? people.filter((person) => text(person?.name).toLocaleLowerCase('ru-RU') === exactName)
-      : [];
-    const resolved = named.length === 1 ? named[0] : people.length === 1 ? people[0] : null;
+    const people = await this.personMatches(tenantId, phone);
+    const resolved = this.resolveKnownPerson(people, source.name);
+    const legalState = currentConsentState(resolved);
 
     return {
       person: resolved ? {
@@ -156,7 +155,21 @@ export class BookingFlowService {
         phone,
       } : null,
       ambiguous: people.length > 1 && !resolved,
-      consents: states,
+      legalState,
+      consents: [
+        {
+          documentId: PDN_CONSENT_DOCUMENT_ID,
+          required: true,
+          marketing: false,
+          active: legalState.pdnActive,
+        },
+        {
+          documentId: MARKETING_CONSENT_DOCUMENT_ID,
+          required: false,
+          marketing: true,
+          active: legalState.marketingActive,
+        },
+      ],
     };
   }
 
@@ -205,6 +218,7 @@ export class BookingFlowService {
       accounts: [],
       links: [],
       tags: [],
+      consentState: { pdnActive: false, marketingActive: false },
       discountPercent: 0,
       visits: 0,
       totalSpent: 0,
@@ -231,35 +245,45 @@ export class BookingFlowService {
     };
   }
 
-  private async ensureLegalState(tenantId: string, phone: string, inputFacts: unknown, documents: any[]) {
+  private async personByKey(tenantId: string, keyValue: unknown) {
+    const key = text(keyValue);
+    if (!key) return null;
+    const business = await this.businessState.get(tenantId);
+    return arrayValue(business.people)
+      .map((item) => objectValue(item))
+      .find((person) => text(person.key) === key) || null;
+  }
+
+  private async ensureLegalState(tenantId: string, person: JsonObject, phone: string, inputFacts: unknown) {
     const facts = consentFacts(inputFacts);
-    for (const document of documents) {
-      const documentId = text(document?.id);
-      if (!documentId || !document?.personConsent) continue;
-      const current = await this.consentPolicy.contactPointConsentState(tenantId, 'PHONE', phone, documentId);
-      if (current?.allowed) continue;
-      const fact = facts.get(documentId);
-      const required = Boolean(document?.required) && documentId !== 'messages-consent';
-      if (required && !fact?.accepted) {
-        throw new ConflictException('Необходимо подтвердить актуальное согласие на обработку персональных данных');
+    const state = currentConsentState(person);
+
+    if (!state.pdnActive) {
+      const fact = facts.get(PDN_CONSENT_DOCUMENT_ID);
+      if (!fact?.accepted) {
+        throw new ConflictException('Необходимо подтвердить согласие на обработку персональных данных');
       }
-      if (fact?.accepted) {
-        await this.consentPolicy.acceptContactPointConsent(
-          tenantId,
-          'PHONE',
-          phone,
-          documentId,
-          'public-booking',
-        );
-      }
+      await this.consentPolicy.acceptContactPointConsent(
+        tenantId,
+        'PHONE',
+        phone,
+        PDN_CONSENT_DOCUMENT_ID,
+        'public-booking',
+        text(person.key),
+      );
+      state.pdnActive = true;
     }
 
-    for (const document of documents) {
-      const documentId = text(document?.id);
-      const required = Boolean(document?.required) && documentId !== 'messages-consent';
-      if (!documentId || !document?.personConsent || !required) continue;
-      const verified = await this.consentPolicy.contactPointConsentState(tenantId, 'PHONE', phone, documentId);
-      if (!verified?.allowed) throw new ConflictException('Не удалось зафиксировать обязательное согласие');
+    if (!state.marketingActive && facts.get(MARKETING_CONSENT_DOCUMENT_ID)?.accepted) {
+      await this.consentPolicy.acceptContactPointConsent(
+        tenantId,
+        'PHONE',
+        phone,
+        MARKETING_CONSENT_DOCUMENT_ID,
+        'public-booking',
+        text(person.key),
+      );
+      state.marketingActive = true;
     }
   }
 
@@ -322,8 +346,16 @@ export class BookingFlowService {
     const totalDuration = prepared.reduce((sum, item) => sum + item.duration, 0);
     const slot = this.assertAvailability(context, workplaceKey, date, from, totalDuration);
 
-    const documents = arrayValue(context.documents).filter((document) => Boolean(document?.personConsent));
-    await this.ensureLegalState(tenantId, booker.phone, source.consents, documents);
+    const bookerIdentity = await this.resolvePerson(tenantId, {
+      id: 'booker-contact',
+      name: booker.name,
+      phone: booker.phone,
+      email: booker.email,
+      procedureIds: [],
+    });
+    const bookerPerson = await this.personByKey(tenantId, bookerIdentity.key);
+    if (!bookerPerson) throw new ConflictException('Не удалось определить контакт оформляющего запись');
+    await this.ensureLegalState(tenantId, bookerPerson, booker.phone, source.consents);
 
     const bookingSessionId = randomUUID();
     const createdBy = {

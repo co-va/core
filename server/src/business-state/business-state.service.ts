@@ -6,6 +6,7 @@ import { resolveTransferredPerson } from './person-transfer';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { ProcedureService } from '../procedure/procedure.service';
 import { RecordService } from '../record/record.service';
 
 type JsonObject = Record<string, any>;
@@ -101,7 +102,6 @@ function canonicalOperational(value: OperationalBundle) {
   return JSON.stringify(stable(value));
 }
 
-
 function json(value: unknown): Prisma.InputJsonValue {
   return clone(value) as Prisma.InputJsonValue;
 }
@@ -131,7 +131,6 @@ function personHasPhone(person: JsonObject, phone: unknown) {
   return (Array.isArray(person.phones) ? person.phones : []).some((value) => phonesMatch(value, phone));
 }
 
-
 @Injectable()
 export class BusinessStateService {
   transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['Person', 'UeiState', 'BusinessOperationalState']); }
@@ -140,6 +139,7 @@ export class BusinessStateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly records: RecordService,
+    private readonly procedures: ProcedureService,
   ) {}
 
   private async bundle(tenantId: string) {
@@ -189,8 +189,6 @@ export class BusinessStateService {
     const previous = resolved.person;
     const key = previous?.key || randomUUID();
     const person: JsonObject = { ...(previous || {}), key };
-    // Ownership is recorded only for values actually introduced by this fact.
-    // Matching an existing value never grants permission to overwrite it later.
     for (const field of ['name', 'surname', 'createdAt','birthDate','gender']) {
       if (input[field] === undefined) continue;
       const value = text(input[field]); const current = text(previous?.[field]);
@@ -294,20 +292,11 @@ export class BusinessStateService {
   async deleteRecord(tenantId: string, recordId: string) {
     const id = text(recordId);
     return this.prisma.$transaction(async (tx) => {
-      const financeOperations = await tx.financeOperation.deleteMany({
-        where: { tenantId, sourceType: 'record', sourceId: id },
-      });
-      const settlements = await tx.financeSettlement.deleteMany({
-        where: { tenantId, sourceType: 'record', sourceId: id },
-      });
+      const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
+      const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
       const record = await tx.record.deleteMany({ where: { tenantId, recordId: id } });
-      return {
-        deleted: record.count,
-        deletedEvents: events.count,
-        deletedFinanceOperations: financeOperations.count,
-        deletedSettlements: settlements.count,
-      };
+      return { deleted: record.count, deletedEvents: events.count, deletedFinanceOperations: financeOperations.count, deletedSettlements: settlements.count };
     });
   }
 
@@ -324,34 +313,19 @@ export class BusinessStateService {
     if (!id || !recordId) throw new BadRequestException('У события записи отсутствует id или recordId');
     event.id = id;
     event.recordId = recordId;
-
-    const existing = await this.prisma.recordEvent.findUnique({
-      where: { tenantId_eventId: { tenantId, eventId: id } },
-    });
+    const existing = await this.prisma.recordEvent.findUnique({ where: { tenantId_eventId: { tenantId, eventId: id } } });
     if (existing) {
       const sameRecord = existing.recordId === recordId;
       const sameData = canonicalJson(objectValue(existing.data)) === canonicalJson(event);
-      if (!sameRecord || !sameData) {
-        throw new ConflictException('Событие Record неизменяемо и не может быть переписано');
-      }
+      if (!sameRecord || !sameData) throw new ConflictException('Событие Record неизменяемо и не может быть переписано');
       return clone(objectValue(existing.data));
     }
-
     if (text(event.type) === 'created') {
       const recordEvents = await this.prisma.recordEvent.findMany({ where: { tenantId, recordId } });
       const created = recordEvents.find((row) => text(objectValue(row.data).type) === 'created');
       if (created) return clone(objectValue(created.data));
     }
-
-    await this.prisma.recordEvent.create({
-      data: {
-        tenantId,
-        eventId: id,
-        recordId,
-        position: positionValue(source.position),
-        data: json(event),
-      },
-    });
+    await this.prisma.recordEvent.create({ data: { tenantId, eventId: id, recordId, position: positionValue(source.position), data: json(event) } });
     return event;
   }
 
@@ -387,7 +361,15 @@ export class BusinessStateService {
 
   async publicOperational(tenantId: string) {
     const row = await this.ensureOperationalState(tenantId);
-    return normalizeOperational(row.data);
+    const current = normalizeOperational(row.data);
+    const workplaceIds = uniqueStrings(current.procedures.flatMap((procedure) =>
+      (Array.isArray(procedure.workplaces) ? procedure.workplaces : [])
+        .map((assignment) => assignment?.workplaceId ?? assignment?.key ?? assignment?.id),
+    ));
+    return {
+      ...current,
+      procedures: this.procedures.publicBookingCatalog(current.procedures, workplaceIds),
+    };
   }
 
   async bookingIdentityForAccount(tenantId: string, accountId: string) {
@@ -427,7 +409,6 @@ export class BusinessStateService {
     const phone = text(phoneValue);
     const requestedUei = text(ueiValue);
     if (!phone && !requestedUei) return [];
-
     const [rows, identityRow] = await Promise.all([
       this.prisma.person.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.ueiState.findUnique({ where: { tenantId } }),
@@ -435,7 +416,6 @@ export class BusinessStateService {
     const people = rows.map((row) => ({ row, person: objectValue(row.data) }));
     const identity = normalizeUEI(identityRow?.data || {});
     const memberKeys = new Set<string>();
-
     const addUeiMembers = (uei: string) => {
       const entity = objectValue(identity.entities[uei]);
       for (const member of Array.isArray(entity.members) ? entity.members : []) {
@@ -443,9 +423,7 @@ export class BusinessStateService {
         if (value.startsWith('person:')) memberKeys.add(value.slice(7));
       }
     };
-
     if (requestedUei) addUeiMembers(requestedUei);
-
     if (phone) {
       for (const { row, person } of people) {
         if (!personHasPhone(person, phone)) continue;
@@ -456,16 +434,10 @@ export class BusinessStateService {
         if (linkedUei) addUeiMembers(linkedUei);
       }
     }
-
     return uniqueStrings(
       people
         .filter(({ row, person }) => memberKeys.has(text(person.key || row.key)))
         .flatMap(({ person }) => accountIdsFromPerson(person)),
     );
   }
-
-
-
-
-
 }
