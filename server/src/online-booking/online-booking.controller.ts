@@ -356,30 +356,31 @@ export class OnlineBookingController {
     const time = String((created as any)?.from || '');
     const workplaceKey = String((created as any)?.workplaceKey || '');
 
-    await this.platformNotices.createForTenantOwner(tenantId, {
-      type: 'BOOKING_CREATED',
-      title: 'Новая запись',
-      body: `Запись на ${date} в ${time}.`,
-      metadata: {
-        recordId,
-        date,
-        time,
-        workplaceKey,
-        source: 'online-booking',
-      },
-    }).catch(() => null);
-
-    await this.notifications.createEventForPerson(tenantId, { accountId }, {
-      type: 'booking.created',
-      entityType: 'record',
-      entityId: recordId,
-      context: {
-        date,
-        time,
-        workplace: workplaceKey,
-        record: { id: recordId },
-      },
-    });
+    void Promise.allSettled([
+      this.platformNotices.createForTenantOwner(tenantId, {
+        type: 'BOOKING_CREATED',
+        title: 'Новая запись',
+        body: `Запись на ${date} в ${time}.`,
+        metadata: {
+          recordId,
+          date,
+          time,
+          workplaceKey,
+          source: 'online-booking',
+        },
+      }),
+      this.notifications.createEventForPerson(tenantId, { accountId }, {
+        type: 'booking.created',
+        entityType: 'record',
+        entityId: recordId,
+        context: {
+          date,
+          time,
+          workplace: workplaceKey,
+          record: { id: recordId },
+        },
+      }),
+    ]);
     return created;
   }
 }
