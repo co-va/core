@@ -4,20 +4,30 @@ on:
   push:
     branches: [staging]
 
+permissions:
+  contents: write
+
 jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - name: Build patched Check Book content
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Stage corrected Check Book as ordinary file
         shell: bash
         run: |
+          set -euo pipefail
+          if [ -f ci/check-patched.yml ]; then
+            echo "Patched blob already staged"
+            exit 0
+          fi
           python3 - <<'PY'
           from pathlib import Path
-          import base64
-          import urllib.request
 
-          url = 'https://raw.githubusercontent.com/co-va/core/staging/.github/workflows/check.yml'
-          lines = urllib.request.urlopen(url).read().decode().splitlines()
+          source = Path('.github/workflows/check.yml')
+          lines = source.read_text().splitlines()
 
           pdn_indexes = [
               index for index, line in enumerate(lines)
@@ -52,8 +62,12 @@ jobs:
               block_indent + '" "$booking_state"',
           ]
           lines[start:end + 1] = replacement
-          content = ('\n'.join(lines) + '\n').encode()
-          print('CHECK_B64_BEGIN')
-          print(base64.b64encode(content).decode())
-          print('CHECK_B64_END')
+          target = Path('ci/check-patched.yml')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text('\n'.join(lines) + '\n')
           PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add ci/check-patched.yml
+          git commit -m "chore(ci): stage corrected Check Book blob"
+          git push origin HEAD:staging
