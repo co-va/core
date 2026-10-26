@@ -2,10 +2,6 @@ name: Production Smoke
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, staging]
-    paths:
-      - '.github/workflows/production-smoke.yml'
   schedule:
     - cron: '17 */6 * * *'
 

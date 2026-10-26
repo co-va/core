@@ -3,6 +3,8 @@ name: Record View Account Runtime
 on:
   push:
     branches: [staging]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,7 +25,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Verify shared account runtime DOM
+      - name: Verify App / Account and Public Booking runtime DOM
         shell: bash
         run: |
           set -euo pipefail
@@ -72,21 +74,22 @@ jobs:
             set -e
 
             if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
-              echo "Account runtime timed out: $path"
+              echo "Runtime timed out: $path"
               exit 1
             fi
             if [ "$browser_status" -ne 0 ]; then
-              echo "Account runtime browser failed: $path (exit $browser_status)"
+              echo "Runtime browser failed: $path (exit $browser_status)"
               exit 1
             fi
             if ! grep -Fq "$marker" "$output"; then
-              echo "Account runtime failed: $path"
+              echo "Runtime failed: $path"
               grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
               grep -A8 -B2 '<pre id="result"' "$output" || true
               exit 1
             fi
           }
 
+          echo '::group::App / Account runtime'
           run_browser_case \
             "tests/record-view-account-runtime-browser.html" \
             'data-record-view-account-runtime="pass"' \
@@ -97,16 +100,6 @@ jobs:
             'data-journal-account-runtime="pass"' \
             'data-journal-account-runtime-stage' \
             /tmp/journal-account-runtime-dom.html
-          run_browser_case \
-            "tests/booking-success-journal-runtime-browser.html" \
-            'data-booking-success-journal-runtime="pass"' \
-            'data-booking-success-journal-runtime-stage' \
-            /tmp/booking-success-journal-runtime-dom.html
-          run_browser_case \
-            "tests/public-booking-variants-runtime-browser.html" \
-            'data-public-booking-variants-runtime="pass"' \
-            'data-public-booking-variants-runtime-stage' \
-            /tmp/public-booking-variants-runtime-dom.html
           run_browser_case \
             "tests/document-viewer-mobile-runtime-browser.html" \
             'data-document-viewer-mobile-runtime="pass"' \
@@ -127,3 +120,18 @@ jobs:
             'data-event-shared-ui-runtime="pass"' \
             'data-event-shared-ui-runtime-stage' \
             /tmp/event-shared-ui-runtime-dom.html
+          echo '::endgroup::'
+
+          echo '::group::Public Booking runtime'
+          run_browser_case \
+            "tests/booking-success-journal-runtime-browser.html" \
+            'data-booking-success-journal-runtime="pass"' \
+            'data-booking-success-journal-runtime-stage' \
+            /tmp/booking-success-journal-runtime-dom.html
+          run_browser_case \
+            "tests/public-booking-variants-runtime-browser.html" \
+            'data-public-booking-variants-runtime="pass"' \
+            'data-public-booking-variants-runtime-stage' \
+            /tmp/public-booking-variants-runtime-dom.html
+          echo 'Public Booking runtime: PASS'
+          echo '::endgroup::'

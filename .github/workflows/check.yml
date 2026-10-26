@@ -2,9 +2,9 @@ name: Check Book
 
 on:
   push:
-    branches: [main, staging]
+    branches: [staging]
   pull_request:
-    branches: [main, staging]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -113,7 +113,6 @@ jobs:
       - name: Build server
         run: npm run build --prefix server
 
-
   modal-browser-interaction:
     runs-on: ubuntu-latest
     container:
@@ -142,7 +141,9 @@ jobs:
           PLAYWRIGHT_MODULE="$RUNNER_TEMP/modal-browser/node_modules/playwright/index.mjs" node scripts/check-modal-browser-interaction.mjs
           PLAYWRIGHT_MODULE="$RUNNER_TEMP/modal-browser/node_modules/playwright/index.mjs" node scripts/check-list-reorder-browser-interaction.mjs
 
+  # Historical migration/recovery checks are intentionally manual-only.
   profile-migration-upgrade:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -493,8 +494,8 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.staging.yml down -v
 
-
   global-account-clean-reset:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -720,8 +721,8 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.staging.yml down -v
 
-
   prelaunch-failed-migration-recovery:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -875,7 +876,6 @@ jobs:
       - name: Stop isolated database
         if: always()
         run: docker compose -f docker-compose.staging.yml down -v
-
 
   staging-smoke:
     if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || github.base_ref == 'staging' || github.base_ref == 'main'

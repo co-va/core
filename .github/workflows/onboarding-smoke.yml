@@ -2,9 +2,9 @@ name: Onboarding Smoke
 
 on:
   push:
-    branches: [main, staging]
+    branches: [staging]
   pull_request:
-    branches: [main, staging]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
