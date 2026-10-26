@@ -153,41 +153,52 @@ button.document-tile,.document-tile__open,.document-tile__toggle{cursor:pointer}
 .document-viewer-backdrop{background:#111!important}
 .v2-layer--technical.document-viewer-sheet{
   width:min(calc(100% - 28px),760px);
+  max-width:calc(100% - 28px);
   height:calc(var(--visual-vh,100dvh) - 28px);
   max-height:calc(var(--visual-vh,100dvh) - 28px);
   padding:54px 20px 24px;
-  overflow:auto;
+  overflow-y:auto;
+  overflow-x:hidden;
   background:#fff;
 }
 .document-viewer__content{
   width:100%;
+  max-width:100%;
+  min-width:0;
   min-height:100%;
+  overflow-x:hidden;
   background:#fff;
 }
 .document-page{
   width:min(100%,680px);
+  max-width:100%;
+  min-width:0;
   min-height:calc(var(--visual-vh,100dvh) - 122px);
   box-sizing:border-box;
   margin:0 auto;
   padding:18px 16px 42px;
+  overflow-x:hidden;
   background:#fff;
   color:#111;
 }
 .document-page__version{margin-bottom:12px;font-size:12px;color:#6f7478}
-.document-page h1{margin:0 0 24px;font-size:24px;line-height:1.15}
-.document-page__body{font-size:15px;line-height:1.58}
-.document-page__body p{margin:0 0 1em}
+.document-page h1{margin:0 0 24px;font-size:24px;line-height:1.15;overflow-wrap:anywhere}
+.document-page__body{max-width:100%;min-width:0;font-size:15px;line-height:1.58;overflow-wrap:anywhere;word-break:break-word}
+.document-page__body p{max-width:100%;margin:0 0 1em}
 .document-page__body p:last-child{margin-bottom:0}
 .document-viewer__pdf{
   display:block;
   width:100%;
+  max-width:100%;
+  min-width:0;
   height:calc(var(--visual-vh,100dvh) - 110px);
   border:0;
+  overflow:hidden;
   background:#fff;
 }
 @media(max-width:360px){
   .document-tile{width:238px}
-  .v2-layer--technical.document-viewer-sheet{width:calc(100% - 20px);height:calc(var(--visual-vh,100dvh) - 20px);max-height:calc(var(--visual-vh,100dvh) - 20px)}
+  .v2-layer--technical.document-viewer-sheet{width:calc(100% - 20px);max-width:calc(100% - 20px);height:calc(var(--visual-vh,100dvh) - 20px);max-height:calc(var(--visual-vh,100dvh) - 20px);padding-left:14px;padding-right:14px}
 }
 .document-tiles--rail{
   display:flex;
