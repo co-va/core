@@ -108,6 +108,11 @@ jobs:
             'data-public-booking-variants-runtime-stage' \
             /tmp/public-booking-variants-runtime-dom.html
           run_browser_case \
+            "tests/document-viewer-mobile-runtime-browser.html" \
+            'data-document-viewer-mobile-runtime="pass"' \
+            'data-document-viewer-mobile-runtime-stage' \
+            /tmp/document-viewer-mobile-runtime-dom.html
+          run_browser_case \
             "tests/journal-account-day-range-runtime-browser.html" \
             'data-journal-account-day-range-runtime="pass"' \
             'data-journal-account-day-range-runtime-stage' \
