@@ -103,7 +103,7 @@ jobs:
           run_browser_case "tests/account-shell-runtime-browser.html" 'data-account-runtime="pass"' 'data-account-runtime-stage' /tmp/account-runtime-dom.html
           run_browser_case "tests/professional-core-runtime-browser.html" 'data-professional-runtime="pass"' 'data-professional-runtime-stage' /tmp/professional-runtime-dom.html
           run_browser_case "tests/documents-runtime-browser.html" 'data-documents-runtime="pass"' 'data-documents-runtime-stage' /tmp/documents-runtime-dom.html
-          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-transfer-runtime="pass"' 'data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
+          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-data-transfer-runtime="pass"' 'data-data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
       - name: Validate staging compose
         run: docker compose -f docker-compose.staging.yml config >/dev/null
       - name: Install server dependencies
@@ -1003,95 +1003,125 @@ jobs:
           tenant_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.tenant?.id) process.exit(1); process.stdout.write(p.tenant.id)" "$login_payload")
           curl -fsS -H "Authorization: Bearer $access_token" http://localhost:8080/api/auth/me >/dev/null
 
-          account_terms=$(curl -fsS "http://localhost:8080/api/online-booking/account-terms")
-          account_terms_fact=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.key || !p.version) process.exit(1); process.stdout.write(JSON.stringify({key:p.key,version:p.version,accepted:true,acceptedAt:new Date().toISOString()}))" "$account_terms")
-          smoke_password="Smoke-${GITHUB_RUN_ID}-Pass"
-
-          booking_payload=$(curl -fsS \
-            -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({email:'push-smoke@book.local',password:process.argv[1],name:'Push',phone:'+79990000999',accountTerms:JSON.parse(process.argv[2])}))" "$smoke_password" "$account_terms_fact")" \
-            "http://localhost:8080/api/online-booking/$tenant_id/account/register")
-          booking_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$booking_payload")
-
           booking_context=$(curl -fsS "http://localhost:8080/api/online-booking/$tenant_id/context")
           node -e "const p=JSON.parse(process.argv[1]); const w=(p.workplaces||[]).find((item)=>item.key==='studio-test'); if(!w || w.timeZone!=='Europe/Moscow') { console.error('Workplace timezone missing from public booking context'); process.exit(1); }" "$booking_context"
 
-          pdn_consent=$(node -e "const p=JSON.parse(process.argv[1]); const d=(p.documents||[]).find((item)=>item.id==='pdn-consent'); if(!d || !d.version) { console.error('PDN consent missing from public booking context'); process.exit(1); } process.stdout.write(JSON.stringify({documentId:d.id,documentVersion:d.version,accepted:true,acceptedAt:new Date().toISOString()}))" "$booking_context")
-          curl -fsS \
+          pdn_consent=$(node -e "const p=JSON.parse(process.argv[1]); const d=(p.documents||[]).find((item)=>item.id==='pdn-consent'); if(!d || !d.version) { console.error('PDN consent missing from public booking context'); process.exit(1); } process.stdout.write(JSON.stringify({documentId:d.id,documentVersion:d.version,accepted:true}))" "$booking_context")
+          booking_state=$(curl -fsS \
             -X POST \
-            -H "Authorization: Bearer $booking_token" \
             -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({consents:[JSON.parse(process.argv[1])] }))" "$pdn_consent")" \
-            "http://localhost:8080/api/online-booking/$tenant_id/account/consents" >/dev/null
+            -d '{"name":"Push","phone":"+79990000999","email":"push-smoke@book.local"}' \
+            "http://localhost:8080/api/online-booking/$tenant_id/booking-state")
+          node -e "
+            const state=JSON.parse(process.argv[1]);
+            const fact=JSON.parse(process.argv[2]);
+            const row=(state.consents||[]).find((item)=>String(item.documentId||'')===String(fact.documentId||''));
+            if(!row || Number(row.documentVersion)!==Number(fact.documentVersion)){
+              console.error('Public booking state did not expose the current PDN consent version');
+              process.exit(1);
+            }
+          " "$booking_state" "$pdn_consent"
 
           booking_today=$(node -e "const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).filter((x)=>x.type!=='literal').map((x)=>[x.type,x.value])); process.stdout.write(parts.year+'-'+parts.month+'-'+parts.day)")
-          past_body=$(mktemp)
-          past_status=$(curl -sS -o "$past_body" -w '%{http_code}' \
-            -X POST \
-            -H "Authorization: Bearer $booking_token" \
-            -H 'Content-Type: application/json' \
-            -d "{\"workplaceKey\":\"studio-test\",\"date\":\"$booking_today\",\"from\":\"00:00\",\"procedureIds\":[\"procedure-cut\"]}" \
-            "http://localhost:8080/api/online-booking/$tenant_id/requests")
-          if [ "$past_status" != "409" ] || ! grep -Fq "Это время уже прошло" "$past_body"; then
-            echo "Public booking past-time guard failed: HTTP $past_status"
-            cat "$past_body" || true
+          has_today=$(node -e "const p=JSON.parse(process.argv[1]); const today=process.argv[2]; process.stdout.write((p.days||[]).some((d)=>String(d.workplaceId||'')==='studio-test' && String(d.date||'').slice(0,10)===today)?'yes':'no')" "$booking_context" "$booking_today")
+          if [ "$has_today" = "yes" ]; then
+            past_payload=$(node -e "
+              const consent=JSON.parse(process.argv[2]);
+              process.stdout.write(JSON.stringify({
+                workplaceKey:'studio-test',date:process.argv[1],from:'00:00',mode:'self',
+                booker:{name:'Push',phone:'+79990000999',email:'push-smoke@book.local'},
+                participants:[{id:'booker',name:'Push',phone:'+79990000999',email:'push-smoke@book.local',procedureIds:['procedure-cut']}],
+                consents:[consent],
+              }));
+            " "$booking_today" "$pdn_consent")
+            past_body=$(mktemp)
+            past_status=$(curl -sS -o "$past_body" -w '%{http_code}' \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              -d "$past_payload" \
+              "http://localhost:8080/api/online-booking/$tenant_id/confirm")
+            if [ "$past_status" != "409" ] || ! grep -Fq "Это время уже прошло" "$past_body"; then
+              echo "Public booking /confirm past-time guard failed: HTTP $past_status"
+              cat "$past_body" || true
+              rm -f "$past_body"
+              exit 1
+            fi
             rm -f "$past_body"
-            exit 1
           fi
-          rm -f "$past_body"
 
-          account_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.account?.id) process.exit(1); process.stdout.write(p.account.id)" "$booking_payload")
           booking_slot=$(node -e "
             const p=JSON.parse(process.argv[1]);
             const today=process.argv[2];
+            const workplace=(p.workplaces||[]).find((item)=>String(item.key||'')==='studio-test')||{};
+            const procedure=(p.procedures||[]).find((item)=>String(item.id||'')==='procedure-cut')||{};
+            const duration=Math.max(1,Number(procedure.duration||60));
+            const toMinutes=(value)=>{ const m=String(value||'').match(/^(\d{1,2}):(\d{2})$/); return m?Number(m[1])*60+Number(m[2]):null; };
+            const toTime=(value)=>String(Math.floor(value/60)).padStart(2,'0')+':'+String(value%60).padStart(2,'0');
             const days=(p.days||[])
               .filter((d)=>String(d.workplaceId||'')==='studio-test' && String(d.date||'').slice(0,10)>today)
               .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-            const day=days[0];
-            if(!day){ console.error('No future studio-test booking day in staging context'); process.exit(1); }
-            process.stdout.write(JSON.stringify({date:String(day.date).slice(0,10),from:'09:00'}));
+            for(const day of days){
+              const date=String(day.date||'').slice(0,10);
+              const start=toMinutes(day.from||workplace.from);
+              const end=toMinutes(day.to||workplace.to);
+              if(start==null||end==null) continue;
+              const usages=(p.occupancy||[]).filter((u)=>String(u.workplaceId||'')==='studio-test' && String(u.date||'').slice(0,10)===date)
+                .map((u)=>({from:toMinutes(u.from),to:toMinutes(u.to)})).filter((u)=>u.from!=null&&u.to!=null);
+              for(let cursor=start;cursor+duration<=end;cursor+=15){
+                if(usages.every((u)=>cursor+duration<=u.from||cursor>=u.to)){
+                  process.stdout.write(JSON.stringify({date,from:toTime(cursor)}));
+                  process.exit(0);
+                }
+              }
+            }
+            console.error('No future studio-test booking slot in staging context');
+            process.exit(1);
           " "$booking_context" "$booking_today")
           booking_date=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).date)" "$booking_slot")
           booking_from=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).from)" "$booking_slot")
-
+          confirm_payload=$(node -e "
+            const consent=JSON.parse(process.argv[3]);
+            process.stdout.write(JSON.stringify({
+              workplaceKey:'studio-test',date:process.argv[1],from:process.argv[2],mode:'self',
+              booker:{name:'Push',phone:'+79990000999',email:'push-smoke@book.local'},
+              participants:[{id:'booker',name:'Push',phone:'+79990000999',email:'push-smoke@book.local',procedureIds:['procedure-cut']}],
+              consents:[consent],
+            }));
+          " "$booking_date" "$booking_from" "$pdn_consent")
           created_booking=$(curl -fsS \
             -X POST \
-            -H "Authorization: Bearer $booking_token" \
             -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({workplaceKey:'studio-test',date:process.argv[1],from:process.argv[2],procedureIds:['procedure-cut']}))" "$booking_date" "$booking_from")" \
-            "http://localhost:8080/api/online-booking/$tenant_id/requests")
-          created_record_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.recordId) { console.error('Public booking did not return recordId'); process.exit(1); } process.stdout.write(p.recordId)" "$created_booking")
+            -d "$confirm_payload" \
+            "http://localhost:8080/api/online-booking/$tenant_id/confirm")
+          created_record_id=$(node -e "const p=JSON.parse(process.argv[1]); const id=p.records?.[0]?.id; if(!id) { console.error('Public /confirm did not return a Record'); process.exit(1); } process.stdout.write(id)" "$created_booking")
 
           owner_business=$(curl -fsS \
             -H "Authorization: Bearer $access_token" \
             "http://localhost:8080/api/business-state")
           node -e "
             const business=JSON.parse(process.argv[1]);
-            const accountId=process.argv[2];
-            const recordId=process.argv[3];
+            const recordId=process.argv[2];
             const people=Array.isArray(business.people)?business.people:[];
             const records=Array.isArray(business.records)?business.records:[];
-            const linked=people.find((person)=>Array.isArray(person.accounts) && person.accounts.includes(accountId));
-            if(!linked){ console.error('Global Account is not linked to Person in owner business state'); process.exit(1); }
+            const linked=people.find((person)=>String(person.name||'')==='Push' && Array.isArray(person.phones) && person.phones.includes('+79990000999'));
+            if(!linked){ console.error('Account-free public Booking Person is missing from owner business state'); process.exit(1); }
+            if(Array.isArray(linked.accounts) && linked.accounts.length){ console.error('Public Booking unexpectedly created or required an Account link'); process.exit(1); }
             const record=records.find((item)=>String(item.id||'')===recordId);
             if(!record){ console.error('Public booking Record is missing from owner business state'); process.exit(1); }
             if(String(record.person?.key||'')!==String(linked.key||'')){
-              console.error('Public booking Record is linked to a different Person than Account');
+              console.error('Public booking Record is linked to a different Person');
               process.exit(1);
             }
-          " "$owner_business" "$account_id" "$created_record_id"
+          " "$owner_business" "$created_record_id"
 
-          client_records=$(curl -fsS \
-            -H "Authorization: Bearer $booking_token" \
-            "http://localhost:8080/api/online-booking/$tenant_id/account/records")
-          node -e "
-            const rows=JSON.parse(process.argv[1]);
-            const recordId=process.argv[2];
-            if(!Array.isArray(rows) || !rows.some((item)=>String(item.id||'')===recordId)){
-              console.error('Created Record is missing from Account profile');
-              process.exit(1);
-            }
-          " "$client_records" "$created_record_id"
+          account_terms=$(curl -fsS "http://localhost:8080/api/online-booking/account-terms")
+          account_terms_fact=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.key || !p.version) process.exit(1); process.stdout.write(JSON.stringify({key:p.key,version:p.version,accepted:true,acceptedAt:new Date().toISOString()}))" "$account_terms")
+          smoke_password="Smoke-${GITHUB_RUN_ID}-Pass"
+          push_account=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({email:'push-account-smoke@book.local',password:process.argv[1],name:'Push Account',phone:'+79990000888',accountTerms:JSON.parse(process.argv[2])}))" "$smoke_password" "$account_terms_fact")" \
+            "http://localhost:8080/api/online-booking/$tenant_id/account/register")
+          booking_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$push_account")
 
           push_config=$(curl -fsS \
             -H "Authorization: Bearer $booking_token" \
