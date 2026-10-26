@@ -127,6 +127,7 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
 
 const coreSource = fs.readFileSync(path.join(root, 'core.js'), 'utf8');
 const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
+const journalBootstrapSource = fs.readFileSync(path.join(root, 'core/runtime/journal-bootstrap.js'), 'utf8');
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
 const documentArchiveSource = fs.readFileSync(path.join(root, 'core/runtime/tenant-document-archive.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
@@ -156,22 +157,25 @@ if (!coreSource.includes('async function ensureWorkspaceState(section)')
   || !coreSource.includes('await loadTenantDocumentArchive()')) {
   failures.push('core.js: non-Journal data must load on demand from the existing workspace render path');
 }
-if (!auxiliaryStartupSource.includes('export function loadFinanceState')
-  || !auxiliaryStartupSource.includes('export function loadAuxiliaryState')) {
+if (!/export\s+(?:async\s+)?function\s+loadFinanceState/.test(auxiliaryStartupSource)
+  || !/export\s+(?:async\s+)?function\s+loadAuxiliaryState/.test(auxiliaryStartupSource)) {
   failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separately loadable');
 }
 if (businessStartupSource.includes('loadAllDeposits(') || auxiliaryStartupSource.includes('loadAllDeposits(')) {
   failures.push('startup runtime: deposits must not load during authenticated startup');
 }
-if (!businessStartupSource.includes("apiRequest('/business-state/journal-bootstrap')")
+if (!businessStartupSource.includes("consumeJournalBootstrap('journal')")
+  || !journalBootstrapSource.includes("apiRequest('/business-state/journal-bootstrap')")
   || businessStartupSource.includes("apiRequest('/events')")
   || businessStartupSource.includes("apiRequest('/notes')")) {
-  failures.push('core/runtime/business-state.js: Journal startup must use one bootstrap read request');
+  failures.push('core/runtime/business-state.js: Journal startup must consume the single canonical bootstrap request');
 }
 if (!businessControllerSource.includes("@Get('journal-bootstrap')")
-  || !businessControllerSource.includes('this.businessState.get(auth.tenantId)')
-  || !businessControllerSource.includes('this.events.list(auth.tenantId)')
-  || !businessControllerSource.includes('this.notes.listProfile(auth.tenantId, auth.platformAccountId)')) {
+  || !businessControllerSource.includes('private async journalBundle')
+  || !businessControllerSource.includes('this.businessState.get(current.tenantId)')
+  || !businessControllerSource.includes('this.events.list(current.tenantId)')
+  || !businessControllerSource.includes('this.notes.listProfile(current.tenantId, current.platformAccountId)')
+  || !businessControllerSource.includes('this.journalBundle(auth)')) {
   failures.push('server business-state controller: Journal bootstrap must compose canonical BusinessState, Event and Note owners');
 }
 if (!documentArchiveSource.includes('return initialArchiveLoad;')) {
