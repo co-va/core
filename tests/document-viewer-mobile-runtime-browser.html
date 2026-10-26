@@ -28,13 +28,16 @@ openDocumentViewer({
 });
 await wait();
 
+let backdrop = document.querySelector('.document-viewer-backdrop');
 let sheet = document.querySelector('.document-viewer-sheet');
 let content = document.querySelector('.document-viewer__content');
 let page = document.querySelector('.document-page');
-ok(Boolean(sheet && content && page), 'document viewer did not open');
-if (sheet && content && page) {
-  ok(sheet.getBoundingClientRect().right <= 390.5, 'technical document sheet exceeds iPhone width');
-  ok(sheet.getBoundingClientRect().left >= -0.5, 'technical document sheet starts outside viewport');
+ok(Boolean(backdrop && sheet && content && page), 'document viewer did not open');
+if (backdrop && sheet && content && page) {
+  const surfaceRect = backdrop.getBoundingClientRect();
+  const sheetRect = sheet.getBoundingClientRect();
+  ok(sheetRect.right <= surfaceRect.right + 0.5, 'technical document sheet exceeds shared app surface');
+  ok(sheetRect.left >= surfaceRect.left - 0.5, 'technical document sheet starts outside shared app surface');
   ok(sheet.scrollWidth <= sheet.clientWidth + 1, `sheet has horizontal overflow: ${sheet.scrollWidth}/${sheet.clientWidth}`);
   ok(content.scrollWidth <= content.clientWidth + 1, `content has horizontal overflow: ${content.scrollWidth}/${content.clientWidth}`);
   ok(page.scrollWidth <= page.clientWidth + 1, `document page has horizontal overflow: ${page.scrollWidth}/${page.clientWidth}`);
@@ -49,10 +52,14 @@ openDocumentViewer({
   pdfDataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJSVFT0YK',
 });
 await wait();
+backdrop = document.querySelector('.document-viewer-backdrop');
 sheet = document.querySelector('.document-viewer-sheet');
 const frame = document.querySelector('.document-viewer__pdf');
-ok(Boolean(sheet && frame), 'PDF viewer did not open');
-if (sheet && frame) {
+ok(Boolean(backdrop && sheet && frame), 'PDF viewer did not open');
+if (backdrop && sheet && frame) {
+  const surfaceRect = backdrop.getBoundingClientRect();
+  const sheetRect = sheet.getBoundingClientRect();
+  ok(sheetRect.right <= surfaceRect.right + 0.5 && sheetRect.left >= surfaceRect.left - 0.5, 'PDF technical sheet exceeds shared app surface');
   ok(sheet.scrollWidth <= sheet.clientWidth + 1, 'PDF technical sheet has horizontal overflow');
   ok(frame.getBoundingClientRect().width <= sheet.clientWidth + 1, 'PDF frame exceeds technical sheet width');
 }
