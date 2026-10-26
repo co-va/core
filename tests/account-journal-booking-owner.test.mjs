@@ -5,6 +5,7 @@ const day = fs.readFileSync('journal/день.js', 'utf8');
 const entry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
 const access = fs.readFileSync('online-booking/access.js', 'utf8');
 const publicEntry = fs.readFileSync('online-booking/booking-entry.js', 'utf8');
+const targetsController = fs.readFileSync('server/src/online-booking/account-booking-targets.controller.ts', 'utf8');
 
 const dayActionStart = day.indexOf('function openAccountDayAction');
 const dayActionEnd = day.indexOf('export function renderJournalDay', dayActionStart);
@@ -21,6 +22,15 @@ assert.match(entry, /getGlobalAccountBookingTargets/, 'App Journal professional 
 assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal professional selector may use the existing Shared Record Q owner before Booking starts');
 assert.match(entry, /title: 'Выбор специалиста'/, 'App Journal first selector step must be professional selection');
 assert.match(entry, /recordPersonList\(/, 'Professional selection must use the Shared Record person list');
+
+assert.match(targetsController, /this\.prisma\.accountTenantLink\.findMany/, 'Booking targets must start from existing AccountTenantLink relationships');
+assert.match(targetsController, /this\.prisma\.profile\.findMany/, 'Booking targets must read the existing Profile source directly');
+assert.match(targetsController, /orderBy: \{ createdAt: 'asc' \}/, 'Booking targets must preserve the existing first-created Profile semantics');
+for (const field of ['tenantId', 'name', 'surname', 'profession', 'phone']) {
+  assert.match(targetsController, new RegExp(`${field}: true`), `Booking targets Profile projection must include ${field}`);
+}
+assert.doesNotMatch(targetsController, /ProfileService|accountRelationshipProfile/, 'Booking targets must not load the full relationship Profile/Card');
+assert.doesNotMatch(targetsController, /photo|photoCropX|photoCropY|about|cardAppearance|workplaces/, 'Booking targets must not request Card-level Profile or workplace data');
 
 const journalStart = entry.indexOf('async function startJournalBooking');
 const selectorStart = entry.indexOf('async function openAccountBookingProfessionalSelector', journalStart);
