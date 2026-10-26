@@ -31,7 +31,7 @@ assert.match(policy, /acceptContactPointConsent[\s\S]*updateCurrentContactConsen
 assert.match(policy, /revokeContactPointConsent[\s\S]*updateCurrentContactConsent\([\s\S]*false/, 'revoke must append history and deactivate current state');
 assert.match(archive, /consentInvalidations\(/);
 assert.match(archive, /invalidateCurrentConsentState\(/);
-assert.match(archive, /consentState:[\s\S]*\[field\]: false/, 'document version change must invalidate current state at update time');
+assert.match(archive, /nextState\[field\] = false[\s\S]*consentState: nextState/, 'document version change must invalidate current state at update time');
 
 assert.match(policy, /async accountConsentState\(/);
 assert.doesNotMatch(policy, /async requiredConsentState\(/);
