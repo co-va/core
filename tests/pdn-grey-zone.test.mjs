@@ -30,7 +30,7 @@ assert.match(bookingController, /@UseGuards\(AccountGuard\)\s+@Post\(':tenantId\
 assert.match(bookingController, /@UseGuards\(AccountGuard\)\s+@Get\(':tenantId\/account\/chat'\)/);
 assert.match(bookingController, /@UseGuards\(AccountGuard\)\s+@Post\(':tenantId\/account\/chat\/messages'\)/);
 assert.doesNotMatch(bookingController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)\s+@(?:Get|Post)\(':tenantId\/account\/chat/);
-assert.doesNotMatch(bookingController, /@Post\(':tenantId\/requests'\)/, 'retired account Record-write endpoint must stay removed');
+assert.match(bookingController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)\s+@Post\(':tenantId\/requests'\)/, 'App Journal Record-write endpoint must remain account-authenticated and PDN-gated');
 assert.match(bookingFlowController, /@Post\(':tenantId\/confirm'\)/);
 assert.doesNotMatch(bookingFlowController, /AccountGuard|BookingPdnConsentGuard/);
 assert.match(bookingFlowService, /ensureLegalState\(tenantId, bookerPerson, booker\.phone, source\.consents\)/);

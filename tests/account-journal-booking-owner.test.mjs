@@ -6,8 +6,10 @@ const day = fs.readFileSync('journal/день.js', 'utf8');
 const entry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
 const access = fs.readFileSync('online-booking/access.js', 'utf8');
 const publicEntry = fs.readFileSync('online-booking/booking-entry.js', 'utf8');
+const records = fs.readFileSync('core/records/records.js', 'utf8');
 const targetsClient = fs.readFileSync('core/account/booking-targets.js', 'utf8');
 const targetsController = fs.readFileSync('server/src/online-booking/account-booking-targets.controller.ts', 'utf8');
+const bookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const bookingService = fs.readFileSync('server/src/online-booking/online-booking.service.ts', 'utf8');
 
 const dayActionStart = day.indexOf('function openAccountDayAction');
@@ -23,7 +25,7 @@ assert.doesNotMatch(bookingAction, /\bdate\b|\bfrom\b|timeHint|detail\s*:/, 'Jou
 
 assert.match(targetsClient, /\/online-booking\/account\/booking-targets/, 'Professional selector must keep the existing Account booking-targets endpoint');
 assert.match(entry, /getGlobalAccountBookingTargets/, 'App Journal professional selector must use the narrow Account booking-targets projection');
-assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal professional selector may use the existing Shared Record Q owner before Booking starts');
+assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal must start inside the existing Shared Record Q owner');
 assert.match(entry, /title: 'Выбор специалиста'/, 'App Journal first selector step must be professional selection');
 assert.match(entry, /recordPersonList\(/, 'Professional selection must use the Shared Record person list');
 
@@ -40,10 +42,30 @@ const journalStart = entry.indexOf('async function startJournalBooking');
 const selectorStart = entry.indexOf('async function openAccountBookingProfessionalSelector', journalStart);
 assert.ok(journalStart >= 0 && selectorStart > journalStart, 'Journal booking handoff must exist');
 const journalBooking = entry.slice(journalStart, selectorStart);
-assert.match(journalBooking, /renderAccess\(content/, 'Professional selection must continue into the existing canonical Booking');
-assert.match(journalBooking, /workplaceKey: ''/, 'Journal booking must start without a preselected workplace');
-assert.match(journalBooking, /procedureIds: \[\]/, 'Journal booking must start without preselected procedures');
-assert.doesNotMatch(journalBooking, /\bdate\s*:|timeHint|\bfrom\s*:/, 'Journal booking must not preselect date or time');
+assert.match(journalBooking, /getBookingContext\(id\)/, 'Journal Booking must use the lean canonical Booking context');
+assert.match(journalBooking, /getAccount\(id\)/, 'Journal Booking must resolve the already-authenticated App account without asking for identity again');
+assert.match(journalBooking, /openRecords\(\{/, 'Journal Booking must continue through the existing canonical Records flow');
+assert.match(journalBooking, /context: 'online'/, 'Journal Booking must use the online Records provider semantics');
+assert.match(journalBooking, /person: account/, 'Journal Booking must carry the known App account into confirmation instead of asking for name or phone');
+assert.match(journalBooking, /professionalActions: false/, 'Journal Booking must not expose professional Record actions');
+assert.match(journalBooking, /creationOwner,/, 'Journal Booking must reuse the already-open Shared Q owner');
+assert.match(journalBooking, /if \(workplaces\.length === 1\)/, 'One workplace must skip the workplace selector in App Journal Booking');
+assert.match(journalBooking, /creationOwner\.render\(\{[\s\S]*step: 'workplace'/, 'Multiple workplaces must stay inside the same Shared Q owner');
+assert.match(journalBooking, /createBookingRequest\(id,/, 'Journal confirmation must use the authenticated Account Booking write');
+assert.doesNotMatch(journalBooking, /renderAccess\(/, 'Journal Booking must never enter the Public technical Booking shell');
+assert.doesNotMatch(journalBooking, /creationOwner\?\.close|variant:\s*'technical'|mountModal\(/, 'Journal Booking must not close Q or mount a technical modal');
+assert.doesNotMatch(entry, /from '\.\/access\.js'/, 'App user entry must not import the Public technical Booking entry');
+assert.doesNotMatch(entry, /phoneField|passwordField|account\/login|account\/register/, 'Journal Booking must not render identity, password, login or registration steps');
+assert.match(entry, /v2ListEntry\(/, 'App workplace selection must use the Shared list owner');
+assert.match(records, /const owner = creationOwner \|\| openRecordCreationOwner/, 'Canonical Records must keep support for an externally owned Shared Q');
+
+const requestRouteStart = bookingController.indexOf("@UseGuards(AccountGuard, BookingPdnConsentGuard)");
+const requestRouteEnd = bookingController.indexOf('\n  }\n}', requestRouteStart);
+assert.ok(requestRouteStart >= 0 && requestRouteEnd > requestRouteStart, 'Authenticated App Booking write route must exist');
+const requestRoute = bookingController.slice(requestRouteStart, requestRouteEnd);
+assert.match(requestRoute, /@Post\(':tenantId\/requests'\)/, 'App Journal Booking write must stay on the authenticated Account route');
+assert.match(requestRoute, /this\.booking\.createRequest\(tenantId, accountId/, 'App Journal Booking route must reuse the existing Account Booking service owner');
+assert.match(requestRoute, /BookingPdnConsentGuard/, 'App Journal Booking write must preserve the existing PDN gate without asking for identity again');
 
 const contextStart = bookingService.indexOf('async getContext');
 const prepareAccountStart = bookingService.indexOf('async prepareAccount', contextStart);
@@ -62,25 +84,25 @@ for (const preserved of ['procedures', 'days', 'documents', 'occupancy']) {
   assert.match(bookingContext, new RegExp(`\\b${preserved}\\b`), `Booking context must preserve ${preserved}`);
 }
 
-assert.match(access, /variant: 'technical'/, 'Canonical Booking must use the existing Shared technical modal');
-assert.match(access, /className: 'booking-technical-modal'/, 'Canonical Booking must stay inside the technical modal surface');
-assert.doesNotMatch(access, /openRecordCreationOwner\(|creationOwner:\s*state\./, 'Canonical Booking must not reuse the App Record Q as its Booking shell');
-assert.match(access, /if \(workplaces\.length === 1\)/, 'Single workplace must be skipped by the canonical booking logic');
-assert.doesNotMatch(access, /renderLegal|renderAccountEntry|passwordField|account\/login|account\/register/, 'Canonical Booking must not contain App authentication or onboarding gates');
+assert.match(access, /variant: 'technical'/, 'Public Booking must keep its isolated Shared technical modal');
+assert.match(access, /className: 'booking-technical-modal'/, 'Public Booking must stay inside the technical modal surface');
+assert.doesNotMatch(access, /openRecordCreationOwner\(|creationOwner:\s*state\./, 'Public Booking must not depend on the App Record Q shell');
+assert.match(access, /if \(workplaces\.length === 1\)/, 'Single workplace must be skipped by Public Booking logic');
+assert.doesNotMatch(access, /renderLegal|renderAccountEntry|passwordField|account\/login|account\/register/, 'Public Booking must not contain App authentication or onboarding gates');
 
 const workplaceRenderStart = access.indexOf('function renderWorkplace');
 const modeRenderStart = access.indexOf('function renderMode', workplaceRenderStart);
-assert.ok(workplaceRenderStart >= 0 && modeRenderStart > workplaceRenderStart, 'Canonical workplace renderer must exist');
+assert.ok(workplaceRenderStart >= 0 && modeRenderStart > workplaceRenderStart, 'Public workplace renderer must exist');
 const workplaceRender = access.slice(workplaceRenderStart, modeRenderStart);
-assert.match(workplaceRender, /v2ListEntry\(/, 'Workplace selection must keep Shared v2ListEntry');
+assert.match(workplaceRender, /v2ListEntry\(/, 'Public workplace selection must keep Shared v2ListEntry');
 for (const field of ['name', 'city', 'address', 'key']) {
-  assert.match(workplaceRender, new RegExp(`workplace\\?\\.${field}`), `Workplace selection must keep using ${field}`);
+  assert.match(workplaceRender, new RegExp(`workplace\\?\\.${field}`), `Public workplace selection must keep using ${field}`);
 }
-assert.doesNotMatch(workplaceRender, /profile|photo|cardAppearance|cardProfile/, 'Workplace selection must not depend on Profile/Card data');
+assert.doesNotMatch(workplaceRender, /profile|photo|cardAppearance|cardProfile/, 'Public workplace selection must not depend on Profile/Card data');
 
 const initialStepStart = access.indexOf('function initialStep');
 const renderAccessStart = access.indexOf('export async function renderAccess', initialStepStart);
-assert.ok(initialStepStart >= 0 && renderAccessStart > initialStepStart, 'Canonical Booking initial step must exist');
+assert.ok(initialStepStart >= 0 && renderAccessStart > initialStepStart, 'Public Booking initial step must exist');
 const initialStepSource = access.slice(initialStepStart, renderAccessStart);
 const initialStep = Function('text', `${initialStepSource}\nreturn initialStep;`)((value) => String(value ?? '').trim());
 
@@ -89,16 +111,16 @@ const singleWorkplaceState = {
   lockedWorkplaceKey: '',
   workplaceKey: '',
 };
-assert.deepEqual(initialStep(singleWorkplaceState), { kind: 'mode', index: 0 }, 'One workplace must skip the selector');
-assert.equal(singleWorkplaceState.workplaceKey, 'only', 'One workplace must be selected automatically');
+assert.deepEqual(initialStep(singleWorkplaceState), { kind: 'mode', index: 0 }, 'One workplace must skip the Public selector');
+assert.equal(singleWorkplaceState.workplaceKey, 'only', 'One Public workplace must be selected automatically');
 
 const multipleWorkplaceState = {
   context: { workplaces: [{ key: 'one' }, { key: 'two' }] },
   lockedWorkplaceKey: '',
   workplaceKey: '',
 };
-assert.deepEqual(initialStep(multipleWorkplaceState), { kind: 'workplace', index: 0 }, 'Multiple workplaces must open the selector');
-assert.equal(multipleWorkplaceState.workplaceKey, '', 'Multiple workplaces must not preselect a workplace');
+assert.deepEqual(initialStep(multipleWorkplaceState), { kind: 'workplace', index: 0 }, 'Multiple Public workplaces must open the selector');
+assert.equal(multipleWorkplaceState.workplaceKey, '', 'Multiple Public workplaces must not preselect a workplace');
 
 const leanBookingContext = {
   workplaces: [{
@@ -129,7 +151,7 @@ const downstreamSlots = getBookingSlots(leanBookingContext, {
 assert.ok(downstreamSlots.length > 0, 'Downstream Booking must continue from the lean workplace context');
 assert.equal(downstreamSlots[0]?.from, '10:00', 'Lean workplace context must preserve Booking time calculation');
 
-assert.match(publicEntry, /renderAccess\(root, route\)/, 'Public entry must open the same canonical Booking flow');
+assert.match(publicEntry, /renderAccess\(root, route\)/, 'Public entry must open the isolated technical Booking flow');
 assert.doesNotMatch(publicEntry, /startAccountRuntime|renderGlobalClient|user-entry\.js|core\.js/, 'Public entry must not load the App runtime');
 
-console.log('account Journal and public Booking ownership: ok');
+console.log('account Journal Q and public technical Booking ownership: ok');

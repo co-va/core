@@ -1,7 +1,16 @@
+import { accountErrorMessage, createBookingRequest, getAccount, getBookingContext } from '../core/account/index.js';
 import { getGlobalAccountBookingTargets } from '../core/account/booking-targets.js';
-import { field, openRecordCreationOwner, recordPersonList } from '../ui/ui.js';
+import { normalizeBookingSettings } from '../core/booking-settings/index.js';
+import { openRecords } from '../core/records/records.js';
+import { field, openNotice, openRecordCreationOwner, recordPersonList, v2ListEntry, v2ListEntries } from '../ui/ui.js';
 import { renderGlobalClient } from './booking.js';
-import { renderAccess } from './access.js';
+import {
+  bookingProcedureCost,
+  getBookingProcedures,
+  getBookingSlots,
+  getBookingTimeRows,
+  getBookingWorkingDates,
+} from './model.js';
 
 const app = document.querySelector('#app');
 let disposeView = () => {};
@@ -54,6 +63,34 @@ function accountBookingProfessionalList(relationships = [], query = '') {
   });
 }
 
+function accountDisplayName(account = {}) {
+  return [account?.name, account?.surname]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    || 'Пользователь';
+}
+
+function accountDiscount(account = {}) {
+  const value = Number(account?.discountPercent || 0);
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+}
+
+function numericCost(value) {
+  const number = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
+function workplaceRows(workplaces = []) {
+  return v2ListEntries(workplaces.map((workplace) => v2ListEntry({
+    title: String(workplace?.name || '').trim() || 'Рабочее пространство',
+    subtitle: [workplace?.city, workplace?.address].map((value) => String(value || '').trim()).filter(Boolean).join(', '),
+    interactive: true,
+    data: `data-account-booking-workplace="${String(workplace?.key || '')}"`,
+    aria: `Выбрать рабочее пространство ${String(workplace?.name || '').trim()}`,
+  })));
+}
+
 async function renderGlobalClientRoot(initial = {}) {
   disposeView();
   disposeView = () => {};
@@ -72,15 +109,124 @@ async function renderGlobalClientRoot(initial = {}) {
 
 async function startJournalBooking(tenantId, creationOwner) {
   const id = String(tenantId || '').trim();
-  const content = document.querySelector('#app-content');
-  creationOwner?.close?.();
-  if (!id || !content) return;
+  if (!id || !creationOwner?.isOpen?.()) return;
 
-  await renderAccess(content, {
-    tenantId: id,
-    workplaceKey: '',
-    procedureIds: [],
+  let context;
+  let account;
+  try {
+    [context, account] = await Promise.all([
+      getBookingContext(id),
+      getAccount(id),
+    ]);
+  } catch (error) {
+    openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось открыть запись.') });
+    return;
+  }
+  if (!creationOwner.isOpen()) return;
+  if (!account) {
+    openNotice({ title: 'Запись недоступна', message: 'Не удалось определить пользователя приложения.' });
+    return;
+  }
+
+  let bookingContext = context && typeof context === 'object' ? context : {};
+  const workplaces = Array.isArray(bookingContext.workplaces) ? bookingContext.workplaces : [];
+  if (!workplaces.length) {
+    openNotice({ title: 'Запись недоступна', message: 'Рабочие пространства не настроены.' });
+    return;
+  }
+  const settings = normalizeBookingSettings(bookingContext.settings);
+
+  const provider = {
+    kind: 'online',
+    workplaces: () => Array.isArray(bookingContext.workplaces) ? bookingContext.workplaces : [],
+    workplaceId: (workplace) => String(workplace?.key || ''),
+    workplaceName: (workplaceKey) => {
+      const workplace = (Array.isArray(bookingContext.workplaces) ? bookingContext.workplaces : [])
+        .find((item) => String(item?.key || '') === String(workplaceKey || ''));
+      return String(workplace?.name || '').trim() || 'Рабочее пространство';
+    },
+    procedures: (workplaceKey) => getBookingProcedures(bookingContext, workplaceKey),
+    procedureId: (procedure) => String(procedure?.id || ''),
+    procedureName: (procedure) => String(procedure?.name || ''),
+    procedureCost: (procedure, workplaceKey) => bookingProcedureCost(procedure, workplaceKey),
+    procedureDuration: (procedure) => Math.max(0, Number(procedure?.duration) || 0),
+    workingDates: (workplaceKey) => getBookingWorkingDates(bookingContext, workplaceKey),
+    timeRows: ({ workplaceId, date, procedures }) => getBookingTimeRows(bookingContext, {
+      workplaceKey: workplaceId,
+      date,
+      procedureIds: procedures.map((entry) => String(entry.id || '')),
+      step: settings.slotStep,
+    }),
+    personDisplay: (person = {}) => ({
+      uei: String(person?.uei || person?.person?.uei || ''),
+      name: [person?.name, person?.surname].filter(Boolean).join(' ').trim() || accountDisplayName(account),
+      phone: String(person?.phone || person?.phones?.[0] || ''),
+    }),
+    discount: () => accountDiscount(account),
+    total: (recordsState) => {
+      const subtotal = recordsState.procedures.reduce((sum, entry) => sum + numericCost(entry.cost), 0);
+      return Math.max(0, subtotal * (1 - accountDiscount(account) / 100));
+    },
+    async create(recordsState) {
+      return createBookingRequest(id, {
+        workplaceKey: recordsState.workplaceId,
+        date: recordsState.date,
+        from: recordsState.from,
+        procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')).filter(Boolean),
+      });
+    },
+    async onCreateError(error, recordsState, { renderTimes, renderConfirmation }) {
+      bookingContext = await getBookingContext(id, recordsState.workplaceId).catch(() => bookingContext);
+      const stillAvailable = getBookingSlots(bookingContext, {
+        workplaceKey: recordsState.workplaceId,
+        date: recordsState.date,
+        procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')),
+        step: settings.slotStep,
+      }).some((slot) => String(slot.from || '') === String(recordsState.from || ''));
+      if (!stillAvailable) {
+        openNotice({ title: 'Запись недоступна', message: 'Выбранное время уже занято или стало недоступно. Выберите другое.' });
+        renderTimes();
+        return;
+      }
+      const message = accountErrorMessage(error, 'Не удалось подтвердить запись');
+      openNotice({ title: 'Не удалось подтвердить запись', message });
+      renderConfirmation();
+    },
+  };
+
+  const openBooking = (workplaceKey) => {
+    if (!creationOwner.isOpen()) return;
+    openRecords({
+      context: 'online',
+      person: account,
+      workplaceId: String(workplaceKey || ''),
+      procedures: [],
+      professionalActions: false,
+      provider,
+      creationOwner,
+      onCreated: async (result) => {
+        await renderGlobalClientRoot({
+          tab: 'journal',
+          journalDate: String(result?.date || ''),
+        });
+      },
+    });
+  };
+
+  if (workplaces.length === 1) {
+    openBooking(String(workplaces[0]?.key || ''));
+    return;
+  }
+
+  const view = creationOwner.render({
+    step: 'workplace',
+    title: 'Выбор пространства',
+    body: workplaceRows(workplaces),
   });
+  view?.body?.querySelectorAll('[data-account-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
+    const workplaceKey = String(node.dataset.accountBookingWorkplace || '');
+    if (workplaceKey) openBooking(workplaceKey);
+  }));
 }
 
 async function openAccountBookingProfessionalSelector() {
@@ -112,7 +258,9 @@ async function openAccountBookingProfessionalSelector() {
       const tenantId = String(node.dataset.accountBookingProfessional || '');
       if (!tenantId) return;
       opening = true;
-      void startJournalBooking(tenantId, owner);
+      void startJournalBooking(tenantId, owner).finally(() => {
+        opening = false;
+      });
     }));
   };
   search?.addEventListener('input', renderList);
