@@ -301,7 +301,7 @@ export class BookingFlowService {
       throw new BadRequestException('Не выбраны рабочее пространство, дата или время');
     }
     if (!booker.name || !booker.phone) throw new BadRequestException('Укажите имя и телефон оформляющего запись');
-    if (![ 'self', 'other', 'joint' ].includes(mode)) throw new BadRequestException('Не выбран способ оформления записи');
+    if (!['self', 'other', 'joint'].includes(mode)) throw new BadRequestException('Не выбран способ оформления записи');
 
     const participants = arrayValue(source.participants).map(normalizeParticipant);
     if (!participants.length || participants.some((participant) => !participant.name || !participant.procedureIds.length)) {
@@ -361,7 +361,7 @@ export class BookingFlowService {
       }
     } catch (error) {
       for (const record of records.reverse()) {
-        await this.records.delete(tenantId, text(record?.id)).catch(() => null);
+        await this.businessState.deleteRecord(tenantId, text(record?.id)).catch(() => null);
       }
       throw error;
     }
