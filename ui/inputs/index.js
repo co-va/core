@@ -56,6 +56,7 @@ function ensurePhoneEvents() {
     if (country) {
       const host = country.closest('[data-phone-input]');
       const national = host?.querySelector('[data-phone-national]');
+      setPhoneCountry(host, country.value);
       syncPhoneHost(host, national?.value || '', { detectCountry: false });
       return;
     }
@@ -340,4 +341,3 @@ export function initPhotoField(root) {
     syncPhotoCropPreview(fieldRoot);
   });
 }
-
