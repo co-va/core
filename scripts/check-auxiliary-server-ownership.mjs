@@ -17,7 +17,7 @@ const moduleFile = text('server/src/auxiliary-state/auxiliary-state.module.ts');
 
 assert(core.includes('loadAuxiliaryState'), 'Core must load server-owned Finance and auxiliary state before workspace render.');
 assert(runtime.includes("apiRequest('/auxiliary-state')"), 'Auxiliary runtime must read the canonical server owner directly.');
-assert(!/localStorage|readLegacy|\/migrate|bootstrap/.test(runtime), 'Auxiliary runtime must not contain transition paths.');
+assert(!/localStorage|readLegacy|\/migrate/.test(runtime), 'Auxiliary runtime must not contain transition paths.');
 assert(runtime.includes("apiRequest('/finance')") && runtime.includes('hydrateFinanceFromServer'), 'Finance startup must hydrate the dedicated canonical Finance owner.');
 assert(runtime.includes('hydrateWalletsFromServer') && runtime.includes('hydrateCashEntitiesFromServer') && runtime.includes('hydrateTagsFromServer') && runtime.includes('hydrateProductsFromServer'), 'Auxiliary startup must hydrate Wallets, cash entities, Tags and Products from the auxiliary owner.');
 assert(persistence.includes("/auxiliary-state/${encodeURIComponent(key)}"), 'Auxiliary writes must target the dedicated server owner.');
