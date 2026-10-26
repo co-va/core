@@ -23,6 +23,7 @@ import {
   registerGlobalAccount,
   submitAccountConsents,
 } from '../core/account/index.js';
+import { getGlobalAccountBookingTargets } from '../core/account/booking-targets.js';
 import { normalizeBookingSettings } from '../core/booking-settings/index.js';
 import {
   actionBlock,
@@ -971,15 +972,6 @@ async function finalizeBookingRequest(root, state) {
   }).some((slot) => String(slot.from || '') === String(state.from || ''));
 
   try {
-    await refreshContext(state);
-    if (!slotStillAvailable()) {
-      state.error = 'Выбранное время уже недоступно. Выберите другое.';
-      state.from = '';
-      state.to = '';
-      renderTimes(root, state);
-      return;
-    }
-
     state.lastRequest = await createBookingRequest(state.tenantId, {
       workplaceKey: state.workplaceKey,
       date: state.date,
@@ -988,7 +980,6 @@ async function finalizeBookingRequest(root, state) {
     });
     state.notice = 'Запись отправлена в журнал.';
     state.error = '';
-    await refreshContext(state);
     exitBookingContext(state, {
       tab: 'journal',
       journalDate: String(state.date || ''),
@@ -1046,16 +1037,23 @@ function globalTermsFact(state) {
 }
 
 async function renderGlobalClientHome(root, state) {
-  const [account, relationships, records] = await Promise.all([
-    getGlobalAccount(),
-    getGlobalAccountRelationships().catch(() => []),
-    getGlobalAccountRecords().catch(() => []),
-  ]);
+  const account = state.account || await getGlobalAccount();
   if (!account) {
     renderGlobalClientEntry(root, state);
     return;
   }
   state.account = account;
+
+  const tab = String(state.accountTab || 'journal');
+  const profileOnly = tab === 'profile' || tab === 'profile-settings';
+  const needsRecords = tab === 'journal' || tab === 'contact-detail';
+  const relationships = profileOnly
+    ? await getGlobalAccountBookingTargets().catch(() => [])
+    : await getGlobalAccountRelationships().catch(() => []);
+  const records = needsRecords
+    ? await getGlobalAccountRecords().catch(() => [])
+    : [];
+
   state.relationships = Array.isArray(relationships) ? relationships : [];
   state.accountRecords = Array.isArray(records) ? records : [];
   await renderGlobalAccount(root, state, {
