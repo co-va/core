@@ -44,7 +44,7 @@ assert.doesNotMatch(booking, /async createRequest[\s\S]*requiredConsentState\(te
 
 const publicStateMethod = bookingFlow.match(/async bookingState\([\s\S]*?\n  private async resolvePerson/)?.[0] || '';
 assert.match(publicStateMethod, /currentConsentState\(resolved\)/, 'Public Booking must read ready Person consent state');
-assert.match(publicStateMethod, /pdnActive: legalState\.pdnActive/);
+assert.match(publicStateMethod, /legalState,[\s\S]*active: legalState\.pdnActive/, 'Public Booking must return ready legalState and expose PDN active state directly');
 assert.match(publicStateMethod, /active: legalState\.marketingActive/);
 assert.doesNotMatch(publicStateMethod, /getContext|documents|documentVersion|contactPointConsentState|latestEvent/, 'Public Booking state must not derive current consent from documents/history');
 assert.doesNotMatch(bookingFlow, /documentVersion/, 'Public Booking must not carry document versions to determine current state');
