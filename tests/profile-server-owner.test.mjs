@@ -36,9 +36,10 @@ assert.match(workplaceData, /apiRequest\(`\/profile\/workplaces\//);
 assert.match(workplaceData, /hydrateWorkplacesFromServer/);
 
 assert.match(runtime, /apiRequest\('\/profile'\)/);
+assert.match(runtime, /consumeJournalBootstrap\('profile'\)/);
 assert.match(runtime, /hydrateProfileFromServer/);
 assert.match(runtime, /hydrateWorkplacesFromServer/);
-assert.doesNotMatch(runtime, /localStorage|readLegacy|\/migrate|bootstrap/);
+assert.doesNotMatch(runtime, /localStorage|readLegacy|\/migrate/);
 
 assert.match(schema, /model Profile\s*\{/);
 assert.match(schema, /model Workplace\s*\{/);
