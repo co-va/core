@@ -1,5 +1,6 @@
 import { normalizeBookingSettings } from '../core/booking-settings/index.js';
 import { API_BASE } from '../core/environment.js';
+import { formatPhone } from '../core/phone/index.js';
 import { button, iconButton } from '../ui/buttons/index.js';
 import { initCalendar } from '../ui/calendar/index.js';
 import { documentTile, documentTiles, openDocumentViewer } from '../ui/documents/index.js';
@@ -13,7 +14,7 @@ import { recordProcedureList } from '../ui/record/runtime.js';
 import { emptyState } from '../ui/states/index.js';
 import { escapeHtml } from '../ui/utils/escape-html.js';
 import {
-  bookingProcedureCost,
+  bookingProcedurePrice,
   getBookingProcedures,
   getBookingSlots,
   getBookingTimeRows,
@@ -31,13 +32,17 @@ function text(value) {
   return String(value ?? '').trim();
 }
 
-function numericCost(value) {
-  const number = Number(String(value ?? '').replace(',', '.'));
-  return Number.isFinite(number) ? Math.max(0, number) : 0;
-}
-
 function money(value) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)} ₽`;
+}
+
+function priceText(price = {}) {
+  return `${price.variable ? 'от ' : ''}${money(price.minimum)}`;
+}
+
+function formatBookingPhone(value) {
+  const phone = text(value);
+  return phone ? formatPhone(phone) || phone : '';
 }
 
 function formatDate(value) {
@@ -231,37 +236,81 @@ function selectedProcedures(state, participant) {
   return participant.procedureIds.map((id) => catalog.get(text(id))).filter(Boolean);
 }
 
-function totalCost(state) {
-  return state.participants.reduce((sum, participant) => sum + selectedProcedures(state, participant)
-    .reduce((inner, procedure) => inner + numericCost(bookingProcedureCost(procedure, state.workplaceKey)), 0), 0);
+function proceduresPrice(state, procedures = []) {
+  return procedures.reduce((summary, procedure) => {
+    const price = bookingProcedurePrice(procedure, state.workplaceKey);
+    summary.minimum += price.minimum;
+    summary.variable = summary.variable || price.variable;
+    return summary;
+  }, { minimum: 0, variable: false });
 }
 
-function startLegalLookup(state) {
+function participantPrice(state, participant) {
+  return proceduresPrice(state, selectedProcedures(state, participant));
+}
+
+function totalPrice(state) {
+  return state.participants.reduce((summary, participant) => {
+    const price = participantPrice(state, participant);
+    summary.minimum += price.minimum;
+    summary.variable = summary.variable || price.variable;
+    return summary;
+  }, { minimum: 0, variable: false });
+}
+
+function legalPhoneKey(value) {
+  return text(value).replace(/\D/g, '');
+}
+
+function startLegalLookup(state, { force = false } = {}) {
   const phone = text(state.booker.phone);
-  if (!phone) return Promise.resolve({});
+  const phoneKey = legalPhoneKey(phone);
+  if (!phoneKey) return Promise.resolve({});
+
+  if (state.legalPhone !== phoneKey) {
+    const hadPhone = Boolean(state.legalPhone);
+    state.legalPhone = phoneKey;
+    state.legalState = {};
+    state.legalResolved = false;
+    state.legalLookup = null;
+    state.legalError = '';
+    if (hadPhone) state.consents = {};
+  } else if (!force && state.legalResolved) {
+    return Promise.resolve(state.legalState);
+  } else if (!force && state.legalLookup) {
+    return state.legalLookup;
+  }
+
   const token = ++state.legalLookupToken;
   state.legalResolved = false;
-  state.legalLookup = jsonRequest(
+  state.legalError = '';
+  const lookup = jsonRequest(
     `/online-booking/${encodeURIComponent(state.tenantId)}/booking-state`,
     {
       method: 'POST',
       body: JSON.stringify({ name: state.booker.name, phone, email: state.booker.email }),
     },
-    'Не удалось проверить данные',
-  ).then((result) => {
+    'Не удалось проверить действующие согласия',
+  );
+  state.legalLookup = lookup;
+  return lookup.then((result) => {
     if (token !== state.legalLookupToken) return result;
+    state.legalLookup = null;
     state.legalResolved = true;
+    state.legalError = '';
     state.legalState = result && typeof result === 'object' ? result : {};
     if (state.current.kind === 'consents') renderCurrent(state);
     return result;
-  }).catch(() => {
+  }).catch((error) => {
     if (token === state.legalLookupToken) {
+      state.legalLookup = null;
       state.legalResolved = false;
       state.legalState = {};
+      state.legalError = text(error?.message) || 'Не удалось проверить действующие согласия.';
+      if (state.current.kind === 'consents') renderCurrent(state);
     }
     return {};
   });
-  return state.legalLookup;
 }
 
 function activeConsentIds(state) {
@@ -480,7 +529,7 @@ function procedureRows(state, participant) {
   return getBookingProcedures(state.context, state.workplaceKey).map((procedure) => ({
     ...procedure,
     durationText: durationText(procedure?.duration || 0),
-    costText: money(bookingProcedureCost(procedure, state.workplaceKey)),
+    costText: priceText(bookingProcedurePrice(procedure, state.workplaceKey)),
     aria: `Выбрать услугу ${text(procedure?.name)}`,
   }));
 }
@@ -617,21 +666,44 @@ function openConsentDocument(document = {}) {
 }
 
 function renderConsents(state) {
+  if (!state.legalResolved) {
+    if (!state.legalLookup && !state.legalError) startLegalLookup(state);
+    const hasError = Boolean(state.legalError);
+    const host = renderFrame(state, {
+      title: 'Согласия',
+      body: hasError
+        ? `<p class="form-error" role="alert">${escapeHtml(state.legalError)}</p>`
+        : '<p class="booking-flow__legal-check">Проверяем действующие согласия…</p>',
+      action: hasError ? actionBlock(button('Повторить', { data: 'data-booking-consents-retry' })) : '',
+      back: state.history.length > 0,
+    });
+    host?.querySelector('[data-booking-consents-retry]')?.addEventListener('click', () => {
+      startLegalLookup(state, { force: true });
+      renderConsents(state);
+    });
+    return;
+  }
+
   const documents = consentDocuments(state);
+  if (!documents.length) {
+    go(state, { kind: 'preview' }, { push: false });
+    return;
+  }
+
   const required = documents.filter((document) => document?.required && text(document?.id) !== 'messages-consent');
-  const canContinue = !state.legalResolved || required.every((document) => Boolean(state.consents[text(document?.id)]));
-  const cards = documents.length ? documentTiles(documents.map((document) => {
+  const canContinue = required.every((document) => Boolean(state.consents[text(document?.id)]));
+  const cards = documentTiles(documents.map((document) => {
     const id = text(document?.id);
     const marketing = id === 'messages-consent';
     return documentTile({
-      title: marketing ? 'Согласие на рекламные сообщения' : text(document?.title) || 'Согласие на обработку персональных данных',
+      title: marketing ? 'Согласие на получение рекламы' : text(document?.title) || 'Согласие на обработку персональных данных',
       version: document?.version || 1,
       openData: `data-booking-document="${escapeHtml(id)}"`,
       toggleData: `data-booking-consent="${escapeHtml(id)}"`,
       toggleChecked: Boolean(state.consents[id]),
-      toggleAria: marketing ? 'Согласие на рекламные сообщения' : 'Согласие на обработку персональных данных',
+      toggleAria: marketing ? 'Согласие на получение рекламы' : 'Согласие на обработку персональных данных',
     });
-  }), { layout: 'stack' }) : '<p class="booking-flow__legal-ok">Необходимые согласия уже действуют.</p>';
+  }), { layout: 'stack' });
   const host = renderFrame(state, {
     title: 'Согласия',
     body: cards,
@@ -653,23 +725,30 @@ function renderConsents(state) {
   });
 }
 
-function previewMarkup(state, headline = 'Запись') {
+function previewMarkup(state) {
   const participantBlocks = state.participants.map((participant) => {
     const procedures = selectedProcedures(state, participant);
+    const phone = formatBookingPhone(participant.phone);
+    const price = participantPrice(state, participant);
     return `<section class="booking-summary__participant">
       <strong>${escapeHtml(participant.name)}</strong>
+      ${phone ? `<div>${escapeHtml(phone)}</div>` : ''}
       ${procedures.map((procedure) => `<div>${escapeHtml(text(procedure?.name))}</div>`).join('')}
+      <div class="booking-summary__participant-cost">${escapeHtml(priceText(price))}</div>
     </section>`;
   }).join('');
+  const total = state.participants.length > 1
+    ? `<div><dt>Итого</dt><dd>${escapeHtml(priceText(totalPrice(state)))}</dd></div>`
+    : '';
+  const bookerPhone = formatBookingPhone(state.booker.phone);
   return `<div class="booking-summary">
-    <h3>${escapeHtml(headline)}</h3>
     ${participantBlocks}
     <dl>
       <div><dt>Дата</dt><dd>${escapeHtml(formatDate(state.date))}</dd></div>
       <div><dt>Начало</dt><dd>${escapeHtml(state.from)}</dd></div>
-      <div><dt>Стоимость</dt><dd>${escapeHtml(money(totalCost(state)))}</dd></div>
+      ${total}
     </dl>
-    <section class="booking-summary__booker"><span>Оформляет</span><strong>${escapeHtml(state.booker.name)}</strong><div>${escapeHtml(state.booker.phone)}</div></section>
+    <section class="booking-summary__booker"><strong>${escapeHtml(state.booker.name)}</strong>${bookerPhone ? `<div>${escapeHtml(bookerPhone)}</div>` : ''}</section>
   </div>`;
 }
 
@@ -720,7 +799,7 @@ async function confirmBooking(state, action) {
   } catch (error) {
     const message = text(error?.message);
     if (Number(error?.status) === 409 && /соглас/i.test(message)) {
-      await startLegalLookup(state);
+      await startLegalLookup(state, { force: true });
       state.current = { kind: 'consents', index: 0 };
       state.history = state.history.filter((step) => step.kind !== 'preview');
       state.exited = false;
@@ -783,7 +862,7 @@ function renderExit(state) {
 function renderSuccess(state) {
   const host = renderFrame(state, {
     title: 'Запись подтверждена',
-    body: `${previewMarkup(state, 'Запись подтверждена')}<p class="booking-flow__app-note">В приложении можно видеть свои записи и управлять ими.</p>`,
+    body: `${previewMarkup(state)}<p class="booking-flow__app-note">В приложении можно видеть свои записи и управлять ими.</p>`,
     action: actionBlock(button('Открыть приложение', { variant: 'secondary', data: 'data-booking-open-app' })),
     back: false,
   });
@@ -843,6 +922,8 @@ export async function renderAccess(root, {
     legalResolved: false,
     legalLookup: null,
     legalLookupToken: 0,
+    legalPhone: '',
+    legalError: '',
     current: { kind: 'workplace', index: 0 },
     resumeStep: { kind: 'workplace', index: 0 },
     history: [],
