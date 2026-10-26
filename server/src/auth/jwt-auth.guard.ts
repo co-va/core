@@ -29,22 +29,25 @@ export class JwtAuthGuard implements CanActivate {
       if (!payload.sub || !payload.tenantId) throw new UnauthorizedException();
       request.auth = { platformAccountId: payload.sub, tenantId: payload.tenantId, role: payload.role || '' };
 
-      await this.prisma.$executeRaw`
-        UPDATE "CommunicationMessage"
-        SET "status" = 'delivered',
-            "deliveredAt" = COALESCE("deliveredAt", CURRENT_TIMESTAMP)
-        WHERE "tenantId" = ${payload.tenantId}
-          AND "direction" = 'inbound'
-          AND "purpose" = 'DIRECT'
-          AND "readAt" IS NULL
-          AND "failedAt" IS NULL
-          AND "status" <> 'failed'
-          AND "deliveredAt" IS NULL
-      `;
-
       const requestPath = String((request as any).path || request.url || '').split('?')[0];
       const chatThread = request.method === 'GET' && /\/communications\/chat\/thread\/?$/.test(requestPath);
       const messengerThread = request.method === 'GET' && /\/communications\/messenger\/conversations\/[^/]+\/messages\/?$/.test(requestPath);
+
+      if (chatThread || messengerThread) {
+        await this.prisma.$executeRaw`
+          UPDATE "CommunicationMessage"
+          SET "status" = 'delivered',
+              "deliveredAt" = COALESCE("deliveredAt", CURRENT_TIMESTAMP)
+          WHERE "tenantId" = ${payload.tenantId}
+            AND "direction" = 'inbound'
+            AND "purpose" = 'DIRECT'
+            AND "readAt" IS NULL
+            AND "failedAt" IS NULL
+            AND "status" <> 'failed'
+            AND "deliveredAt" IS NULL
+        `;
+      }
+
       if (chatThread) {
         const phone = canonicalPhone((request.query as any)?.phone);
         const uei = text((request.query as any)?.uei);
