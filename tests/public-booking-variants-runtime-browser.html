@@ -48,9 +48,9 @@ const workplaceKey = 'public-variants-workplace';
 const date1 = future(4);
 const date2 = future(5);
 const procedures = {
-  color: { id: 'color', name: 'Окрашивание', duration: 60, cost: { from: 7000, to: 9000 }, workplaces: [{ workplaceId: workplaceKey, cost: { from: 7000, to: 9000 } }] },
-  cut: { id: 'cut', name: 'Стрижка', duration: 30, cost: { amount: 3000 }, workplaces: [{ workplaceId: workplaceKey, cost: { amount: 3000 } }] },
-  care: { id: 'care', name: 'Уход', duration: 30, cost: { from: 2500 }, workplaces: [{ workplaceId: workplaceKey, cost: { from: 2500 } }] },
+  color: { id: 'color', name: 'Окрашивание', duration: 60, cost: { amount: 111 }, workplaces: [{ workplaceId: workplaceKey, cost: { amount: 222 }, bookingPrice: { minimum: 7000, variable: true, free: false } }] },
+  cut: { id: 'cut', name: 'Стрижка', duration: 30, cost: { from: 1, to: 99999 }, workplaces: [{ workplaceId: workplaceKey, cost: { from: 2, to: 99999 }, bookingPrice: { minimum: 3000, variable: false, free: false } }] },
+  care: { id: 'care', name: 'Уход', duration: 30, cost: { amount: 3 }, workplaces: [{ workplaceId: workplaceKey, cost: { amount: 4 }, bookingPrice: { minimum: 2500, variable: true, free: false } }] },
 };
 const context = {
   tenantId,
@@ -82,10 +82,10 @@ window.fetch = async (inputValue, options = {}) => {
     if (legalMode === 'error') return json({ message: 'lookup failed' }, 503);
     if (legalMode === 'delayed-active') await wait(900);
     const pdnActive = ['active', 'pdn-active', 'delayed-active'].includes(legalMode);
-    const marketingActive = ['active', 'marketing-active', 'old-pdn', 'delayed-active'].includes(legalMode);
-    return json({ person: null, ambiguous: false, consents: [
-      { documentId: 'pdn-consent', documentVersion: legalMode === 'old-pdn' ? 4 : 5, required: true, marketing: false, active: pdnActive },
-      { documentId: 'messages-consent', documentVersion: 4, required: false, marketing: true, active: marketingActive },
+    const marketingActive = ['active', 'marketing-active', 'delayed-active'].includes(legalMode);
+    return json({ person: null, ambiguous: false, legalState: { pdnActive, marketingActive }, consents: [
+      { documentId: 'pdn-consent', required: true, marketing: false, active: pdnActive },
+      { documentId: 'messages-consent', required: false, marketing: true, active: marketingActive },
     ] });
   }
   if (path === `/online-booking/${tenantId}/confirm` && method === 'POST') {
@@ -205,25 +205,25 @@ ok(Boolean(document.querySelector('[data-booking-consent="messages-consent"]')),
 ok(!document.querySelector('[data-booking-consents-next]')?.disabled, 'optional advertising consent blocked booking');
 await cleanup(dispose);
 
-mark('old-version');
-legalMode = 'old-pdn';
+mark('ready-consent-state');
+legalMode = 'marketing-active';
 dispose = await toTime('self', '+79990000004', null, [['cut']]);
-ok(Boolean(document.querySelector('[data-booking-consent="pdn-consent"]')), 'old PDN version did not require current document');
-ok(!document.querySelector('[data-booking-consent="messages-consent"]'), 'current advertising consent was asked again');
+ok(Boolean(document.querySelector('[data-booking-consent="pdn-consent"]')), 'inactive current PDN state was not shown');
+ok(!document.querySelector('[data-booking-consent="messages-consent"]'), 'active current advertising state was asked again');
 await cleanup(dispose);
 
 mark('lookup-error');
 legalMode = 'error';
 dispose = await toTime('self', '+79990000005', null, [['cut']]);
 ok(currentTitle() === 'Согласия' && flowText().includes('lookup failed'), 'lookup error was not held at consent boundary');
-ok(!document.querySelector('[data-booking-consent]') && !document.querySelector('[data-booking-consents-next]'), 'lookup error was treated as missing consent history');
+ok(!document.querySelector('[data-booking-consent]') && !document.querySelector('[data-booking-consents-next]'), 'lookup error was treated as missing current state');
 ok(Boolean(document.querySelector('[data-booking-consents-retry]')), 'lookup error has no retry action');
 await cleanup(dispose);
 
 mark('lookup-pending');
 legalMode = 'delayed-active';
 dispose = await toTime('self', '+79990000006', null, [['cut']]);
-ok(currentTitle() === 'Согласия' && flowText().includes('Проверяем действующие согласия'), 'pending lookup was treated as missing history');
+ok(currentTitle() === 'Согласия' && flowText().includes('Проверяем действующие согласия'), 'pending lookup was treated as missing current state');
 ok(!document.querySelector('[data-booking-consent]'), 'pending lookup rendered documents early');
 await wait(900);
 ok(currentTitle() === 'Запись', 'resolved current consents did not auto-skip to preview');
