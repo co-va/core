@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from 'node:fs';
 const guard = readFileSync(new URL('../scripts/check-browser-storage-ownership.mjs', import.meta.url), 'utf8');
 const core = readFileSync(new URL('../core.js', import.meta.url), 'utf8');
 const auth = readFileSync(new URL('../core/auth.js', import.meta.url), 'utf8');
+const bookingDraft = readFileSync(new URL('../core/booking-draft.js', import.meta.url), 'utf8');
+const bookingEntry = readFileSync(new URL('../online-booking/booking-entry.js', import.meta.url), 'utf8');
 const rootIndex = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const adminIndex = readFileSync(new URL('../admin/index.html', import.meta.url), 'utf8');
 const resetRequest = readFileSync(new URL('../core/password-reset-request.js', import.meta.url), 'utf8');
@@ -35,7 +37,15 @@ assert.match(guard, /core\/auth\.js/);
 assert.match(guard, /core\/account\/index\.js/);
 assert.match(guard, /core\/workplace-context\.js/);
 assert.match(guard, /core\/people\/view-state\.js/);
+assert.match(guard, /core\/booking-draft\.js/);
 assert.doesNotMatch(core, /clearLegacyBusinessStorage|workspace-sync/);
+
+assert.match(bookingDraft, /localStorage\.getItem\(key\(id\)\)/, 'public Booking draft must be recoverable across page openings');
+assert.match(bookingDraft, /localStorage\.setItem\(key\(id\), JSON\.stringify/, 'public Booking draft must persist only through its technical owner');
+assert.match(bookingDraft, /localStorage\.removeItem\(key\(id\)\)/, 'completed Booking must clear its technical draft');
+assert.match(bookingEntry, /loadBookingDraft/);
+assert.match(bookingEntry, /pagehide/);
+assert.match(bookingEntry, /visibilitychange/);
 
 assert.match(auth, /localStorage\.getItem\(TOKEN_KEY\)/, 'professional auth must survive Safari/browser session closure');
 assert.match(auth, /localStorage\.setItem\(TOKEN_KEY, value\)/, 'professional auth token must use persistent browser storage');

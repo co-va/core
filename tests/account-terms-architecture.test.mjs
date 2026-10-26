@@ -67,7 +67,9 @@ assert.ok(
 
 assert.match(workflow, /online-booking\/account-terms/);
 assert.match(workflow, /accountTerms:JSON\.parse/);
-assert.match(workflow, /account\/consents/);
+assert.match(workflow, /online-booking\/\$tenant_id\/booking-state/);
+assert.match(workflow, /online-booking\/\$tenant_id\/confirm/);
+assert.doesNotMatch(workflow, /online-booking\/\$tenant_id\/requests/);
 assert.doesNotMatch(
   workflow,
   /account\/register[^\n]*[\s\S]{0,500}consents\s*:/,

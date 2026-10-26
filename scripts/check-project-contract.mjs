@@ -197,11 +197,18 @@ for (const [name, source] of [
   }
 }
 
-if (!userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-detail', tenantId: route.tenantId })")) {
-  failures.push('online-booking/user-entry.js: account booking must preserve the professional Contacts context beneath Shared Record creation');
+if (userEntrySource.includes('accountBookingRoute(')
+  || userEntrySource.includes('publicBookingPath(')
+  || userEntrySource.includes('bookingRoute(')
+  || userEntrySource.includes('renderAccessRoute(')
+  || userEntrySource.includes('startAccountRuntime(')) {
+  failures.push('online-booking/user-entry.js: App entry must not own public Booking routing or Account runtime');
+}
+if (!userEntrySource.includes('await renderGlobalClientRoot();')) {
+  failures.push('online-booking/user-entry.js: App entry must finish in the end-user application root');
 }
 if (!userEntrySource.includes('data-startup-loading')) {
-  failures.push('online-booking/user-entry.js: public booking route must keep visible Shared loading feedback during hydration');
+  failures.push('online-booking/user-entry.js: end-user app entry must keep visible Shared loading feedback during hydration');
 }
 
 if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")

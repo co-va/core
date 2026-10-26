@@ -174,8 +174,8 @@ button.document-tile,.document-tile__open,.document-tile__toggle{cursor:pointer}
   color:#111;
 }
 .document-page__version{margin-bottom:12px;font-size:12px;color:#6f7478}
-.document-page h1{margin:0 0 24px;font-size:24px;line-height:1.15}
-.document-page__body{font-size:15px;line-height:1.58}
+.document-page h1{margin:0 0 24px;font-size:24px;line-height:1.15;overflow-wrap:anywhere}
+.document-page__body{font-size:15px;line-height:1.58;overflow-wrap:anywhere}
 .document-page__body p{margin:0 0 1em}
 .document-page__body p:last-child{margin-bottom:0}
 .document-viewer__pdf{

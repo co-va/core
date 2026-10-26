@@ -11,6 +11,7 @@ const journalCreation = fs.readFileSync('journal/creation-flow.js', 'utf8');
 const eventCreation = fs.readFileSync('journal/event-create.js', 'utf8');
 const recordView = fs.readFileSync('core/records/view.js', 'utf8');
 const booking = fs.readFileSync('online-booking/access.js', 'utf8');
+const bookingFlowService = fs.readFileSync('server/src/online-booking/booking-flow.service.ts', 'utf8');
 const personEntry = fs.readFileSync('core/people/record-creation.js', 'utf8');
 
 assert.equal(fs.existsSync('journal/record.js'), false);
@@ -53,7 +54,9 @@ assert.match(records, /state\.from = value/);
 assert.match(records, /owner\.resumeRecord/);
 assert.match(recordView, /export function openRecordView/);
 assert.match(personEntry, /from '\.\.\/records\/records\.js'/);
-assert.match(booking, /from '\.\.\/core\/records\/records\.js'/);
+assert.doesNotMatch(booking, /core\/records\/records\.js|openRecords\(/);
+assert.match(bookingFlowService, /from '\.\.\/record\/record\.service'/);
+assert.match(bookingFlowService, /this\.records\.create\(tenantId/);
 
 // One shared record mini-card contract is used both during creation and in Record View.
 assert.match(runtime, /export function recordConfirmationMiniCard\(\{/);

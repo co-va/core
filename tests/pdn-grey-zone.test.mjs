@@ -5,7 +5,8 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 
 const consentPolicy = read('server/src/tenant-document-archive/consent-policy.service.ts');
 const bookingController = read('server/src/online-booking/online-booking.controller.ts');
-const bookingService = read('server/src/online-booking/online-booking.service.ts');
+const bookingFlowController = read('server/src/online-booking/booking-flow.controller.ts');
+const bookingFlowService = read('server/src/online-booking/booking-flow.service.ts');
 const pdnGuard = read('server/src/online-booking/booking-pdn-consent.guard.ts');
 const notification = read('server/src/notification/notification.service.ts');
 const dispatch = read('server/src/communication/communication-dispatch.service.ts');
@@ -29,9 +30,12 @@ assert.match(bookingController, /@UseGuards\(AccountGuard\)\s+@Post\(':tenantId\
 assert.match(bookingController, /@UseGuards\(AccountGuard\)\s+@Get\(':tenantId\/account\/chat'\)/);
 assert.match(bookingController, /@UseGuards\(AccountGuard\)\s+@Post\(':tenantId\/account\/chat\/messages'\)/);
 assert.doesNotMatch(bookingController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)\s+@(?:Get|Post)\(':tenantId\/account\/chat/);
-assert.match(bookingController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)\s+@Post\(':tenantId\/requests'\)/);
-assert.match(bookingService, /async createRequest[\s\S]*hasActivePdnConsent\(tenantId, accountId\)/);
-assert.doesNotMatch(bookingService, /async createRequest[\s\S]*requiredConsentState\(tenantId, accountId\)/);
+assert.doesNotMatch(bookingController, /@Post\(':tenantId\/requests'\)/, 'retired account Record-write endpoint must stay removed');
+assert.match(bookingFlowController, /@Post\(':tenantId\/confirm'\)/);
+assert.doesNotMatch(bookingFlowController, /AccountGuard|BookingPdnConsentGuard/);
+assert.match(bookingFlowService, /ensureLegalState\(tenantId, booker\.phone, source\.consents, documents\)/);
+assert.match(bookingFlowService, /contactPointConsentState\(tenantId, 'PHONE', phone, documentId\)/);
+assert.match(bookingFlowService, /acceptContactPointConsent\([\s\S]*'public-booking'/);
 
 // PDN remains part of the document/booking contract, but it must not gate message delivery.
 assert.doesNotMatch(notification, /hasActivePdnConsent\(tenantId, identity\.accountId\)/);

@@ -12,6 +12,12 @@ const journalCreation = read('journal/creation-flow.js');
 const eventCreation = read('journal/event-create.js');
 const personEntry = read('core/people/record-creation.js');
 const booking = read('online-booking/access.js');
+const bookingHtml = read('booking.html');
+const bookingEntry = read('online-booking/booking-entry.js');
+const userEntry = read('online-booking/user-entry.js');
+const serverMain = read('server/src/main.ts');
+const bookingController = read('server/src/online-booking/online-booking.controller.ts');
+const bookingFlowService = read('server/src/online-booking/booking-flow.service.ts');
 
 expect(!fs.existsSync('journal/record.js'), 'journal/record.js must not exist.');
 expect(!fs.existsSync('journal/record-view.js'), 'journal/record-view.js must not exist.');
@@ -39,7 +45,22 @@ expect(!records.includes('allowBreak'), 'Records must not route between Record a
 expect(eventCreation.includes('createEvent'), 'Event creation must live in the Event flow.');
 expect(eventCreation.includes('timeHint'), 'Event flow must receive the original Timeline time hint.');
 expect(personEntry.includes("from '../records/records.js'"), 'Person entry must call canonical Records.');
-expect(booking.includes("from '../core/records/records.js'"), 'Online booking must call canonical Records.');
+expect(!booking.includes("core/records/records.js") && !booking.includes('openRecords('), 'Public Booking must not load the App Records flow.');
+expect(bookingFlowService.includes("from '../record/record.service'"), 'Public Booking server confirmation must use the canonical RecordService owner.');
+expect(bookingFlowService.includes('this.records.create(tenantId'), 'Public Booking must create ordinary Records through RecordService.');
+
+expect(bookingHtml.includes('online-booking/booking-entry.js'), 'Public Booking HTML must load its isolated Booking entry.');
+for (const forbidden of ['core.js', 'online-booking/user-entry.js', 'account-runtime.js']) {
+  expect(!bookingHtml.includes(forbidden), `Public Booking HTML must not load ${forbidden}.`);
+}
+for (const forbidden of ['journal/', 'core/finance/', 'core/people/', 'core/profile/runtime', './account-runtime.js', './booking.js']) {
+  expect(!bookingEntry.includes(forbidden), `Public Booking entry must not import App runtime dependency ${forbidden}.`);
+}
+expect(bookingEntry.includes("from './access.js'"), 'Public Booking entry must open the canonical Booking flow.');
+expect(!userEntry.includes('resolveBookingPublicRoute') && !userEntry.includes('startAccountRuntime'), 'App user entry must not contain a public Booking fallback into App runtime.');
+expect(serverMain.includes("response.sendFile(resolve(siteRoot, 'booking.html'))"), 'USER_HOST public Booking paths must resolve to isolated booking.html.');
+expect(!bookingController.includes("@Post(':tenantId/requests')"), 'Retired Account/Booking Record-write endpoint must stay removed.');
+
 expect(!fs.existsSync('records/records.js'), 'Root records/records.js must not remain after Records moved into Core.');
 expect(!fs.existsSync('core/records.js'), 'Core must not contain Records JS directly; Records must live in core/records/records.js.');
 

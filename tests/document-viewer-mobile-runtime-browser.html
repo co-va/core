@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>:root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:844px;--visual-vw:390px;--app-stable-vh:844px}html,body{margin:0;width:390px;height:844px;overflow:hidden}*{box-sizing:border-box}</style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/buttons/buttons.css">
+  <link rel="stylesheet" href="/ui/modals/modal.css">
+  <link rel="stylesheet" href="/ui/documents/document.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<pre id="result">pending</pre>
+<script type="module">
+import { openDocumentViewer } from '/ui/documents/index.js';
+
+const result = document.querySelector('#result');
+const failures = [];
+const ok = (condition, message) => { if (!condition) failures.push(message); };
+const wait = (ms = 80) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const longWord = 'ОченьДлиннаяСтрокаБезПробелов'.repeat(18);
+openDocumentViewer({
+  title: 'Согласие на обработку персональных данных',
+  version: 12,
+  content: `${longWord}\n\n${longWord}`,
+});
+await wait();
+
+let backdrop = document.querySelector('.document-viewer-backdrop');
+let sheet = document.querySelector('.document-viewer-sheet');
+let content = document.querySelector('.document-viewer__content');
+let page = document.querySelector('.document-page');
+ok(Boolean(backdrop && sheet && content && page), 'document viewer did not open');
+if (backdrop && sheet && content && page) {
+  const surfaceRect = backdrop.getBoundingClientRect();
+  const sheetRect = sheet.getBoundingClientRect();
+  ok(sheetRect.right <= surfaceRect.right + 0.5, 'technical document sheet exceeds shared app surface');
+  ok(sheetRect.left >= surfaceRect.left - 0.5, 'technical document sheet starts outside shared app surface');
+  ok(sheet.scrollWidth <= sheet.clientWidth + 1, `sheet has horizontal overflow: ${sheet.scrollWidth}/${sheet.clientWidth}`);
+  ok(content.scrollWidth <= content.clientWidth + 1, `content has horizontal overflow: ${content.scrollWidth}/${content.clientWidth}`);
+  ok(page.scrollWidth <= page.clientWidth + 1, `document page has horizontal overflow: ${page.scrollWidth}/${page.clientWidth}`);
+}
+
+document.querySelector('.document-viewer-backdrop .v2-layer__close')?.click();
+await wait();
+
+openDocumentViewer({
+  title: 'PDF',
+  version: 1,
+  pdfDataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJSVFT0YK',
+});
+await wait();
+backdrop = document.querySelector('.document-viewer-backdrop');
+sheet = document.querySelector('.document-viewer-sheet');
+const frame = document.querySelector('.document-viewer__pdf');
+ok(Boolean(backdrop && sheet && frame), 'PDF viewer did not open');
+if (backdrop && sheet && frame) {
+  const surfaceRect = backdrop.getBoundingClientRect();
+  const sheetRect = sheet.getBoundingClientRect();
+  ok(sheetRect.right <= surfaceRect.right + 0.5 && sheetRect.left >= surfaceRect.left - 0.5, 'PDF technical sheet exceeds shared app surface');
+  ok(sheet.scrollWidth <= sheet.clientWidth + 1, 'PDF technical sheet has horizontal overflow');
+  ok(frame.getBoundingClientRect().width <= sheet.clientWidth + 1, 'PDF frame exceeds technical sheet width');
+}
+
+document.querySelector('.document-viewer-backdrop .v2-layer__close')?.click();
+
+if (failures.length) {
+  document.documentElement.dataset.documentViewerMobileRuntime = 'fail';
+  result.textContent = failures.join('\n');
+} else {
+  document.documentElement.dataset.documentViewerMobileRuntime = 'pass';
+  result.textContent = 'mobile document viewer runtime passed';
+}
+</script>
+</body>
+</html>

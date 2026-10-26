@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>:root{--surface-dark:#2f3338;--button-secondary:#d8d3cf;--text-muted:#817a73;--app-max-width:390px;--visual-vh:844px;--visual-vw:390px;--app-stable-vh:844px}html,body{margin:0;width:390px;height:844px}*{box-sizing:border-box}</style>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/ui/page/page.css">
+  <link rel="stylesheet" href="/ui/buttons/buttons.css">
+  <link rel="stylesheet" href="/ui/inputs/inputs.css">
+  <link rel="stylesheet" href="/ui/selectors/selectors.css">
+  <link rel="stylesheet" href="/ui/calendar/calendar.css">
+  <link rel="stylesheet" href="/ui/lists/list-entry.css">
+  <link rel="stylesheet" href="/ui/time/time.css">
+  <link rel="stylesheet" href="/ui/record/record.css">
+  <link rel="stylesheet" href="/ui/states/state-view.css">
+  <link rel="stylesheet" href="/ui/modals/modal.css">
+  <link rel="stylesheet" href="/ui/documents/document.css">
+  <link rel="stylesheet" href="/ui/booking/booking.css">
+  <link rel="stylesheet" href="/ui/v2/v2.css">
+</head>
+<body>
+<main id="app-content" class="booking-content"></main>
+<pre id="result">pending</pre>
+<script type="module">
+import { renderAccess } from '/online-booking/access.js';
+
+const root = document.querySelector('#app-content');
+const result = document.querySelector('#result');
+const failures = [];
+let stage = 'boot';
+const mark = (value) => { stage = value; result.textContent = `running: ${value}`; };
+const ok = (condition, message) => { if (!condition) failures.push(`${stage}: ${message}`); };
+const wait = (ms = 70) => new Promise((resolve) => setTimeout(resolve, ms));
+const click = (node) => node?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const future = (days) => { const date = new Date(); date.setDate(date.getDate() + days); return dateKey(date); };
+
+const tenantId = 'public-variants-tenant';
+const workplaceKey = 'public-variants-workplace';
+const date1 = future(4);
+const date2 = future(5);
+const procedures = {
+  color: { id: 'color', name: 'Окрашивание', duration: 60, cost: { amount: 7000 }, workplaces: [{ workplaceId: workplaceKey, cost: { amount: 7000 } }] },
+  cut: { id: 'cut', name: 'Стрижка', duration: 30, cost: { amount: 3000 }, workplaces: [{ workplaceId: workplaceKey, cost: { amount: 3000 } }] },
+  care: { id: 'care', name: 'Уход', duration: 30, cost: { amount: 2500 }, workplaces: [{ workplaceId: workplaceKey, cost: { amount: 2500 } }] },
+};
+const context = {
+  tenantId,
+  workplaces: [{ key: workplaceKey, name: 'Студия', from: '09:00', to: '18:00', timeZone: 'UTC' }],
+  procedures: Object.values(procedures),
+  days: [
+    { workplaceId: workplaceKey, date: date1, from: '09:00', to: '18:00' },
+    { workplaceId: workplaceKey, date: date2, from: '09:00', to: '18:00' },
+  ],
+  occupancy: [],
+  documents: [
+    { id: 'pdn-consent', title: 'Согласие на обработку персональных данных', version: 5, personConsent: true, required: true, text: 'Актуальный текст ПДн' },
+    { id: 'messages-consent', title: 'Согласие на рекламные сообщения', version: 4, personConsent: true, required: false, text: 'Актуальный рекламный текст' },
+  ],
+  settings: { slotStep: 30 },
+};
+
+let legalMode = 'active';
+let confirmMode = 'success';
+let confirmCalls = [];
+let accountRequests = 0;
+
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (input, options = {}) => {
+  const url = new URL(typeof input === 'string' ? input : input.url, location.origin);
+  const path = url.pathname;
+  const method = String(options.method || input?.method || 'GET').toUpperCase();
+  if (path === `/online-booking/${tenantId}/context` && method === 'GET') return json(context);
+  if (path === `/online-booking/${tenantId}/booking-state` && method === 'POST') {
+    const active = legalMode === 'active';
+    return json({ person: null, ambiguous: false, consents: [
+      { documentId: 'pdn-consent', documentVersion: 5, required: true, marketing: false, active },
+      { documentId: 'messages-consent', documentVersion: 4, required: false, marketing: true, active },
+    ] });
+  }
+  if (path === `/online-booking/${tenantId}/confirm` && method === 'POST') {
+    const payload = JSON.parse(String(options.body || '{}'));
+    confirmCalls.push(payload);
+    if (confirmMode === 'conflict-once') {
+      confirmMode = 'success';
+      return json({ message: 'Это время уже занято' }, 409);
+    }
+    return json({
+      bookingSessionId: `session-${confirmCalls.length}`,
+      workplaceKey,
+      date: payload.date,
+      from: payload.from,
+      to: '12:00',
+      records: payload.participants.map((participant, index) => ({
+        id: `record-${confirmCalls.length}-${index}`,
+        person: { key: `person-${index}`, name: participant.name, phone: participant.phone || '' },
+        procedures: participant.procedureIds.map((id) => procedures[id]),
+        from: index === 0 ? payload.from : '10:00',
+        to: index === 0 ? '10:00' : '10:30',
+      })),
+    });
+  }
+  if (path.includes('/account/') || path.endsWith('/account')) {
+    accountRequests += 1;
+    return json({ message: 'App account endpoint forbidden in public Booking' }, 500);
+  }
+  failures.push(`${stage}: unexpected fetch ${method} ${path}`);
+  return json({ message: 'unexpected' }, 404);
+};
+
+function bookingLayer() { return document.querySelector('.booking-technical-modal'); }
+function closeButton() { return bookingLayer()?.querySelector('.v2-layer__close'); }
+function backButton() { return bookingLayer()?.querySelector('[data-booking-back]'); }
+function flowText() { return String(bookingLayer()?.textContent || '').replace(/\s+/g, ' ').trim(); }
+function setPhone(form, name, value) {
+  const hidden = form?.querySelector(`input[name="${name}"]`);
+  const host = hidden?.closest('[data-phone-input]');
+  const visible = host?.querySelector('[data-phone-national]');
+  if (hidden) hidden.value = value;
+  if (visible) visible.value = value.replace(/^\+7/, '');
+  if (host) host.dataset.phoneComplete = 'true';
+}
+function setInput(form, name, value) {
+  const input = form?.querySelector(`[name="${name}"]`);
+  if (input) input.value = value;
+}
+function chooseDate(value) { click(document.querySelector(`[data-calendar-date="${value}"]`)); }
+function chooseFirstTime() { click(document.querySelector('[data-booking-time]:not(:disabled)')); }
+function selectProcedure(id) { click(document.querySelector(`[data-booking-procedure="${id}"]`)); }
+async function xAndResume(expected) {
+  const before = confirmCalls.length;
+  click(closeButton());
+  await wait();
+  ok(flowText().includes('Запись не оформлена'), `X did not open unified exit at ${expected}`);
+  ok(confirmCalls.length === before, `X created Record at ${expected}`);
+  click(document.querySelector('[data-booking-resume]'));
+  await wait();
+  ok(flowText().includes(expected), `Continue did not resume ${expected}`);
+}
+async function cleanup(dispose) {
+  dispose?.();
+  await wait(20);
+  document.querySelectorAll('.v2-layer-portal').forEach((node) => node.remove());
+  document.querySelectorAll('.v2-layer-backdrop').forEach((node) => node.remove());
+  root.innerHTML = '';
+  history.replaceState({}, '', '/public-variants');
+}
+
+// Other person: booker and recipient stay separate; only recipient goes to Record payload.
+mark('other-open');
+legalMode = 'active';
+confirmMode = 'success';
+let dispose = await renderAccess(root, { tenantId, workplaceKey });
+await wait();
+ok(!backButton(), 'first visible step has Back');
+await xAndResume('Как оформить запись?');
+click(document.querySelector('[data-booking-mode="other"]'));
+await wait();
+const otherForm = document.querySelector('[data-booking-data-form]');
+setInput(otherForm, 'bookerName', 'Наталья');
+setPhone(otherForm, 'bookerPhone', '+79990000001');
+setInput(otherForm, 'participantName0', 'Маша');
+click(document.querySelector('[data-booking-data-next]'));
+await wait();
+mark('other-services');
+ok(flowText().includes('Выбор услуг — Маша'), 'other booking did not use recipient name');
+await xAndResume('Выбор услуг — Маша');
+selectProcedure('cut');
+click(document.querySelector('[data-booking-services-next]'));
+await wait();
+chooseDate(date1); await wait(); click(document.querySelector('[data-booking-date-next]')); await wait();
+chooseFirstTime(); await wait(); click(document.querySelector('[data-booking-time-next]')); await wait(100);
+click(document.querySelector('[data-booking-consents-next]')); await wait();
+click(document.querySelector('[data-booking-confirm]')); await wait(120);
+mark('other-result');
+const otherPayload = confirmCalls.at(-1);
+ok(otherPayload?.mode === 'other', 'other booking mode lost');
+ok(otherPayload?.booker?.name === 'Наталья', 'booker identity lost');
+ok(otherPayload?.participants?.length === 1 && otherPayload.participants[0]?.name === 'Маша', 'recipient was not the Record participant');
+ok(!otherPayload?.participants?.[0]?.phone, 'recipient phone became mandatory unexpectedly');
+ok(flowText().includes('Запись подтверждена'), 'other booking did not finish locally');
+await cleanup(dispose);
+
+// Joint booking + Back dependencies + X on all later stages + slot conflict.
+mark('joint-open');
+legalMode = 'missing';
+confirmMode = 'conflict-once';
+dispose = await renderAccess(root, { tenantId, workplaceKey });
+await wait();
+click(document.querySelector('[data-booking-mode="joint"]')); await wait();
+const jointForm = document.querySelector('[data-booking-data-form]');
+setInput(jointForm, 'bookerName', 'Наталья');
+setPhone(jointForm, 'bookerPhone', '+79990000002');
+setInput(jointForm, 'participantName0', 'Маша');
+click(document.querySelector('[data-booking-data-next]')); await wait();
+mark('joint-services-first');
+ok(flowText().includes('Выбор услуг — Наталья'), 'joint first services are not for booker');
+selectProcedure('color');
+click(document.querySelector('[data-booking-services-next]')); await wait();
+mark('joint-services-second');
+ok(flowText().includes('Выбор услуг — Маша'), 'joint second services are not for second participant');
+click(backButton()); await wait();
+ok(flowText().includes('Выбор услуг — Наталья'), 'services second -> first Back failed');
+ok(document.querySelector('[data-booking-procedure="color"]')?.classList.contains('is-selected'), 'first participant services disappeared after Back');
+click(document.querySelector('[data-booking-services-next]')); await wait();
+selectProcedure('cut');
+await xAndResume('Выбор услуг — Маша');
+click(document.querySelector('[data-booking-services-next]')); await wait();
+mark('joint-date');
+await xAndResume('Дата');
+chooseDate(date1); await wait(); click(document.querySelector('[data-booking-date-next]')); await wait();
+mark('joint-time');
+chooseFirstTime(); await wait();
+await xAndResume('Время');
+click(backButton()); await wait();
+ok(flowText().includes('Дата'), 'time -> date Back failed');
+chooseDate(date2); await wait(); click(document.querySelector('[data-booking-date-next]')); await wait();
+ok(!document.querySelector('[data-booking-time].is-selected'), 'old time survived date change');
+click(backButton()); await wait();
+click(backButton()); await wait();
+mark('joint-date-to-services');
+ok(flowText().includes('Выбор услуг — Маша'), 'date -> services Back failed');
+selectProcedure('care');
+click(document.querySelector('[data-booking-services-next]')); await wait();
+ok(flowText().includes('Дата'), 'services did not return to date');
+chooseDate(date2); await wait(); click(document.querySelector('[data-booking-date-next]')); await wait();
+chooseFirstTime(); await wait(); click(document.querySelector('[data-booking-time-next]')); await wait(100);
+mark('joint-consents');
+await xAndResume('Согласия');
+const marketing = document.querySelector('[data-booking-consent="messages-consent"]');
+const pdn = document.querySelector('[data-booking-consent="pdn-consent"]');
+ok(Boolean(pdn), 'missing PDN was not shown');
+ok(Boolean(marketing), 'missing marketing consent was not visible');
+ok(marketing?.getAttribute('aria-pressed') === 'false', 'marketing consent was enabled by default');
+click(pdn); await wait();
+const consentNext = document.querySelector('[data-booking-consents-next]');
+ok(Boolean(consentNext) && !consentNext.disabled, 'required PDN did not enable continuation');
+click(consentNext); await wait();
+mark('joint-preview');
+await xAndResume('Запись');
+const beforeConflict = confirmCalls.length;
+click(document.querySelector('[data-booking-confirm]')); await wait(160);
+mark('joint-slot-conflict');
+ok(confirmCalls.length === beforeConflict + 1, 'slot conflict did not reach final availability check');
+ok(flowText().includes('Время'), 'slot conflict did not return to time');
+ok(!flowText().includes('Запись подтверждена'), 'slot conflict incorrectly showed success');
+chooseFirstTime(); await wait(); click(document.querySelector('[data-booking-time-next]')); await wait();
+click(document.querySelector('[data-booking-consents-next]')); await wait();
+click(document.querySelector('[data-booking-confirm]')); await wait(160);
+mark('joint-result');
+const jointPayload = confirmCalls.at(-1);
+ok(jointPayload?.mode === 'joint', 'joint mode lost');
+ok(jointPayload?.participants?.length === 2, 'joint booking did not submit two ordinary Record participants');
+ok(jointPayload?.participants?.[0]?.name === 'Наталья', 'joint first participant lost');
+ok(jointPayload?.participants?.[0]?.procedureIds?.includes('color'), 'Natalia services lost');
+ok(jointPayload?.participants?.[1]?.name === 'Маша', 'joint second participant lost');
+ok(jointPayload?.participants?.[1]?.procedureIds?.includes('cut') && jointPayload?.participants?.[1]?.procedureIds?.includes('care'), 'Masha service changes were not preserved');
+ok(jointPayload?.consents?.find((item) => item.documentId === 'messages-consent')?.accepted === false, 'marketing consent was forced');
+ok(flowText().includes('Запись подтверждена'), 'joint booking did not finish locally');
+ok(accountRequests === 0, 'public variants loaded Account/App endpoints');
+
+await cleanup(dispose);
+window.fetch = originalFetch;
+if (failures.length) {
+  document.documentElement.dataset.publicBookingVariantsRuntime = 'fail';
+  result.textContent = failures.join('\n');
+} else {
+  document.documentElement.dataset.publicBookingVariantsRuntime = 'pass';
+  result.textContent = 'public booking variants runtime passed';
+}
+</script>
+</body>
+</html>
