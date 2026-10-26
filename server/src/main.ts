@@ -137,8 +137,8 @@ async function bootstrap() {
         return response.sendFile(resolve(siteRoot, userPwaAsset));
       }
 
-      const legacyBooking = request.path === '/' && typeof request.query.booking === 'string' && String(request.query.booking).trim();
-      if (legacyBooking) return response.sendFile(resolve(siteRoot, 'booking.html'));
+      const bookingQuery = request.path === '/' && typeof request.query.booking === 'string' && String(request.query.booking).trim();
+      if (bookingQuery) return response.sendFile(resolve(siteRoot, 'booking.html'));
 
       if (request.path === '/' || request.path === '/user.html') {
         return response.sendFile(resolve(siteRoot, 'user.html'));
