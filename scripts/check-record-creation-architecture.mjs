@@ -45,6 +45,7 @@ expect(!records.includes('allowBreak'), 'Records must not route between Record a
 expect(eventCreation.includes('createEvent'), 'Event creation must live in the Event flow.');
 expect(eventCreation.includes('timeHint'), 'Event flow must receive the original Timeline time hint.');
 expect(personEntry.includes("from '../records/records.js'"), 'Person entry must call canonical Records.');
+
 expect(!booking.includes("core/records/records.js") && !booking.includes('openRecords('), 'Public Booking must not load the App Records flow.');
 expect(bookingFlowService.includes("from '../record/record.service'"), 'Public Booking server confirmation must use the canonical RecordService owner.');
 expect(bookingFlowService.includes('this.records.create(tenantId'), 'Public Booking must create ordinary Records through RecordService.');
@@ -56,10 +57,17 @@ for (const forbidden of ['core.js', 'online-booking/user-entry.js', 'account-run
 for (const forbidden of ['journal/', 'core/finance/', 'core/people/', 'core/profile/runtime', './account-runtime.js', './booking.js']) {
   expect(!bookingEntry.includes(forbidden), `Public Booking entry must not import App runtime dependency ${forbidden}.`);
 }
-expect(bookingEntry.includes("from './access.js'"), 'Public Booking entry must open the canonical Booking flow.');
+expect(bookingEntry.includes("from './access.js'"), 'Public Booking entry must open the isolated technical Booking flow.');
+expect(!userEntry.includes("from './access.js'") && !userEntry.includes('renderAccess('), 'App Journal Booking must not enter the Public technical Booking shell.');
+expect(userEntry.includes("from '../core/records/records.js'") && userEntry.includes('openRecords({'), 'App Journal Booking must reuse canonical Records inside the Shared Q owner.');
+expect(userEntry.includes('createBookingRequest(id,'), 'App Journal Booking must use the authenticated Account Booking write.');
+expect(bookingController.includes('@UseGuards(AccountGuard, BookingPdnConsentGuard)')
+  && bookingController.includes("@Post(':tenantId/requests')")
+  && bookingController.includes('this.booking.createRequest(tenantId, accountId'),
+'Authenticated App Booking write must exist behind Account + PDN guards.');
+expect(!booking.includes('createBookingRequest(') && !bookingEntry.includes('createBookingRequest('), 'Public Booking must not use the authenticated App Booking write.');
 expect(!userEntry.includes('resolveBookingPublicRoute') && !userEntry.includes('startAccountRuntime'), 'App user entry must not contain a public Booking fallback into App runtime.');
 expect(serverMain.includes("response.sendFile(resolve(siteRoot, 'booking.html'))"), 'USER_HOST public Booking paths must resolve to isolated booking.html.');
-expect(!bookingController.includes("@Post(':tenantId/requests')"), 'Retired Account/Booking Record-write endpoint must stay removed.');
 
 expect(!fs.existsSync('records/records.js'), 'Root records/records.js must not remain after Records moved into Core.');
 expect(!fs.existsSync('core/records.js'), 'Core must not contain Records JS directly; Records must live in core/records/records.js.');
