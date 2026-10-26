@@ -91,11 +91,22 @@ export function getBookingOccupancy(context = {}, workplaceKey = '', date = '') 
     }));
 }
 
-function bookingTimeContext(context = {}, { workplaceKey = '', date = '', procedureIds = [], step = 0, notBefore = '', now = new Date() } = {}) {
-  const duration = bookingDuration(context, workplaceKey, procedureIds);
+function bookingTimeContext(context = {}, {
+  workplaceKey = '',
+  date = '',
+  procedureIds = [],
+  duration = 0,
+  step = 0,
+  notBefore = '',
+  now = new Date(),
+} = {}) {
+  const requestedDuration = Number(duration);
+  const resolvedDuration = Number.isFinite(requestedDuration) && requestedDuration > 0
+    ? requestedDuration
+    : bookingDuration(context, workplaceKey, procedureIds);
   const plan = getBookingDayPlan(context, workplaceKey, date);
   const workplace = getBookingWorkplace(context, workplaceKey);
-  if (!plan || duration <= 0 || !workplace) return null;
+  if (!plan || resolvedDuration <= 0 || !workplace) return null;
 
   const clock = zonedDateTimeParts(now, workplace.timeZone);
   const dayKey = String(date || '').slice(0, 10);
@@ -117,7 +128,7 @@ function bookingTimeContext(context = {}, { workplaceKey = '', date = '', proced
   });
   const numericStep = Number(step);
   return {
-    duration,
+    duration: resolvedDuration,
     plan,
     minimum,
     occupancy,
@@ -192,4 +203,3 @@ export function getBookingTimeRows(context = {}, options = {}) {
 export function requiredBookingDocuments(context = {}) {
   return (Array.isArray(context.documents) ? context.documents : []).filter((document) => Boolean(document?.personConsent));
 }
-
