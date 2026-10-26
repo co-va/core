@@ -137,7 +137,7 @@ assert.match(onlineBookingController, /PlatformNoticeService/);
 assert.match(onlineBookingController, /createForTenantOwner\(tenantId/);
 assert.match(onlineBookingController, /type: 'BOOKING_CREATED'/);
 assert.match(onlineBookingController, /source: 'online-booking'/);
-assert.match(onlineBookingController, /createForTenantOwner[\s\S]*?\.catch\(\(\) => null\)/);
+assert.match(onlineBookingController, /void Promise\.allSettled\(\[[\s\S]*?createForTenantOwner\(tenantId[\s\S]*?createEventForPerson\(tenantId[\s\S]*?\]\);/);
 assert.match(adminUi, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
 assert.match(adminUi, /Notification\.requestPermission/);
 assert.match(adminUi, /data-enable-admin-push/);
