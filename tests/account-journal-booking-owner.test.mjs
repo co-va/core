@@ -5,6 +5,7 @@ const day = fs.readFileSync('journal/день.js', 'utf8');
 const entry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
 const access = fs.readFileSync('online-booking/access.js', 'utf8');
 const publicEntry = fs.readFileSync('online-booking/booking-entry.js', 'utf8');
+const targetsClient = fs.readFileSync('core/account/booking-targets.js', 'utf8');
 const targetsController = fs.readFileSync('server/src/online-booking/account-booking-targets.controller.ts', 'utf8');
 
 const dayActionStart = day.indexOf('function openAccountDayAction');
@@ -18,6 +19,7 @@ const bookingAction = dayAction.slice(bookingActionStart, noteActionStart);
 assert.match(bookingAction, /cova:account-journal-open-contacts/, 'Journal booking X action must hand off without creating local booking UI');
 assert.doesNotMatch(bookingAction, /\bdate\b|\bfrom\b|timeHint|detail\s*:/, 'Journal booking must not inherit the tapped day or time');
 
+assert.match(targetsClient, /\/online-booking\/account\/booking-targets/, 'Professional selector must keep the existing Account booking-targets endpoint');
 assert.match(entry, /getGlobalAccountBookingTargets/, 'App Journal professional selector must use the narrow Account booking-targets projection');
 assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal professional selector may use the existing Shared Record Q owner before Booking starts');
 assert.match(entry, /title: 'Выбор специалиста'/, 'App Journal first selector step must be professional selection');
@@ -36,6 +38,7 @@ const journalStart = entry.indexOf('async function startJournalBooking');
 const selectorStart = entry.indexOf('async function openAccountBookingProfessionalSelector', journalStart);
 assert.ok(journalStart >= 0 && selectorStart > journalStart, 'Journal booking handoff must exist');
 const journalBooking = entry.slice(journalStart, selectorStart);
+assert.match(journalBooking, /renderAccess\(content/, 'Professional selection must continue into the existing canonical Booking');
 assert.match(journalBooking, /workplaceKey: ''/, 'Journal booking must start without a preselected workplace');
 assert.match(journalBooking, /procedureIds: \[\]/, 'Journal booking must start without preselected procedures');
 assert.doesNotMatch(journalBooking, /\bdate\s*:|timeHint|\bfrom\s*:/, 'Journal booking must not preselect date or time');
