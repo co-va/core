@@ -98,13 +98,12 @@ function normalizeParticipant(value: unknown, index: number): BookingParticipant
 }
 
 function consentFacts(value: unknown) {
-  const facts = new Map<string, { documentId: string; documentVersion: number; accepted: boolean }>();
+  const facts = new Map<string, { documentId: string; accepted: boolean }>();
   for (const item of arrayValue(value)) {
     const documentId = text(item?.documentId);
     if (!documentId) continue;
     facts.set(documentId, {
       documentId,
-      documentVersion: Math.max(1, Number(item?.documentVersion || 1)),
       accepted: Boolean(item?.accepted),
     });
   }
@@ -145,27 +144,9 @@ export class BookingFlowService {
     const phone = displayPhone(source.phone);
     if (!phone) throw new BadRequestException('Введите телефон полностью');
 
-    const [context, people] = await Promise.all([
-      this.online.getContext(tenantId, ''),
-      this.personMatches(tenantId, phone),
-    ]);
+    const people = await this.personMatches(tenantId, phone);
     const resolved = this.resolveKnownPerson(people, source.name);
     const legalState = currentConsentState(resolved);
-    const documents = arrayValue(context?.documents)
-      .filter((document) => Boolean(document?.personConsent))
-      .filter((document) => [PDN_CONSENT_DOCUMENT_ID, MARKETING_CONSENT_DOCUMENT_ID].includes(text(document?.id)));
-    const states = documents.map((document) => {
-      const documentId = text(document?.id);
-      return {
-        documentId,
-        documentVersion: Math.max(1, Number(document?.version || 1)),
-        required: Boolean(document?.required) && documentId !== MARKETING_CONSENT_DOCUMENT_ID,
-        marketing: documentId === MARKETING_CONSENT_DOCUMENT_ID,
-        active: documentId === PDN_CONSENT_DOCUMENT_ID
-          ? legalState.pdnActive
-          : legalState.marketingActive,
-      };
-    });
 
     return {
       person: resolved ? {
@@ -175,7 +156,20 @@ export class BookingFlowService {
       } : null,
       ambiguous: people.length > 1 && !resolved,
       legalState,
-      consents: states,
+      consents: [
+        {
+          documentId: PDN_CONSENT_DOCUMENT_ID,
+          required: true,
+          marketing: false,
+          active: legalState.pdnActive,
+        },
+        {
+          documentId: MARKETING_CONSENT_DOCUMENT_ID,
+          required: false,
+          marketing: true,
+          active: legalState.marketingActive,
+        },
+      ],
     };
   }
 
@@ -260,15 +254,13 @@ export class BookingFlowService {
       .find((person) => text(person.key) === key) || null;
   }
 
-  private async ensureLegalState(tenantId: string, person: JsonObject, phone: string, inputFacts: unknown, documents: any[]) {
+  private async ensureLegalState(tenantId: string, person: JsonObject, phone: string, inputFacts: unknown) {
     const facts = consentFacts(inputFacts);
     const state = currentConsentState(person);
-    const pdnDocument = documents.find((document) => text(document?.id) === PDN_CONSENT_DOCUMENT_ID && document?.personConsent);
-    const marketingDocument = documents.find((document) => text(document?.id) === MARKETING_CONSENT_DOCUMENT_ID && document?.personConsent);
 
     if (!state.pdnActive) {
       const fact = facts.get(PDN_CONSENT_DOCUMENT_ID);
-      if (!pdnDocument || !fact?.accepted) {
+      if (!fact?.accepted) {
         throw new ConflictException('Необходимо подтвердить согласие на обработку персональных данных');
       }
       await this.consentPolicy.acceptContactPointConsent(
@@ -282,7 +274,7 @@ export class BookingFlowService {
       state.pdnActive = true;
     }
 
-    if (!state.marketingActive && marketingDocument && facts.get(MARKETING_CONSENT_DOCUMENT_ID)?.accepted) {
+    if (!state.marketingActive && facts.get(MARKETING_CONSENT_DOCUMENT_ID)?.accepted) {
       await this.consentPolicy.acceptContactPointConsent(
         tenantId,
         'PHONE',
@@ -293,8 +285,6 @@ export class BookingFlowService {
       );
       state.marketingActive = true;
     }
-
-    if (!state.pdnActive) throw new ConflictException('Не удалось зафиксировать обязательное согласие');
   }
 
   private assertAvailability(context: JsonObject, workplaceKey: string, date: string, from: string, duration: number) {
@@ -365,8 +355,7 @@ export class BookingFlowService {
     });
     const bookerPerson = await this.personByKey(tenantId, bookerIdentity.key);
     if (!bookerPerson) throw new ConflictException('Не удалось определить контакт оформляющего запись');
-    const documents = arrayValue(context.documents).filter((document) => Boolean(document?.personConsent));
-    await this.ensureLegalState(tenantId, bookerPerson, booker.phone, source.consents, documents);
+    await this.ensureLegalState(tenantId, bookerPerson, booker.phone, source.consents);
 
     const bookingSessionId = randomUUID();
     const createdBy = {
