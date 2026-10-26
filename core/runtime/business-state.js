@@ -5,6 +5,7 @@ import { hydrateRecordStateFromServer } from '../record/index.js';
 import { hydrateEventsFromServer } from '../event/index.js';
 import { hydrateNotesFromServer } from '../note/index.js';
 import { hydratePeopleFromServer } from '../people/data.js';
+import { consumeJournalBootstrap } from './journal-bootstrap.js';
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -24,10 +25,7 @@ async function payload(response, fallback) {
   return value;
 }
 
-export async function loadBusinessState() {
-  setBusinessServerReady(false);
-  const response = await apiRequest('/business-state/journal');
-  const remote = await payload(response, 'Не удалось загрузить данные Журнала');
+function hydrate(remote = {}) {
   hydratePeopleFromServer(Array.isArray(remote.people) ? clone(remote.people) : []);
   hydrateUEIFromServer(normalizeUEI(remote.uei));
   hydrateRecordStateFromServer({
@@ -36,5 +34,12 @@ export async function loadBusinessState() {
   });
   hydrateEventsFromServer(Array.isArray(remote.events) ? clone(remote.events) : []);
   hydrateNotesFromServer(Array.isArray(remote.notes) ? clone(remote.notes) : []);
+}
+
+export async function loadBusinessState() {
+  setBusinessServerReady(false);
+  const bootstrap = await consumeJournalBootstrap('journal');
+  const remote = bootstrap || await payload(await apiRequest('/business-state/journal'), 'Не удалось загрузить данные Журнала');
+  hydrate(remote);
   setBusinessServerReady(true);
 }
