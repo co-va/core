@@ -50,7 +50,7 @@ assert.equal(bookingProcedureCost(range, 'spb'), 1500, 'Booking calculations mus
 
 const modelSource = readFileSync(new URL('../online-booking/model.js', import.meta.url), 'utf8');
 const procedureSource = readFileSync(new URL('../server/src/procedure/procedure.service.ts', import.meta.url), 'utf8');
-assert.match(modelSource, /assignment\?\.bookingPrice/, 'Booking must consume owner-provided price semantics');
+assert.match(modelSource, /procedureWorkplaceAssignment\(procedure, workplaceKey\)\?\.bookingPrice/, 'Booking must consume owner-provided price semantics');
 assert.doesNotMatch(modelSource, /cost\.amount|cost\.from|cost\.to|assigned\.amount|assigned\.from|assigned\.to/, 'Booking must not parse raw price shapes');
 assert.match(procedureSource, /bookingPriceFor\(/, 'Procedure owner must normalize Booking price semantics');
 assert.match(procedureSource, /bookingPrice: this\.bookingPriceFor\(procedure, workplaceId\)/, 'public procedure assignment must carry ready Booking price');
