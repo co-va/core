@@ -18,9 +18,10 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   window.addEventListener('book:auth-logout', reset);
 }
 
-export async function consumeJournalBootstrap(slice) {
+export async function consumeJournalBootstrap(slice, { start = true } = {}) {
   const key = String(slice || '').trim();
   if (!key || consumed.has(key)) return null;
+  if (!bootstrapRequest && !start) return null;
   consumed.add(key);
   try {
     if (!bootstrapRequest) {
