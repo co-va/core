@@ -128,6 +128,7 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
 const coreSource = fs.readFileSync(path.join(root, 'core.js'), 'utf8');
 const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
+const journalBootstrapSource = fs.readFileSync(path.join(root, 'core/runtime/journal-bootstrap.js'), 'utf8');
 const documentArchiveSource = fs.readFileSync(path.join(root, 'core/runtime/tenant-document-archive.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
 const userEntrySource = fs.readFileSync(path.join(root, 'online-booking/user-entry.js'), 'utf8');
@@ -154,23 +155,35 @@ if (!coreSource.includes('async function ensureWorkspaceState(section)')
   || !coreSource.includes('await loadTenantDocumentArchive()')) {
   failures.push('core.js: non-Journal data must load on demand from the existing workspace render path');
 }
-if (!auxiliaryStartupSource.includes('export function loadFinanceState()')
-  || !auxiliaryStartupSource.includes('export function loadAuxiliaryState()')) {
-  failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separate owners');
+if (!/export\s+(?:async\s+)?function\s+loadFinanceState\b/.test(auxiliaryStartupSource)
+  || !/export\s+(?:async\s+)?function\s+loadAuxiliaryState\b/.test(auxiliaryStartupSource)) {
+  failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separate callable owners');
 }
 if (businessStartupSource.includes('loadAllDeposits(') || auxiliaryStartupSource.includes('loadAllDeposits(')) {
   failures.push('startup runtime: deposits must not load during authenticated startup');
 }
+if (!journalBootstrapSource.includes("apiRequest('/business-state/journal-bootstrap')")
+  || journalBootstrapSource.includes("apiRequest('/events')")
+  || journalBootstrapSource.includes("apiRequest('/notes')")) {
+  failures.push('core/runtime/journal-bootstrap.js: authenticated startup must use one canonical bootstrap request');
+}
 if (!businessStartupSource.includes("apiRequest('/business-state/journal')")
   || businessStartupSource.includes("apiRequest('/events')")
   || businessStartupSource.includes("apiRequest('/notes')")) {
-  failures.push('core/runtime/business-state.js: Journal startup must use one canonical read request');
+  failures.push('core/runtime/business-state.js: later Journal refresh must use one canonical read request');
 }
 if (!businessControllerSource.includes("@Get('journal')")
-  || !businessControllerSource.includes('this.businessState.get(auth.tenantId)')
-  || !businessControllerSource.includes('this.events.list(auth.tenantId)')
-  || !businessControllerSource.includes('this.notes.listProfile(auth.tenantId, auth.platformAccountId)')) {
+  || !businessControllerSource.includes('this.businessState.get(')
+  || !businessControllerSource.includes('this.events.list(')
+  || !businessControllerSource.includes('this.notes.listProfile(')) {
   failures.push('server business-state controller: Journal projection must compose canonical BusinessState, Event and Note owners');
+}
+if (!businessControllerSource.includes("@Get('journal-bootstrap')")
+  || !businessControllerSource.includes('this.profile.get(')
+  || !businessControllerSource.includes('this.businessState.getOperational(')
+  || !businessControllerSource.includes('journalFinanceProjection(')
+  || !businessControllerSource.includes('this.access.resolveTenantAccess(')) {
+  failures.push('server business-state controller: Journal bootstrap must compose existing profile, operational, finance projection and access owners');
 }
 if (!documentArchiveSource.includes('return initialArchiveLoad;')) {
   failures.push('tenant document archive: on-demand load must be awaitable by the section that requested it');
@@ -196,6 +209,9 @@ if (!userEntrySource.includes("await renderGlobalClientRoot({ tab: 'contact-deta
 }
 if (!userEntrySource.includes('data-startup-loading')) {
   failures.push('online-booking/user-entry.js: public booking route must keep visible Shared loading feedback during hydration');
+}
+if (!userEntrySource.includes('getGlobalAccountBookingTargets()')) {
+  failures.push('online-booking/user-entry.js: specialist selector must use the narrow account booking-targets projection');
 }
 
 if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")
