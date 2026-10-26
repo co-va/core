@@ -175,7 +175,7 @@ export class BookingFlowService {
     const existing = namedMatches.length === 1 ? namedMatches[0] : phoneMatches.length === 1 ? phoneMatches[0] : null;
 
     if (existing) {
-      const next = {
+      const next: JsonObject = {
         ...existing,
         name: text(existing.name) || participant.name,
         phones: uniqueStrings([...personPhones(existing), ...(phone ? [phone] : [])]),
