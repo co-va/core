@@ -1,7 +1,6 @@
-import { accountErrorMessage, getAccount, getBookingContext } from '../core/account/index.js';
+import { accountErrorMessage, createBookingRequest, getAccount, getBookingContext } from '../core/account/index.js';
 import { getGlobalAccountBookingTargets } from '../core/account/booking-targets.js';
 import { normalizeBookingSettings } from '../core/booking-settings/index.js';
-import { API_BASE } from '../core/environment.js';
 import { openRecords } from '../core/records/records.js';
 import { field, openNotice, openRecordCreationOwner, recordPersonList, v2ListEntry, v2ListEntries } from '../ui/ui.js';
 import { renderGlobalClient } from './booking.js';
@@ -65,8 +64,10 @@ function accountBookingProfessionalList(relationships = [], query = '') {
 }
 
 function accountDisplayName(account = {}) {
-  return String(account?.name || '').trim()
-    || [account?.name, account?.surname].map((value) => String(value || '').trim()).filter(Boolean).join(' ')
+  return [account?.name, account?.surname]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ')
     || 'Пользователь';
 }
 
@@ -78,38 +79,6 @@ function accountDiscount(account = {}) {
 function numericCost(value) {
   const number = Number(String(value ?? '').replace(',', '.'));
   return Number.isFinite(number) ? Math.max(0, number) : 0;
-}
-
-async function confirmJournalBooking(tenantId, account, state) {
-  const booker = {
-    name: accountDisplayName(account),
-    phone: String(account?.phone || account?.phones?.[0] || '').trim(),
-    email: String(account?.email || '').trim(),
-  };
-  const response = await fetch(`${API_BASE}/online-booking/${encodeURIComponent(tenantId)}/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      workplaceKey: state.workplaceId,
-      date: state.date,
-      from: state.from,
-      booker,
-      mode: 'self',
-      participants: [{
-        id: 'booker',
-        ...booker,
-        procedureIds: state.procedures.map((entry) => String(entry.id || '')).filter(Boolean),
-      }],
-      consents: [],
-    }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(String(payload?.message || 'Не удалось подтвердить запись'));
-    error.status = response.status;
-    throw error;
-  }
-  return payload;
 }
 
 function workplaceRows(workplaces = []) {
@@ -199,7 +168,12 @@ async function startJournalBooking(tenantId, creationOwner) {
       return Math.max(0, subtotal * (1 - accountDiscount(account) / 100));
     },
     async create(recordsState) {
-      return confirmJournalBooking(id, account, recordsState);
+      return createBookingRequest(id, {
+        workplaceKey: recordsState.workplaceId,
+        date: recordsState.date,
+        from: recordsState.from,
+        procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')).filter(Boolean),
+      });
     },
     async onCreateError(error, recordsState, { renderTimes, renderConfirmation }) {
       bookingContext = await getBookingContext(id, recordsState.workplaceId).catch(() => bookingContext);
@@ -214,8 +188,8 @@ async function startJournalBooking(tenantId, creationOwner) {
         renderTimes();
         return;
       }
-      const message = String(error?.message || '').trim();
-      openNotice({ title: 'Не удалось подтвердить запись', message: message || 'Попробуйте ещё раз.' });
+      const message = accountErrorMessage(error, 'Не удалось подтвердить запись');
+      openNotice({ title: 'Не удалось подтвердить запись', message });
       renderConfirmation();
     },
   };
