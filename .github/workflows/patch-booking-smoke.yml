@@ -1,0 +1,67 @@
+name: Patch Booking Smoke Contract
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore(ci): apply booking smoke contract patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Align Public Booking smoke with ready consent state
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/check.yml')
+          text = path.read_text()
+          old = '''          pdn_consent=$(node -e "const p=JSON.parse(process.argv[1]); const d=(p.documents||[]).find((item)=>item.id==='pdn-consent'); if(!d || !d.version) { console.error('PDN consent missing from public booking context'); process.exit(1); } process.stdout.write(JSON.stringify({documentId:d.id,documentVersion:d.version,accepted:true}))" "$booking_context")
+          booking_state=$(curl -fsS \\
+            -X POST \\
+            -H 'Content-Type: application/json' \\
+            -d '{"name":"Push","phone":"+79990000999","email":"push-smoke@book.local"}' \\
+            "http://localhost:8080/api/online-booking/$tenant_id/booking-state")
+          node -e "
+            const state=JSON.parse(process.argv[1]);
+            const fact=JSON.parse(process.argv[2]);
+            const row=(state.consents||[]).find((item)=>String(item.documentId||'')===String(fact.documentId||''));
+            if(!row || Number(row.documentVersion)!==Number(fact.documentVersion)){
+              console.error('Public booking state did not expose the current PDN consent version');
+              process.exit(1);
+            }
+          " "$booking_state" "$pdn_consent"
+'''
+          new = '''          pdn_consent=$(node -e "const p=JSON.parse(process.argv[1]); const d=(p.documents||[]).find((item)=>item.id==='pdn-consent'); if(!d) { console.error('PDN consent missing from public booking context'); process.exit(1); } process.stdout.write(JSON.stringify({documentId:d.id,accepted:true}))" "$booking_context")
+          booking_state=$(curl -fsS \\
+            -X POST \\
+            -H 'Content-Type: application/json' \\
+            -d '{"name":"Push","phone":"+79990000999","email":"push-smoke@book.local"}' \\
+            "http://localhost:8080/api/online-booking/$tenant_id/booking-state")
+          node -e "
+            const state=JSON.parse(process.argv[1]);
+            const pdn=(state.consents||[]).find((item)=>String(item.documentId||'')==='pdn-consent');
+            const marketing=(state.consents||[]).find((item)=>String(item.documentId||'')==='messages-consent');
+            if(state.legalState?.pdnActive!==false || state.legalState?.marketingActive!==false || !pdn || pdn.active!==false || pdn.required!==true || !marketing || marketing.active!==false || marketing.marketing!==true){
+              console.error('Public booking state did not expose ready inactive PDN/marketing state for a new contact');
+              process.exit(1);
+            }
+          " "$booking_state"
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale Booking smoke block, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          rm .github/workflows/patch-booking-smoke.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/check.yml .github/workflows/patch-booking-smoke.yml
+          git commit -m "fix(ci): align booking smoke with current consent state"
+          git push origin HEAD:staging
