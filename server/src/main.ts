@@ -137,6 +137,9 @@ async function bootstrap() {
         return response.sendFile(resolve(siteRoot, userPwaAsset));
       }
 
+      const legacyBooking = request.path === '/' && typeof request.query.booking === 'string' && String(request.query.booking).trim();
+      if (legacyBooking) return response.sendFile(resolve(siteRoot, 'booking.html'));
+
       if (request.path === '/' || request.path === '/user.html') {
         return response.sendFile(resolve(siteRoot, 'user.html'));
       }
@@ -146,7 +149,7 @@ async function bootstrap() {
         const publicBookingPath = segments.length >= 1
           && segments.length <= 2
           && segments.every((segment) => !segment.includes('.'));
-        if (publicBookingPath) return response.sendFile(resolve(siteRoot, 'user.html'));
+        if (publicBookingPath) return response.sendFile(resolve(siteRoot, 'booking.html'));
         return response.status(404).send('Not Found');
       });
     }
