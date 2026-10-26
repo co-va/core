@@ -21,6 +21,10 @@ type TenantConsentEventRow = {
 };
 
 const MUTABLE_DATASETS = new Set(['documents', 'history']);
+const CURRENT_CONSENT_DOCUMENTS = new Map([
+  ['pdn-consent', 'pdnActive'],
+  ['messages-consent', 'marketingActive'],
+]);
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -69,6 +73,21 @@ function json(value: unknown): Prisma.InputJsonValue {
   return clone(value) as Prisma.InputJsonValue;
 }
 
+function consentInvalidations(currentDocuments: any[], nextDocuments: any[]) {
+  const invalid = new Set<string>();
+  for (const [documentId, field] of CURRENT_CONSENT_DOCUMENTS) {
+    const previous = currentDocuments.find((item) => text(item?.id) === documentId) || null;
+    const next = nextDocuments.find((item) => text(item?.id) === documentId) || null;
+    const previousVersion = previous ? Math.max(1, Number(previous?.version || 1)) : 0;
+    const nextVersion = next ? Math.max(1, Number(next?.version || 1)) : 0;
+    if (
+      previousVersion !== nextVersion
+      || Boolean(previous?.personConsent) !== Boolean(next?.personConsent)
+    ) invalid.add(field);
+  }
+  return invalid;
+}
+
 function publicConsentEvent(row: TenantConsentEventRow) {
   return {
     id: row.id,
@@ -111,6 +130,32 @@ export class TenantDocumentArchiveService {
     return { data: { ...stored, consents } };
   }
 
+  private async invalidateCurrentConsentState(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    fields: Set<string>,
+  ) {
+    if (!fields.size) return;
+    const rows = await tx.person.findMany({ where: { tenantId } });
+    for (const row of rows) {
+      const person = objectValue(row.data);
+      const consentState = objectValue(person.consentState);
+      const nextState = { ...consentState };
+      let changed = false;
+      for (const field of fields) {
+        if (nextState[field] !== false) {
+          nextState[field] = false;
+          changed = true;
+        }
+      }
+      if (!changed) continue;
+      await tx.person.update({
+        where: { id: row.id },
+        data: { data: json({ ...person, consentState: nextState }) },
+      });
+    }
+  }
+
   get(tenantId: string) { return this.snapshot(tenantId); }
 
   async initialize(tenantId: string, body: unknown) {
@@ -129,8 +174,15 @@ export class TenantDocumentArchiveService {
     const current = normalize(state.data);
     const source = objectValue(body);
     const value = source.value;
-    current[dataset as keyof typeof current] = Array.isArray(value) ? clone(value) : [];
-    await this.prisma.tenantDocumentArchive.update({ where: { tenantId }, data: { data: json(current) } });
+    const nextValue = Array.isArray(value) ? clone(value) : [];
+    const invalidations = dataset === 'documents'
+      ? consentInvalidations(current.documents, nextValue)
+      : new Set<string>();
+    current[dataset as keyof typeof current] = nextValue;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tenantDocumentArchive.update({ where: { tenantId }, data: { data: json(current) } });
+      await this.invalidateCurrentConsentState(tx, tenantId, invalidations);
+    });
     return { dataset, value: current[dataset as keyof typeof current] };
   }
 

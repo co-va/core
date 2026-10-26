@@ -34,6 +34,10 @@ function arrayValue(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
+function objectValue(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
 function canonicalPhone(value: unknown) {
   const digits = text(value).replace(/\D/g, '');
   if (digits.length === 10) return `7${digits}`;
@@ -63,6 +67,16 @@ function contactSubjectKey(typeValue: unknown, value: unknown) {
   const type = contactPointType(typeValue);
   const normalized = contactPointValue(type, value);
   return type && normalized ? `${type}:${normalized}` : '';
+}
+
+function personHasPhone(person: Record<string, any>, phone: string) {
+  return [person.phone, ...arrayValue(person.phones)].some((value) => canonicalPhone(value) === phone);
+}
+
+function currentConsentField(documentId: string) {
+  if (documentId === PDN_CONSENT_DOCUMENT_ID) return 'pdnActive';
+  if (documentId === MARKETING_CONSENT_DOCUMENT_ID) return 'marketingActive';
+  return '';
 }
 
 function asDate(value: unknown, fallback: Date) {
@@ -175,6 +189,42 @@ export class ConsentPolicyService {
     };
   }
 
+  private async updateCurrentContactConsent(
+    tenantId: string,
+    typeValue: unknown,
+    value: unknown,
+    documentIdValue: unknown,
+    active: boolean,
+    personKeyValue: unknown = '',
+  ) {
+    const type = contactPointType(typeValue);
+    const phone = contactPointValue(type, value);
+    const documentId = text(documentIdValue);
+    const field = currentConsentField(documentId);
+    if (type !== 'PHONE' || !phone || !field) return;
+
+    const business = await this.businessState.get(tenantId);
+    const people = arrayValue(business.people).map((item) => objectValue(item));
+    const personKey = text(personKeyValue);
+    const targets = personKey
+      ? people.filter((person) => text(person.key) === personKey)
+      : people.filter((person) => personHasPhone(person, phone));
+
+    for (const person of targets) {
+      const current = objectValue(person.consentState);
+      if (current[field] === active) continue;
+      await this.businessState.upsertPerson(tenantId, text(person.key), {
+        person: {
+          ...person,
+          consentState: {
+            ...current,
+            [field]: active,
+          },
+        },
+      });
+    }
+  }
+
   async acceptAccountConsents(tenantId: string, accountIdValue: unknown, facts: unknown, source = 'online-booking-account') {
     const accountId = text(accountIdValue);
     if (!accountId) throw new BadRequestException('Не указан аккаунт');
@@ -209,6 +259,7 @@ export class ConsentPolicyService {
     value: unknown,
     documentId: string,
     source = 'manual',
+    personKeyValue: unknown = '',
   ) {
     const type = contactPointType(typeValue);
     const normalizedValue = contactPointValue(type, value);
@@ -221,7 +272,10 @@ export class ConsentPolicyService {
     if (!document || !canSignTenantDocument(document)) throw new BadRequestException('Документ недоступен для подписания');
     const documentVersion = Math.max(1, Number(document.version || 1));
     const latest = await this.latestEvent(tenantId, 'CONTACT_POINT', subjectKey, targetDocumentId);
-    if (latest?.status === 'accepted' && latest.documentVersion === documentVersion) return publicEvent(latest);
+    if (latest?.status === 'accepted' && latest.documentVersion === documentVersion) {
+      await this.updateCurrentContactConsent(tenantId, type, normalizedValue, targetDocumentId, true, personKeyValue);
+      return publicEvent(latest);
+    }
 
     const now = new Date();
     const event = await this.insertEvent({
@@ -237,6 +291,7 @@ export class ConsentPolicyService {
       source,
       occurredAt: now,
     });
+    await this.updateCurrentContactConsent(tenantId, type, normalizedValue, targetDocumentId, true, personKeyValue);
     return event ? publicEvent(event) : null;
   }
 
@@ -257,7 +312,10 @@ export class ConsentPolicyService {
     const document = current.documents.find((item: any) => text(item?.id) === targetDocumentId);
     if (!document || !canSignTenantDocument(document)) throw new BadRequestException('Документ недоступен для подписания');
     const latest = await this.latestEvent(tenantId, 'CONTACT_POINT', subjectKey, targetDocumentId);
-    if (latest?.status === 'revoked') return publicEvent(latest);
+    if (latest?.status === 'revoked') {
+      await this.updateCurrentContactConsent(tenantId, type, normalizedValue, targetDocumentId, false);
+      return publicEvent(latest);
+    }
     const now = new Date();
     const event = await this.insertEvent({
       tenantId,
@@ -272,6 +330,7 @@ export class ConsentPolicyService {
       source,
       occurredAt: now,
     });
+    await this.updateCurrentContactConsent(tenantId, type, normalizedValue, targetDocumentId, false);
     return event ? publicEvent(event) : null;
   }
 
@@ -364,6 +423,15 @@ export class ConsentPolicyService {
         source,
         occurredAt: now,
       });
+      if (event.subjectType === 'CONTACT_POINT') {
+        await this.updateCurrentContactConsent(
+          tenantId,
+          contact?.type || event.contactType,
+          contact?.value || event.contactValue,
+          event.documentId,
+          false,
+        );
+      }
     }
 
     return { revoked: true };
