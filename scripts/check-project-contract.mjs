@@ -127,6 +127,7 @@ if (fs.existsSync(path.join(root, 'UI_ALPHABET.md'))) {
 
 const coreSource = fs.readFileSync(path.join(root, 'core.js'), 'utf8');
 const businessStartupSource = fs.readFileSync(path.join(root, 'core/runtime/business-state.js'), 'utf8');
+const journalBootstrapSource = fs.readFileSync(path.join(root, 'core/runtime/journal-bootstrap.js'), 'utf8');
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
 const documentArchiveSource = fs.readFileSync(path.join(root, 'core/runtime/tenant-document-archive.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
@@ -135,6 +136,8 @@ const bookingAccessSource = fs.readFileSync(path.join(root, 'online-booking/acce
 const recordServiceSource = fs.readFileSync(path.join(root, 'core/record/service.js'), 'utf8');
 const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payment.js'), 'utf8');
 const businessControllerSource = fs.readFileSync(path.join(root, 'server/src/business-state/business-state.controller.ts'), 'utf8');
+const professionalAuthGuardSource = fs.readFileSync(path.join(root, 'server/src/auth/jwt-auth.guard.ts'), 'utf8');
+const accountAuthGuardSource = fs.readFileSync(path.join(root, 'server/src/online-booking/account.guard.ts'), 'utf8');
 const userHtml = fs.readFileSync(path.join(root, 'user.html'), 'utf8');
 
 const authenticatedStart = coreSource.slice(
@@ -154,23 +157,26 @@ if (!coreSource.includes('async function ensureWorkspaceState(section)')
   || !coreSource.includes('await loadTenantDocumentArchive()')) {
   failures.push('core.js: non-Journal data must load on demand from the existing workspace render path');
 }
-if (!auxiliaryStartupSource.includes('export function loadFinanceState()')
-  || !auxiliaryStartupSource.includes('export function loadAuxiliaryState()')) {
-  failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separate owners');
+if (!/export\s+(?:async\s+)?function\s+loadFinanceState/.test(auxiliaryStartupSource)
+  || !/export\s+(?:async\s+)?function\s+loadAuxiliaryState/.test(auxiliaryStartupSource)) {
+  failures.push('core/runtime/auxiliary-state.js: finance and auxiliary state must remain separately loadable');
 }
 if (businessStartupSource.includes('loadAllDeposits(') || auxiliaryStartupSource.includes('loadAllDeposits(')) {
   failures.push('startup runtime: deposits must not load during authenticated startup');
 }
-if (!businessStartupSource.includes("apiRequest('/business-state/journal')")
+if (!businessStartupSource.includes("consumeJournalBootstrap('journal')")
+  || !journalBootstrapSource.includes("apiRequest('/business-state/journal-bootstrap')")
   || businessStartupSource.includes("apiRequest('/events')")
   || businessStartupSource.includes("apiRequest('/notes')")) {
-  failures.push('core/runtime/business-state.js: Journal startup must use one canonical read request');
+  failures.push('core/runtime/business-state.js: Journal startup must consume the single canonical bootstrap request');
 }
-if (!businessControllerSource.includes("@Get('journal')")
-  || !businessControllerSource.includes('this.businessState.get(auth.tenantId)')
-  || !businessControllerSource.includes('this.events.list(auth.tenantId)')
-  || !businessControllerSource.includes('this.notes.listProfile(auth.tenantId, auth.platformAccountId)')) {
-  failures.push('server business-state controller: Journal projection must compose canonical BusinessState, Event and Note owners');
+if (!businessControllerSource.includes("@Get('journal-bootstrap')")
+  || !businessControllerSource.includes('private async journalBundle')
+  || !businessControllerSource.includes('this.businessState.get(current.tenantId)')
+  || !businessControllerSource.includes('this.events.list(current.tenantId)')
+  || !businessControllerSource.includes('this.notes.listProfile(current.tenantId, current.platformAccountId)')
+  || !businessControllerSource.includes('this.journalBundle(auth)')) {
+  failures.push('server business-state controller: Journal bootstrap must compose canonical BusinessState, Event and Note owners');
 }
 if (!documentArchiveSource.includes('return initialArchiveLoad;')) {
   failures.push('tenant document archive: on-demand load must be awaitable by the section that requested it');
@@ -216,6 +222,15 @@ if (!paymentSource.includes('paymentEntryOpeningRecords')
   || !paymentSource.includes("emptyState('Оплата', 'Загрузка…')")
   || !paymentSource.includes("submit.textContent = 'Проводим…'")) {
   failures.push('core/payment/record-payment.js: payment entry must respond immediately and prevent duplicate opening/submission');
+}
+
+const professionalGuardPrefix = professionalAuthGuardSource.slice(0, professionalAuthGuardSource.indexOf('if (chatThread || messengerThread)'));
+const accountGuardPrefix = accountAuthGuardSource.slice(0, accountAuthGuardSource.indexOf('if (chatThread || messengerThread)'));
+if (professionalGuardPrefix.includes('UPDATE "CommunicationMessage"')) {
+  failures.push('professional auth guard: unrelated API requests must not write CommunicationMessage delivery state');
+}
+if (accountGuardPrefix.includes('UPDATE "CommunicationMessage"')) {
+  failures.push('account auth guard: unrelated API requests must not write CommunicationMessage delivery state');
 }
 
 const branch = String(

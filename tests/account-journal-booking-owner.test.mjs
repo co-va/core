@@ -16,7 +16,7 @@ const bookingAction = dayAction.slice(bookingActionStart, noteActionStart);
 assert.match(bookingAction, /cova:account-journal-open-contacts/, 'Journal booking X action must hand off without creating local booking UI');
 assert.doesNotMatch(bookingAction, /\bdate\b|\bfrom\b|timeHint|detail\s*:/, 'Journal booking must not inherit the tapped day or time');
 
-assert.match(entry, /getGlobalAccountRelationships/, 'First booking step must use existing Account relationships');
+assert.match(entry, /getGlobalAccountBookingTargets/, 'First booking step must use the narrow Account booking-targets projection');
 assert.match(entry, /openRecordCreationOwner\(\)/, 'Professional selection must use the Shared Record Q owner');
 assert.match(entry, /title: 'Выбор специалиста'/, 'First Q step must be professional selection');
 assert.match(entry, /recordPersonList\(/, 'Professional selection must use the Shared Record person list');

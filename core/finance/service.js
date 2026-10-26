@@ -1,6 +1,6 @@
 import { apiRequest } from '../auth.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
-import { hydrateFinanceFromServer } from './data.js';
+import { applyFinancePatch, hydrateFinanceFromServer } from './data.js';
 import { financialNumber } from './rules.js';
 import { getDDSExpenses, getDDSIncome } from './read.js';
 
@@ -170,8 +170,6 @@ export async function recordPaymentIncome({
   if (maxAmount != null && applied > Math.max(0, financialNumber(maxAmount)) + 0.009) return null;
   if (Math.abs(received - applied - tipsTotal) > 0.009) return null;
 
-  const financeData = await import('./data.js');
-  const before = new Set((Array.isArray(financeData.readFinanceState?.()?.operations) ? financeData.readFinanceState().operations : []).map((item) => String(item?.operationId || '')));
   const response = await apiRequest('/finance/operations/payment', {
     method: 'POST',
     body: JSON.stringify({
@@ -189,12 +187,8 @@ export async function recordPaymentIncome({
     }),
   });
   const envelope = await responseJson(response, 'Не удалось провести оплату');
-  const state = hydrateFinanceFromServer(envelope?.finance && typeof envelope.finance === 'object' ? envelope.finance : envelope);
-  const operation = newestOperation(state, (item) => String(item?.kind || '') === 'payment'
-    && !before.has(String(item?.operationId || ''))
-    && sourceMatch(item, source))
-    || newestOperation(state, (item) => String(item?.kind || '') === 'payment' && sourceMatch(item, source));
-  const payment = operationProjection(operation);
+  const patch = applyFinancePatch(envelope?.financePatch);
+  const payment = operationProjection(patch?.operation);
   if (!payment) return null;
   payment.due = Math.max(0, financialNumber(envelope?.payment?.due));
   payment.paymentState = String(envelope?.payment?.state || '');

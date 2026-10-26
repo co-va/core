@@ -1,5 +1,6 @@
 import { apiRequest } from './auth.js';
 import { openCommercialLiveFlow } from './commercial-flow.js';
+import { consumeJournalBootstrap } from './runtime/journal-bootstrap.js';
 
 let currentAccess = {
   tenantId: '',
@@ -75,6 +76,13 @@ export async function requestLiveMode({ manage = false } = {}) {
 }
 
 export async function loadBookAccess() {
+  const bootstrap = await consumeJournalBootstrap('access', { start:false });
+  if (bootstrap) {
+    const access = applyAccess(bootstrap);
+    openRequiredLiveFlowIfNeeded(access);
+    openRenewalFlowIfNeeded(access);
+    return access;
+  }
   const response = await apiRequest('/saas-access/me');
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.message || 'Не удалось загрузить доступы');

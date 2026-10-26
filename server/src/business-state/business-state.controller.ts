@@ -2,9 +2,12 @@ import { Body, Controller, Delete, Get, Param, Put, Req, UseGuards } from '@nest
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { EventService } from '../event/event.service';
+import { journalFinanceProjection } from '../finance/journal-finance-projection';
 import { NoteService } from '../note/note.service';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PrismaService } from '../prisma.service';
+import { ProfileService } from '../profile/profile.service';
+import { SaasAccessService } from '../saas-access/saas-access.service';
 import { BusinessStateService } from './business-state.service';
 
 type JsonObject = Record<string, any>;
@@ -36,7 +39,19 @@ export class BusinessStateController {
     private readonly notes: NoteService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationEventService,
+    private readonly profile: ProfileService,
+    private readonly access: SaasAccessService,
   ) {}
+
+  private async journalBundle(auth: AuthenticatedRequest['auth']) {
+    const current = auth!;
+    const [business, events, notes] = await Promise.all([
+      this.businessState.get(current.tenantId),
+      this.events.list(current.tenantId),
+      this.notes.listProfile(current.tenantId, current.platformAccountId),
+    ]);
+    return { ...business, events, notes };
+  }
 
   private async notifyRecordEvent(tenantId: string, type: string, recordValue: unknown) {
     const record = objectValue(recordValue);
@@ -65,14 +80,21 @@ export class BusinessStateController {
   }
 
   @Get('journal')
-  async journal(@Req() request: AuthenticatedRequest) {
+  journal(@Req() request: AuthenticatedRequest) {
+    return this.journalBundle(request.auth);
+  }
+
+  @Get('journal-bootstrap')
+  async journalBootstrap(@Req() request: AuthenticatedRequest) {
     const auth = request.auth!;
-    const [business, events, notes] = await Promise.all([
-      this.businessState.get(auth.tenantId),
-      this.events.list(auth.tenantId),
-      this.notes.listProfile(auth.tenantId, auth.platformAccountId),
+    const [journal, profile, operational, finance, access] = await Promise.all([
+      this.journalBundle(auth),
+      this.profile.get(auth.tenantId, auth.platformAccountId),
+      this.businessState.getOperational(auth.tenantId),
+      journalFinanceProjection(this.prisma, auth.tenantId),
+      this.access.resolveTenantAccess(auth.tenantId),
     ]);
-    return { ...business, events, notes };
+    return { journal, profile, operational, finance, access };
   }
 
   @Get('records')

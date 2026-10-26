@@ -1,4 +1,5 @@
-import { getBookingContext, getGlobalAccountRecords, getGlobalAccountRelationships, resolveBookingPublicRoute } from '../core/account/index.js';
+import { getBookingContext, getGlobalAccountRecords, resolveBookingPublicRoute } from '../core/account/index.js';
+import { getGlobalAccountBookingTargets } from '../core/account/booking-targets.js';
 import { procedurePricingForWorkplace } from '../core/service/procedures/selection.js';
 import { field, openRecordCreationOwner, recordPersonList } from '../ui/ui.js';
 import { openRecordConfirmationNotice } from '../ui/record/confirmation-notice.js';
@@ -249,7 +250,7 @@ async function openAccountBookingProfessionalSelector() {
   search?.addEventListener('input', renderList);
 
   try {
-    const loaded = await getGlobalAccountRelationships();
+    const loaded = await getGlobalAccountBookingTargets();
     relationships = Array.isArray(loaded) ? loaded : [];
     if (owner.isOpen()) renderList();
   } catch {

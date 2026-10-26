@@ -3,6 +3,7 @@ import { hydrateCashEntitiesFromServer, hydrateFinanceFromServer, hydrateWallets
 import { hydrateProductsFromServer } from '../../core/service/products/data.js';
 import { hydrateTagsFromServer } from '../../settings/tags/data.js';
 import { hydrateCardAppearanceTemplates } from '../card-appearance-templates.js';
+import { consumeJournalBootstrap } from './journal-bootstrap.js';
 
 let financeStateLoad = null;
 let auxiliaryStateLoad = null;
@@ -18,7 +19,11 @@ if(typeof window!=='undefined'){
   });
 }
 
-export function loadFinanceState(){
+export async function loadFinanceState({full=false}={}){
+  if(!full){
+    const bootstrap=await consumeJournalBootstrap('finance');
+    if(bootstrap){hydrateFinanceFromServer(bootstrap);return bootstrap;}
+  }
   if(!financeStateLoad){
     financeStateLoad=apiRequest('/finance')
       .then((response)=>payload(response,'Не удалось загрузить Финансы'))
