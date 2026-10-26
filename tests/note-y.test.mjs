@@ -205,7 +205,7 @@ assert.match(persistence, /queueNoteDelete/);
 assert.match(runtime, /apiRequest\('\/business-state\/journal'\)/);
 assert.doesNotMatch(runtime, /apiRequest\('\/notes'\)/);
 assert.match(runtime, /hydrateNotesFromServer/);
-assert.match(businessController, /this\.notes\.listProfile\(auth\.tenantId, auth\.platformAccountId\)/);
+assert.match(businessController, /this\.notes\.listProfile\(current\.tenantId, current\.platformAccountId\)/);
 
 assert.match(creation, /label: 'Заметка'/);
 assert.match(creation, /createJournalNoteFlow/);
