@@ -11,6 +11,15 @@ function key(value) {
   return String(value || '');
 }
 
+function priceNumber(value) {
+  const number = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
+function hasPriceValue(value) {
+  return value !== '' && value != null;
+}
+
 export function getBookingWorkplace(context = {}, workplaceKey = '') {
   const target = key(workplaceKey);
   return (Array.isArray(context.workplaces) ? context.workplaces : [])
@@ -28,19 +37,36 @@ export function getBookingProcedures(context = {}, workplaceKey = '') {
     .filter((procedure) => procedureWorkplaceAssignment(procedure, workplaceKey));
 }
 
-export function bookingProcedureCost(procedure = {}, workplaceKey = '') {
+function bookingProcedureCostSource(procedure = {}, workplaceKey = '') {
   const assignment = procedureWorkplaceAssignment(procedure, workplaceKey);
   const assigned = assignment?.cost;
   const base = procedure?.cost;
   const hasAssigned = assigned && typeof assigned === 'object' && !assigned.free && (
-    assigned.amount !== '' && assigned.amount != null
-    || assigned.from !== '' && assigned.from != null
-    || assigned.to !== '' && assigned.to != null
+    hasPriceValue(assigned.amount)
+    || hasPriceValue(assigned.from)
+    || hasPriceValue(assigned.to)
   );
-  const cost = hasAssigned ? assigned : base;
-  if (cost == null || cost?.free) return '';
-  if (typeof cost === 'number' || typeof cost === 'string') return cost;
-  return cost.amount ?? cost.from ?? '';
+  return hasAssigned ? assigned : base;
+}
+
+export function bookingProcedurePrice(procedure = {}, workplaceKey = '') {
+  const cost = bookingProcedureCostSource(procedure, workplaceKey);
+  if (cost == null || cost?.free) return { minimum: 0, variable: false, free: true };
+  if (typeof cost === 'number' || typeof cost === 'string') {
+    return { minimum: priceNumber(cost), variable: false, free: false };
+  }
+  if (hasPriceValue(cost.amount)) {
+    return { minimum: priceNumber(cost.amount), variable: false, free: false };
+  }
+  if (hasPriceValue(cost.from)) {
+    return { minimum: priceNumber(cost.from), variable: true, free: false };
+  }
+  return { minimum: 0, variable: hasPriceValue(cost.to), free: false };
+}
+
+export function bookingProcedureCost(procedure = {}, workplaceKey = '') {
+  const price = bookingProcedurePrice(procedure, workplaceKey);
+  return price.free ? '' : price.minimum;
 }
 
 export function bookingSelection(context = {}, workplaceKey = '', ids = []) {
@@ -71,7 +97,7 @@ export function getBookingDayPlan(context = {}, workplaceKey = '', date = '') {
   const day = (Array.isArray(context.days) ? context.days : [])
     .find((item) => key(item?.workplaceId) === target && String(item?.date || '').slice(0, 10) === dayKey);
   if (!day) return null;
-  const workplace = getBookingWorkplace(context, target);
+  const workplace = getBookingWorkplace(context, workplaceKey);
   const from = String(day.from || workplace?.from || '');
   const to = String(day.to || workplace?.to || '');
   return from && to ? { from, to } : null;
