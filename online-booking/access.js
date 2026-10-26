@@ -1,568 +1,892 @@
-import {
-  acceptAccountTerms,
-  accountErrorMessage,
-  createBookingRequest,
-  getAccount,
-  getAccountConsentState,
-  getAccountPlatformState,
-  getAccountTerms,
-  getBookingContext,
-  getRememberedAccountEmail,
-  isAccountSystemError,
-  loginAccount,
-  prepareAccount,
-  registerAccount,
-  submitAccountConsents,
-} from '../core/account/index.js';
 import { normalizeBookingSettings } from '../core/booking-settings/index.js';
-import {
-  button,
-  documentTile,
-  documentTiles,
-  emptyState,
-  escapeHtml,
-  field,
-  formValidationMessage,
-  initPasswordFields,
-  initV2StickerSwipe,
-  openDocumentViewer,
-  openNotice,
-  passwordField,
-  phoneField,
-  v2Sticker,
-} from '../ui/ui.js';
-import { formError, formView } from '../ui/forms/index.js';
-import { openRecords } from '../core/records/records.js';
+import { API_BASE } from '../core/environment.js';
+import { button, iconButton } from '../ui/buttons/index.js';
+import { initCalendar } from '../ui/calendar/index.js';
+import { documentTile, documentTiles, openDocumentViewer } from '../ui/documents/index.js';
+import { durationText } from '../ui/duration/index.js';
+import { field, formValidationMessage, phoneField } from '../ui/inputs/index.js';
+import { v2ListEntry, v2ListEntries } from '../ui/lists/list-entry.js';
+import { modal, mountModal, openNotice } from '../ui/modals/index.js';
+import { actionBlock } from '../ui/page/page.js';
+import { recordCreationTimeRows } from '../ui/record/creation-flow.js';
+import { recordProcedureList } from '../ui/record/runtime.js';
+import { emptyState } from '../ui/states/index.js';
+import { escapeHtml } from '../ui/utils/escape-html.js';
 import {
   bookingProcedureCost,
   getBookingProcedures,
   getBookingSlots,
   getBookingTimeRows,
   getBookingWorkingDates,
-  getBookingWorkplace,
   requiredBookingDocuments,
 } from './model.js';
-import { workplaceCardAppearance, workplaceCardFields } from '../core/profile/card-presentation.js';
+
+const MODE_SELF = 'self';
+const MODE_OTHER = 'other';
+const MODE_JOINT = 'joint';
+const DRAFT_VERSION = 1;
+const DRAFT_TTL = 24 * 60 * 60 * 1000;
+
+function text(value) {
+  return String(value ?? '').trim();
+}
 
 function numericCost(value) {
   const number = Number(String(value ?? '').replace(',', '.'));
   return Number.isFinite(number) ? Math.max(0, number) : 0;
 }
 
-function accountDiscount(account = {}) {
-  const value = Number(account?.discountPercent || 0);
-  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+function money(value) {
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)} ₽`;
 }
 
-function accountFlowError(error, fallbackMessage) {
-  const message = accountErrorMessage(error, fallbackMessage);
-  if (!isAccountSystemError(error)) return message;
-  openNotice({ title: 'Не удалось выполнить действие', message, variant: 'technical' });
-  return '';
+function formatDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(value || '');
+  const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  return `${Number(match[3])} ${months[Number(match[2]) - 1] || match[2]}`;
 }
 
-function exitBookingContext(state, target = {}) {
-  if (typeof state.onExitToAccount !== 'function') return false;
-  state.onExitToAccount(target);
+function normalizeStep(value = {}) {
+  const kind = text(value?.kind || value);
+  const allowed = new Set(['workplace', 'mode', 'data', 'services', 'date', 'time', 'consents', 'preview', 'exit', 'success']);
+  return {
+    kind: allowed.has(kind) ? kind : 'workplace',
+    index: Math.max(0, Math.floor(Number(value?.index) || 0)),
+  };
+}
+
+function cloneStep(value) {
+  return normalizeStep(value);
+}
+
+function sameStep(left, right) {
+  const a = normalizeStep(left);
+  const b = normalizeStep(right);
+  return a.kind === b.kind && a.index === b.index;
+}
+
+async function jsonRequest(path, options = {}, fallback = 'Не удалось выполнить действие') {
+  const headers = new Headers(options.headers || {});
+  if (options.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(text(payload?.message) || fallback);
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function draftState() {
+  return history.state && typeof history.state === 'object' ? history.state : {};
+}
+
+function draftSnapshot(state, exited = state.exited) {
+  return {
+    version: DRAFT_VERSION,
+    savedAt: Date.now(),
+    tenantId: state.tenantId,
+    lockedWorkplaceKey: state.lockedWorkplaceKey,
+    workplaceKey: state.workplaceKey,
+    mode: state.mode,
+    booker: { ...state.booker },
+    participants: state.participants.map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      phone: participant.phone,
+      email: participant.email,
+      procedureIds: [...participant.procedureIds],
+    })),
+    date: state.date,
+    from: state.from,
+    to: state.to,
+    consents: { ...state.consents },
+    current: cloneStep(state.current),
+    resumeStep: cloneStep(state.resumeStep || state.current),
+    history: state.history.map(cloneStep),
+    exited: Boolean(exited),
+  };
+}
+
+function persistDraft(state, exited = state.exited) {
+  history.replaceState({ ...draftState(), covaBookingDraft: draftSnapshot(state, exited) }, '', location.href);
+}
+
+function clearDraft() {
+  const next = { ...draftState() };
+  delete next.covaBookingDraft;
+  history.replaceState(next, '', location.href);
+}
+
+function restoreDraft(state) {
+  const draft = draftState().covaBookingDraft;
+  if (!draft || Number(draft.version) !== DRAFT_VERSION) return false;
+  if (text(draft.tenantId) !== state.tenantId || text(draft.lockedWorkplaceKey) !== state.lockedWorkplaceKey) return false;
+  if (Date.now() - Number(draft.savedAt || 0) > DRAFT_TTL) {
+    clearDraft();
+    return false;
+  }
+  state.workplaceKey = text(draft.workplaceKey);
+  state.mode = [MODE_SELF, MODE_OTHER, MODE_JOINT].includes(text(draft.mode)) ? text(draft.mode) : '';
+  state.booker = {
+    name: text(draft.booker?.name),
+    phone: text(draft.booker?.phone),
+    email: text(draft.booker?.email),
+  };
+  state.participants = (Array.isArray(draft.participants) ? draft.participants : []).map((participant, index) => ({
+    id: text(participant?.id) || `participant-${index + 1}`,
+    name: text(participant?.name),
+    phone: text(participant?.phone),
+    email: text(participant?.email),
+    procedureIds: [...new Set((Array.isArray(participant?.procedureIds) ? participant.procedureIds : []).map(text).filter(Boolean))],
+  }));
+  state.participantSequence = state.participants.length + 1;
+  state.date = text(draft.date).slice(0, 10);
+  state.from = text(draft.from);
+  state.to = text(draft.to);
+  state.consents = draft.consents && typeof draft.consents === 'object' ? { ...draft.consents } : {};
+  state.current = normalizeStep(draft.current);
+  state.resumeStep = normalizeStep(draft.resumeStep || draft.current);
+  state.history = (Array.isArray(draft.history) ? draft.history : []).map(normalizeStep);
+  state.exited = Boolean(draft.exited);
   return true;
 }
 
-function releaseCreationOwner(state) {
-  if (state?.creationOwner?.isOpen?.()) state.creationOwner.close();
-  if (state) state.creationOwner = null;
+async function refreshContext(state) {
+  const params = new URLSearchParams();
+  if (state.lockedWorkplaceKey) params.set('workplace', state.lockedWorkplaceKey);
+  const suffix = params.toString() ? `?${params}` : '';
+  state.context = await jsonRequest(
+    `/online-booking/${encodeURIComponent(state.tenantId)}/context${suffix}`,
+    {},
+    'Не удалось загрузить запись',
+  );
+  state.settings = normalizeBookingSettings(state.context?.settings);
+}
+
+function newParticipant(state, seed = {}) {
+  state.participantSequence += 1;
+  return {
+    id: text(seed.id) || `participant-${state.participantSequence}`,
+    name: text(seed.name),
+    phone: text(seed.phone),
+    email: text(seed.email),
+    procedureIds: [...new Set((Array.isArray(seed.procedureIds) ? seed.procedureIds : []).map(text).filter(Boolean))],
+  };
+}
+
+function resetAfterServices(state) {
+  state.date = '';
+  state.from = '';
+  state.to = '';
+}
+
+function resetAfterDate(state) {
+  state.from = '';
+  state.to = '';
+}
+
+function setMode(state, mode) {
+  const next = [MODE_SELF, MODE_OTHER, MODE_JOINT].includes(mode) ? mode : MODE_SELF;
+  if (state.mode === next && state.participants.length) return;
+  const previous = state.participants;
+  state.mode = next;
+  if (next === MODE_SELF) {
+    state.participants = [newParticipant(state, {
+      id: 'booker',
+      ...state.booker,
+      procedureIds: previous[0]?.procedureIds?.length ? previous[0].procedureIds : state.repeatProcedureIds,
+    })];
+  } else if (next === MODE_OTHER) {
+    const other = previous.find((item) => item.id !== 'booker') || previous[0] || {};
+    state.participants = [newParticipant(state, {
+      ...other,
+      id: 'recipient-1',
+      procedureIds: other.procedureIds?.length ? other.procedureIds : state.repeatProcedureIds,
+    })];
+  } else {
+    const bookerServices = previous.find((item) => item.id === 'booker')?.procedureIds || state.repeatProcedureIds;
+    const extras = previous.filter((item) => item.id !== 'booker');
+    state.participants = [
+      newParticipant(state, { id: 'booker', ...state.booker, procedureIds: bookerServices }),
+      ...(extras.length ? extras.map((item) => newParticipant(state, item)) : [newParticipant(state)]),
+    ];
+  }
+  resetAfterServices(state);
+}
+
+function totalDuration(state) {
+  const catalog = new Map(getBookingProcedures(state.context, state.workplaceKey)
+    .map((procedure) => [text(procedure?.id), procedure]));
+  return state.participants.reduce((sum, participant) => sum + participant.procedureIds.reduce((inner, id) => (
+    inner + Math.max(0, Number(catalog.get(text(id))?.duration || 0))
+  ), 0), 0);
+}
+
+function selectedProcedures(state, participant) {
+  const catalog = new Map(getBookingProcedures(state.context, state.workplaceKey)
+    .map((procedure) => [text(procedure?.id), procedure]));
+  return participant.procedureIds.map((id) => catalog.get(text(id))).filter(Boolean);
+}
+
+function totalCost(state) {
+  return state.participants.reduce((sum, participant) => sum + selectedProcedures(state, participant)
+    .reduce((inner, procedure) => inner + numericCost(bookingProcedureCost(procedure, state.workplaceKey)), 0), 0);
+}
+
+function startLegalLookup(state) {
+  const phone = text(state.booker.phone);
+  if (!phone) return;
+  const token = ++state.legalLookupToken;
+  state.legalResolved = false;
+  state.legalLookup = jsonRequest(
+    `/online-booking/${encodeURIComponent(state.tenantId)}/booking-state`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ phone, email: state.booker.email }),
+    },
+    'Не удалось проверить данные',
+  ).then((result) => {
+    if (token !== state.legalLookupToken) return result;
+    state.legalResolved = true;
+    state.legalState = result && typeof result === 'object' ? result : {};
+    if (state.current.kind === 'consents') renderCurrent(state);
+    return result;
+  }).catch(() => {
+    if (token === state.legalLookupToken) {
+      state.legalResolved = false;
+      state.legalState = {};
+    }
+    return {};
+  });
+}
+
+function activeConsentIds(state) {
+  const rows = Array.isArray(state.legalState?.consents) ? state.legalState.consents : [];
+  return new Set(rows.filter((row) => row?.active).map((row) => text(row?.documentId)).filter(Boolean));
+}
+
+function flowHost(state) {
+  return state.layer?.querySelector('[data-booking-flow]') || null;
+}
+
+function renderFrame(state, { title = 'Запись', body = '', action = '', back = true } = {}) {
+  const host = flowHost(state);
+  if (!host) return null;
+  host.innerHTML = `<div class="booking-flow">
+    <header class="booking-flow__header${back ? '' : ' booking-flow__header--first'}">
+      ${back ? iconButton('←', { className: 'booking-flow__back', data: 'data-booking-back', aria: 'Назад' }) : ''}
+      <h2>${escapeHtml(title)}</h2>
+    </header>
+    <div class="booking-flow__body">${body}</div>
+    ${action ? `<div class="booking-flow__footer">${action}</div>` : ''}
+  </div>`;
+  host.querySelector('[data-booking-back]')?.addEventListener('click', () => goBack(state));
+  return host;
+}
+
+function go(state, step, { push = true } = {}) {
+  const next = normalizeStep(step);
+  if (push && state.current && !sameStep(state.current, next)) state.history.push(cloneStep(state.current));
+  state.current = next;
+  state.exited = false;
+  persistDraft(state, false);
+  renderCurrent(state);
+}
+
+function goBack(state) {
+  const previous = state.history.pop();
+  if (!previous) return;
+  state.current = previous;
+  state.exited = false;
+  persistDraft(state, false);
+  renderCurrent(state);
+}
+
+function showExit(state) {
+  if (state.current.kind === 'success') {
+    state.hardClose?.();
+    return;
+  }
+  if (state.current.kind === 'exit') return;
+  state.resumeStep = cloneStep(state.current);
+  state.current = { kind: 'exit', index: 0 };
+  state.exited = true;
+  persistDraft(state, true);
+  renderCurrent(state);
+}
+
+function renderWorkplace(state) {
+  const workplaces = Array.isArray(state.context?.workplaces) ? state.context.workplaces : [];
+  const rows = workplaces.map((workplace) => v2ListEntry({
+    title: text(workplace?.name) || 'Рабочее пространство',
+    subtitle: [text(workplace?.city), text(workplace?.address)].filter(Boolean).join(', '),
+    interactive: true,
+    selected: text(workplace?.key) === state.workplaceKey,
+    data: `data-booking-workplace="${escapeHtml(text(workplace?.key))}"`,
+    aria: `Выбрать рабочее пространство ${text(workplace?.name)}`,
+  }));
+  const host = renderFrame(state, {
+    title: 'Рабочее пространство',
+    body: v2ListEntries(rows),
+    back: state.history.length > 0,
+  });
+  host?.querySelectorAll('[data-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
+    state.workplaceKey = text(node.dataset.bookingWorkplace);
+    resetAfterServices(state);
+    persistDraft(state);
+    go(state, { kind: 'mode' });
+  }));
+}
+
+function renderMode(state) {
+  const options = [
+    { value: MODE_SELF, label: 'Записаться' },
+    { value: MODE_OTHER, label: 'Записать другого человека' },
+    { value: MODE_JOINT, label: 'Совместная запись' },
+  ];
+  const rows = options.map((option) => v2ListEntry({
+    title: option.label,
+    interactive: true,
+    selected: state.mode === option.value,
+    data: `data-booking-mode="${option.value}"`,
+    aria: option.label,
+  }));
+  const host = renderFrame(state, {
+    title: 'Как оформить запись?',
+    body: v2ListEntries(rows),
+    back: state.history.length > 0,
+  });
+  host?.querySelectorAll('[data-booking-mode]').forEach((node) => node.addEventListener('click', () => {
+    setMode(state, text(node.dataset.bookingMode));
+    persistDraft(state);
+    go(state, { kind: 'data' });
+  }));
+}
+
+function participantFields(participant, index, { removable = false } = {}) {
+  return `<section class="booking-participant" data-booking-participant="${index}">
+    <div class="booking-participant__heading"><strong>Участник ${index + 1}</strong>${removable ? button('Удалить', { variant: 'secondary', data: `data-booking-remove-participant="${index}"` }) : ''}</div>
+    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: true, autocomplete: 'given-name' })}
+    ${phoneField({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, required: false })}
+    ${field({ label: 'Email', name: `participantEmail${index}`, value: participant.email, type: 'email', required: false, autocomplete: 'email' })}
+  </section>`;
+}
+
+function syncDataForm(state, form, { validate = false } = {}) {
+  if (!form) return '';
+  if (validate) {
+    const error = formValidationMessage(form);
+    if (error) return error;
+  }
+  const data = new FormData(form);
+  state.booker = {
+    name: text(data.get('bookerName')),
+    phone: text(data.get('bookerPhone')),
+    email: text(data.get('bookerEmail')),
+  };
+  if (state.mode === MODE_SELF) {
+    const services = state.participants[0]?.procedureIds || [];
+    state.participants = [newParticipant(state, { id: 'booker', ...state.booker, procedureIds: services })];
+  } else if (state.mode === MODE_OTHER) {
+    const current = state.participants[0] || newParticipant(state, { id: 'recipient-1' });
+    state.participants = [newParticipant(state, {
+      ...current,
+      id: 'recipient-1',
+      name: text(data.get('participantName0')),
+      phone: text(data.get('participantPhone0')),
+      email: text(data.get('participantEmail0')),
+    })];
+  } else {
+    const current = state.participants;
+    const extras = current.filter((item) => item.id !== 'booker');
+    const bookerServices = current.find((item) => item.id === 'booker')?.procedureIds || [];
+    state.participants = [newParticipant(state, { id: 'booker', ...state.booker, procedureIds: bookerServices })];
+    extras.forEach((participant, index) => {
+      state.participants.push(newParticipant(state, {
+        ...participant,
+        name: text(data.get(`participantName${index}`)),
+        phone: text(data.get(`participantPhone${index}`)),
+        email: text(data.get(`participantEmail${index}`)),
+      }));
+    });
+  }
+  return '';
+}
+
+function renderData(state, errorMessage = '') {
+  const extras = state.mode === MODE_JOINT
+    ? state.participants.filter((item) => item.id !== 'booker')
+    : state.participants;
+  const participantMarkup = state.mode === MODE_SELF
+    ? ''
+    : extras.map((participant, index) => participantFields(participant, index, {
+      removable: state.mode === MODE_JOINT && extras.length > 1,
+    })).join('');
+  const add = state.mode === MODE_JOINT
+    ? button('Добавить участника', { variant: 'secondary', data: 'data-booking-add-participant' })
+    : '';
+  const body = `<form data-booking-data-form>
+    <section class="booking-participant booking-participant--booker">
+      <div class="booking-participant__heading"><strong>Кто оформляет запись</strong></div>
+      ${field({ label: 'Имя', name: 'bookerName', value: state.booker.name, required: true, autocomplete: 'given-name' })}
+      ${phoneField({ label: 'Телефон', name: 'bookerPhone', value: state.booker.phone, required: true })}
+      ${field({ label: 'Email', name: 'bookerEmail', value: state.booker.email, type: 'email', required: false, autocomplete: 'email' })}
+    </section>
+    ${participantMarkup}
+    ${add}
+    ${errorMessage ? `<p class="form-error" role="alert">${escapeHtml(errorMessage)}</p>` : ''}
+  </form>`;
+  const host = renderFrame(state, {
+    title: state.mode === MODE_SELF ? 'Ваши данные' : 'Данные участников',
+    body,
+    action: actionBlock(button('Далее', { data: 'data-booking-data-next' })),
+    back: state.history.length > 0,
+  });
+  const form = host?.querySelector('[data-booking-data-form]');
+  host?.querySelector('[data-booking-add-participant]')?.addEventListener('click', () => {
+    syncDataForm(state, form);
+    state.participants.push(newParticipant(state));
+    persistDraft(state);
+    renderData(state);
+  });
+  host?.querySelectorAll('[data-booking-remove-participant]').forEach((node) => node.addEventListener('click', () => {
+    syncDataForm(state, form);
+    const index = Math.max(0, Number(node.dataset.bookingRemoveParticipant) || 0);
+    const booker = state.participants.find((item) => item.id === 'booker');
+    const remaining = state.participants.filter((item) => item.id !== 'booker').filter((_, itemIndex) => itemIndex !== index);
+    state.participants = [booker, ...remaining].filter(Boolean);
+    persistDraft(state);
+    renderData(state);
+  }));
+  host?.querySelector('[data-booking-data-next]')?.addEventListener('click', () => {
+    const validationError = syncDataForm(state, form, { validate: true });
+    const missingParticipantName = state.mode !== MODE_SELF && state.participants.some((participant) => !participant.name);
+    if (validationError || missingParticipantName) {
+      renderData(state, validationError || 'Укажите имя каждого участника.');
+      return;
+    }
+    startLegalLookup(state);
+    resetAfterServices(state);
+    persistDraft(state);
+    go(state, { kind: 'services', index: 0 });
+  });
+}
+
+function procedureRows(state, participant) {
+  return getBookingProcedures(state.context, state.workplaceKey).map((procedure) => ({
+    ...procedure,
+    durationText: durationText(procedure?.duration || 0),
+    costText: money(bookingProcedureCost(procedure, state.workplaceKey)),
+    aria: `Выбрать услугу ${text(procedure?.name)}`,
+  }));
+}
+
+function renderServices(state) {
+  const index = Math.min(state.current.index, Math.max(0, state.participants.length - 1));
+  state.current.index = index;
+  const participant = state.participants[index];
+  if (!participant) {
+    go(state, { kind: 'data' }, { push: false });
+    return;
+  }
+  const body = recordProcedureList(procedureRows(state, participant), {
+    data: 'data-booking-procedure',
+    selected: participant.procedureIds,
+    empty: 'Услуги не настроены.',
+  });
+  const host = renderFrame(state, {
+    title: `Выбор услуг — ${participant.name || 'Участник'}`,
+    body,
+    action: actionBlock(button('Далее', { data: 'data-booking-services-next', disabled: !participant.procedureIds.length })),
+    back: state.history.length > 0,
+  });
+  host?.querySelectorAll('[data-booking-procedure]').forEach((node) => node.addEventListener('click', () => {
+    const id = text(node.dataset.bookingProcedure);
+    if (!id) return;
+    const selected = new Set(participant.procedureIds);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    participant.procedureIds = [...selected];
+    resetAfterServices(state);
+    persistDraft(state);
+    renderServices(state);
+  }));
+  host?.querySelector('[data-booking-services-next]')?.addEventListener('click', () => {
+    if (!participant.procedureIds.length) return;
+    const nextIndex = index + 1;
+    if (nextIndex < state.participants.length) go(state, { kind: 'services', index: nextIndex });
+    else go(state, { kind: 'date' });
+  });
+}
+
+function availableDates(state) {
+  const duration = totalDuration(state);
+  if (duration <= 0) return [];
+  return getBookingWorkingDates(state.context, state.workplaceKey).filter((date) => getBookingSlots(state.context, {
+    workplaceKey: state.workplaceKey,
+    date,
+    duration,
+    step: state.settings.slotStep,
+  }).length > 0);
+}
+
+function renderDate(state) {
+  const dates = availableDates(state);
+  const allowed = new Set(dates);
+  if (state.date && !allowed.has(state.date)) {
+    state.date = '';
+    resetAfterDate(state);
+  }
+  const host = renderFrame(state, {
+    title: 'Дата',
+    body: dates.length ? '<div data-booking-calendar></div>' : emptyState('Нет доступных дат', 'Для выбранных услуг пока нет свободного времени.'),
+    action: actionBlock(button('Далее', { data: 'data-booking-date-next', disabled: !state.date })),
+    back: state.history.length > 0,
+  });
+  const calendarHost = host?.querySelector('[data-booking-calendar]');
+  if (calendarHost) {
+    initCalendar(calendarHost, {
+      workingDates: dates,
+      selectedValue: state.date,
+      onDateSelect: (date) => {
+        if (!allowed.has(date)) return;
+        state.date = date;
+        resetAfterDate(state);
+        persistDraft(state);
+        renderDate(state);
+      },
+    });
+  }
+  host?.querySelector('[data-booking-date-next]')?.addEventListener('click', () => {
+    if (state.date) go(state, { kind: 'time' });
+  });
+}
+
+function renderTime(state) {
+  const duration = totalDuration(state);
+  const rows = getBookingTimeRows(state.context, {
+    workplaceKey: state.workplaceKey,
+    date: state.date,
+    duration,
+    step: state.settings.slotStep,
+  });
+  if (state.from && !rows.some((row) => text(row.from) === state.from && row.available !== false)) {
+    state.from = '';
+    state.to = '';
+  }
+  const body = recordCreationTimeRows(rows, {
+    data: 'data-booking-time',
+    selected: state.from,
+    empty: 'Свободного времени нет.',
+  });
+  const host = renderFrame(state, {
+    title: 'Время',
+    body,
+    action: actionBlock(button('Далее', { data: 'data-booking-time-next', disabled: !state.from })),
+    back: state.history.length > 0,
+  });
+  host?.querySelectorAll('[data-booking-time]').forEach((node) => node.addEventListener('click', () => {
+    const from = text(node.dataset.bookingTime || node.dataset.value);
+    const row = rows.find((item) => text(item.from || item.value) === from);
+    if (!row || row.available === false || row.disabled) return;
+    state.from = text(row.from || row.value);
+    state.to = text(row.to);
+    persistDraft(state);
+    renderTime(state);
+  }));
+  host?.querySelector('[data-booking-time-next]')?.addEventListener('click', () => {
+    if (state.from) go(state, { kind: 'consents' });
+  });
+}
+
+function consentDocuments(state) {
+  const active = activeConsentIds(state);
+  return requiredBookingDocuments(state.context).filter((document) => !active.has(text(document?.id)));
 }
 
 function openConsentDocument(document = {}) {
   return openDocumentViewer({
-    title: document?.title || 'Документ',
+    title: text(document?.title) || 'Документ',
     version: document?.version || 1,
     content: document?.content ?? document?.text ?? '',
   });
 }
 
-function currentAccountTermsFact(state) {
-  const document = state.accountTerms || {};
-  return {
-    key: String(document.key || ''),
-    version: Math.max(1, Number(document.version || 1)),
-    accepted: Boolean(state.accountTermsAccepted),
-    acceptedAt: new Date().toISOString(),
-  };
-}
-
-function currentTenantConsentFacts(state) {
-  return requiredBookingDocuments(state.context).map((document) => ({
-    documentId: String(document.id || ''),
-    documentVersion: Math.max(1, Number(document.version || 1)),
-    accepted: Boolean(state.consents[String(document.id || '')]),
-    acceptedAt: new Date().toISOString(),
-  }));
-}
-
-function seedTenantConsents(state, facts = []) {
-  state.consents = {};
-  for (const fact of Array.isArray(facts) ? facts : []) {
-    if (fact?.accepted) state.consents[String(fact.documentId || '')] = true;
-  }
-}
-
-async function refreshContext(state) {
-  state.context = await getBookingContext(state.tenantId, state.lockedWorkplaceKey);
-  state.settings = normalizeBookingSettings(state.context.settings);
-}
-
-async function loadLegalState(state) {
-  const [platform, tenant] = await Promise.all([
-    getAccountPlatformState(state.tenantId),
-    getAccountConsentState(state.tenantId).catch(() => ({ pdnActive: false, consents: [] })),
-  ]);
-  state.accountTerms = platform?.document || state.accountTerms || null;
-  if (!state.accountTerms) state.accountTerms = await getAccountTerms();
-  state.accountTermsAccepted = Boolean(platform?.accepted);
-  seedTenantConsents(state, tenant?.consents || []);
-  return { platform, tenant };
-}
-
-function renderWelcome(root, state) {
-  const profile = state.context?.profile || {};
-  const owner = [profile.name, profile.surname].filter(Boolean).join(' ').trim();
-  const continueFlow = () => {
-    if (state.account) void continueAfterIdentity(root, state);
-    else renderAccountEntry(root, state);
-  };
-  root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
-    eyebrow: owner ? `Приглашение от ${escapeHtml(owner)}` : '',
-    title: state.settings.welcomeTitle || '',
-    body: state.settings.welcomeText ? `<p>${escapeHtml(state.settings.welcomeText).replaceAll('\n', '<br>')}</p>` : '',
-    action: button('Продолжить', { data: 'data-access-welcome' }),
-    className: 'v2-sticker-screen--welcome',
-    closeData: 'data-access-welcome-close',
-  })}</section>`;
-  root.querySelector('[data-access-welcome]')?.addEventListener('click', continueFlow);
-  root.querySelector('[data-access-welcome-close]')?.addEventListener('click', continueFlow);
-  initV2StickerSwipe(root, { onRight: continueFlow, onLeft: continueFlow });
-}
-
-function renderAccountEntry(root, state) {
-  const remembered = state.accountDraft?.identifier || getRememberedAccountEmail(state.tenantId) || '';
-  const form = formView(`
-    ${field({ label: 'Телефон или email', name: 'identifier', value: remembered, required: true, autocomplete: 'username' })}
-    ${passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'current-password' })}
-    ${formError(state.error)}
-    <button type="button" class="v2-sticker-link" data-access-register>Зарегистрироваться</button>
-  `, { data: 'id="access-entry-form" data-access-entry-form' });
-  root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
-    title: 'Вход',
-    body: form,
-    action: '<button class="ui-button" type="submit" form="access-entry-form">Войти</button>',
-    className: 'v2-sticker-screen--auth',
-    closeData: 'data-access-auth-close',
-  })}</section>`;
-  initPasswordFields(root);
-  const authForm = root.querySelector('[data-access-entry-form]');
-  root.querySelector('[data-access-auth-close]')?.addEventListener('click', () => {
-    if (state.entry === 'account-booking' && exitBookingContext(state, { tab: 'journal' })) return;
-    renderWelcome(root, state);
+function renderConsents(state) {
+  const documents = consentDocuments(state);
+  const required = documents.filter((document) => document?.required && text(document?.id) !== 'messages-consent');
+  const canContinue = required.every((document) => Boolean(state.consents[text(document?.id)]));
+  const cards = documents.length ? documentTiles(documents.map((document) => {
+    const id = text(document?.id);
+    const marketing = id === 'messages-consent';
+    return documentTile({
+      title: marketing ? 'Согласие на рекламные сообщения' : text(document?.title) || 'Согласие на обработку персональных данных',
+      version: document?.version || 1,
+      openData: `data-booking-document="${escapeHtml(id)}"`,
+      toggleData: `data-booking-consent="${escapeHtml(id)}"`,
+      toggleChecked: Boolean(state.consents[id]),
+      toggleAria: marketing ? 'Согласие на рекламные сообщения' : 'Согласие на обработку персональных данных',
+    });
+  }), { layout: 'stack' }) : '<p class="booking-flow__legal-ok">Необходимые согласия уже действуют.</p>';
+  const host = renderFrame(state, {
+    title: 'Согласия',
+    body: cards,
+    action: actionBlock(button('Далее', { data: 'data-booking-consents-next', disabled: !canContinue })),
+    back: state.history.length > 0,
   });
-  root.querySelector('[data-access-register]')?.addEventListener('click', async () => {
-    const data = new FormData(authForm);
-    const identifier = String(data.get('identifier') || '').trim();
-    state.accountDraft = { identifier, ...(identifier.includes('@') ? { email: identifier.toLowerCase() } : {}) };
-    state.error = '';
-    state.accountTerms = await getAccountTerms().catch(() => null);
-    renderAccountDetails(root, state);
-  });
-  authForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const validationError = formValidationMessage(authForm);
-    if (validationError) {
-      state.error = validationError;
-      renderAccountEntry(root, state);
-      return;
-    }
-    const submit = root.querySelector('button[form="access-entry-form"]');
-    if (submit) {
-      submit.disabled = true;
-      submit.textContent = 'Входим…';
-    }
-    const data = new FormData(authForm);
-    const identifier = String(data.get('identifier') || '').trim();
-    const password = String(data.get('password') || '');
-    try {
-      const prepared = await prepareAccount(state.tenantId, { identifier });
-      if (!prepared.exists) {
-        state.accountDraft = {
-          identifier,
-          ...(prepared.identifierType === 'EMAIL' ? { email: identifier.toLowerCase() } : {}),
-          ...(prepared.identifierType === 'PHONE' ? { phone: identifier } : {}),
-        };
-        state.error = 'Аккаунт не найден. Выберите «Зарегистрироваться».';
-        renderAccountEntry(root, state);
-        return;
-      }
-      const payload = await loginAccount(state.tenantId, identifier, password);
-      state.account = payload.account;
-      state.error = '';
-      await continueAfterIdentity(root, state);
-    } catch (error) {
-      state.error = accountFlowError(error, 'Не удалось войти');
-      renderAccountEntry(root, state);
-    }
-  });
-}
-
-function renderAccountDetails(root, state) {
-  const draft = state.accountDraft || {};
-  const form = formView(`
-    ${field({ label: 'Имя', name: 'name', value: draft.name || '', required: true, autocomplete: 'given-name' })}
-    ${field({ label: 'Фамилия', name: 'surname', value: draft.surname || '', autocomplete: 'family-name' })}
-    ${phoneField({ label: 'Телефон', name: 'phone', value: draft.phone || '', required: true })}
-    ${field({ label: 'Email', name: 'email', value: draft.email || '', type: 'email', required: true, autocomplete: 'email' })}
-    ${passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'new-password' })}
-    ${passwordField({ label: 'Повтор пароля', name: 'repeatPassword', required: true, autocomplete: 'new-password' })}
-    ${formError(state.error)}
-  `, { data: 'id="access-register-form" data-access-register-form' });
-  root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
-    title: 'Регистрация',
-    body: form,
-    action: '<button class="ui-button" type="submit" form="access-register-form">Подтвердить</button>',
-    closeData: 'data-access-register-close',
-  })}</section>`;
-  initPasswordFields(root);
-  root.querySelector('[data-access-register-close]')?.addEventListener('click', () => renderAccountEntry(root, state));
-  const registerForm = root.querySelector('[data-access-register-form]');
-  registerForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const validationError = formValidationMessage(registerForm);
-    if (validationError) {
-      state.error = validationError;
-      renderAccountDetails(root, state);
-      return;
-    }
-    const data = new FormData(registerForm);
-    const password = String(data.get('password') || '');
-    if (password !== String(data.get('repeatPassword') || '')) {
-      state.error = 'Пароли не совпадают.';
-      renderAccountDetails(root, state);
-      return;
-    }
-    const submit = root.querySelector('button[form="access-register-form"]');
-    if (submit) {
-      submit.disabled = true;
-      submit.textContent = 'Проверяем…';
-    }
-    const email = String(data.get('email') || '').trim().toLowerCase();
-    const phone = String(data.get('phone') || '').trim();
-    state.accountDraft = {
-      name: String(data.get('name') || '').trim(),
-      surname: String(data.get('surname') || '').trim(),
-      email,
-      phone,
-      password,
-    };
-    try {
-      const prepared = await prepareAccount(state.tenantId, { email, phone });
-      if (prepared?.conflicts?.email || prepared?.conflicts?.phone) {
-        state.error = 'Этот контакт уже зарегистрирован. Войдите в учетную запись.';
-        renderAccountDetails(root, state);
-        return;
-      }
-      if (!state.accountTerms) state.accountTerms = await getAccountTerms();
-      state.accountTermsAccepted = false;
-      renderLegal(root, state, { registration: true });
-    } catch (error) {
-      state.error = accountFlowError(error, 'Не удалось проверить контакты');
-      renderAccountDetails(root, state);
-    }
-  });
-}
-
-function renderLegal(root, state, { registration = false } = {}) {
-  const tenantDocuments = requiredBookingDocuments(state.context);
-  const platformDocument = state.accountTerms && !state.accountTermsAccepted
-    ? { ...state.accountTerms, platform: true, required: true }
-    : null;
-  const documents = [...(platformDocument ? [platformDocument] : []), ...tenantDocuments];
-  const canContinue = (!platformDocument || state.accountTermsAccepted)
-    && tenantDocuments.filter((document) => document.required).every((document) => state.consents[String(document.id || '')]);
-  const cards = documentTiles(documents.map((document) => documentTile({
-    title: document.platform ? 'Условия использования' : document.required ? 'Согласие на обработку персональных данных' : 'Согласие на получение рекламы',
-    version: document.version || 1,
-    openData: document.platform ? 'data-access-platform-document' : `data-access-document="${escapeHtml(document.id)}"`,
-    toggleData: document.platform ? 'data-access-platform-toggle' : `data-access-consent="${escapeHtml(document.id)}"`,
-    toggleChecked: document.platform ? Boolean(state.accountTermsAccepted) : Boolean(state.consents[String(document.id || '')]),
-  })), { layout: 'rail' });
-  root.innerHTML = `<section class="booking-account booking-account--account booking-account--v2">${v2Sticker({
-    title: 'Документы',
-    body: `${cards}${button('Продолжить', { data: 'data-access-legal-continue', disabled: !canContinue })}${formError(state.error)}`,
-    closeData: 'data-access-legal-close',
-  })}</section>`;
-  root.querySelector('[data-access-legal-close]')?.addEventListener('click', () => (
-    registration ? renderAccountDetails(root, state) : renderAccountEntry(root, state)
-  ));
-  root.querySelector('[data-access-platform-document]')?.addEventListener('click', () => openConsentDocument(state.accountTerms));
-  root.querySelector('[data-access-platform-toggle]')?.addEventListener('click', () => {
-    state.accountTermsAccepted = !state.accountTermsAccepted;
-    renderLegal(root, state, { registration });
-  });
-  root.querySelectorAll('[data-access-document]').forEach((node) => node.addEventListener('click', () => {
-    const document = tenantDocuments.find((item) => String(item.id) === String(node.dataset.accessDocument));
+  host?.querySelectorAll('[data-booking-document]').forEach((node) => node.addEventListener('click', () => {
+    const document = documents.find((item) => text(item?.id) === text(node.dataset.bookingDocument));
     if (document) openConsentDocument(document);
   }));
-  root.querySelectorAll('[data-access-consent]').forEach((node) => node.addEventListener('click', () => {
-    const id = String(node.dataset.accessConsent || '');
+  host?.querySelectorAll('[data-booking-consent]').forEach((node) => node.addEventListener('click', () => {
+    const id = text(node.dataset.bookingConsent);
     state.consents[id] = !state.consents[id];
-    renderLegal(root, state, { registration });
+    persistDraft(state);
+    renderConsents(state);
   }));
-  root.querySelector('[data-access-legal-continue]')?.addEventListener('click', async (event) => {
-    if (!canContinue) return;
-    const action = event.currentTarget;
-    action.disabled = true;
-    action.textContent = 'Сохраняем…';
-    try {
-      if (!state.account) {
-        const payload = await registerAccount(state.tenantId, {
-          ...state.accountDraft,
-          accountTerms: currentAccountTermsFact(state),
-        });
-        state.account = payload.account;
-      } else if (platformDocument) {
-        const accepted = await acceptAccountTerms(state.tenantId, currentAccountTermsFact(state));
-        state.accountTermsAccepted = Boolean(accepted?.accepted);
-      }
-      const consents = currentTenantConsentFacts(state);
-      if (consents.length) {
-        const saved = await submitAccountConsents(state.tenantId, consents);
-        seedTenantConsents(state, saved?.consents || consents);
-      }
-      state.error = '';
-      startBookingFlow(root, state);
-    } catch (error) {
-      state.error = accountFlowError(error, 'Не удалось сохранить документы');
-      renderLegal(root, state, { registration });
-    }
+  host?.querySelector('[data-booking-consents-next]')?.addEventListener('click', () => {
+    if (canContinue) go(state, { kind: 'preview' });
   });
 }
 
-async function continueAfterIdentity(root, state) {
-  if (!state.account) {
-    releaseCreationOwner(state);
-    renderAccountEntry(root, state);
-    return;
+function previewMarkup(state, headline = 'Запись') {
+  const participantBlocks = state.participants.map((participant) => {
+    const procedures = selectedProcedures(state, participant);
+    return `<section class="booking-summary__participant">
+      <strong>${escapeHtml(participant.name)}</strong>
+      ${procedures.map((procedure) => `<div>${escapeHtml(text(procedure?.name))}</div>`).join('')}
+    </section>`;
+  }).join('');
+  return `<div class="booking-summary">
+    <h3>${escapeHtml(headline)}</h3>
+    ${participantBlocks}
+    <dl>
+      <div><dt>Дата</dt><dd>${escapeHtml(formatDate(state.date))}</dd></div>
+      <div><dt>Начало</dt><dd>${escapeHtml(state.from)}</dd></div>
+      <div><dt>Стоимость</dt><dd>${escapeHtml(money(totalCost(state)))}</dd></div>
+    </dl>
+    <section class="booking-summary__booker"><span>Оформляет</span><strong>${escapeHtml(state.booker.name)}</strong><div>${escapeHtml(state.booker.phone)}</div></section>
+  </div>`;
+}
+
+function consentFacts(state) {
+  const documents = requiredBookingDocuments(state.context);
+  return documents.map((document) => ({
+    documentId: text(document?.id),
+    documentVersion: Math.max(1, Number(document?.version || 1)),
+    accepted: Boolean(state.consents[text(document?.id)]),
+  }));
+}
+
+async function confirmBooking(state, action) {
+  if (action) {
+    action.disabled = true;
+    action.setAttribute('aria-busy', 'true');
+    action.textContent = 'Подтверждаем…';
   }
   try {
-    const { platform, tenant } = await loadLegalState(state);
-    if (!platform?.accepted || !tenant?.pdnActive) {
-      releaseCreationOwner(state);
-      renderLegal(root, state);
+    const result = await jsonRequest(
+      `/online-booking/${encodeURIComponent(state.tenantId)}/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          workplaceKey: state.workplaceKey,
+          date: state.date,
+          from: state.from,
+          booker: state.booker,
+          mode: state.mode,
+          participants: state.participants.map((participant) => ({
+            id: participant.id,
+            name: participant.name,
+            phone: participant.phone,
+            email: participant.email,
+            procedureIds: participant.procedureIds,
+          })),
+          consents: consentFacts(state),
+        }),
+      },
+      'Не удалось подтвердить запись',
+    );
+    state.result = result;
+    clearDraft();
+    state.history = [];
+    state.current = { kind: 'success', index: 0 };
+    state.exited = false;
+    renderCurrent(state);
+  } catch (error) {
+    if (Number(error?.status) === 409) {
+      await refreshContext(state).catch(() => {});
+      state.from = '';
+      state.to = '';
+      state.current = { kind: 'time', index: 0 };
+      state.history = state.history.filter((step) => !['time', 'consents', 'preview'].includes(step.kind));
+      persistDraft(state);
+      openNotice({ title: 'Время недоступно', message: text(error?.message) || 'Выбранное время уже занято. Выберите другое.' });
+      renderCurrent(state);
       return;
     }
-    startBookingFlow(root, state);
-  } catch (error) {
-    releaseCreationOwner(state);
-    state.error = accountFlowError(error, 'Не удалось проверить учетную запись');
-    renderAccountEntry(root, state);
+    openNotice({ title: 'Не удалось подтвердить запись', message: text(error?.message) || 'Попробуйте ещё раз.' });
+    if (action?.isConnected) {
+      action.disabled = false;
+      action.removeAttribute('aria-busy');
+      action.textContent = 'Подтвердить запись';
+    }
   }
 }
 
-function workplaceCards(state) {
-  const profile = state.context?.profile || {};
-  return (Array.isArray(state.context.workplaces) ? state.context.workplaces : []).map((workplace) => ({
-    ...workplace,
-    appearance: workplaceCardAppearance(workplace),
-    fields: workplaceCardFields(workplace, workplace.cardProfile || profile),
-    image: workplace.photo || '',
-    imagePosition: `${Number(workplace.photoCropX || 50)}% ${Number(workplace.photoCropY || 50)}%`,
-  }));
-}
-
-function onlineProcedureEntry(state, procedure, workplaceKey) {
-  return {
-    id: String(procedure?.id || ''),
-    name: String(procedure?.name || ''),
-    cost: bookingProcedureCost(procedure, workplaceKey),
-    duration: Math.max(0, Number(procedure?.duration) || 0),
-    raw: procedure,
-  };
-}
-
-function startBookingFlow(root, state) {
-  const workplaces = Array.isArray(state.context.workplaces) ? state.context.workplaces : [];
-  if (!workplaces.length) {
-    releaseCreationOwner(state);
-    openNotice({ title: 'Запись недоступна', message: 'Рабочие пространства не настроены.' });
-    return;
-  }
-
-  const initialWorkplace = state.lockedWorkplaceKey
-    || (workplaces.length === 1 ? String(workplaces[0]?.key || '') : '');
-  let initialProcedures = [];
-  if (initialWorkplace && state.repeatProcedureIds.length) {
-    const byId = new Map(getBookingProcedures(state.context, initialWorkplace)
-      .map((procedure) => [String(procedure.id || ''), procedure]));
-    initialProcedures = state.repeatProcedureIds
-      .map((id) => byId.get(String(id)))
-      .filter(Boolean)
-      .map((procedure) => onlineProcedureEntry(state, procedure, initialWorkplace));
-  }
-
-  const provider = {
-    kind: 'online',
-    workplaces: () => workplaces,
-    workplaceId: (workplace) => String(workplace?.key || ''),
-    workplaceName: (workplaceKey) => (
-      getBookingWorkplace(state.context, workplaceKey)?.name
-      || [state.context?.profile?.name, state.context?.profile?.surname].filter(Boolean).join(' ').trim()
-      || 'Рабочее пространство'
-    ),
-    workplaceCards: () => workplaceCards(state),
-    procedures: (workplaceKey) => getBookingProcedures(state.context, workplaceKey),
-    procedureId: (procedure) => String(procedure?.id || ''),
-    procedureName: (procedure) => String(procedure?.name || ''),
-    procedureCost: (procedure, workplaceKey) => bookingProcedureCost(procedure, workplaceKey),
-    procedureDuration: (procedure) => Math.max(0, Number(procedure?.duration) || 0),
-    workingDates: (workplaceKey) => getBookingWorkingDates(state.context, workplaceKey),
-    timeRows: ({ workplaceId, date, procedures }) => getBookingTimeRows(state.context, {
-      workplaceKey: workplaceId,
-      date,
-      procedureIds: procedures.map((entry) => String(entry.id || '')),
-      step: state.settings.slotStep,
-    }),
-    personDisplay: (account = {}) => ({
-      uei: String(account?.uei || account?.person?.uei || ''),
-      name: [account?.name, account?.surname].filter(Boolean).join(' ').trim() || 'Запись',
-      phone: String(account?.phone || account?.phones?.[0] || ''),
-    }),
-    discount: () => accountDiscount(state.account),
-    total: (recordsState) => {
-      const subtotal = recordsState.procedures.reduce((sum, entry) => sum + numericCost(entry.cost), 0);
-      return Math.max(0, subtotal * (1 - accountDiscount(state.account) / 100));
-    },
-    async create(recordsState) {
-      const action = document.querySelector('[data-records-confirm]');
-      const originalLabel = action?.textContent || 'Подтвердить';
-      if (action) {
-        if (action.dataset.bookingBusy === 'true') return null;
-        action.dataset.bookingBusy = 'true';
-        action.disabled = true;
-        action.setAttribute('aria-busy', 'true');
-        action.textContent = 'Записываем…';
-      }
-      try {
-        return await createBookingRequest(state.tenantId, {
-          workplaceKey: recordsState.workplaceId,
-          date: recordsState.date,
-          from: recordsState.from,
-          procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')),
-        });
-      } finally {
-        if (action?.isConnected) {
-          delete action.dataset.bookingBusy;
-          action.disabled = false;
-          action.removeAttribute('aria-busy');
-          action.textContent = originalLabel;
-        }
-      }
-    },
-    async onCreateError(error, recordsState, { renderTimes, renderConfirmation }) {
-      await refreshContext(state).catch(() => {});
-      const stillAvailable = getBookingSlots(state.context, {
-        workplaceKey: recordsState.workplaceId,
-        date: recordsState.date,
-        procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')),
-        step: state.settings.slotStep,
-      }).some((slot) => String(slot.from || '') === String(recordsState.from || ''));
-      if (!stillAvailable) {
-        openNotice({ title: 'Запись недоступна', message: 'Выбранное время уже занято или стало недоступно. Выберите другое.' });
-        renderTimes();
-        return;
-      }
-      const message = accountFlowError(error, 'Не удалось подтвердить запись');
-      if (message) openNotice({ title: 'Не удалось подтвердить запись', message });
-      renderConfirmation();
-    },
-  };
-
-  openRecords({
-    context: 'online',
-    person: state.account,
-    workplaceId: initialWorkplace,
-    procedures: initialProcedures,
-    professionalActions: false,
-    provider,
-    creationOwner: state.creationOwner?.isOpen?.() ? state.creationOwner : null,
-    onCancel: () => {
-      if (state.entry === 'account-booking') {
-        exitBookingContext(state, { tab: 'journal' });
-      }
-    },
-    onCreated: (record) => {
-      if (!exitBookingContext(state, {
-        tab: 'journal',
-        journalDate: String(record?.date || ''),
-      })) {
-        document.querySelector('#app')?.replaceChildren();
-        openNotice({ title: 'Запись создана', message: 'Запись отправлена специалисту.' });
-      }
-    },
+function renderPreview(state) {
+  const host = renderFrame(state, {
+    title: 'Запись',
+    body: previewMarkup(state),
+    action: actionBlock(button('Подтвердить запись', { data: 'data-booking-confirm' })),
+    back: state.history.length > 0,
   });
+  host?.querySelector('[data-booking-confirm]')?.addEventListener('click', (event) => {
+    void confirmBooking(state, event.currentTarget);
+  });
+}
+
+function renderExit(state) {
+  const host = renderFrame(state, {
+    title: 'Запись не оформлена',
+    body: '<p>Вы можете продолжить запись сейчас или вернуться к ней позже.</p>',
+    action: actionBlock(`${button('Продолжить запись', { data: 'data-booking-resume' })}${button('Открыть приложение', { variant: 'secondary', data: 'data-booking-open-app' })}`),
+    back: false,
+  });
+  host?.querySelector('[data-booking-resume]')?.addEventListener('click', () => {
+    state.current = cloneStep(state.resumeStep || { kind: 'workplace' });
+    state.exited = false;
+    persistDraft(state, false);
+    renderCurrent(state);
+  });
+  host?.querySelector('[data-booking-open-app]')?.addEventListener('click', () => {
+    location.assign('/');
+  });
+}
+
+function renderSuccess(state) {
+  const host = renderFrame(state, {
+    title: 'Запись подтверждена',
+    body: `${previewMarkup(state, 'Запись подтверждена')}<p class="booking-flow__app-note">В приложении можно видеть свои записи и управлять ими.</p>`,
+    action: actionBlock(button('Открыть приложение', { variant: 'secondary', data: 'data-booking-open-app' })),
+    back: false,
+  });
+  host?.querySelector('[data-booking-open-app]')?.addEventListener('click', () => {
+    location.assign('/');
+  });
+}
+
+function renderCurrent(state) {
+  if (!state.layer?.isConnected) return;
+  if (state.current.kind === 'workplace') renderWorkplace(state);
+  else if (state.current.kind === 'mode') renderMode(state);
+  else if (state.current.kind === 'data') renderData(state);
+  else if (state.current.kind === 'services') renderServices(state);
+  else if (state.current.kind === 'date') renderDate(state);
+  else if (state.current.kind === 'time') renderTime(state);
+  else if (state.current.kind === 'consents') renderConsents(state);
+  else if (state.current.kind === 'preview') renderPreview(state);
+  else if (state.current.kind === 'exit') renderExit(state);
+  else if (state.current.kind === 'success') renderSuccess(state);
+}
+
+function initialStep(state) {
+  const workplaces = Array.isArray(state.context?.workplaces) ? state.context.workplaces : [];
+  if (state.lockedWorkplaceKey) {
+    state.workplaceKey = state.lockedWorkplaceKey;
+    return { kind: 'mode', index: 0 };
+  }
+  if (workplaces.length === 1) {
+    state.workplaceKey = text(workplaces[0]?.key);
+    return { kind: 'mode', index: 0 };
+  }
+  return { kind: 'workplace', index: 0 };
 }
 
 export async function renderAccess(root, {
   tenantId = '',
   workplaceKey = '',
   procedureIds = [],
-  entry = '',
-  creationOwner = null,
-  onExitToAccount = null,
 } = {}) {
   const state = {
-    tenantId: String(tenantId || ''),
-    lockedWorkplaceKey: String(workplaceKey || ''),
-    repeatProcedureIds: [...new Set((Array.isArray(procedureIds) ? procedureIds : []).map((value) => String(value || '').trim()).filter(Boolean))],
+    tenantId: text(tenantId),
+    lockedWorkplaceKey: text(workplaceKey),
+    repeatProcedureIds: [...new Set((Array.isArray(procedureIds) ? procedureIds : []).map(text).filter(Boolean))],
     context: {},
     settings: normalizeBookingSettings(),
-    accountDraft: {},
-    account: null,
-    accountTerms: null,
-    accountTermsAccepted: false,
+    workplaceKey: '',
+    mode: '',
+    booker: { name: '', phone: '', email: '' },
+    participants: [],
+    participantSequence: 0,
+    date: '',
+    from: '',
+    to: '',
     consents: {},
-    error: '',
-    entry: String(entry || ''),
-    creationOwner,
-    onExitToAccount,
+    legalState: {},
+    legalResolved: false,
+    legalLookup: null,
+    legalLookupToken: 0,
+    current: { kind: 'workplace', index: 0 },
+    resumeStep: { kind: 'workplace', index: 0 },
+    history: [],
+    exited: false,
+    result: null,
+    layer: null,
+    hardClose: null,
   };
 
   if (!state.tenantId) {
-    releaseCreationOwner(state);
     root.innerHTML = emptyState('Ссылка недействительна', 'В ссылке отсутствует идентификатор онлайн-записи.');
-    return;
+    return () => {};
   }
 
-  if (state.entry !== 'account-booking') {
-    root.innerHTML = emptyState('Онлайн-запись', 'Загрузка…');
-  }
+  root.innerHTML = '';
   try {
-    const [, account] = await Promise.all([
-      refreshContext(state),
-      getAccount(state.tenantId),
-    ]);
-    state.account = account;
-    if (state.entry === 'account-booking') {
-      if (state.account) await continueAfterIdentity(root, state);
-      else {
-        releaseCreationOwner(state);
-        renderAccountEntry(root, state);
-      }
-      return;
-    }
-    if (state.account) {
-      await continueAfterIdentity(root, state);
-      return;
-    }
-    renderWelcome(root, state);
+    await refreshContext(state);
   } catch (error) {
-    releaseCreationOwner(state);
-    root.innerHTML = emptyState('Запись недоступна', accountFlowError(error, 'Не удалось открыть онлайн-запись.'));
+    root.innerHTML = emptyState('Запись недоступна', text(error?.message) || 'Не удалось открыть онлайн-запись.');
+    return () => {};
   }
+
+  const workplaces = Array.isArray(state.context?.workplaces) ? state.context.workplaces : [];
+  if (!workplaces.length) {
+    root.innerHTML = emptyState('Запись недоступна', 'Рабочие пространства не настроены.');
+    return () => {};
+  }
+
+  const restored = restoreDraft(state);
+  if (!restored) {
+    state.current = initialStep(state);
+    state.resumeStep = cloneStep(state.current);
+    setMode(state, MODE_SELF);
+    state.mode = '';
+  } else if (state.booker.phone) {
+    startLegalLookup(state);
+  }
+
+  const layer = mountModal(document.body, modal('<div data-booking-flow></div>', {
+    variant: 'technical',
+    surface: 'app',
+    title: 'Запись',
+    className: 'booking-technical-modal',
+  }));
+  if (!layer) {
+    root.innerHTML = emptyState('Запись недоступна', 'Не удалось открыть интерфейс записи.');
+    return () => {};
+  }
+  state.layer = layer;
+  state.hardClose = layer.v2Close?.bind(layer) || (() => layer.remove());
+  layer.v2Close = () => showExit(state);
+
+  if (state.exited) state.current = { kind: 'exit', index: 0 };
+  persistDraft(state, state.exited);
+  renderCurrent(state);
+
+  return () => {
+    if (state.layer?.isConnected) state.hardClose?.();
+  };
 }
