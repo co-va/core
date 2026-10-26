@@ -238,14 +238,14 @@ function totalCost(state) {
 
 function startLegalLookup(state) {
   const phone = text(state.booker.phone);
-  if (!phone) return;
+  if (!phone) return Promise.resolve({});
   const token = ++state.legalLookupToken;
   state.legalResolved = false;
   state.legalLookup = jsonRequest(
     `/online-booking/${encodeURIComponent(state.tenantId)}/booking-state`,
     {
       method: 'POST',
-      body: JSON.stringify({ phone, email: state.booker.email }),
+      body: JSON.stringify({ name: state.booker.name, phone, email: state.booker.email }),
     },
     'Не удалось проверить данные',
   ).then((result) => {
@@ -261,6 +261,7 @@ function startLegalLookup(state) {
     }
     return {};
   });
+  return state.legalLookup;
 }
 
 function activeConsentIds(state) {
@@ -618,7 +619,7 @@ function openConsentDocument(document = {}) {
 function renderConsents(state) {
   const documents = consentDocuments(state);
   const required = documents.filter((document) => document?.required && text(document?.id) !== 'messages-consent');
-  const canContinue = required.every((document) => Boolean(state.consents[text(document?.id)]));
+  const canContinue = !state.legalResolved || required.every((document) => Boolean(state.consents[text(document?.id)]));
   const cards = documents.length ? documentTiles(documents.map((document) => {
     const id = text(document?.id);
     const marketing = id === 'messages-consent';
@@ -682,11 +683,11 @@ function consentFacts(state) {
 }
 
 async function confirmBooking(state, action) {
-  if (action) {
-    action.disabled = true;
-    action.setAttribute('aria-busy', 'true');
-    action.textContent = 'Подтверждаем…';
-  }
+  if (!action || action.dataset.bookingBusy === 'true') return;
+  action.dataset.bookingBusy = 'true';
+  action.disabled = true;
+  action.setAttribute('aria-busy', 'true');
+  action.textContent = 'Записываем…';
   try {
     const result = await jsonRequest(
       `/online-booking/${encodeURIComponent(state.tenantId)}/confirm`,
@@ -717,6 +718,17 @@ async function confirmBooking(state, action) {
     state.exited = false;
     renderCurrent(state);
   } catch (error) {
+    const message = text(error?.message);
+    if (Number(error?.status) === 409 && /соглас/i.test(message)) {
+      await startLegalLookup(state);
+      state.current = { kind: 'consents', index: 0 };
+      state.history = state.history.filter((step) => step.kind !== 'preview');
+      state.exited = false;
+      persistDraft(state, false);
+      openNotice({ title: 'Нужно согласие', message: message || 'Подтвердите актуальное согласие.' });
+      renderCurrent(state);
+      return;
+    }
     if (Number(error?.status) === 409) {
       await refreshContext(state).catch(() => {});
       state.from = '';
@@ -724,12 +736,13 @@ async function confirmBooking(state, action) {
       state.current = { kind: 'time', index: 0 };
       state.history = state.history.filter((step) => !['time', 'consents', 'preview'].includes(step.kind));
       persistDraft(state);
-      openNotice({ title: 'Время недоступно', message: text(error?.message) || 'Выбранное время уже занято. Выберите другое.' });
+      openNotice({ title: 'Время недоступно', message: message || 'Выбранное время уже занято. Выберите другое.' });
       renderCurrent(state);
       return;
     }
-    openNotice({ title: 'Не удалось подтвердить запись', message: text(error?.message) || 'Попробуйте ещё раз.' });
+    openNotice({ title: 'Не удалось подтвердить запись', message: message || 'Попробуйте ещё раз.' });
     if (action?.isConnected) {
+      delete action.dataset.bookingBusy;
       action.disabled = false;
       action.removeAttribute('aria-busy');
       action.textContent = 'Подтвердить запись';
