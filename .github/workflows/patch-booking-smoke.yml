@@ -4,25 +4,20 @@ on:
   push:
     branches: [staging]
 
-permissions:
-  contents: write
-
 jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: staging
-          fetch-depth: 0
-      - name: Align Public Booking smoke with ready consent state
+      - name: Build patched Check Book content
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import base64
+          import urllib.request
 
-          path = Path('.github/workflows/check.yml')
-          lines = path.read_text().splitlines()
+          url = 'https://raw.githubusercontent.com/co-va/core/staging/.github/workflows/check.yml'
+          lines = urllib.request.urlopen(url).read().decode().splitlines()
 
           pdn_indexes = [
               index for index, line in enumerate(lines)
@@ -57,11 +52,8 @@ jobs:
               block_indent + '" "$booking_state"',
           ]
           lines[start:end + 1] = replacement
-          path.write_text('\n'.join(lines) + '\n')
+          content = ('\n'.join(lines) + '\n').encode()
+          print('CHECK_B64_BEGIN')
+          print(base64.b64encode(content).decode())
+          print('CHECK_B64_END')
           PY
-          rm .github/workflows/patch-booking-smoke.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/check.yml .github/workflows/patch-booking-smoke.yml
-          git commit -m "fix(ci): align booking smoke with current consent state"
-          git push origin HEAD:staging
