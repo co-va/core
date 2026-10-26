@@ -1,7 +1,6 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma.service';
-import { ProfileService } from '../profile/profile.service';
 import { AccountGuard } from './account.guard';
 
 type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: string } };
@@ -9,10 +8,7 @@ type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: s
 @Controller('online-booking/account')
 @UseGuards(AccountGuard)
 export class AccountBookingTargetsController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly profile: ProfileService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get('booking-targets')
   async list(@Req() request: AccountRequest) {
@@ -22,18 +18,40 @@ export class AccountBookingTargetsController {
       orderBy: { updatedAt: 'desc' },
       select: { tenantId: true, createdAt: true },
     });
-    const targets = await Promise.all(links.map(async (link) => {
-      try {
-        const profile = await this.profile.accountRelationshipProfile(link.tenantId);
-        return {
+    if (!links.length) return [];
+
+    const profiles = await this.prisma.profile.findMany({
+      where: { tenantId: { in: links.map((link) => link.tenantId) } },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        tenantId: true,
+        name: true,
+        surname: true,
+        profession: true,
+        phone: true,
+      },
+    });
+    const profileByTenantId = new Map();
+    profiles.forEach((profile) => {
+      if (!profileByTenantId.has(profile.tenantId)) profileByTenantId.set(profile.tenantId, profile);
+    });
+
+    return links.flatMap((link) => {
+      const profile = profileByTenantId.get(link.tenantId);
+      if (!profile) return [];
+      return [{
+        tenantId: link.tenantId,
+        linkedAt: link.createdAt,
+        context: {
           tenantId: link.tenantId,
-          linkedAt: link.createdAt,
-          context: { tenantId: link.tenantId, profile },
-        };
-      } catch {
-        return null;
-      }
-    }));
-    return targets.filter(Boolean);
+          profile: {
+            name: profile.name,
+            surname: profile.surname,
+            profession: profile.profession,
+            phone: profile.phone,
+          },
+        },
+      }];
+    });
   }
 }
