@@ -33,8 +33,9 @@ assert.doesNotMatch(bookingController, /@UseGuards\(AccountGuard, BookingPdnCons
 assert.doesNotMatch(bookingController, /@Post\(':tenantId\/requests'\)/, 'retired account Record-write endpoint must stay removed');
 assert.match(bookingFlowController, /@Post\(':tenantId\/confirm'\)/);
 assert.doesNotMatch(bookingFlowController, /AccountGuard|BookingPdnConsentGuard/);
-assert.match(bookingFlowService, /ensureLegalState\(tenantId, booker\.phone, source\.consents, documents\)/);
-assert.match(bookingFlowService, /contactPointConsentState\(tenantId, 'PHONE', phone, documentId\)/);
+assert.match(bookingFlowService, /ensureLegalState\(tenantId, bookerPerson, booker\.phone, source\.consents\)/);
+assert.match(bookingFlowService, /const state = currentConsentState\(person\)/);
+assert.doesNotMatch(bookingFlowService, /contactPointConsentState\(/, 'Public Booking legal state must not be recomputed from consent history');
 assert.match(bookingFlowService, /acceptContactPointConsent\([\s\S]*'public-booking'/);
 
 // PDN remains part of the document/booking contract, but it must not gate message delivery.
