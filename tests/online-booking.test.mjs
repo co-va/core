@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   bookingDuration,
   bookingProcedureCost,
@@ -39,13 +40,20 @@ assert.deepEqual(getBookingProcedures(context, 'spb').map((item) => item.id), ['
 assert.equal(bookingDuration(context, 'spb', ['cut', 'color']), 180);
 assert.deepEqual(getBookingWorkingDates(context, 'spb', { fromDate: '2026-09-21' }), ['2026-09-21']);
 
-const fixed = { id: 'fixed', cost: { amount: 1500 }, workplaces: [{ workplaceId: 'spb', cost: { amount: 1500 } }] };
-const from = { id: 'from', cost: { from: 1500 }, workplaces: [{ workplaceId: 'spb', cost: { from: 1500 } }] };
-const range = { id: 'range', cost: { from: 1500, to: 3000 }, workplaces: [{ workplaceId: 'spb', cost: { from: 1500, to: 3000 } }] };
-assert.deepEqual(bookingProcedurePrice(fixed, 'spb'), { minimum: 1500, variable: false, free: false }, 'fixed price must stay exact');
-assert.deepEqual(bookingProcedurePrice(from, 'spb'), { minimum: 1500, variable: true, free: false }, 'from price must stay variable');
-assert.deepEqual(bookingProcedurePrice(range, 'spb'), { minimum: 1500, variable: true, free: false }, 'range must preserve that its minimum is not final');
-assert.equal(bookingProcedureCost(range, 'spb'), 1500, 'legacy numeric cost must remain the minimum for calculations');
+const fixed = { id: 'fixed', cost: { from: 1, to: 9999 }, workplaces: [{ workplaceId: 'spb', cost: { from: 2, to: 9999 }, bookingPrice: { minimum: 1500, variable: false, free: false } }] };
+const from = { id: 'from', cost: { amount: 1 }, workplaces: [{ workplaceId: 'spb', cost: { amount: 2 }, bookingPrice: { minimum: 1500, variable: true, free: false } }] };
+const range = { id: 'range', cost: { amount: 1 }, workplaces: [{ workplaceId: 'spb', cost: { amount: 2 }, bookingPrice: { minimum: 1500, variable: true, free: false } }] };
+assert.deepEqual(bookingProcedurePrice(fixed, 'spb'), { minimum: 1500, variable: false, free: false }, 'fixed ready price must stay exact');
+assert.deepEqual(bookingProcedurePrice(from, 'spb'), { minimum: 1500, variable: true, free: false }, 'ready from price must stay variable');
+assert.deepEqual(bookingProcedurePrice(range, 'spb'), { minimum: 1500, variable: true, free: false }, 'owner-normalized range must arrive as from semantics');
+assert.equal(bookingProcedureCost(range, 'spb'), 1500, 'Booking calculations must use the ready minimum');
+
+const modelSource = readFileSync(new URL('../online-booking/model.js', import.meta.url), 'utf8');
+const procedureSource = readFileSync(new URL('../server/src/procedure/procedure.service.ts', import.meta.url), 'utf8');
+assert.match(modelSource, /assignment\?\.bookingPrice/, 'Booking must consume owner-provided price semantics');
+assert.doesNotMatch(modelSource, /cost\.amount|cost\.from|cost\.to|assigned\.amount|assigned\.from|assigned\.to/, 'Booking must not parse raw price shapes');
+assert.match(procedureSource, /bookingPriceFor\(/, 'Procedure owner must normalize Booking price semantics');
+assert.match(procedureSource, /bookingPrice: this\.bookingPriceFor\(procedure, workplaceId\)/, 'public procedure assignment must carry ready Booking price');
 
 const slots = getBookingSlots(context, {
   workplaceKey: 'spb',
