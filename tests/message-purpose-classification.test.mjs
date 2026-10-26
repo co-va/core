@@ -11,7 +11,8 @@ const controller = read('server/src/communication/communication.controller.ts');
 const broadcast = read('server/src/communication/communication-broadcast.service.ts');
 const telegram = read('server/src/communication/telegram-bot.service.ts');
 const notification = read('server/src/notification/notification.service.ts');
-const booking = read('server/src/online-booking/online-booking.controller.ts');
+const bookingAccount = read('server/src/online-booking/online-booking.controller.ts');
+const bookingFlow = read('server/src/online-booking/booking-flow.controller.ts');
 const consentPolicy = read('server/src/tenant-document-archive/consent-policy.service.ts');
 
 assert.match(purpose, /\['SYSTEM', 'SERVICE', 'DIRECT', 'MARKETING'\]/);
@@ -29,8 +30,8 @@ assert.match(communication, /"kind", "purpose", "channel"/);
 assert.match(dispatch, /purpose: MessagePurpose/);
 assert.match(controller, /purpose: 'DIRECT'/);
 assert.match(broadcast, /purpose: 'MARKETING'/);
-assert.match(booking, /purpose: 'DIRECT'/);
-assert.match(booking, /createEventForPerson\([\s\S]*type: 'booking\.created'/);
+assert.match(bookingAccount, /purpose: 'DIRECT'/);
+assert.match(bookingFlow, /createEventForPerson\([\s\S]*type: 'booking\.created'/);
 assert.match(notification, /createEventForPerson\([\s\S]*purpose: 'SERVICE'[\s\S]*type,/);
 
 assert.match(telegram, /const purpose: MessagePurpose = 'SYSTEM'/);
@@ -41,7 +42,7 @@ assert.match(notification, /purpose: MessagePurpose/);
 assert.match(notification, /normalizeMessagePurpose\(input\.purpose\)/);
 assert.match(notification, /"type", "purpose", "title"/);
 
-// Marketing consent is now purpose-specific. It must not gate SYSTEM, SERVICE or DIRECT.
+// Marketing consent is purpose-specific. It must not gate SYSTEM, SERVICE or DIRECT.
 assert.doesNotMatch(consentPolicy, /async canSendMessages\(/);
 assert.match(consentPolicy, /async canSendMarketing\(/);
 assert.match(consentPolicy, /MARKETING_CONSENT_DOCUMENT_ID = 'messages-consent'/);
@@ -54,8 +55,8 @@ assert.doesNotMatch(telegram, /consentPolicy\.canSendMessages/);
 assert.match(telegram, /purpose === 'MARKETING'[\s\S]*consentPolicy\.canSendMarketing/);
 assert.match(broadcast, /documents\.canSendMarketing/);
 
-assert.doesNotMatch(booking, /messages-consent/);
-assert.doesNotMatch(booking, /telegram-consent/);
-assert.doesNotMatch(booking, /ConsentPolicyService/);
+assert.doesNotMatch(bookingAccount, /messages-consent/);
+assert.doesNotMatch(bookingAccount, /telegram-consent/);
+assert.doesNotMatch(bookingAccount, /ConsentPolicyService/);
 
 console.log('Message purpose classification tests: OK');
