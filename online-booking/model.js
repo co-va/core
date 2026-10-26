@@ -11,15 +11,6 @@ function key(value) {
   return String(value || '');
 }
 
-function priceNumber(value) {
-  const number = Number(String(value ?? '').replace(',', '.'));
-  return Number.isFinite(number) ? Math.max(0, number) : 0;
-}
-
-function hasPriceValue(value) {
-  return value !== '' && value != null;
-}
-
 export function getBookingWorkplace(context = {}, workplaceKey = '') {
   const target = key(workplaceKey);
   return (Array.isArray(context.workplaces) ? context.workplaces : [])
@@ -37,31 +28,13 @@ export function getBookingProcedures(context = {}, workplaceKey = '') {
     .filter((procedure) => procedureWorkplaceAssignment(procedure, workplaceKey));
 }
 
-function bookingProcedureCostSource(procedure = {}, workplaceKey = '') {
-  const assignment = procedureWorkplaceAssignment(procedure, workplaceKey);
-  const assigned = assignment?.cost;
-  const base = procedure?.cost;
-  const hasAssigned = assigned && typeof assigned === 'object' && !assigned.free && (
-    hasPriceValue(assigned.amount)
-    || hasPriceValue(assigned.from)
-    || hasPriceValue(assigned.to)
-  );
-  return hasAssigned ? assigned : base;
-}
-
 export function bookingProcedurePrice(procedure = {}, workplaceKey = '') {
-  const cost = bookingProcedureCostSource(procedure, workplaceKey);
-  if (cost == null || cost?.free) return { minimum: 0, variable: false, free: true };
-  if (typeof cost === 'number' || typeof cost === 'string') {
-    return { minimum: priceNumber(cost), variable: false, free: false };
-  }
-  if (hasPriceValue(cost.amount)) {
-    return { minimum: priceNumber(cost.amount), variable: false, free: false };
-  }
-  if (hasPriceValue(cost.from)) {
-    return { minimum: priceNumber(cost.from), variable: true, free: false };
-  }
-  return { minimum: 0, variable: hasPriceValue(cost.to), free: false };
+  const price = procedureWorkplaceAssignment(procedure, workplaceKey)?.bookingPrice;
+  return {
+    minimum: Math.max(0, Number(price?.minimum || 0)),
+    variable: Boolean(price?.variable),
+    free: Boolean(price?.free),
+  };
 }
 
 export function bookingProcedureCost(procedure = {}, workplaceKey = '') {
