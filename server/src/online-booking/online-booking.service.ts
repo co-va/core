@@ -418,8 +418,24 @@ export class OnlineBookingService {
 
   async getContext(tenantId: string, workplaceKey = '') {
     await this.access.assertRealOperationsAllowed(tenantId);
-    const data = await this.bookingSource(tenantId);
-    const sourceWorkplaces = arrayValue(data.workplaces);
+    const [sourceWorkplaces, operational, documents] = await Promise.all([
+      this.prisma.workplace.findMany({
+        where: { tenantId, deletedAt: null },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          key: true,
+          name: true,
+          city: true,
+          address: true,
+          timeZone: true,
+          from: true,
+          to: true,
+          visibleInPublicBooking: true,
+        },
+      }),
+      this.businessState.publicOperational(tenantId),
+      this.tenantDocumentArchive.publicDocuments(tenantId),
+    ]);
     const requestedWorkplace = text(workplaceKey);
     const selected = requestedWorkplace
       ? sourceWorkplaces.find((item) => text(item?.key) === requestedWorkplace)
@@ -438,11 +454,11 @@ export class OnlineBookingService {
       to: text(workplace?.to),
     }));
     const allowedKeys = new Set(workplaces.map((item) => text(item?.key)).filter(Boolean));
-    const procedures = arrayValue(data.procedures).filter((procedure) => {
+    const procedures = arrayValue(operational.procedures).filter((procedure) => {
       const assignments = arrayValue(procedure?.workplaces);
       return assignments.some((item) => allowedKeys.has(text(item?.workplaceId ?? item?.key ?? item?.id)));
     });
-    const days = arrayValue(data.days).filter((day) => allowedKeys.has(text(day?.workplaceId)));
+    const days = arrayValue(operational.days).filter((day) => allowedKeys.has(text(day?.workplaceId)));
     const [recordOccupancy, eventOccupancy, pending] = await Promise.all([
       this.records.publicOccupancy(tenantId),
       this.prisma.event.findMany({
@@ -466,11 +482,11 @@ export class OnlineBookingService {
     return {
       tenantId,
       revision: 0,
-      settings: objectValue(data.bookingSettings),
+      settings: objectValue(operational.bookingSettings),
       workplaces: bookingWorkplaces,
       procedures,
       days,
-      documents: arrayValue(data.documents).filter((item) => Boolean(item?.personConsent)),
+      documents: arrayValue(documents).filter((item) => Boolean(item?.personConsent)),
       occupancy: [
         ...occupancy,
         ...pending.map((item) => ({
