@@ -14,7 +14,7 @@ function reset() {
   consumed = new Set();
 }
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('book:auth-logout', reset);
 }
 
