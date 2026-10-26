@@ -105,6 +105,26 @@ export function hydrateFinanceFromServer(value = null) {
   return clone(financeState);
 }
 
+export function applyFinancePatch(value = null) {
+  const patch = value && typeof value === 'object' ? value : {};
+  const settlement = normalizeSettlementRow(patch.settlement);
+  const operation = patch.operation ? normalizeOperation(patch.operation) : null;
+  if (settlement) {
+    const key = sourceKey(settlement.source);
+    financeState.settlements = [
+      ...financeState.settlements.filter((row) => sourceKey(row?.source) !== key),
+      settlement,
+    ];
+  }
+  if (operation?.operationId) {
+    financeState.operations = [
+      ...financeState.operations.filter((row) => String(row?.operationId || '') !== operation.operationId),
+      operation,
+    ];
+  }
+  return clone({ settlement, operation });
+}
+
 export function replaceFinanceState(value = null) {
   financeState = normalizedState(value) || emptyState();
   return clone(financeState);
@@ -119,7 +139,6 @@ export function getStoredSettlement(type, id) {
   const row = financeState.settlements.find((item) => sourceKey(item?.source) === key);
   return row?.settlement ? clone(row.settlement) : null;
 }
-
 
 export function getFinanceArticles() {
   return clone(financeState.articles || []);
