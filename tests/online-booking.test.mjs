@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
   bookingDuration,
+  bookingProcedureCost,
+  bookingProcedurePrice,
   getBookingProcedures,
   getBookingSlots,
   getBookingWorkingDates,
@@ -36,6 +38,14 @@ const context = {
 assert.deepEqual(getBookingProcedures(context, 'spb').map((item) => item.id), ['cut', 'color']);
 assert.equal(bookingDuration(context, 'spb', ['cut', 'color']), 180);
 assert.deepEqual(getBookingWorkingDates(context, 'spb', { fromDate: '2026-09-21' }), ['2026-09-21']);
+
+const fixed = { id: 'fixed', cost: { amount: 1500 }, workplaces: [{ workplaceId: 'spb', cost: { amount: 1500 } }] };
+const from = { id: 'from', cost: { from: 1500 }, workplaces: [{ workplaceId: 'spb', cost: { from: 1500 } }] };
+const range = { id: 'range', cost: { from: 1500, to: 3000 }, workplaces: [{ workplaceId: 'spb', cost: { from: 1500, to: 3000 } }] };
+assert.deepEqual(bookingProcedurePrice(fixed, 'spb'), { minimum: 1500, variable: false, free: false }, 'fixed price must stay exact');
+assert.deepEqual(bookingProcedurePrice(from, 'spb'), { minimum: 1500, variable: true, free: false }, 'from price must stay variable');
+assert.deepEqual(bookingProcedurePrice(range, 'spb'), { minimum: 1500, variable: true, free: false }, 'range must preserve that its minimum is not final');
+assert.equal(bookingProcedureCost(range, 'spb'), 1500, 'legacy numeric cost must remain the minimum for calculations');
 
 const slots = getBookingSlots(context, {
   workplaceKey: 'spb',
@@ -74,6 +84,5 @@ const ekbSlots = getBookingSlots(context, {
   now: new Date('2026-09-20T08:10:00Z'),
 });
 assert.equal(ekbSlots[0]?.from, '13:15', 'the same instant must use the selected Workplace timezone, not visitor or server time');
-
 
 console.log('online booking tests passed');
