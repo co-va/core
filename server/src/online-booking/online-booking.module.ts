@@ -16,6 +16,7 @@ import { ProcedureModule } from '../procedure/procedure.module';
 import { FinanceModule } from '../finance/finance.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { AccountGuard } from './account.guard';
+import { AccountBookingTargetsController } from './account-booking-targets.controller';
 import { AccountDepositController } from './account-deposit.controller';
 import { AccountEventController } from './account-event.controller';
 import { AccountNoteController } from './account-note.controller';
@@ -31,7 +32,7 @@ import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
   imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, PlatformNoticeModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
-  controllers: [OnlineBookingController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController],
+  controllers: [OnlineBookingController, AccountBookingTargetsController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController],
   providers: [OnlineBookingService, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })
 export class OnlineBookingModule {}
