@@ -61,7 +61,7 @@ assert.match(timeline, /journal-record--event/);
 assert.match(businessRuntime, /apiRequest\('\/business-state\/journal'\)/);
 assert.doesNotMatch(businessRuntime, /apiRequest\('\/events'\)/);
 assert.match(businessRuntime, /hydrateEventsFromServer/);
-assert.match(businessController, /this\.events\.list\(auth\.tenantId\)/);
+assert.match(businessController, /this\.events\.list\(current\.tenantId\)/);
 assert.doesNotMatch(operational, /break-data|hydrateBreaksFromServer|queueOperationalDataset\('breaks'/);
 assert.doesNotMatch(records, /createEvent|createJournalBreak/);
 for (const path of ['journal/break-data.js','journal/break-read.js','journal/break-service.js','journal/break-view.js','journal/break-create.js']) assert.equal(fs.existsSync(path), false, `${path} must be removed`);
