@@ -12,6 +12,7 @@ const journalCreation = read('journal/creation-flow.js');
 const eventCreation = read('journal/event-create.js');
 const personEntry = read('core/people/record-creation.js');
 const booking = read('online-booking/access.js');
+const bookingFlowService = read('server/src/online-booking/booking-flow.service.ts');
 
 expect(!fs.existsSync('journal/record.js'), 'journal/record.js must not exist.');
 expect(!fs.existsSync('journal/record-view.js'), 'journal/record-view.js must not exist.');
@@ -39,7 +40,9 @@ expect(!records.includes('allowBreak'), 'Records must not route between Record a
 expect(eventCreation.includes('createEvent'), 'Event creation must live in the Event flow.');
 expect(eventCreation.includes('timeHint'), 'Event flow must receive the original Timeline time hint.');
 expect(personEntry.includes("from '../records/records.js'"), 'Person entry must call canonical Records.');
-expect(booking.includes("from '../core/records/records.js'"), 'Online booking must call canonical Records.');
+expect(!booking.includes("core/records/records.js") && !booking.includes('openRecords('), 'Public Booking must not load the App Records flow.');
+expect(bookingFlowService.includes("from '../record/record.service'"), 'Public Booking server confirmation must use the canonical RecordService owner.');
+expect(bookingFlowService.includes('this.records.create(tenantId'), 'Public Booking must create ordinary Records through RecordService.');
 expect(!fs.existsSync('records/records.js'), 'Root records/records.js must not remain after Records moved into Core.');
 expect(!fs.existsSync('core/records.js'), 'Core must not contain Records JS directly; Records must live in core/records/records.js.');
 
