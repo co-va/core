@@ -173,16 +173,18 @@ await wait();
 click(document.querySelector('[data-booking-time-next]'));
 await wait();
 
+mark('consents-pending');
+ok(String(document.querySelector('.booking-flow')?.textContent || '').includes('Проверяем действующие согласия'), 'pending lookup was treated as missing consent history');
+ok(!document.querySelector('[data-booking-consent]'), 'pending lookup exposed consent documents before history resolved');
+ok(!document.querySelector('[data-booking-consents-next]'), 'pending lookup allowed continuation');
+
 mark('consents-resolve');
-ok(Boolean(document.querySelector('[data-booking-consent="pdn-consent"]')), 'unresolved required consent was not represented on consent step');
 legalResolve();
 await wait(180);
 ok(!document.querySelector('[data-booking-consent="pdn-consent"]'), 'active current PDN was requested again after lookup resolved');
 ok(!document.querySelector('[data-booking-consent="messages-consent"]'), 'active current marketing consent was requested again after lookup resolved');
-const consentNext = document.querySelector('[data-booking-consents-next]');
-ok(Boolean(consentNext) && !consentNext.disabled, 'consent step did not allow continuation with existing current consents');
-click(consentNext);
-await wait();
+ok(!document.querySelector('[data-booking-consents-next]'), 'two active current consents left an empty consent step');
+ok(Boolean(document.querySelector('[data-booking-confirm]')), 'two active current consents did not skip directly to preview');
 
 mark('preview');
 ok(String(document.querySelector('.booking-summary')?.textContent || '').includes('Наталья'), 'preview lost participant name');
