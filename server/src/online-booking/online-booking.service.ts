@@ -428,6 +428,15 @@ export class OnlineBookingService {
 
     const generalWorkplaces = sourceWorkplaces.filter((item) => item?.visibleInPublicBooking !== false);
     const workplaces = selected ? [selected] : generalWorkplaces;
+    const bookingWorkplaces = workplaces.map((workplace) => ({
+      key: text(workplace?.key),
+      name: text(workplace?.name),
+      city: text(workplace?.city),
+      address: text(workplace?.address),
+      timeZone: text(workplace?.timeZone),
+      from: text(workplace?.from),
+      to: text(workplace?.to),
+    }));
     const allowedKeys = new Set(workplaces.map((item) => text(item?.key)).filter(Boolean));
     const procedures = arrayValue(data.procedures).filter((procedure) => {
       const assignments = arrayValue(procedure?.workplaces);
@@ -457,9 +466,8 @@ export class OnlineBookingService {
     return {
       tenantId,
       revision: 0,
-      profile: objectValue(data.profile),
       settings: objectValue(data.bookingSettings),
-      workplaces,
+      workplaces: bookingWorkplaces,
       procedures,
       days,
       documents: arrayValue(data.documents).filter((item) => Boolean(item?.personConsent)),
