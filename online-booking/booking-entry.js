@@ -33,10 +33,10 @@ function pathParts() {
 
 async function resolveRoute() {
   const params = new URLSearchParams(location.search);
-  const legacyTenantId = String(params.get('booking') || '').trim();
-  if (legacyTenantId) {
+  const queryTenantId = String(params.get('booking') || '').trim();
+  if (queryTenantId) {
     return {
-      tenantId: legacyTenantId,
+      tenantId: queryTenantId,
       workplaceKey: String(params.get('workplace') || '').trim(),
       ...routeQuery(params),
     };
