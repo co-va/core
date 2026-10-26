@@ -363,8 +363,33 @@ export class PaymentSettlementService {
       }
     });
 
+    const [operation, settlementRow] = await Promise.all([
+      this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } }),
+      this.prisma.financeSettlement.findUnique({
+        where: { tenantId_sourceType_sourceId: { tenantId, sourceType: source.type, sourceId: source.id } },
+      }),
+    ]);
+    if (!operation || !settlementRow) throw new NotFoundException('Оплата сохранена, но результат операции не найден');
+
     return {
-      finance: await this.finance.snapshot(tenantId),
+      financePatch: {
+        settlement: {
+          source: { type: settlementRow.sourceType, id: settlementRow.sourceId },
+          settlement: clone(settlementRow.data),
+          recordedAt: settlementRow.createdAt.toISOString(),
+          updatedAt: settlementRow.updatedAt.toISOString(),
+        },
+        operation: {
+          operationId: operation.operationId,
+          kind: operation.kind,
+          status: operation.status,
+          source: { type: operation.sourceType, id: operation.sourceId },
+          originalOperationId: text(operation.originalOperationId),
+          occurredAt: operation.occurredAt.toISOString(),
+          recordedAt: operation.createdAt.toISOString(),
+          data: clone(operation.data),
+        },
+      },
       payment: { due: remainingDue, state: remainingDue <= 0.009 ? 'paid' : 'partial' },
     };
   }
