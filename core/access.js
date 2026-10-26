@@ -76,7 +76,7 @@ export async function requestLiveMode({ manage = false } = {}) {
 }
 
 export async function loadBookAccess() {
-  const bootstrap = await consumeJournalBootstrap('access');
+  const bootstrap = await consumeJournalBootstrap('access', { start:false });
   if (bootstrap) {
     const access = applyAccess(bootstrap);
     openRequiredLiveFlowIfNeeded(access);
