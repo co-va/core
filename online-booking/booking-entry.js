@@ -83,6 +83,46 @@ function persistStoredDraft(id) {
   else clearBookingDraft(id);
 }
 
+async function keepUnscheduledSingleWorkplaceVisible(route) {
+  const tenantId = String(route?.tenantId || '').trim();
+  if (!tenantId) return;
+  const params = new URLSearchParams();
+  const lockedWorkplaceKey = String(route?.workplaceKey || '').trim();
+  if (lockedWorkplaceKey) params.set('workplace', lockedWorkplaceKey);
+  const suffix = params.toString() ? `?${params}` : '';
+  const response = await fetch(`${API_BASE}/online-booking/${encodeURIComponent(tenantId)}/context${suffix}`);
+  if (!response.ok) return;
+  const context = await response.json().catch(() => ({}));
+  const workplaces = Array.isArray(context?.workplaces) ? context.workplaces : [];
+  if (workplaces.length !== 1) return;
+  const workplaceKey = String(workplaces[0]?.key || '').trim();
+  const scheduled = new Set((Array.isArray(context?.days) ? context.days : [])
+    .map((day) => String(day?.workplaceId || '').trim())
+    .filter(Boolean));
+  if (workplaceKey && scheduled.has(workplaceKey)) return;
+
+  const step = { kind: 'workplace', index: 0 };
+  const draft = {
+    version: 1,
+    savedAt: Date.now(),
+    tenantId,
+    lockedWorkplaceKey,
+    workplaceKey: '',
+    mode: '',
+    booker: {},
+    participants: [],
+    date: '',
+    from: '',
+    to: '',
+    consents: {},
+    current: step,
+    resumeStep: step,
+    history: [],
+    exited: false,
+  };
+  history.replaceState({ ...(history.state || {}), covaBookingDraft: draft }, '', location.href);
+}
+
 window.addEventListener('resize', syncViewport, { passive: true });
 window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
 window.visualViewport?.addEventListener('scroll', syncViewport, { passive: true });
@@ -96,6 +136,7 @@ try {
 }
 
 const storedDraftId = restoreStoredDraft(route);
+await keepUnscheduledSingleWorkplaceVisible(route).catch(() => {});
 window.addEventListener('pagehide', () => persistStoredDraft(storedDraftId));
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') persistStoredDraft(storedDraftId);
