@@ -1058,7 +1058,7 @@ async function renderGlobalClientHome(root, state) {
   state.accountRecords = Array.isArray(records) ? records : [];
   await renderGlobalAccount(root, state, {
     onStartBooking: (tenantId, options = {}) => {
-      const id = String(tenantId || '');
+      const id = String(tenantId || '').trim();
       if (!id) return;
       const repeatRequest = options?.repeatRequest && typeof options.repeatRequest === 'object'
         ? options.repeatRequest
@@ -1069,15 +1069,14 @@ async function renderGlobalClientHome(root, state) {
         || repeatRequest?.workplaceKey
         || ''
       ).trim();
-      const procedureIds = repeatRequest
-        ? requestProcedures(repeatRequest).map((item) => String(item?.id || '').trim()).filter(Boolean)
-        : [];
-      const params = new URLSearchParams();
-      params.set('booking', id);
-      params.set('entry', 'account-booking');
-      if (workplaceKey) params.set('workplace', workplaceKey);
-      if (procedureIds.length) params.set('procedures', procedureIds.join(','));
-      location.assign(`${location.pathname}?${params.toString()}`);
+      window.dispatchEvent(new CustomEvent('cova:account-booking-start', {
+        detail: {
+          tenantId: id,
+          workplaceKey,
+          repeatRequest,
+          entry: repeatRequest ? 'repeat' : workplaceKey ? 'workplace' : 'profile',
+        },
+      }));
     },
     onLogout: () => {
       clearAccount('');
@@ -1159,7 +1158,7 @@ function renderGlobalClientEntry(root, state) {
       renderGlobalClientEntry(root, state);
       return;
     }
-    const data = new FormData(authForm);
+    const data = new FormData(form);
     const identifier = String(data.get('identifier') || '').trim();
     const password = String(data.get('password') || '');
     try {
