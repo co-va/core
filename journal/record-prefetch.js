@@ -12,11 +12,18 @@ function prefetchWhenJournalVisible() {
   });
 }
 
-new MutationObserver(prefetchWhenJournalVisible)
-  .observe(document.documentElement, { childList: true, subtree: true });
+const observer = new MutationObserver(prefetchWhenJournalVisible);
+observer.observe(document.documentElement, { childList: true, subtree: true });
 
-window.addEventListener('book:auth-logout', () => {
+const onLogout = () => {
   prefetched = false;
-});
+};
+const dispose = () => {
+  observer.disconnect();
+  window.removeEventListener('book:auth-logout', onLogout);
+  window.removeEventListener('pagehide', dispose);
+};
 
+window.addEventListener('book:auth-logout', onLogout);
+window.addEventListener('pagehide', dispose);
 prefetchWhenJournalVisible();
