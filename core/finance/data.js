@@ -2,6 +2,7 @@
 // Canonical persistence is server FinanceSettlement + FinanceOperation + FinanceLedgerEntry.
 const VERSION = 7;
 let financeState = emptyState();
+let financeRevision = 0;
 
 function numberValue(value) {
   const number = Number(String(value ?? '').replace(',', '.'));
@@ -19,6 +20,10 @@ function clone(value) {
 
 function emptyState() {
   return { version: VERSION, articles: [], settlements: [], operations: [], ledger: [] };
+}
+
+function bumpRevision() {
+  financeRevision += 1;
 }
 
 function normalizeSettlementSnapshot(value = null) {
@@ -102,6 +107,7 @@ function normalizedState(value) {
 
 export function hydrateFinanceFromServer(value = null) {
   financeState = normalizedState(value) || emptyState();
+  bumpRevision();
   return clone(financeState);
 }
 
@@ -109,25 +115,34 @@ export function applyFinancePatch(value = null) {
   const patch = value && typeof value === 'object' ? value : {};
   const settlement = normalizeSettlementRow(patch.settlement);
   const operation = patch.operation ? normalizeOperation(patch.operation) : null;
+  let changed = false;
   if (settlement) {
     const key = sourceKey(settlement.source);
     financeState.settlements = [
       ...financeState.settlements.filter((row) => sourceKey(row?.source) !== key),
       settlement,
     ];
+    changed = true;
   }
   if (operation?.operationId) {
     financeState.operations = [
       ...financeState.operations.filter((row) => String(row?.operationId || '') !== operation.operationId),
       operation,
     ];
+    changed = true;
   }
+  if (changed) bumpRevision();
   return clone({ settlement, operation });
 }
 
 export function replaceFinanceState(value = null) {
   financeState = normalizedState(value) || emptyState();
+  bumpRevision();
   return clone(financeState);
+}
+
+export function getFinanceRevision() {
+  return financeRevision;
 }
 
 export function readFinanceState() {
