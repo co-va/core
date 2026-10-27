@@ -58,6 +58,9 @@ assert.match(journalBooking, /creationOwner\.render\(\{[\s\S]*step: 'workplace'/
 assert.match(journalBooking, /createBookingRequest\(id,/, 'Journal confirmation must use the authenticated Account Booking write');
 assert.doesNotMatch(journalBooking, /renderAccess\(/, 'Journal Booking must never enter the Public technical Booking shell');
 assert.doesNotMatch(journalBooking, /creationOwner\?\.close|variant:\s*'technical'|mountModal\(/, 'Journal Booking must not close Q or mount a technical modal');
+assert.match(journalBooking, /let participantProcedureController = null/, 'Journal participant procedures must have one controller owner for the whole Q flow');
+assert.match(journalBooking, /destroyParticipantProcedureController\(\);[\s\S]*participantProcedureController = initMultiSelect/, 'Journal participant procedure step must destroy the previous multiselect controller before binding the next participant');
+assert.doesNotMatch(journalBooking, /participants(?:\.slice\([^)]*\))?\.forEach\([^\n]*procedures = \[\]/, 'Journal step navigation must not erase participant procedure selections');
 assert.doesNotMatch(entry, /from '\.\/access\.js'/, 'App user entry must not import the Public technical Booking entry');
 assert.doesNotMatch(entry, /phoneField|passwordField|account\/login|account\/register/, 'Journal Booking must not render identity, password, login or registration steps');
 assert.match(entry, /v2ListEntry\(/, 'App workplace selection must use the Shared list owner');
