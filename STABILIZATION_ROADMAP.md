@@ -28,21 +28,19 @@ Benchmark reference: EasyWeek operational baseline for the same user scenarios. 
 
 ## Ordered queue
 
-### 1. Startup / first Journal load — `IN PROGRESS`
+### 1. Startup / first Journal load — `DONE`
 Goal: the first useful Journal screen must not be blocked by unrelated full-domain loading.
 
-Known fact at start: authenticated startup waits for Profile + Business/Journal + Operational + Finance + Access; `journal-bootstrap` computes journal + profile + operational + finance + access together.
+Result:
+- startup bootstrap no longer computes the Finance projection;
+- startup receives only minimal `profileContext` (Profile header fields + Workplace context), not the full Profile/profession/reference payload;
+- full Profile is loaded lazily when Profile opens;
+- full Finance is loaded lazily when Finance opens;
+- regression `tests/startup-journal-load-boundary.test.mjs` is part of the full `npm test` chain.
 
-Close only when:
-- Finance no longer blocks first Journal paint;
-- full Profile data is not required merely to show the first Journal screen; only the minimal profile/workplace context needed by Journal may block it;
-- navigating later to Profile or Finance loads their full data safely;
-- no Journal/booking regression;
-- targeted runtime/regression checks and full Check Book pass.
+Evidence: staging `5dd221d32dddf78f0220ec90963e549a75c2e584`; Check Book run `40472015085` — architecture/checks PASS, domain regression PASS, Browser FEZ PASS, server build PASS, modal browser PASS, staging-smoke PASS. Record View Account Runtime run `40472015092` — PASS.
 
-Evidence: pending.
-
-### 2. Profile + Workplaces — `TODO`
+### 2. Profile + Workplaces — `IN PROGRESS`
 Goal: Profile and Workplace stay separate canonical entities even when presented in one UI area; Profile opens and edits predictably; full Profile data is loaded only when needed.
 
 Close only when Profile/Workplace reads, edits and persistence survive reload and do not slow unrelated Journal work.
