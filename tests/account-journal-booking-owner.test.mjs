@@ -102,6 +102,9 @@ assert.match(bookingContext, /this\.prisma\.workplace\.findMany/, 'Booking conte
 for (const field of ['key', 'name', 'city', 'address', 'timeZone', 'from', 'to', 'visibleInPublicBooking']) {
   assert.match(bookingContext, new RegExp(`${field}: true`), `Booking workplace source projection must include ${field}`);
 }
+for (const field of ['key', 'name', 'city', 'address', 'timeZone', 'from', 'to']) {
+  assert.match(bookingContext, new RegExp(`${field}: text\\(workplace\\?\\.${field}\\)`), `Booking workplace context must expose ${field}`);
+}
 assert.doesNotMatch(bookingContext, /photo|photoCropX|photoCropY|cardAppearance|cardProfile|\babout\b/, 'Booking context must not expose workplace Card payload');
 for (const preserved of ['procedures', 'days', 'documents', 'occupancy']) {
   assert.match(bookingContext, new RegExp(`\\b${preserved}\\b`), `Booking context must preserve ${preserved}`);
