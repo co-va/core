@@ -18,7 +18,7 @@ function hydrateFull(remote={}){
   hydrateBookingSettingsFromServer(remote.bookingSettings&&typeof remote.bookingSettings==='object'&&!Array.isArray(remote.bookingSettings)?clone(remote.bookingSettings):null);
 }
 
-if(typeof window!=='undefined'){
+if(typeof window!=='undefined'&&typeof window.addEventListener==='function'){
   window.addEventListener('book:auth-logout',()=>{fullOperationalStateLoad=null;});
 }
 
