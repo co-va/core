@@ -7,6 +7,7 @@ import { NotificationService } from '../notification/notification.service';
 import { WebPushService } from '../notification/web-push.service';
 import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { AccountGuard } from './account.guard';
+import { BookingFlowService } from './booking-flow.service';
 import { BookingPdnConsentGuard } from './booking-pdn-consent.guard';
 import { PersonIdentityService } from './person-identity.service';
 import { OnlineBookingService } from './online-booking.service';
@@ -18,6 +19,7 @@ type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: s
 export class OnlineBookingController {
   constructor(
     private readonly booking: OnlineBookingService,
+    private readonly bookingFlow: BookingFlowService,
     private readonly accountDocuments: AccountDocumentService,
     private readonly notifications: NotificationService,
     private readonly platformNotices: PlatformNoticeService,
@@ -350,11 +352,42 @@ export class OnlineBookingController {
   @Post(':tenantId/requests')
   async createRequest(@Param('tenantId') tenantId: string, @Req() request: AccountRequest, @Body() body: Record<string, any>) {
     const accountId = request.accountAuth!.accountId;
-    const created = await this.booking.createRequest(tenantId, accountId, body || {});
-    const recordId = String((created as any)?.recordId || '');
-    const date = String((created as any)?.date || '').slice(0, 10);
-    const time = String((created as any)?.from || '');
-    const workplaceKey = String((created as any)?.workplaceKey || '');
+    const participantMode = ['self', 'other', 'joint'].includes(String(body?.mode || ''))
+      && Array.isArray(body?.participants)
+      && body.participants.length > 0;
+
+    let created: Record<string, any>;
+    if (participantMode) {
+      const account = await this.booking.getAccount(tenantId, accountId) as Record<string, any>;
+      const result = await this.bookingFlow.confirm(tenantId, {
+        ...(body || {}),
+        booker: {
+          name: [String(account?.name || '').trim(), String(account?.surname || '').trim()].filter(Boolean).join(' '),
+          phone: String(account?.phone || '').trim(),
+          email: String(account?.email || '').trim(),
+        },
+      }, {
+        legalVerified: true,
+        source: 'online-booking',
+        createdBy: { type: 'account', accountId, profileId: '' },
+      });
+      const records = Array.isArray(result?.records) ? result.records : [];
+      created = {
+        ...result,
+        id: String(result?.bookingSessionId || ''),
+        status: 'IMPORTED',
+        recordId: String(records[0]?.id || ''),
+        recordIds: records.map((record: any) => String(record?.id || '')).filter(Boolean),
+      };
+    } else {
+      created = await this.booking.createRequest(tenantId, accountId, body || {}) as Record<string, any>;
+    }
+
+    const recordId = String(created?.recordId || '');
+    const recordIds = Array.isArray(created?.recordIds) && created.recordIds.length ? created.recordIds : recordId ? [recordId] : [];
+    const date = String(created?.date || '').slice(0, 10);
+    const time = String(created?.from || '');
+    const workplaceKey = String(created?.workplaceKey || '');
 
     void Promise.allSettled([
       this.platformNotices.createForTenantOwner(tenantId, {
@@ -363,6 +396,7 @@ export class OnlineBookingController {
         body: `Запись на ${date} в ${time}.`,
         metadata: {
           recordId,
+          recordIds,
           date,
           time,
           workplaceKey,

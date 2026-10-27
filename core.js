@@ -24,7 +24,7 @@ import { activateBookDemo, canUseBookCapability, getBookAccess, loadBookAccess }
 import { startServerBookingSync } from './online-booking/server-sync.js';
 import { renderGlobalClient } from './online-booking/booking.js';
 import { renderAccess as renderOnlineBooking } from './online-booking/access.js';
-import { startAccountRuntime } from './online-booking/account-runtime.js';
+import './online-booking/account-runtime.js';
 import { field, passwordField, initPasswordFields, mountV2ZLayer, openNotice, initV2WorkspaceInteraction, setV2DeckOpen, v2CardDeck, v2Header, v2Shell, v2Sticker, v2ZLayer } from './ui/ui.js';
 import { startPlatformNotices } from './core/platform-notices.js';
 import { USER_ORIGIN } from './core/environment.js';
@@ -176,8 +176,7 @@ async function renderPublicBooking(route) {
   setThemeColor('#2F3338');
   app.classList.add('app-shell--booking');
   app.innerHTML = '<main class="booking-content" id="app-content"></main>';
-  disposeView = await startAccountRuntime(route);
-  await renderOnlineBooking(document.querySelector('#app-content'), {
+  disposeView = await renderOnlineBooking(document.querySelector('#app-content'), {
     ...route,
     onExitToAccount: (target = {}) => {
       history.replaceState({}, '', isEndUserAppHost() ? '/' : location.pathname);
