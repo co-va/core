@@ -87,7 +87,7 @@ Result:
 
 Evidence: prior Journal code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; post-item-3 recheck on staging `a9f255a32829976549dd04c8936f7d13769f17ee`; Check Book `40479254564` — PASS including domain regression and Browser FEZ.
 
-### 5. Journal Booking — `TODO`
+### 5. Journal Booking — `IN PROGRESS`
 Goal: Journal → Record creation uses one Q-flow with minimal data per step and no full Profile/People navigation.
 
 ### 6. Public Booking — `TODO`
@@ -115,4 +115,4 @@ Goal: do not add breadth; prove persistence and one complete end-to-end scenario
 
 **Item 5 — Journal Booking.**
 
-PR #769 is the merge boundary for completed items 1–4. Do not merge without explicit owner approval. After merge and staging alignment, continuation starts from item 5 without a new whole-project analysis.
+PR #769 is the merge boundary for completed items 1–4. Continuation starts from item 5 without a new whole-project analysis.
