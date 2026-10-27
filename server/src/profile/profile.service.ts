@@ -372,14 +372,41 @@ export class ProfileService {
     const customProfessions = source.customProfessions === undefined
       ? stringList(current.customProfessions)
       : stringList(source.customProfessions);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.profile.update({
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.profile.update({
         where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
         data: profileData(profile, customProfessions),
       });
       await this.observeProfessions(tx, [profile.profession, ...customProfessions]);
+      return row;
     });
-    return this.bundle(tenantId, platformAccountId);
+    const professionRows = await this.prisma.platformProfession.findMany({
+      orderBy: [{ name: 'asc' }],
+      select: { name: true },
+    });
+    return {
+      profile: {
+        id: saved.id,
+        platformAccountId: saved.platformAccountId,
+        key: saved.key,
+        name: saved.name,
+        surname: saved.surname,
+        phone: saved.phone,
+        phones: stringList(saved.phones),
+        telegrams: stringList(saved.telegrams),
+        emails: stringList(saved.emails),
+        about: saved.about,
+        photo: saved.photo,
+        photoCropX: saved.photoCropX,
+        photoCropY: saved.photoCropY,
+        profession: saved.profession,
+        experience: saved.experience,
+        professionAbout: saved.professionAbout,
+        cardAppearance: objectValue(saved.cardAppearance),
+      },
+      customProfessions: stringList(saved.customProfessions),
+      professionCatalog: professionRows.map((item) => item.name),
+    };
   }
 
   async reorderWorkplaces(tenantId: string, platformAccountId: string, body: unknown) {
