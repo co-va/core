@@ -85,7 +85,7 @@ expect(/async function continueAfterIdentity[\s\S]*hasBookingSelection[\s\S]*nex
 expect(!booking.includes('renderAccountHome(') && !booking.includes("import { renderAccount,"), 'Online booking must not retain the removed tenant account UI owner.');
 const globalAccountHomeBlock = booking.slice(booking.indexOf('async function renderGlobalClientHome'), booking.indexOf('async function continueGlobalIdentity'));
 expect(!globalAccountHomeBlock.includes("params.set('entry', 'account')") && !globalAccountHomeBlock.includes('onOpenRelationship:') && !globalAccountHomeBlock.includes('onOpenRecord:'), 'Global account must not bridge Contacts or History into the legacy tenant account contour.');
-expect(globalAccountHomeBlock.includes('onStartBooking: (tenantId, options = {})') && globalAccountHomeBlock.includes("params.set('booking', id)"), 'Leaving the global account for a tenant must be reserved for the explicit booking action.');
+expect(globalAccountHomeBlock.includes('onStartBooking: (tenantId, options = {})') && globalAccountHomeBlock.includes("new CustomEvent('cova:account-booking-start'"), 'Leaving the global account for a tenant must be reserved for the explicit App Q booking action.');
 expect(booking.includes("exitBookingContext(state, { tab: 'contact-detail', tenantId: state.tenantId })")
   && booking.includes("tab: state.entry === 'chat' ? 'messages' : 'contact-detail'"),
   'Tenant flows may return only through the existing global account owner; the UI refactor must not create a second account contour.');

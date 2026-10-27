@@ -31,6 +31,8 @@ const MODE_SELF = 'self';
 const MODE_OTHER = 'other';
 const MODE_JOINT = 'joint';
 let disposeView = () => {};
+let accountBookingOwner = null;
+let accountBookingOpening = false;
 
 function text(value) {
   return String(value ?? '').trim();
@@ -159,10 +161,34 @@ function newParticipant(id, source = {}) {
   };
 }
 
+function requestProcedures(request = {}) {
+  return Array.isArray(request?.procedures) ? request.procedures : [];
+}
+
+function canonicalPhone(value) {
+  const digits = text(value).replace(/\D/g, '');
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
+
+function repeatTargetsAccount(request = {}, account = {}) {
+  const person = request?.person && typeof request.person === 'object' ? request.person : {};
+  if (text(person.accountId) && text(account?.id) && text(person.accountId) === text(account.id)) return true;
+  const personPhone = canonicalPhone(person.phone || person.phones?.[0]);
+  const accountPhone = canonicalPhone(account?.phone || account?.phones?.[0]);
+  if (personPhone && accountPhone && personPhone === accountPhone) return true;
+  const personEmail = text(person.email || person.emails?.[0]).toLowerCase();
+  const accountEmail = text(account?.email).toLowerCase();
+  return Boolean(personEmail && accountEmail && personEmail === accountEmail);
+}
+
 function participantFields(participant, index, { removable = false } = {}) {
   return `<section class="booking-participant" data-account-booking-participant="${index}">
     <div class="booking-participant__heading"><strong>Участник ${index + 1}</strong>${removable ? button('Удалить', { variant: 'secondary', data: `data-account-booking-remove-participant="${index}"` }) : ''}</div>
-    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: false, autocomplete: 'given-name' })}
+    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: true, autocomplete: 'given-name' })}
+    ${field({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, type: 'tel', required: false, autocomplete: 'tel', inputmode: 'tel' })}
+    ${field({ label: 'Email', name: `participantEmail${index}`, value: participant.email, type: 'email', required: false, autocomplete: 'email' })}
   </section>`;
 }
 
@@ -185,9 +211,14 @@ function proceduresPrice(procedures = [], workplaceKey = '') {
   }, { minimum: 0, variable: false });
 }
 
-async function startJournalBooking(tenantId, creationOwner) {
+async function startJournalBooking(tenantId, creationOwner, options = {}) {
   const id = String(tenantId || '').trim();
   if (!id || !creationOwner?.isOpen?.()) return;
+  const entryOrigin = text(options?.entry) || 'journal';
+  const initialWorkplaceKey = text(options?.workplaceKey);
+  const repeatRequest = options?.repeatRequest && typeof options.repeatRequest === 'object'
+    ? options.repeatRequest
+    : null;
 
   const accountResultPromise = getAccount(id)
     .then((account) => ({ account, error: null }))
@@ -222,6 +253,12 @@ async function startJournalBooking(tenantId, creationOwner) {
 
   const clearParticipantProcedures = () => {
     for (const participant of participants) participant.procedures = [];
+  };
+
+  const closeToEntry = () => {
+    destroyParticipantProcedureController();
+    creationOwner.close?.();
+    return true;
   };
 
   const resolveAccount = async () => {
@@ -375,7 +412,7 @@ async function startJournalBooking(tenantId, creationOwner) {
     return '';
   };
 
-  const openCanonicalRecords = async ({ preselected = false } = {}) => {
+  const openCanonicalRecords = async ({ preselected = false, repeat = false } = {}) => {
     if (!creationOwner.isOpen()) return;
     const resolvedAccount = await resolveAccount();
     const initialProcedures = preselected
@@ -392,6 +429,7 @@ async function startJournalBooking(tenantId, creationOwner) {
       creationOwner,
       stepBack: true,
       onBackFromStart: () => {
+        if (repeat) return closeToEntry();
         if (mode === MODE_SELF) {
           mode = '';
           participants = [];
@@ -544,6 +582,7 @@ async function startJournalBooking(tenantId, creationOwner) {
     creationOwner.setBackHandler?.(() => {
       mode = '';
       participants = [];
+      if (entryOrigin === 'workplace' || (entryOrigin === 'profile' && workplaces.length === 1)) return closeToEntry();
       activeWorkplaceKey = '';
       return workplaces.length > 1 ? renderWorkplaces() : showProfessionals();
     });
@@ -593,6 +632,7 @@ async function startJournalBooking(tenantId, creationOwner) {
       activeWorkplaceKey = '';
       mode = '';
       participants = [];
+      if (entryOrigin === 'profile') return closeToEntry();
       return showProfessionals();
     });
     const view = creationOwner.render({
@@ -606,6 +646,56 @@ async function startJournalBooking(tenantId, creationOwner) {
     }));
     return true;
   };
+
+  const enterRepeat = async () => {
+    if (!repeatRequest) return false;
+    const workplaceKey = text(repeatRequest.workplaceId || repeatRequest.workplaceKey || initialWorkplaceKey);
+    if (!workplaceKey || !workplaces.some((workplace) => text(workplace?.key) === workplaceKey)) {
+      openNotice({ title: 'Повтор записи', message: 'Рабочее пространство больше недоступно.' });
+      return false;
+    }
+    const procedureIds = [...new Set(requestProcedures(repeatRequest).map((item) => text(item?.id)).filter(Boolean))];
+    const available = getBookingProcedures(bookingContext, workplaceKey);
+    const selected = procedureIds.map((procedureId) => {
+      const raw = available.find((item) => text(item?.id) === procedureId);
+      return raw ? procedureEntry(raw, workplaceKey) : null;
+    }).filter(Boolean);
+    if (!procedureIds.length || selected.length !== procedureIds.length) {
+      openNotice({ title: 'Повтор записи', message: 'Одна из процедур больше недоступна.' });
+      return false;
+    }
+
+    let resolvedAccount;
+    try {
+      resolvedAccount = await resolveAccount();
+    } catch (error) {
+      openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось определить пользователя приложения.') });
+      return false;
+    }
+    const person = repeatRequest.person && typeof repeatRequest.person === 'object' ? repeatRequest.person : {};
+    mode = repeatTargetsAccount(repeatRequest, resolvedAccount) ? MODE_SELF : MODE_OTHER;
+    participants = [mode === MODE_SELF
+      ? selfParticipant(resolvedAccount)
+      : newParticipant(text(person.key || person.id) || 'repeat-1', person)];
+    if (!text(participants[0]?.name)) {
+      openNotice({ title: 'Повтор записи', message: 'Не удалось определить участника предыдущей записи.' });
+      return false;
+    }
+    participants[0].procedures = selected.map((entry) => ({ ...entry }));
+    activeWorkplaceKey = workplaceKey;
+    await openCanonicalRecords({ preselected: true, repeat: true });
+    return true;
+  };
+
+  if (repeatRequest) {
+    await enterRepeat();
+    return;
+  }
+
+  if (initialWorkplaceKey && workplaces.some((workplace) => text(workplace?.key) === initialWorkplaceKey)) {
+    enterWorkplace(initialWorkplaceKey);
+    return;
+  }
 
   if (workplaces.length === 1) {
     enterWorkplace(String(workplaces[0]?.key || ''));
@@ -667,6 +757,23 @@ window.visualViewport?.addEventListener('resize', syncViewport, { passive: true 
 window.visualViewport?.addEventListener('scroll', syncViewport, { passive: true });
 window.addEventListener('cova:account-journal-open-contacts', () => {
   void openAccountBookingProfessionalSelector();
+});
+window.addEventListener('cova:account-booking-start', (event) => {
+  const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+  const tenantId = text(detail.tenantId);
+  if (!tenantId || accountBookingOpening || accountBookingOwner?.isOpen?.()) return;
+  const owner = openRecordCreationOwner();
+  if (!owner) return;
+  accountBookingOwner = owner;
+  accountBookingOpening = true;
+  void startJournalBooking(tenantId, owner, {
+    entry: text(detail.entry),
+    workplaceKey: text(detail.workplaceKey),
+    repeatRequest: detail.repeatRequest && typeof detail.repeatRequest === 'object' ? detail.repeatRequest : null,
+  }).finally(() => {
+    accountBookingOpening = false;
+    if (!owner.isOpen?.()) accountBookingOwner = null;
+  });
 });
 
 syncViewport();
