@@ -74,6 +74,7 @@ export function openRecordCreationOwner({
   let inlineHeaderHost = null;
   let inlineDismissControl = null;
   let inlineDismissHandler = null;
+  const previousInlineBack = inline ? surfaceRoot?.v2Back : null;
 
   if (inline) {
     inlineHeaderHost = surfaceRoot.querySelector?.(':scope > [data-v2-z-header] > [data-v2-z-header-content]') || null;
@@ -101,10 +102,16 @@ export function openRecordCreationOwner({
     ? (layer.v2Close?.bind(layer) || (() => layer.remove()))
     : null;
 
+  const invokeBack = () => {
+    if (typeof backHandler !== 'function') return false;
+    return backHandler() !== false;
+  };
+
   const restoreInline = () => {
     if (!inline || closed) return;
     closed = true;
     if (inlineDismissControl && inlineDismissHandler) inlineDismissControl.removeEventListener('click', inlineDismissHandler, true);
+    if (surfaceRoot?.v2Back === invokeBack) surfaceRoot.v2Back = previousInlineBack || null;
     inlineHeaderHost.replaceChildren(savedHeader);
     bodyRoot.replaceChildren(savedBody);
   };
@@ -116,15 +123,14 @@ export function openRecordCreationOwner({
   };
 
   const handleBackControl = (event) => {
-    if (typeof backHandler !== 'function') return false;
-    const handled = backHandler();
-    if (handled === false) return false;
+    if (!invokeBack()) return false;
     event.preventDefault();
     event.stopImmediatePropagation();
     return true;
   };
 
   if (inline) {
+    surfaceRoot.v2Back = invokeBack;
     inlineDismissControl = surfaceRoot.querySelector?.(':scope > [data-v2-z-header] > [data-v2-z-dismiss]') || null;
     inlineDismissHandler = (event) => {
       if (handleBackControl(event)) return;
@@ -134,6 +140,7 @@ export function openRecordCreationOwner({
     };
     inlineDismissControl?.addEventListener('click', inlineDismissHandler, true);
   } else {
+    layer.v2Back = invokeBack;
     layer.querySelector('[data-modal-close]')?.addEventListener('click', handleBackControl, true);
     layer.v2Close = () => {
       if (!layer.isConnected) return;

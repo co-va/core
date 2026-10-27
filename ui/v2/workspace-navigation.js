@@ -392,6 +392,7 @@ export function initV2WorkspaceInteraction(root, {
   };
 
   const dismissBaseZ = () => {
+    if (typeof z?.v2Back === 'function' && z.v2Back() === true) return;
     if (onZRight) onZRight();
     else {
       setOpen(true);

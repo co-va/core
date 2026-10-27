@@ -17,6 +17,8 @@ import {
   recordProcedureList,
   recordWorkplaceCards,
   select,
+  v2ListEntries,
+  v2ListEntry,
 } from '../../ui/ui.js';
 import { createRecord, getRecord, updateRecord } from '../record/index.js';
 import { getPeople } from '../people/data.js';
@@ -359,6 +361,37 @@ export function openRecords({
   const owner = creationOwner || openRecordCreationOwner({ onCancel });
   if (!owner) return null;
   let currentRenderer = null;
+  const stepHistory = [];
+  let restoringHistory = false;
+
+  const stateSnapshot = () => ({
+    ...state,
+    procedures: state.procedures.map((item) => ({ ...item })),
+    person: state.person ? { ...state.person } : null,
+    people: state.people.map((item) => ({ ...item })),
+  });
+
+  const restoreState = (snapshot = {}) => {
+    Object.assign(state, {
+      ...snapshot,
+      procedures: (snapshot.procedures || []).map((item) => ({ ...item })),
+      person: snapshot.person ? { ...snapshot.person } : null,
+      people: (snapshot.people || []).map((item) => ({ ...item })),
+    });
+  };
+
+  const enterStep = (step, renderer) => {
+    currentRenderer = renderer;
+    if (!stepBack || state.recordId) return;
+    if (restoringHistory) {
+      restoringHistory = false;
+      return;
+    }
+    const current = stepHistory.at(-1);
+    if (current?.step === step && current?.renderer === renderer) return;
+    if (current) current.snapshot = stateSnapshot();
+    stepHistory.push({ step, renderer, snapshot: stateSnapshot() });
+  };
 
   const renderFooter = (view, handlers = {}) => {
     for (const [selector, handler] of Object.entries(handlers)) {
@@ -402,10 +435,25 @@ export function openRecords({
   };
 
   const renderWorkplaces = () => {
-    currentRenderer = renderWorkplaces;
-    const items = source.workplaceCards ? source.workplaceCards() : source.workplaces();
+    enterStep('workplace', renderWorkplaces);
+    const rawItems = source.workplaces();
+    const compact = context === 'person';
+    const items = compact ? rawItems : (source.workplaceCards ? source.workplaceCards() : rawItems);
     const body = items.length
-      ? recordWorkplaceCards(items, { data: 'data-records-workplace' })
+      ? compact
+        ? v2ListEntries(rawItems.map((item) => {
+            const id = source.workplaceId(item);
+            const title = String(item?.name || item?.title || source.workplaceName(id) || 'Рабочее пространство');
+            const subtitle = String(item?.address || item?.city || '').trim();
+            return v2ListEntry({
+              title,
+              subtitle,
+              initial: title.slice(0, 1).toUpperCase() || '?',
+              data: `data-records-workplace="${id}"`,
+              aria: `Выбрать ${title}`,
+            });
+          }))
+        : recordWorkplaceCards(items, { data: 'data-records-workplace' })
       : emptyState('Нет рабочих пространств', 'Рабочие пространства не настроены.');
     const view = owner.render({ step: 'workplace', body });
     view?.body?.querySelectorAll('[data-records-workplace]').forEach((node) => node.addEventListener('click', () => {
@@ -471,7 +519,7 @@ export function openRecords({
   };
 
   const renderProcedures = () => {
-    currentRenderer = renderProcedures;
+    enterStep('procedures', renderProcedures);
     const available = source.procedures(state.workplaceId);
     const selected = new Map(state.procedures.map((entry) => [String(entry.id || ''), entry]));
     let controller = null;
@@ -528,7 +576,7 @@ export function openRecords({
   };
 
   const renderDates = () => {
-    currentRenderer = renderDates;
+    enterStep('date', renderDates);
     const dates = source.workingDates(state.workplaceId);
     const now = new Date();
     const selectedDate = state.date ? new Date(`${state.date}T00:00:00`) : now;
@@ -596,7 +644,7 @@ export function openRecords({
   };
 
   const renderTimes = () => {
-    currentRenderer = renderTimes;
+    enterStep('time', renderTimes);
     let rows;
     if (context === 'journal' && state.timeHint && !state.correcting) {
       rows = defaultJournalTimeRows({ date: state.date, workplaceId: state.workplaceId, hint: state.timeHint });
@@ -622,7 +670,7 @@ export function openRecords({
   };
 
   const renderPerson = () => {
-    currentRenderer = renderPerson;
+    enterStep('person', renderPerson);
     const all = getPeople();
     const capacity = groupCapacity(state.procedures);
     const groupMode = capacity > 1;
@@ -707,7 +755,7 @@ export function openRecords({
   };
 
   const renderCorrectionMenu = () => {
-    currentRenderer = renderCorrectionMenu;
+    enterStep('correction', renderCorrectionMenu);
     const actions = [
       ['Пространство', 'workplace'],
       ['Процедуры', 'procedures'],
@@ -758,7 +806,7 @@ export function openRecords({
     : personDisplay(confirmationPerson());
 
   const renderConfirmation = () => {
-    currentRenderer = renderConfirmation;
+    enterStep('confirmation', renderConfirmation);
     const contact = confirmationPerson();
     const personInfo = confirmationDisplay();
     const settlement = source.settlement
@@ -854,7 +902,7 @@ export function openRecords({
           if (!saved) return;
           owner.commit();
           const callback = typeof onSaved === 'function' ? onSaved : onCreated;
-          callback(saved, { ...state });
+          callback(saved, stateSnapshot());
         } catch (error) {
           if (source.onCreateError) source.onCreateError(error, state, { renderTimes, renderConfirmation });
           else openNotice({
@@ -868,42 +916,20 @@ export function openRecords({
 
   const backFromCurrentStep = () => {
     if (!stepBack || state.recordId) return false;
-    const step = String(owner.layer?.dataset?.recordCreationStep || '');
-    if (step === 'confirmation') {
-      state.from = '';
-      state.to = '';
-      renderTimes();
+    if (stepHistory.length > 1) {
+      stepHistory.pop();
+      const previous = stepHistory.at(-1);
+      if (!previous?.renderer) return false;
+      restoreState(previous.snapshot);
+      restoringHistory = true;
+      previous.renderer();
       return true;
     }
-    if (step === 'person') {
-      state.from = '';
-      state.to = '';
-      renderTimes();
-      return true;
+    if (typeof onBackFromStart === 'function') {
+      return onBackFromStart(stateSnapshot()) !== false;
     }
-    if (step === 'time') {
-      state.date = '';
-      state.from = '';
-      state.to = '';
-      renderDates();
-      return true;
-    }
-    if (step === 'date') {
-      state.date = '';
-      state.from = '';
-      state.to = '';
-      renderProcedures();
-      return true;
-    }
-    if (step === 'procedures' && typeof onBackFromStart === 'function') {
-      return onBackFromStart({
-        ...state,
-        procedures: state.procedures.map((item) => ({ ...item })),
-        person: state.person ? { ...state.person } : null,
-        people: state.people.map((item) => ({ ...item })),
-      }) !== false;
-    }
-    return false;
+    owner.close();
+    return true;
   };
 
   const start = () => {
@@ -942,12 +968,7 @@ export function openRecords({
   owner.resumeRecord = () => {
     currentRenderer?.();
   };
-  owner.getRecordState = () => ({
-    ...state,
-    procedures: state.procedures.map((item) => ({ ...item })),
-    person: state.person ? { ...state.person } : null,
-    people: state.people.map((item) => ({ ...item })),
-  });
+  owner.getRecordState = stateSnapshot;
 
   owner.setBackHandler?.(stepBack ? backFromCurrentStep : null);
   start();

@@ -193,7 +193,13 @@ export function initV2StickerSwipe(root, { onRight = null, onLeft = null, thresh
 }
 
 
-export function initV2LayerDismissGesture(node, { kind = 'standard', onDismiss = null, threshold = 64, maxDrag = 180 } = {}) {
+export function initV2LayerDismissGesture(node, {
+  kind = 'standard',
+  onBeforeDismiss = null,
+  onDismiss = null,
+  threshold = 64,
+  maxDrag = 180,
+} = {}) {
   if (!node || kind === 'technical') return () => {};
   const sheet = node.querySelector('.v2-layer');
   if (!sheet) return () => {};
@@ -259,6 +265,10 @@ export function initV2LayerDismissGesture(node, { kind = 'standard', onDismiss =
     const passed = kind === 'top' ? delta <= -threshold : delta >= threshold;
     pointerId = null;
     if (!passed) {
+      reset();
+      return;
+    }
+    if (onBeforeDismiss?.() === false) {
       reset();
       return;
     }

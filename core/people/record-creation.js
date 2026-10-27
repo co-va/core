@@ -24,6 +24,7 @@ export function openPersonRecordCreation({ person, onCreated = () => {} } = {}) 
     person,
     professionalActions: true,
     actionContext: actionContext(),
+    stepBack: true,
     onCreated: (created, state) => {
       onCreated?.(created);
       const procedures = (state?.procedures || []).map((entry) => {
