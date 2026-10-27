@@ -1,3 +1,4 @@
+import { loadProfileState } from '../core/profile/runtime.js';
 import { loadOperationalState } from '../core/runtime/operational-state.js';
 
 let prefetched = false;
@@ -7,8 +8,11 @@ function prefetchWhenJournalVisible() {
   const journal = document.querySelector('[data-time-timeline], [data-journal-day], [data-journal-view]');
   if (!journal) return;
   prefetched = true;
-  void loadOperationalState({ full: true }).catch(() => {
-    prefetched = false;
+  void Promise.allSettled([
+    loadOperationalState({ full: true }),
+    loadProfileState({ full: true }),
+  ]).then((results) => {
+    if (results.every((result) => result.status === 'rejected')) prefetched = false;
   });
 }
 
