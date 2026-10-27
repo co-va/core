@@ -4,6 +4,7 @@ import { getBookingSlots } from '../online-booking/model.js';
 
 const day = fs.readFileSync('journal/день.js', 'utf8');
 const entry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
+const booking = fs.readFileSync('online-booking/booking.js', 'utf8');
 const access = fs.readFileSync('online-booking/access.js', 'utf8');
 const publicEntry = fs.readFileSync('online-booking/booking-entry.js', 'utf8');
 const records = fs.readFileSync('core/records/records.js', 'utf8');
@@ -31,6 +32,9 @@ assert.match(entry, /getGlobalAccountBookingTargets/, 'App Journal professional 
 assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal must start inside the existing Shared Record Q owner');
 assert.match(entry, /title: 'Выбор специалиста'/, 'App Journal first selector step must be professional selection');
 assert.match(entry, /recordPersonList\(/, 'Professional selection must use the Shared Record person list');
+assert.match(entry, /label: 'Имя'[\s\S]*required: true[\s\S]*autocomplete: 'given-name'/, 'Additional participant name must stay required');
+assert.match(entry, /label: 'Телефон'[\s\S]*required: false[\s\S]*autocomplete: 'tel'/, 'Additional participant phone must stay optional');
+assert.match(entry, /label: 'Email'[\s\S]*required: false[\s\S]*autocomplete: 'email'/, 'Additional participant email must stay optional');
 
 assert.match(targetsController, /this\.prisma\.accountTenantLink\.findMany/, 'Booking targets must start from existing AccountTenantLink relationships');
 assert.match(targetsController, /this\.prisma\.profile\.findMany/, 'Booking targets must read the existing Profile source directly');
@@ -50,14 +54,14 @@ assert.match(journalBooking, /accountResultPromise = getAccount\(id\)/, 'Journal
 assert.doesNotMatch(journalBooking, /Promise\.all\(\[\s*getBookingContext\(id\),\s*getAccount\(id\)/, 'Workplace selection must not wait for the tenant Account request');
 assert.match(journalBooking, /openRecords\(\{/, 'Journal Booking must continue through the existing canonical Records flow');
 assert.match(journalBooking, /context: 'online'/, 'Journal Booking must use the online Records provider semantics');
-assert.match(journalBooking, /person: resolvedAccount/, 'Journal Booking must carry the known App account into confirmation instead of asking for name or phone');
+assert.match(journalBooking, /person: resolvedAccount/, 'Journal Booking must carry the known App account into confirmation instead of asking for identity again');
 assert.match(journalBooking, /professionalActions: false/, 'Journal Booking must not expose professional Record actions');
 assert.match(journalBooking, /creationOwner,/, 'Journal Booking must reuse the already-open Shared Q owner');
 assert.match(journalBooking, /if \(workplaces\.length === 1\)/, 'One workplace must skip the workplace selector in App Journal Booking');
 assert.match(journalBooking, /creationOwner\.render\(\{[\s\S]*step: 'workplace'/, 'Multiple workplaces must stay inside the same Shared Q owner');
 assert.match(journalBooking, /createBookingRequest\(id,/, 'Journal confirmation must use the authenticated Account Booking write');
-assert.doesNotMatch(journalBooking, /renderAccess\(/, 'Journal Booking must never enter the Public technical Booking shell');
-assert.doesNotMatch(journalBooking, /creationOwner\?\.close|variant:\s*'technical'|mountModal\(/, 'Journal Booking must not close Q or mount a technical modal');
+assert.doesNotMatch(journalBooking, /renderAccess\(|variant:\s*'technical'|mountModal\(/, 'App Q Booking must never enter or mount the Public technical Booking shell');
+assert.match(journalBooking, /mode === MODE_JOINT \? button\('Добавить участника'/, 'Joint Booking must retain Add participant inside the same Q');
 assert.match(journalBooking, /let participantProcedureController = null/, 'Journal participant procedures must have one controller owner for the whole Q flow');
 assert.match(journalBooking, /destroyParticipantProcedureController\(\);[\s\S]*participantProcedureController = initMultiSelect/, 'Journal participant procedure step must destroy the previous multiselect controller before binding the next participant');
 assert.match(journalBooking, /const clearParticipantProcedures = \(\) => \{[\s\S]*participant\.procedures = \[\]/, 'Leaving the participant service stage must be able to invalidate all participant services');
@@ -74,9 +78,26 @@ assert.doesNotMatch(participantChange, /participant\.procedures\s*=/, 'Changing 
 assert.match(participantNext, /participant\.procedures = \[\.\.\.selected\.values\(\)\]/, 'Далее must commit only the current participant service draft');
 assert.match(participantProcedures, /if \(index > 0\) return renderParticipantProcedures\(index - 1\);[\s\S]*clearParticipantProcedures\(\);[\s\S]*return renderParticipantData\(\);/, 'Back inside services must revisit the previous participant, while leaving services entirely invalidates service state');
 assert.match(journalBooking, /clearParticipantProcedures\(\);\s*void renderParticipantProcedures\(0\)/, 'Re-entering participant services from participant data must start with clean services and calculations');
+assert.match(journalBooking, /const initialWorkplaceKey = text\(options\?\.workplaceKey\)/, 'Known workplace entry must reuse the same Q while skipping workplace selection');
+assert.match(journalBooking, /const repeatRequest = options\?\.repeatRequest/, 'Repeat entry must enter the same Q with the known Record context');
+assert.match(journalBooking, /openCanonicalRecords\(\{ preselected: true, repeat: true \}\)/, 'Repeat must skip known participant, workplace and service steps and start canonical Records at date selection');
+assert.match(journalBooking, /entryOrigin === 'profile'/, 'Profile entry must keep profile-aware back navigation without revealing professional selection');
+assert.match(journalBooking, /entryOrigin === 'workplace'/, 'Workplace entry must keep workplace-aware back navigation without revealing skipped selectors');
+assert.match(entry, /window\.addEventListener\('cova:account-booking-start'/, 'Profile, workplace and repeat actions must enter the existing App Q owner');
+assert.match(entry, /accountBookingOpening \|\| accountBookingOwner\?\.isOpen\?\.\(\)/, 'App Booking handoff must reject duplicate Q opens');
 assert.doesNotMatch(entry, /from '\.\/access\.js'/, 'App user entry must not import the Public technical Booking entry');
 assert.doesNotMatch(entry, /phoneField|passwordField|account\/login|account\/register/, 'Journal Booking must not render identity, password, login or registration steps');
 assert.match(entry, /v2ListEntry\(/, 'App workplace selection must use the Shared list owner');
+
+const globalHomeStart = booking.indexOf('async function renderGlobalClientHome');
+const globalHomeEnd = booking.indexOf('async function continueGlobalIdentity', globalHomeStart);
+assert.ok(globalHomeStart >= 0 && globalHomeEnd > globalHomeStart, 'Global Account home Booking handoff must exist');
+const globalHome = booking.slice(globalHomeStart, globalHomeEnd);
+assert.match(globalHome, /new CustomEvent\('cova:account-booking-start'/, 'Profile/workplace/repeat actions must hand off in-place to Shared Q');
+assert.match(globalHome, /entry: repeatRequest \? 'repeat' : workplaceKey \? 'workplace' : 'profile'/, 'App handoff must identify the three skip contexts explicitly');
+assert.doesNotMatch(globalHome, /location\.assign|params\.set\('entry', 'account-booking'\)/, 'App Booking actions must not navigate into the technical Booking entry');
+assert.match(booking, /const authForm = root\.querySelector\('\[data-global-account-entry\]'\);[\s\S]*new FormData\(authForm\)/, 'Global Account login form source must remain intact while changing Booking handoff');
+
 assert.match(records, /const owner = creationOwner \|\| openRecordCreationOwner/, 'Canonical Records must keep support for an externally owned Shared Q');
 assert.match(records, /stepBack = false/, 'Canonical Records must expose opt-in step-back navigation without changing other Record flows');
 assert.match(records, /onBackFromStart/, 'Account Journal Booking must be able to return from procedures to its outer professional/workplace steps');
@@ -90,7 +111,8 @@ const requestRouteEnd = bookingController.indexOf('\n  }\n}', requestRouteStart)
 assert.ok(requestRouteStart >= 0 && requestRouteEnd > requestRouteStart, 'Authenticated App Booking write route must exist');
 const requestRoute = bookingController.slice(requestRouteStart, requestRouteEnd);
 assert.match(requestRoute, /@Post\(':tenantId\/requests'\)/, 'App Journal Booking write must stay on the authenticated Account route');
-assert.match(requestRoute, /this\.booking\.createRequest\(tenantId, accountId/, 'App Journal Booking route must reuse the existing Account Booking service owner');
+assert.match(requestRoute, /this\.booking\.createRequest\(tenantId, accountId/, 'Single-participant App Booking must reuse the existing Account Booking service owner');
+assert.match(requestRoute, /if \(participantMode\) \{[\s\S]*this\.bookingFlow\.confirm\(tenantId,/, 'Multi-participant App Booking must keep one canonical write path without duplicate Records');
 assert.match(requestRoute, /BookingPdnConsentGuard/, 'App Journal Booking write must preserve the existing PDN gate without asking for identity again');
 
 const contextStart = bookingService.indexOf('async getContext');
