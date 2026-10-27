@@ -96,6 +96,7 @@ export function openRecordCreationOwner({
 
   let committed = false;
   let closed = false;
+  let backHandler = null;
   const originalClose = !inline
     ? (layer.v2Close?.bind(layer) || (() => layer.remove()))
     : null;
@@ -114,15 +115,26 @@ export function openRecordCreationOwner({
     if (!committed) onCancel?.();
   };
 
+  const handleBackControl = (event) => {
+    if (typeof backHandler !== 'function') return false;
+    const handled = backHandler();
+    if (handled === false) return false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  };
+
   if (inline) {
     inlineDismissControl = surfaceRoot.querySelector?.(':scope > [data-v2-z-header] > [data-v2-z-dismiss]') || null;
     inlineDismissHandler = (event) => {
+      if (handleBackControl(event)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       cancelInline();
     };
     inlineDismissControl?.addEventListener('click', inlineDismissHandler, true);
   } else {
+    layer.querySelector('[data-modal-close]')?.addEventListener('click', handleBackControl, true);
     layer.v2Close = () => {
       if (!layer.isConnected) return;
       const cancelled = !committed;
@@ -195,6 +207,9 @@ export function openRecordCreationOwner({
       if (!shellHeaderHost) return null;
       shellHeaderHost.innerHTML = String(content || '');
       return shellHeaderHost;
+    },
+    setBackHandler(handler = null) {
+      backHandler = typeof handler === 'function' ? handler : null;
     },
     commit() {
       committed = true;

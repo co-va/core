@@ -411,9 +411,19 @@ export class RecordService {
   }
 
   async listForPeople(tenantId: string, people: JsonObject[]) {
+    const canonicalPhone = (value: unknown) => {
+      const digits = text(value).replace(/\D/g, '');
+      if (digits.length === 10) return `7${digits}`;
+      if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+      return digits;
+    };
     const personKeys = new Set(people.map((person) => text(person?.key)).filter(Boolean));
     const personIds = new Set(people.map((person) => text(person?.id)).filter(Boolean));
-    if (!personKeys.size && !personIds.size) return [];
+    const personPhones = new Set(people.flatMap((person) => [person?.phone, ...arrayValue(person?.phones)])
+      .map(canonicalPhone).filter(Boolean));
+    const personEmails = new Set(people.flatMap((person) => [person?.email, ...arrayValue(person?.emails)])
+      .map((value) => text(value).toLowerCase()).filter(Boolean));
+    if (!personKeys.size && !personIds.size && !personPhones.size && !personEmails.size) return [];
 
     const [rows, eventRows] = await Promise.all([
       this.prisma.record.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
@@ -430,7 +440,16 @@ export class RecordService {
     for (const row of rows) {
       const record = objectValue(row.data);
       const person = objectValue(record.person);
-      if (!personKeys.has(text(person?.key)) && !personIds.has(text(person?.id))) continue;
+      const directMatch = personKeys.has(text(person?.key)) || personIds.has(text(person?.id));
+      const groupMatch = arrayValue(objectValue(record.group).participants)
+        .map((participant) => objectValue(participant))
+        .some((participant) => personKeys.has(text(participant?.key)) || personIds.has(text(participant?.id)));
+      const booker = objectValue(objectValue(record.createdBy).booker);
+      const bookerPhone = canonicalPhone(booker.phone);
+      const bookerEmail = text(booker.email).toLowerCase();
+      const bookedByMatch = (bookerPhone && personPhones.has(bookerPhone))
+        || (bookerEmail && personEmails.has(bookerEmail));
+      if (!directMatch && !groupMatch && !bookedByMatch) continue;
       const events = byRecord.get(text(record.id)) || [];
       const lifecycle = this.projectLifecycle(record, events);
       const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram);
