@@ -74,6 +74,7 @@ import {
 import { getGlobalPersonalAccounts } from './personal-account-data.js';
 import { getGlobalDeposits } from './deposit-data.js';
 import { renderJournal } from '../journal/journal.js';
+import { accountIntegrationsCard, bindAccountIntegrationsCard } from './calendar-integrations.js';
 
 function money(value) {
   const number = Number(value || 0);
@@ -715,9 +716,10 @@ async function renderGlobalProfile(root, state, handlers) {
   renderV2Shell(root, state, {
     header,
     v: { data: 'data-account-profile-settings', aria: 'Настройки профиля' },
-    body: profileSummary(state),
+    body: entityCardStack([profileSummary(state), accountIntegrationsCard()]),
   });
   bindWorkspaceInteraction(root, state, handlers);
+  bindAccountIntegrationsCard(root);
   bindGlobalProfileSettingsEntry(root, state, handlers);
   bindGlobalChatButton(root, state, handlers);
 

@@ -20,3 +20,4 @@
 .journal-record--event{border-left:4px solid var(--journal-event-color,#777A7D);background:color-mix(in srgb,var(--journal-event-color,#777A7D) 16%,#fff);display:flex;flex-direction:column;align-items:flex-start;gap:2px}
 .journal-event__time{font-size:.78em;opacity:.75}
 .journal-event__title{font-weight:700}
+.journal-usage__overlap{position:absolute;right:6px;bottom:4px;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border:1px solid currentColor;border-radius:9px;background:var(--white);font-size:11px;font-weight:800;line-height:1}

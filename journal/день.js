@@ -32,6 +32,7 @@ import {
   getAccountEvents,
   loadAccountEvents,
 } from '../core/event/account-owner.js';
+import { syncAccountCalendars } from '../core/calendar-sync/account.js';
 import { createJournalEventFlow } from './event-create.js';
 import { createJournalNoteFlow } from './note-create.js';
 import { noteTargetLabel, noteVisibleForWorkplace, resolveNoteTarget } from './note-target.js';
@@ -115,6 +116,33 @@ function accountEventUsage(event = null) {
     sourceId: String(event?.id || ''),
     rigidity: 'soft',
   };
+}
+
+function usageMinutes(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  return Number.isFinite(minutes) ? minutes : null;
+}
+
+function withAccountOverlaps(values = []) {
+  const usages = (Array.isArray(values) ? values : []).map((usage) => ({ ...usage, overlap: false }));
+  const intervals = usages.map((usage, index) => {
+    const from = usageMinutes(usage?.from);
+    const rawTo = usageMinutes(usage?.to);
+    if (from == null || rawTo == null || rawTo === from) return null;
+    return { index, from, to: rawTo > from ? rawTo : rawTo + 24 * 60 };
+  }).filter(Boolean);
+  for (let left = 0; left < intervals.length; left += 1) {
+    for (let right = left + 1; right < intervals.length; right += 1) {
+      const a = intervals[left], b = intervals[right];
+      if (a.from < b.to && b.from < a.to) {
+        usages[a.index].overlap = true;
+        usages[b.index].overlap = true;
+      }
+    }
+  }
+  return usages;
 }
 
 async function openExistingRecord(record, rerender = () => {}) {
@@ -265,6 +293,11 @@ export function renderJournalDay(root, {
         if (root.isConnected) rerender();
       }).catch(() => {});
     }
+    void syncAccountCalendars().then(async (result) => {
+      if (Number(result?.synced || 0) <= 0) return;
+      await loadAccountEvents({ force: true });
+      if (root.isConnected) rerender();
+    }).catch(() => {});
 
     const allAccountRecords = readRecords(records);
     const accountRecords = allAccountRecords
@@ -308,10 +341,10 @@ export function renderJournalDay(root, {
     };
     renderAccountY();
 
-    const usages = [
+    const usages = withAccountOverlaps([
       ...accountRecords.map((record) => accountUsage(record, resolveRecordContext)),
       ...accountEvents.map(accountEventUsage),
-    ];
+    ]);
     const recordById = new Map(accountRecords.map((record) => [recordId(record), record]).filter(([id]) => Boolean(id)));
     const eventById = new Map(accountEvents.map((event) => [String(event?.id || ''), event]).filter(([id]) => Boolean(id)));
 

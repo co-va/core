@@ -4,6 +4,7 @@ const DAY_MINUTES = 24 * 60;
 
 const escape = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const moneyText = (value) => `${Math.max(0, Number(value) || 0).toLocaleString('ru-RU')} ₽`;
+const overlapMarkup = (usage) => usage?.overlap ? '<span class="journal-usage__overlap" aria-label="Есть пересечение" title="Есть пересечение">⚠</span>' : '';
 
 function recordMarkup(usage, { interactive = true } = {}) {
   const person = usage?.person || {};
@@ -14,7 +15,7 @@ function recordMarkup(usage, { interactive = true } = {}) {
   const phone = person.phone ? `<span class="journal-record__phone">${escape(person.phone)}</span>` : '';
   const services = (usage.procedures || []).map((item) => `<span class="journal-record__service">${escape(item.name)}</span>`).join('');
   const statusClass = usage?.paid ? ' journal-record--paid' : usage?.attendance === 'no-show' ? ' journal-record--no-show' : '';
-  const content = `<span class="journal-record__head"><strong class="journal-record__identity">${identity}</strong><strong class="journal-record__total">${escape(total)}</strong></span>${phone}${services}`;
+  const content = `<span class="journal-record__head"><strong class="journal-record__identity">${identity}</strong><strong class="journal-record__total">${escape(total)}</strong></span>${phone}${services}${overlapMarkup(usage)}`;
   return interactive
     ? `<button type="button" class="journal-record${statusClass}" data-journal-usage="${escape(usage.sourceId || usage.id)}">${content}</button>`
     : `<div class="journal-record${statusClass}" aria-disabled="true">${content}</div>`;
@@ -25,7 +26,7 @@ function usageMarkup(usage, { interactive = true } = {}) {
   const title = escape(usage?.title || 'Событие');
   const period = `${escape(usage?.from || '')}–${escape(usage?.to || '')}`;
   const color = /^#[0-9A-Fa-f]{6}$/.test(String(usage?.color || '')) ? String(usage.color) : '#777A7D';
-  const content = `<span class="journal-event__time">${period}</span><strong class="journal-event__title">${title}</strong>`;
+  const content = `<span class="journal-event__time">${period}</span><strong class="journal-event__title">${title}</strong>${overlapMarkup(usage)}`;
   return interactive
     ? `<button type="button" class="journal-record journal-record--event" style="--journal-event-color:${escape(color)}" data-journal-usage="${escape(usage.sourceId || usage.id)}">${content}</button>`
     : `<div class="journal-record journal-record--event" style="--journal-event-color:${escape(color)}" aria-disabled="true">${content}</div>`;
