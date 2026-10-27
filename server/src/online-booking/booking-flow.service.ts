@@ -187,11 +187,19 @@ export class BookingFlowService {
     const phoneMatches = phone
       ? people.filter((person) => personPhones(person).some((value) => samePhone(value, phone)))
       : [];
+    const emailMatches = !phone && email
+      ? people.filter((person) => personEmails(person).includes(email))
+      : [];
+    const identityMatches = phone ? phoneMatches : emailMatches;
     const name = participant.name.toLocaleLowerCase('ru-RU');
     const namedMatches = name
-      ? phoneMatches.filter((person) => text(person?.name).toLocaleLowerCase('ru-RU') === name)
+      ? identityMatches.filter((person) => text(person?.name).toLocaleLowerCase('ru-RU') === name)
       : [];
-    const existing = namedMatches.length === 1 ? namedMatches[0] : phoneMatches.length === 1 ? phoneMatches[0] : null;
+    const existing = namedMatches.length === 1 ? namedMatches[0] : identityMatches.length === 1 ? identityMatches[0] : null;
+
+    if (identityMatches.length > 1 && !existing) {
+      throw new ConflictException('Контакт найден неоднозначно. Выберите существующего человека или уточните контактные данные.');
+    }
 
     if (existing) {
       const next: JsonObject = {
@@ -232,13 +240,6 @@ export class BookingFlowService {
       programs: [],
       createdAt: new Date().toISOString(),
     };
-    if (phoneMatches.length > 1) {
-      created.identityReview = {
-        status: 'CONTACT_CONFLICT',
-        matchedPersonKeys: uniqueStrings(phoneMatches.map((person) => person.key)),
-        createdAt: created.createdAt,
-      };
-    }
     await this.businessState.upsertPerson(tenantId, key, { person: created, position: people.length });
     return {
       key,

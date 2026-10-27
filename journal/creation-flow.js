@@ -29,6 +29,11 @@ export async function openJournalCreation({
   let eventFlow = null;
   let noteFlow = null;
 
+  const closeAuxiliaryFlow = () => {
+    owner.close?.();
+    return true;
+  };
+
   const renderModeSwitch = () => {
     const host = owner.setShellHeader(viewNavigation({
       views: JOURNAL_CREATE_MODES,
@@ -45,12 +50,14 @@ export async function openJournalCreation({
         renderModeSwitch();
 
         if (activeMode === 'event') {
+          owner.setBackHandler?.(closeAuxiliaryFlow);
           if (!eventFlow) eventFlow = createJournalEventFlow({ owner, ...context, onCreated });
           else eventFlow.resume();
           return;
         }
 
         if (activeMode === 'note') {
+          owner.setBackHandler?.(closeAuxiliaryFlow);
           if (!noteFlow) noteFlow = createJournalNoteFlow({ owner, ...context, onCreated });
           else noteFlow.resume();
           return;

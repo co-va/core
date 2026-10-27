@@ -245,6 +245,7 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
   let participants = [];
   let activeWorkplaceKey = '';
   let participantProcedureController = null;
+  let modeOpening = false;
 
   const destroyParticipantProcedureController = () => {
     participantProcedureController?.destroy?.();
@@ -568,17 +569,9 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
     return true;
   };
 
-  const renderMode = async () => {
+  const renderMode = () => {
     if (!creationOwner.isOpen()) return false;
     destroyParticipantProcedureController();
-    let resolvedAccount;
-    try {
-      resolvedAccount = await resolveAccount();
-    } catch (error) {
-      openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось определить пользователя приложения.') });
-      return false;
-    }
-    if (!creationOwner.isOpen()) return false;
     creationOwner.setBackHandler?.(() => {
       mode = '';
       participants = [];
@@ -602,17 +595,34 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
       title: 'Как оформить запись?',
       body: v2ListEntries(rows),
     });
-    view?.body?.querySelectorAll('[data-account-booking-mode]').forEach((node) => node.addEventListener('click', () => {
-      mode = text(node.dataset.accountBookingMode);
-      if (mode === MODE_SELF) {
-        participants = [selfParticipant(resolvedAccount)];
-        void openCanonicalRecords();
-      } else if (mode === MODE_OTHER) {
+    view?.body?.querySelectorAll('[data-account-booking-mode]').forEach((node) => node.addEventListener('click', async () => {
+      if (modeOpening) return;
+      const nextMode = text(node.dataset.accountBookingMode);
+      mode = nextMode;
+      if (nextMode === MODE_OTHER) {
         participants = [newParticipant('recipient-1')];
         renderParticipantData();
-      } else {
-        participants = [selfParticipant(resolvedAccount), newParticipant('recipient-1')];
-        renderParticipantData();
+        return;
+      }
+      if (nextMode !== MODE_SELF && nextMode !== MODE_JOINT) return;
+
+      modeOpening = true;
+      try {
+        const resolvedAccount = await resolveAccount();
+        if (!creationOwner.isOpen()) return;
+        if (nextMode === MODE_SELF) {
+          participants = [selfParticipant(resolvedAccount)];
+          void openCanonicalRecords();
+        } else {
+          participants = [selfParticipant(resolvedAccount), newParticipant('recipient-1')];
+          renderParticipantData();
+        }
+      } catch (error) {
+        mode = '';
+        if (creationOwner.isOpen()) renderMode();
+        openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось определить пользователя приложения.') });
+      } finally {
+        modeOpening = false;
       }
     }));
     return true;
@@ -622,7 +632,7 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
     activeWorkplaceKey = text(workplaceKey);
     mode = '';
     participants = [];
-    void renderMode();
+    renderMode();
   };
 
   const renderWorkplaces = () => {

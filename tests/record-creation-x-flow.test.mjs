@@ -11,8 +11,10 @@ const journalCreation = fs.readFileSync('journal/creation-flow.js', 'utf8');
 const eventCreation = fs.readFileSync('journal/event-create.js', 'utf8');
 const recordView = fs.readFileSync('core/records/view.js', 'utf8');
 const booking = fs.readFileSync('online-booking/access.js', 'utf8');
+const accountEntry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
 const bookingFlowService = fs.readFileSync('server/src/online-booking/booking-flow.service.ts', 'utf8');
 const personEntry = fs.readFileSync('core/people/record-creation.js', 'utf8');
+const personCreate = fs.readFileSync('core/people/create.js', 'utf8');
 const modalPortal = fs.readFileSync('ui/v2/modal-portal.js', 'utf8');
 const workspaceNavigation = fs.readFileSync('ui/v2/workspace-navigation.js', 'utf8');
 const swipe = fs.readFileSync('ui/v2/swipe.js', 'utf8');
@@ -47,6 +49,9 @@ assert.match(journalCreation, /const operationalReady = loadOperationalState\(\{
 assert.doesNotMatch(journalCreation, /await loadOperationalState\(\{ full: true \}\)/);
 assert.match(journalCreation, /stepBack: true/);
 assert.match(journalCreation, /setTimeout\(\(\) => onCreated/);
+assert.match(journalCreation, /const closeAuxiliaryFlow = \(\) => \{[\s\S]*owner\.close\?\.\(\);[\s\S]*return true;/, 'Event/Note must not inherit hidden Record back history');
+assert.match(journalCreation, /activeMode === 'event'[\s\S]*owner\.setBackHandler\?\.\(closeAuxiliaryFlow\)/, 'Event must own Back while visible');
+assert.match(journalCreation, /activeMode === 'note'[\s\S]*owner\.setBackHandler\?\.\(closeAuxiliaryFlow\)/, 'Note must own Back while visible');
 assert.match(eventCreation, /createEvent/);
 assert.match(eventCreation, /timeHint/);
 assert.match(eventCreation, /openTimeRangeAction/);
@@ -59,9 +64,14 @@ assert.match(records, /creationOwner = null/);
 assert.match(records, /state\.timeHint/);
 assert.match(records, /state\.from = value/);
 assert.match(records, /owner\.resumeRecord/);
+assert.match(records, /const backEnabled = Boolean\(stepBack \|\| state\.recordId\)/, 'Existing Record correction must keep step Back enabled');
 assert.match(records, /const stepHistory = \[\]/);
 assert.match(records, /stepHistory\.push\(\{ step, renderer, snapshot:/);
 assert.match(records, /restoreState\(previous\.snapshot\)/);
+assert.match(records, /owner\.resumeRecord = \(\) => \{[\s\S]*owner\.setBackHandler\?\.\(backEnabled \? backFromCurrentStep : null\);[\s\S]*currentRenderer\?\.\(\)/, 'Returning from Journal auxiliary modes must restore Record Back ownership');
+assert.match(records, /if \(!groupMode\) \{[\s\S]*state\.person = item;[\s\S]*renderConfirmation\(\);[\s\S]*return;[\s\S]*\}[\s\S]*selected\.set/, 'Creating a single Person must stop after opening confirmation');
+assert.match(records, /submit\.dataset\.recordsBusy === 'true'/, 'Record confirmation must reject repeated clicks');
+assert.match(records, /submit\.dataset\.recordsBusy = 'true';[\s\S]*submit\.disabled = true;[\s\S]*aria-busy/, 'Record confirmation must become busy before create/save');
 assert.match(records, /context === 'person'/);
 assert.match(records, /v2ListEntries\(/);
 assert.match(records, /v2ListEntry\(/);
@@ -70,6 +80,42 @@ assert.match(personEntry, /from '\.\.\/records\/records\.js'/);
 assert.match(personEntry, /stepBack: true/);
 assert.doesNotMatch(booking, /core\/records\/records\.js|openRecords\(/);
 assert.match(bookingFlowService, /from '\.\.\/record\/record\.service'/);
+
+// Public Booking keeps service toggles as a screen draft until Далее, so Back cannot commit unfinished choices.
+const publicServicesStart = booking.indexOf('function renderServices');
+const publicServicesEnd = booking.indexOf('function availableDates', publicServicesStart);
+assert.ok(publicServicesStart >= 0 && publicServicesEnd > publicServicesStart, 'Public service step must exist');
+const publicServices = booking.slice(publicServicesStart, publicServicesEnd);
+assert.match(publicServices, /const committed = new Set\(participant\.procedureIds\)/);
+assert.match(publicServices, /const selected = new Set\(participant\.procedureIds\)/);
+const publicServiceClickStart = publicServices.indexOf("querySelectorAll('[data-booking-procedure]')");
+const publicServiceNextStart = publicServices.indexOf("querySelector('[data-booking-services-next]')", publicServiceClickStart);
+assert.ok(publicServiceClickStart >= 0 && publicServiceNextStart > publicServiceClickStart);
+assert.doesNotMatch(publicServices.slice(publicServiceClickStart, publicServiceNextStart), /participant\.procedureIds\s*=/, 'Public service checkbox must not commit participant services');
+assert.match(publicServices.slice(publicServiceNextStart), /participant\.procedureIds = \[\.\.\.selected\]/, 'Public Далее must commit participant services');
+
+// App mode choice must paint immediately; Account is resolved only after a self/joint choice needs it.
+const appModeStart = accountEntry.indexOf('const renderMode = () =>');
+const appModeEnd = accountEntry.indexOf('const enterWorkplace', appModeStart);
+assert.ok(appModeStart >= 0 && appModeEnd > appModeStart, 'App mode renderer must exist');
+const appMode = accountEntry.slice(appModeStart, appModeEnd);
+const appModePaint = appMode.indexOf('creationOwner.render({');
+const appModeAccountWait = appMode.indexOf('await resolveAccount()');
+assert.ok(appModePaint >= 0 && appModeAccountWait > appModePaint, 'App mode screen must render before Account wait');
+assert.match(appMode, /nextMode === MODE_OTHER[\s\S]*renderParticipantData\(\);[\s\S]*return;/, 'Other-person entry must not wait for Account');
+assert.match(appMode, /if \(modeOpening\) return;/, 'App mode account handoff must reject repeated clicks');
+
+// Manual Person creation reuses a unique phone match instead of creating a duplicate.
+assert.match(personCreate, /findPeopleByPhone/);
+assert.match(personCreate, /if \(phoneMatches\.length > 1\)[\s\S]*Выберите существующего человека/);
+assert.match(personCreate, /if \(phoneMatches\.length === 1\) \{[\s\S]*onCreated\(phoneMatches\[0\]\);[\s\S]*return;/);
+
+// Phone stays primary in Booking identity; email is only the fallback when phone is absent, and ambiguity stops creation.
+assert.match(bookingFlowService, /const phoneMatches = phone[\s\S]*samePhone/);
+assert.match(bookingFlowService, /const emailMatches = !phone && email/);
+assert.match(bookingFlowService, /const identityMatches = phone \? phoneMatches : emailMatches/);
+assert.match(bookingFlowService, /if \(identityMatches\.length > 1 && !existing\)[\s\S]*throw new ConflictException/);
+assert.doesNotMatch(bookingFlowService, /identityReview = \{[\s\S]*CONTACT_CONFLICT/, 'Ambiguous Booking identity must not create another Person');
 
 // Shared owners keep back/swipe semantics centralized instead of feature-local gesture code.
 assert.match(owner, /surfaceRoot\.v2Back = invokeBack/);

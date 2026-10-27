@@ -550,34 +550,41 @@ function renderServices(state) {
     go(state, { kind: 'data' }, { push: false });
     return;
   }
-  const body = recordProcedureList(procedureRows(state, participant), {
-    data: 'data-booking-procedure',
-    selected: participant.procedureIds,
-    empty: 'Услуги не настроены.',
-  });
-  const host = renderFrame(state, {
-    title: `Выбор услуг — ${participant.name || 'Участник'}`,
-    body,
-    action: actionBlock(button('Далее', { data: 'data-booking-services-next', disabled: !participant.procedureIds.length })),
-    back: state.history.length > 0,
-  });
-  host?.querySelectorAll('[data-booking-procedure]').forEach((node) => node.addEventListener('click', () => {
-    const id = text(node.dataset.bookingProcedure);
-    if (!id) return;
-    const selected = new Set(participant.procedureIds);
-    if (selected.has(id)) selected.delete(id);
-    else selected.add(id);
-    participant.procedureIds = [...selected];
-    resetAfterServices(state);
-    persistDraft(state);
-    renderServices(state);
-  }));
-  host?.querySelector('[data-booking-services-next]')?.addEventListener('click', () => {
-    if (!participant.procedureIds.length) return;
-    const nextIndex = index + 1;
-    if (nextIndex < state.participants.length) go(state, { kind: 'services', index: nextIndex });
-    else go(state, { kind: 'date' });
-  });
+  const committed = new Set(participant.procedureIds);
+  const selected = new Set(participant.procedureIds);
+
+  const render = () => {
+    const body = recordProcedureList(procedureRows(state, participant), {
+      data: 'data-booking-procedure',
+      selected: [...selected],
+      empty: 'Услуги не настроены.',
+    });
+    const host = renderFrame(state, {
+      title: `Выбор услуг — ${participant.name || 'Участник'}`,
+      body,
+      action: actionBlock(button('Далее', { data: 'data-booking-services-next', disabled: !selected.size })),
+      back: state.history.length > 0,
+    });
+    host?.querySelectorAll('[data-booking-procedure]').forEach((node) => node.addEventListener('click', () => {
+      const id = text(node.dataset.bookingProcedure);
+      if (!id) return;
+      if (selected.has(id)) selected.delete(id);
+      else selected.add(id);
+      render();
+    }));
+    host?.querySelector('[data-booking-services-next]')?.addEventListener('click', () => {
+      if (!selected.size) return;
+      const changed = selected.size !== committed.size || [...selected].some((id) => !committed.has(id));
+      participant.procedureIds = [...selected];
+      if (changed) resetAfterServices(state);
+      persistDraft(state);
+      const nextIndex = index + 1;
+      if (nextIndex < state.participants.length) go(state, { kind: 'services', index: nextIndex });
+      else go(state, { kind: 'date' });
+    });
+  };
+
+  render();
 }
 
 function availableDates(state) {
