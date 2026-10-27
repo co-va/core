@@ -32,13 +32,13 @@ Benchmark reference: EasyWeek operational baseline for the same user scenarios. 
 Goal: the first useful Journal screen must not be blocked by unrelated full-domain loading.
 
 Result:
-- startup bootstrap no longer computes the Finance projection;
 - startup receives only minimal `profileContext` (Profile header fields + Workplace context), not the full Profile/profession/reference payload;
 - full Profile is loaded lazily when Profile opens;
 - full Finance is loaded lazily when Finance opens;
+- Journal startup keeps only the minimal Finance payment projection needed for correct paid/debt state: Record settlements plus payment/refund operations, with no full Finance ledger/articles;
 - regression `tests/startup-journal-load-boundary.test.mjs` is part of the full `npm test` chain.
 
-Evidence: staging `5dd221d32dddf78f0220ec90963e549a75c2e584`; Check Book run `40472015085` — architecture/checks PASS, domain regression PASS, Browser FEZ PASS, server build PASS, modal browser PASS, staging-smoke PASS. Record View Account Runtime run `40472015092` — PASS.
+Evidence: initial boundary staging `5dd221d32dddf78f0220ec90963e549a75c2e584`; final corrected startup/Journal boundary is included in Journal evidence below.
 
 ### 2. Profile + Workplaces — `DONE`
 Goal: Profile and Workplace stay separate canonical entities even when presented in one UI area; Profile opens and edits predictably; full Profile data is loaded only when needed.
@@ -53,10 +53,18 @@ Result:
 
 Evidence: staging `dcc8771b66dfcc57abcde9ce796e1d80f9f779a3`; Check Book run `40473273116` — architecture/checks PASS, Profile/Workplace round-trip PASS in domain regression, Browser FEZ PASS, server build PASS, modal browser PASS, staging-smoke PASS. Record View Account Runtime run `40473273103` — PASS.
 
-### 3. Journal — `IN PROGRESS`
+### 3. Journal — `DONE`
 Goal: fast, stable Day / Month / List using canonical Record / Event / Note data, with no duplicate headers, parallel UI or unnecessary full entity loads.
 
-Evidence: pending.
+Result:
+- first Journal load uses canonical Journal data, minimal Profile/Workplace context, Days and the minimal Record payment projection;
+- full Procedures, ProcedureHistory and BookingSettings are removed from the first Journal payload and loaded lazily only when Service, Online Booking settings or Record creation needs them;
+- full Finance remains lazy; Journal payment status still stays correct through the dedicated minimal projection;
+- People remains in the current Journal business state because canonical settlement currently uses the current Person discount when calculating Record price; it was not removed at the cost of money correctness;
+- Journal keeps the existing Shared Day / Month / List and Shared Record/Event/Note paths; no parallel Journal UI/domain implementation was introduced;
+- `tests/startup-journal-load-boundary.test.mjs` protects the startup boundary and the existing browser/runtime regressions cover Journal navigation and Shared Journal View behavior.
+
+Evidence: staging code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; Check Book run `40475653598` — SUCCESS: architecture/checks PASS, domain regression PASS, Browser FEZ PASS, server build PASS, modal-browser PASS, staging-smoke PASS. Record View Account Runtime run `40475653608` — PASS.
 
 ### 4. Journal → Booking — `TODO`
 Goal: one in-app booking flow from Journal: professional summary → workplace summary (skip if one) → procedure → availability → confirmation; no navigation through full Profile/People cards.
