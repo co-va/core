@@ -1,7 +1,25 @@
+const CONTEXT_TTL_MS = 15_000;
 let bookingContext = null;
+const contextCache = new Map();
+const contextInFlight = new Map();
 
 function text(value) {
   return String(value ?? '').trim();
+}
+
+function contextKey(input, init = {}) {
+  const method = String(init?.method || input?.method || 'GET').toUpperCase();
+  if (method !== 'GET') return '';
+  const raw = text(input?.url || input);
+  if (!raw) return '';
+  try {
+    const url = new URL(raw, location.origin);
+    if (!/^\/api\/online-booking\/[^/]+\/context$/.test(url.pathname)
+      && !/^\/online-booking\/[^/]+\/context$/.test(url.pathname)) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
 }
 
 function scheduledWorkplaces(context = bookingContext) {
@@ -23,17 +41,60 @@ function applyWorkplaceAvailability() {
   });
 }
 
+function snapshot(response, payload) {
+  return {
+    expiresAt: Date.now() + CONTEXT_TTL_MS,
+    payload,
+    status: response.status,
+    statusText: response.statusText,
+    headers: [...response.headers.entries()],
+  };
+}
+
+function responseFrom(value) {
+  return new Response(JSON.stringify(value.payload), {
+    status: value.status,
+    statusText: value.statusText,
+    headers: value.headers,
+  });
+}
+
 const originalFetch = window.fetch.bind(window);
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
-  const url = text(args[0]?.url || args[0]);
-  if (response.ok && /\/online-booking\/[^/?]+\/context(?:\?|$)/.test(url)) {
-    void response.clone().json().then((payload) => {
-      bookingContext = payload && typeof payload === 'object' ? payload : null;
-      applyWorkplaceAvailability();
-    }).catch(() => {});
+window.fetch = async (input, init = {}) => {
+  const key = contextKey(input, init);
+  if (!key) return originalFetch(input, init);
+
+  const cached = contextCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    bookingContext = cached.payload;
+    return responseFrom(cached);
   }
-  return response;
+  if (cached) contextCache.delete(key);
+
+  if (contextInFlight.has(key)) {
+    const pending = await contextInFlight.get(key);
+    bookingContext = pending.payload;
+    return responseFrom(pending);
+  }
+
+  const load = (async () => {
+    const response = await originalFetch(input, init);
+    const payload = await response.clone().json().catch(() => ({}));
+    const value = snapshot(response, payload);
+    if (response.ok) contextCache.set(key, value);
+    return value;
+  })();
+  contextInFlight.set(key, load);
+  try {
+    const value = await load;
+    if (value.status >= 200 && value.status < 300) {
+      bookingContext = value.payload && typeof value.payload === 'object' ? value.payload : null;
+      applyWorkplaceAvailability();
+    }
+    return responseFrom(value);
+  } finally {
+    if (contextInFlight.get(key) === load) contextInFlight.delete(key);
+  }
 };
 
 document.addEventListener('click', (event) => {
@@ -43,5 +104,6 @@ document.addEventListener('click', (event) => {
   event.stopImmediatePropagation();
 }, true);
 
-new MutationObserver(() => applyWorkplaceAvailability())
-  .observe(document.documentElement, { childList: true, subtree: true });
+const observer = new MutationObserver(() => applyWorkplaceAvailability());
+observer.observe(document.documentElement, { childList: true, subtree: true });
+window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
