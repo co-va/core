@@ -162,9 +162,7 @@ function newParticipant(id, source = {}) {
 function participantFields(participant, index, { removable = false } = {}) {
   return `<section class="booking-participant" data-account-booking-participant="${index}">
     <div class="booking-participant__heading"><strong>Участник ${index + 1}</strong>${removable ? button('Удалить', { variant: 'secondary', data: `data-account-booking-remove-participant="${index}"` }) : ''}</div>
-    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: true, autocomplete: 'given-name' })}
-    ${field({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, type: 'tel', required: false, autocomplete: 'tel', inputmode: 'tel' })}
-    ${field({ label: 'Email', name: `participantEmail${index}`, value: participant.email, type: 'email', required: false, autocomplete: 'email' })}
+    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: false, autocomplete: 'given-name' })}
   </section>`;
 }
 
@@ -215,6 +213,16 @@ async function startJournalBooking(tenantId, creationOwner) {
   let mode = '';
   let participants = [];
   let activeWorkplaceKey = '';
+  let participantProcedureController = null;
+
+  const destroyParticipantProcedureController = () => {
+    participantProcedureController?.destroy?.();
+    participantProcedureController = null;
+  };
+
+  const clearParticipantProcedures = () => {
+    for (const participant of participants) participant.procedures = [];
+  };
 
   const resolveAccount = async () => {
     if (account) return account;
@@ -373,6 +381,7 @@ async function startJournalBooking(tenantId, creationOwner) {
     const initialProcedures = preselected
       ? participants.flatMap((participant) => participant.procedures.map((entry) => ({ ...entry })))
       : [];
+    destroyParticipantProcedureController();
     openRecords({
       context: 'online',
       person: resolvedAccount,
@@ -389,7 +398,6 @@ async function startJournalBooking(tenantId, creationOwner) {
           return renderMode();
         }
         const lastIndex = Math.max(0, participants.length - 1);
-        participants.slice(lastIndex).forEach((participant) => { participant.procedures = []; });
         return renderParticipantProcedures(lastIndex);
       },
       onCreated: async (result) => {
@@ -414,9 +422,9 @@ async function startJournalBooking(tenantId, creationOwner) {
     const index = Math.max(0, Math.min(Number(participantIndex) || 0, Math.max(0, participants.length - 1)));
     const participant = participants[index];
     if (!participant) return false;
+    destroyParticipantProcedureController();
     const available = getBookingProcedures(bookingContext, activeWorkplaceKey);
     const selected = new Map((participant.procedures || []).map((entry) => [String(entry.id || ''), entry]));
-    let controller = null;
 
     const render = () => {
       const body = recordProcedureList(available.map((procedure) => ({
@@ -432,11 +440,8 @@ async function startJournalBooking(tenantId, creationOwner) {
         empty: 'Для этого рабочего пространства процедуры не настроены.',
       });
       creationOwner.setBackHandler?.(() => {
-        if (index > 0) {
-          participants.slice(index - 1).forEach((item) => { item.procedures = []; });
-          return renderParticipantProcedures(index - 1);
-        }
-        participants.forEach((item) => { item.procedures = []; });
+        if (index > 0) return renderParticipantProcedures(index - 1);
+        clearParticipantProcedures();
         return renderParticipantData();
       });
       const view = creationOwner.render({
@@ -445,8 +450,7 @@ async function startJournalBooking(tenantId, creationOwner) {
         body,
         action: { label: 'Далее', data: 'data-account-booking-procedures-next', disabled: selected.size === 0 },
       });
-      controller?.destroy?.();
-      controller = initMultiSelect(view?.body, {
+      participantProcedureController = initMultiSelect(view?.body, {
         selectedValues: [...selected.keys()],
         selector: '[data-account-booking-procedure]',
         valueAttribute: 'accountBookingProcedure',
@@ -458,7 +462,6 @@ async function startJournalBooking(tenantId, creationOwner) {
           });
           selected.clear();
           next.forEach((value, key) => selected.set(key, value));
-          participant.procedures = [...selected.values()];
           const nextButton = view?.layer?.querySelector('[data-account-booking-procedures-next]');
           if (nextButton) nextButton.disabled = selected.size === 0;
         },
@@ -467,7 +470,6 @@ async function startJournalBooking(tenantId, creationOwner) {
         if (!selected.size) return;
         participant.procedures = [...selected.values()];
         if (index + 1 < participants.length) {
-          participants.slice(index + 1).forEach((item) => { item.procedures = []; });
           renderParticipantProcedures(index + 1);
           return;
         }
@@ -481,6 +483,7 @@ async function startJournalBooking(tenantId, creationOwner) {
 
   const renderParticipantData = (errorMessage = '') => {
     if (!creationOwner.isOpen()) return false;
+    destroyParticipantProcedureController();
     const extras = mode === MODE_JOINT ? participants.filter((participant) => participant.id !== 'booker') : participants;
     const body = `<form data-account-booking-participant-form>
       ${extras.map((participant, index) => participantFields(participant, index, {
@@ -517,12 +520,11 @@ async function startJournalBooking(tenantId, creationOwner) {
     }));
     view?.layer?.querySelector('[data-account-booking-participant-next]')?.addEventListener('click', () => {
       const validationError = syncParticipantForm(form, { validate: true });
-      const missingName = extras.some((participant) => !participant.name);
-      if (validationError || missingName) {
-        renderParticipantData(validationError || 'Укажите имя каждого участника.');
+      if (validationError) {
+        renderParticipantData(validationError);
         return;
       }
-      participants.forEach((participant) => { participant.procedures = []; });
+      clearParticipantProcedures();
       void renderParticipantProcedures(0);
     });
     return true;
@@ -530,6 +532,7 @@ async function startJournalBooking(tenantId, creationOwner) {
 
   const renderMode = async () => {
     if (!creationOwner.isOpen()) return false;
+    destroyParticipantProcedureController();
     let resolvedAccount;
     try {
       resolvedAccount = await resolveAccount();
@@ -585,6 +588,7 @@ async function startJournalBooking(tenantId, creationOwner) {
 
   const renderWorkplaces = () => {
     if (!creationOwner.isOpen()) return false;
+    destroyParticipantProcedureController();
     creationOwner.setBackHandler?.(() => {
       activeWorkplaceKey = '';
       mode = '';
