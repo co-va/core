@@ -2,7 +2,6 @@ import { Body, Controller, Delete, Get, Param, Put, Req, UseGuards } from '@nest
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { EventService } from '../event/event.service';
-import { journalFinanceProjection } from '../finance/journal-finance-projection';
 import { NoteService } from '../note/note.service';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PrismaService } from '../prisma.service';
@@ -53,6 +52,62 @@ export class BusinessStateController {
     return { ...business, events, notes };
   }
 
+  private async journalProfileContext(auth: AuthenticatedRequest['auth']) {
+    const current = auth!;
+    const read = () => this.prisma.profile.findUnique({
+      where: { tenantId_platformAccountId: { tenantId: current.tenantId, platformAccountId: current.platformAccountId } },
+      select: {
+        name: true,
+        surname: true,
+        photo: true,
+        photoCropX: true,
+        photoCropY: true,
+        workplaces: {
+          where: { deletedAt: null },
+          orderBy: [{ position: 'asc' as const }, { createdAt: 'asc' as const }],
+          select: {
+            key: true,
+            name: true,
+            color: true,
+            city: true,
+            currency: true,
+            timeZone: true,
+            from: true,
+            to: true,
+            visibleInPublicBooking: true,
+          },
+        },
+      },
+    });
+    let row = await read();
+    if (!row) {
+      await this.profile.get(current.tenantId, current.platformAccountId);
+      row = await read();
+    }
+    return {
+      profile: {
+        key: 'profile',
+        name: row?.name || '',
+        surname: row?.surname || '',
+        photo: row?.photo || '',
+        photoCropX: row?.photoCropX ?? 50,
+        photoCropY: row?.photoCropY ?? 50,
+      },
+      workplaces: (row?.workplaces || []).map((workplace) => ({
+        key: workplace.key,
+        profileId: 'profile',
+        name: workplace.name,
+        color: workplace.color,
+        city: workplace.city,
+        currency: workplace.currency,
+        timeZone: workplace.timeZone,
+        from: workplace.from,
+        to: workplace.to,
+        visibleInPublicBooking: workplace.visibleInPublicBooking,
+      })),
+    };
+  }
+
   private async notifyRecordEvent(tenantId: string, type: string, recordValue: unknown) {
     const record = objectValue(recordValue);
     const person = objectValue(record.person);
@@ -87,14 +142,13 @@ export class BusinessStateController {
   @Get('journal-bootstrap')
   async journalBootstrap(@Req() request: AuthenticatedRequest) {
     const auth = request.auth!;
-    const [journal, profile, operational, finance, access] = await Promise.all([
+    const [journal, profileContext, operational, access] = await Promise.all([
       this.journalBundle(auth),
-      this.profile.get(auth.tenantId, auth.platformAccountId),
+      this.journalProfileContext(auth),
       this.businessState.getOperational(auth.tenantId),
-      journalFinanceProjection(this.prisma, auth.tenantId),
       this.access.resolveTenantAccess(auth.tenantId),
     ]);
-    return { journal, profile, operational, finance, access };
+    return { journal, profileContext, operational, finance: {}, access };
   }
 
   @Get('records')
