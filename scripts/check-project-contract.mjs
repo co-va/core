@@ -188,13 +188,11 @@ if (!/let\s+allDepositsRequest\s*=\s*null/.test(depositStartupSource)
   failures.push('core/loyalty/deposit/data.js: duplicate deposit reads must share one in-flight request');
 }
 
-for (const [name, source] of [
-  ['index.html', mainHtml],
-  ['user.html', userHtml],
-]) {
-  if (!source.includes('data-startup-loading') || !source.includes('v2-sticker-screen')) {
-    failures.push(`${name}: initial app shell must render Shared loading state before async startup`);
-  }
+if (!userHtml.includes('data-startup-loading') || !userHtml.includes('v2-sticker-screen')) {
+  failures.push('user.html: public Booking entry must render Shared loading state before async route resolution');
+}
+if (mainHtml.includes('data-startup-loading') || mainHtml.includes('>Загрузка…<')) {
+  failures.push('index.html: application startup must not render a blocking loading card');
 }
 
 if (userEntrySource.includes('accountBookingRoute(')
@@ -207,8 +205,11 @@ if (userEntrySource.includes('accountBookingRoute(')
 if (!userEntrySource.includes('await renderGlobalClientRoot();')) {
   failures.push('online-booking/user-entry.js: App entry must finish in the end-user application root');
 }
-if (!userEntrySource.includes('data-startup-loading')) {
-  failures.push('online-booking/user-entry.js: end-user app entry must keep visible Shared loading feedback during hydration');
+if (!userEntrySource.includes("document.createElement('main')")
+  || !userEntrySource.includes('await renderGlobalClient(nextRoot, initial)')
+  || !userEntrySource.includes('app.replaceChildren(nextRoot)')
+  || userEntrySource.includes('data-startup-loading')) {
+  failures.push('online-booking/user-entry.js: end-user Journal must hydrate off-screen and replace the app root atomically without a blocking loading card');
 }
 
 if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")
