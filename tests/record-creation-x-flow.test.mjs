@@ -13,6 +13,9 @@ const recordView = fs.readFileSync('core/records/view.js', 'utf8');
 const booking = fs.readFileSync('online-booking/access.js', 'utf8');
 const bookingFlowService = fs.readFileSync('server/src/online-booking/booking-flow.service.ts', 'utf8');
 const personEntry = fs.readFileSync('core/people/record-creation.js', 'utf8');
+const modalPortal = fs.readFileSync('ui/v2/modal-portal.js', 'utf8');
+const workspaceNavigation = fs.readFileSync('ui/v2/workspace-navigation.js', 'utf8');
+const swipe = fs.readFileSync('ui/v2/swipe.js', 'utf8');
 
 assert.equal(fs.existsSync('journal/record.js'), false);
 assert.equal(fs.existsSync('journal/record-view.js'), false);
@@ -40,6 +43,10 @@ assert.match(journalCreation, /label: 'Событие'/);
 assert.match(journalCreation, /activeMode = 'record'/);
 assert.match(journalCreation, /openRecordCreationOwner\(\{ onCancel, surfaceRoot, bodyRoot \}\)/);
 assert.match(journalCreation, /recordFlow\?\.resumeRecord\?\.\(\)/);
+assert.match(journalCreation, /const operationalReady = loadOperationalState\(\{ full: true \}\);/);
+assert.doesNotMatch(journalCreation, /await loadOperationalState\(\{ full: true \}\)/);
+assert.match(journalCreation, /stepBack: true/);
+assert.match(journalCreation, /setTimeout\(\(\) => onCreated/);
 assert.match(eventCreation, /createEvent/);
 assert.match(eventCreation, /timeHint/);
 assert.match(eventCreation, /openTimeRangeAction/);
@@ -52,11 +59,24 @@ assert.match(records, /creationOwner = null/);
 assert.match(records, /state\.timeHint/);
 assert.match(records, /state\.from = value/);
 assert.match(records, /owner\.resumeRecord/);
+assert.match(records, /const stepHistory = \[\]/);
+assert.match(records, /stepHistory\.push\(\{ step, renderer, snapshot:/);
+assert.match(records, /restoreState\(previous\.snapshot\)/);
+assert.match(records, /context === 'person'/);
+assert.match(records, /v2ListEntries\(/);
+assert.match(records, /v2ListEntry\(/);
 assert.match(recordView, /export function openRecordView/);
 assert.match(personEntry, /from '\.\.\/records\/records\.js'/);
+assert.match(personEntry, /stepBack: true/);
 assert.doesNotMatch(booking, /core\/records\/records\.js|openRecords\(/);
 assert.match(bookingFlowService, /from '\.\.\/record\/record\.service'/);
-assert.match(bookingFlowService, /this\.records\.create\(tenantId/);
+
+// Shared owners keep back/swipe semantics centralized instead of feature-local gesture code.
+assert.match(owner, /surfaceRoot\.v2Back = invokeBack/);
+assert.match(owner, /layer\.v2Back = invokeBack/);
+assert.match(modalPortal, /onBeforeDismiss: \(\) => !requestBack\(\)/);
+assert.match(workspaceNavigation, /typeof z\?\.v2Back === 'function'/);
+assert.match(swipe, /onBeforeDismiss = null/);
 
 // One shared record mini-card contract is used both during creation and in Record View.
 assert.match(runtime, /export function recordConfirmationMiniCard\(\{/);

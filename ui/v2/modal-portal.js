@@ -317,6 +317,8 @@ export function mountV2Layer(html, { root = null } = {}) {
     dismissThroughVeil();
   };
 
+  const requestBack = () => qLayer && typeof node.v2Back === 'function' && node.v2Back() === true;
+
   node.v2Close = close;
   node.remove = close;
   document.addEventListener('pointerdown', handleOutsidePointerDown, true);
@@ -326,11 +328,12 @@ export function mountV2Layer(html, { root = null } = {}) {
   document.addEventListener('click', handleOutsideClick, true);
   disposeGesture = initV2LayerDismissGesture(node, {
     kind,
+    onBeforeDismiss: () => !requestBack(),
     onDismiss: () => node.v2Close?.(),
   });
   node.addEventListener('click', (event) => {
     if (event.target.closest('[data-v2-layer-close]')) node.v2Close?.();
-    if (qLayer && event.target.closest('[data-v2-z-dismiss]')) node.v2Close?.();
+    if (qLayer && event.target.closest('[data-v2-z-dismiss]') && !requestBack()) node.v2Close?.();
   });
   return node;
 }

@@ -19,9 +19,9 @@ export async function openJournalCreation({
   onCreated = () => {},
   onCancel = () => {},
 } = {}) {
-  await loadOperationalState({ full: true });
   const owner = openRecordCreationOwner({ onCancel, surfaceRoot, bodyRoot });
   if (!owner) return null;
+  const operationalReady = loadOperationalState({ full: true });
 
   const context = { date, workplaceId, timeHint };
   let activeMode = 'record';
@@ -61,6 +61,14 @@ export async function openJournalCreation({
     });
   };
 
+  const onRecordCreated = (...args) => {
+    if (typeof window === 'undefined') {
+      onCreated(...args);
+      return;
+    }
+    window.setTimeout(() => onCreated(...args), 0);
+  };
+
   renderModeSwitch();
   recordFlow = openRecords({
     context: 'journal',
@@ -69,7 +77,9 @@ export async function openJournalCreation({
     timeHint,
     professionalActions: true,
     creationOwner: owner,
-    onCreated,
+    stepBack: true,
+    onCreated: onRecordCreated,
   });
+  void operationalReady.catch(() => {});
   return owner;
 }

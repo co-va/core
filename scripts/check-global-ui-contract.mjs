@@ -110,7 +110,11 @@ expect(horizontalAffordanceCss.includes('.v2-section.has-v2-horizontal-rail') &&
 expect(accountShell.includes('if (!canReuseScene) {') && accountShell.includes('root.innerHTML = v2Shell({'), 'End-user surfaces must keep the persistent Shared FEZ scene.');
 
 expect(modalPortal.includes('function lockModalHeader(app)') && modalPortal.includes('header.inert = true') && !modalPortal.includes('qHeaderAction') && !modalPortal.includes('allowContextActions'), 'Q veil must keep Header C and D visible underneath but fully inert.');
-expect(modalPortal.includes("if (qLayer && event.target.closest('[data-v2-z-dismiss]')) node.v2Close?.();"), 'Q Shared dismiss affordance must close only the active Q layer.');
+expect(
+  modalPortal.includes("const requestBack = () => qLayer && typeof node.v2Back === 'function' && node.v2Back() === true;")
+    && modalPortal.includes("if (qLayer && event.target.closest('[data-v2-z-dismiss]') && !requestBack()) node.v2Close?.();"),
+  'Q Shared dismiss affordance must use contextual back when available and close only the active Q layer when no prior step exists.',
+);
 expect(modals.includes('S_INTERACTIVE_CONTENT') && modals.includes('S modal is informational only'), 'Shared S owner must reject buttons/forms/editors/pickers.');
 expect(modalCss.includes('.modal-sheet.modal--top > .document-tiles:has(+ .entity-details){display:none}'), 'Document S modal must show facts only and never duplicate the source document tile.');
 expect(time.includes("variant:'x'") && time.includes("variant: 'x'"), 'Shared time pickers must be X work modals.');

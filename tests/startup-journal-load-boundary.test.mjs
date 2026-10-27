@@ -42,8 +42,12 @@ assert.match(serviceView, /loadOperationalState\(\{ full: true \}\)/,
   'Service must load Procedures on demand');
 assert.match(bookingSettingsView, /loadOperationalState\(\{ full: true \}\)/,
   'Online Booking settings must load BookingSettings on demand');
-assert.match(creationFlow, /loadOperationalState\(\{ full: true \}\)/,
-  'Record creation must preserve Procedures by loading full operational data on demand');
+assert.match(creationFlow, /const operationalReady = loadOperationalState\(\{ full: true \}\);/,
+  'Record creation must start operational hydration needed by later steps');
+assert.doesNotMatch(creationFlow, /await loadOperationalState\(\{ full: true \}\)/,
+  'Record creation must not block Q opening on the full operational request');
+assert.match(creationFlow, /void operationalReady\.catch\(\(\) => \{\}\);/,
+  'Background operational hydration must not turn Q opening into an unhandled failure');
 
 assert.match(financeView, /loadFinanceState\(\{ full: true \}\)/, 'Opening Finance must load the full Finance state');
 
