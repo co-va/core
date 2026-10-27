@@ -37,15 +37,19 @@ import { getProfile } from '../../profile/data.js';
 import { getAllPeople } from '../../people/data.js';
 import { personDisplay } from '../../people/presentation.js';
 import { getCardAppearanceTemplate, saveCardAppearanceTemplate } from '../../card-appearance-templates.js';
-import { createUEI, detachUEI, getUEI, listUEIs, normalizeUEI } from '../../uei.js';
+import { createUEI, getUEI, listUEIs, normalizeUEI, releaseUEI, replaceUEI } from '../../uei.js';
 import { openLoyaltyProgramSettings } from '../shared.js';
 import {
+  correctDepositFunding,
   deleteDeposit,
+  deleteDepositFunding,
   fundDeposit,
+  fundExistingDeposit,
   getDepositPrograms,
   listAllDeposits,
   loadDepositPrograms,
   saveDepositPrograms,
+  updateDepositSettings,
   withdrawDeposit,
 } from './data.js';
 import {
@@ -57,7 +61,7 @@ import {
 } from './card-presentation.js';
 
 const PROGRAM_UEI_TYPE = 'loyalty-deposit-program';
-const DEPOSIT_UEI_TYPE = 'loyalty-deposit';
+const LEGACY_DEPOSIT_UEI_TYPE = 'loyalty-deposit';
 
 const money = (value) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value || 0)).replaceAll('\u00a0', ' ')} ₽`;
 const uid = () => globalThis.crypto?.randomUUID?.() || `deposit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -123,8 +127,17 @@ function programUei(program = {}) {
   return getUEI(PROGRAM_UEI_TYPE, program.id) || '';
 }
 
+function depositPerson(deposit = {}) {
+  const key = String(deposit?.person?.key || deposit?.person?.personKey || deposit?.person?.id || '');
+  return getAllPeople().find((item) => String(item?.key || item?.id || '') === key) || deposit?.person || {};
+}
+
 function depositUei(deposit = {}) {
-  return getUEI(DEPOSIT_UEI_TYPE, deposit.depositId || deposit.id) || '';
+  const program = getDepositPrograms().find((item) => String(item?.id || '') === String(deposit?.programId || '')) || {};
+  const programCode = programUei(program) || '0000';
+  const personCode = personDisplay(depositPerson(deposit)).uei || '0000';
+  const sequence = String(Math.max(0, Math.trunc(Number(deposit?.cardSequence || 0)))).padStart(4, '0').slice(-4);
+  return `${programCode} ${personCode} ${sequence}`;
 }
 
 function normalizeRequiredUei(value) {
@@ -133,17 +146,8 @@ function normalizeRequiredUei(value) {
   return normalized;
 }
 
-function ensureUeiAvailable(value) {
+function ensureUeiAvailable(value, current = '') {
   const normalized = normalizeRequiredUei(value);
-  if (listUEIs().some((item) => String(item?.uei || '') === normalized)) throw new Error('Этот UEI уже используется');
-  return normalized;
-}
-
-function optionalProgramUei(value, current = '') {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const normalized = normalizeUEI(raw);
-  if (!normalized || normalized === '0000') return '';
   if (normalized === current) return normalized;
   if (listUEIs().some((item) => String(item?.uei || '') === normalized)) throw new Error('Этот UEI уже используется');
   return normalized;
@@ -204,6 +208,7 @@ function programConditions(program = {}, issuedCount = null) {
     `Сумма: ${Number(program?.amount || 0) > 0 ? money(program.amount) : 'Свободная'}`,
     `Срок: ${program?.termRule || 'Бессрочно'}`,
     `Выгода: ${program?.benefit || 'Без дополнительной выгоды'}`,
+    `Показывать всем: ${program?.showToAll === false ? 'Нет' : 'Да'}`,
   ];
   if (issuedCount != null) lines.push(`Оформлено: ${Math.max(0, Number(issuedCount) || 0)}`);
   lines.push(`Создано: ${shortDateTime(program?.createdAt, '—')}`, '', program?.description || 'Дополнительные условия не указаны.');
@@ -215,8 +220,8 @@ function depositInfo(deposit = {}) {
   const benefitBalance = Math.max(0, Number(deposit?.benefitBalance || 0));
   const refundableAmount = Math.max(0, Number(deposit?.refundableAmount ?? deposit?.principalBalance ?? 0));
   const rows = [
-    { label: 'UEI', value: depositUei(deposit) || '—' },
-    { label: 'Контакт', value: contactLabel(deposit?.person || {}) },
+    { label: 'UEI', value: depositUei(deposit) },
+    { label: 'Контакт', value: contactLabel(depositPerson(deposit)) },
     { label: 'Дата оформления', value: shortDateTime(deposit?.fundedAt, '—') },
     { label: 'Внесено', value: money(deposit?.fundedAmount) },
     { label: 'Остаток', value: money(deposit?.balance) },
@@ -249,20 +254,24 @@ function historyMarkup(deposit = {}) {
     title: kindLabel(item?.kind),
     value: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
     subtitle: shortDateTime(item?.occurredAt, '—'),
+    interactive: item?.kind === 'deposit-funding',
+    data: item?.kind === 'deposit-funding' ? `data-deposit-funding="${escapeHtml(item.operationId || '')}"` : '',
+    aria: item?.kind === 'deposit-funding' ? 'Настройки внесения' : '',
+    actionLabel: item?.kind === 'deposit-funding' ? 'Настройки' : '',
   })));
 }
 
 function issuedList(items = []) {
   if (!items.length) return emptyState('Депозитов пока нет', 'Оформленные депозиты этой программы появятся здесь.');
   return v2ListEntries(items.map((deposit) => v2ListEntry({
-    title: contactLabel(deposit?.person || {}),
-    subtitle: depositUei(deposit) || depositStatusLabel(deposit?.status),
+    title: contactLabel(depositPerson(deposit)),
+    subtitle: depositUei(deposit),
     rightTop: money(deposit?.balance),
     rightBottom: depositStatusLabel(deposit?.status),
     interactive: true,
     initial: '',
     data: `data-deposit-instance="${escapeHtml(deposit.depositId)}"`,
-    aria: `Открыть депозит ${contactLabel(deposit?.person || {})}`,
+    aria: `Открыть депозит ${contactLabel(depositPerson(deposit))}`,
   })));
 }
 
@@ -274,42 +283,40 @@ async function setProgramStatus(programId, status) {
   await saveDepositPrograms(next);
 }
 
-async function deleteProgram(programId) {
-  const id = String(programId || '');
-  const code = getUEI(PROGRAM_UEI_TYPE, id) || '';
-  await saveDepositPrograms(getDepositPrograms().filter((item) => String(item?.id) !== id));
-  if (code) {
-    try { detachUEI({ entityType: PROGRAM_UEI_TYPE, entityId: id, uei: code, explicit: false }); } catch {}
-  }
+async function setProgramVisibility(programId, showToAll) {
+  const now = new Date().toISOString();
+  const next = getDepositPrograms().map((item) => String(item?.id) === String(programId)
+    ? { ...item, showToAll: Boolean(showToAll), updatedAt: now }
+    : item);
+  await saveDepositPrograms(next);
 }
 
-function openCodeX({ title = 'UEI', entityType, entityId, onCreated = () => {} } = {}) {
-  const current = getUEI(entityType, entityId) || '';
-  if (current) {
-    return mountModal(document.body, modal(`<div class="form-grid">${ueiField({ value: current, readonly: true })}</div>`, {
-      title,
-      variant: 'x',
-      surface: 'app',
-    }));
-  }
+async function deleteProgram(programId) {
+  const id = String(programId || '');
+  await saveDepositPrograms(getDepositPrograms().filter((item) => String(item?.id) !== id));
+  releaseUEI({ entityType: PROGRAM_UEI_TYPE, entityId: id });
+}
+
+function openProgramCodeX(program, onSaved = () => {}) {
+  const current = programUei(program);
   const layer = mountModal(document.body, modal(`<form class="form-grid" data-deposit-code-form>
-    ${ueiField()}
-    ${button('Создать', { type: 'submit' })}
+    ${ueiField({ value: current, required: true })}
+    ${button('Сохранить', { type: 'submit' })}
     <div class="form-error" data-deposit-code-error></div>
-  </form>`, { title, variant: 'x', surface: 'app' }));
+  </form>`, { title: 'UEI программы', variant: 'x', surface: 'app' }));
   if (!layer) return null;
   bindUeiInput(layer);
   const form = layer.querySelector('[data-deposit-code-form]');
-  form?.addEventListener('submit', (event) => {
+  form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const errorNode = layer.querySelector('[data-deposit-code-error]');
     try {
-      const uei = ensureUeiAvailable(new FormData(form).get('uei'));
-      createUEI({ entityType, entityId, value: uei });
+      const value = ensureUeiAvailable(new FormData(form).get('uei'), current);
+      replaceUEI({ entityType: PROGRAM_UEI_TYPE, entityId: program.id, value });
       layer.v2Close?.();
-      onCreated?.(uei);
+      await onSaved?.();
     } catch (error) {
-      if (errorNode) errorNode.textContent = error instanceof Error ? error.message : 'Не удалось создать UEI';
+      if (errorNode) errorNode.textContent = error instanceof Error ? error.message : 'Не удалось сохранить UEI';
     }
   });
   return layer;
@@ -384,11 +391,10 @@ function depositBenefit(values = {}) {
 async function openCreateProgramQ(root, onSaved = () => {}, sourceProgram = null) {
   const copying = Boolean(sourceProgram?.id);
   const title = copying ? 'Создать копию' : 'Новая депозитная программа';
-  const currentCode = '';
   const layer = mountModal(root, modal(`${depositHeaderContext({ title })}
     <form class="form-grid" data-deposit-program-form>
       ${field({ label: 'Название', name: 'name', value: sourceProgram?.name || '', required: true })}
-      ${ueiField({ name: 'programUei', value: '', required: false })}
+      ${ueiField({ name: 'programUei', value: '', required: true })}
       ${select({ label: 'Сумма', name: 'amountMode', value: sourceProgram?.amountMode || (Number(sourceProgram?.amount || 0) > 0 ? 'fixed' : 'free'), options: [
         { value: 'fixed', label: 'Фиксированная сумма' },
         { value: 'free', label: 'Свободная сумма' },
@@ -459,7 +465,7 @@ async function openCreateProgramQ(root, onSaved = () => {}, sourceProgram = null
     }
     const id = uid();
     try {
-      const code = optionalProgramUei(values.programUei, currentCode);
+      const code = ensureUeiAvailable(values.programUei);
       const now = new Date().toISOString();
       const program = {
         ...(sourceProgram || {}),
@@ -475,13 +481,14 @@ async function openCreateProgramQ(root, onSaved = () => {}, sourceProgram = null
         benefitValue: Math.max(0, Number(String(values.benefitValue || '0').replace(',', '.')) || 0),
         benefit,
         description: values.description || '',
+        showToAll: sourceProgram?.showToAll !== false,
         status: 'active',
         archivedAt: null,
         createdAt: now,
         updatedAt: now,
       };
       await saveDepositPrograms([...getDepositPrograms(), program]);
-      if (code) createUEI({ entityType: PROGRAM_UEI_TYPE, entityId: id, value: code });
+      createUEI({ entityType: PROGRAM_UEI_TYPE, entityId: id, value: code });
       layer.v2Close?.();
       await onSaved?.();
     } catch (error) {
@@ -508,7 +515,6 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
   const layer = mountModal(root, modal(`${depositHeaderContext({ title: 'Оформить депозит' })}
     <form class="form-grid" data-deposit-fund-form>
       ${contactField}
-      ${ueiField({ name: 'depositUei' })}
       ${field({ label: 'Сумма', name: 'amount', type: 'number', min: '0.01', step: '0.01', inputmode: 'decimal', value: Number(program?.amount || 0) > 0 ? program.amount : '' })}
       ${field({ label: 'Срок', name: 'termPreview', value: program?.termRule || 'Бессрочно', disabled: true })}
       ${select({ label: 'Кошелёк приёма денег', name: 'walletId', value: '', options: [{ value: '', label: 'Выберите кошелёк' }, ...wallets.map((wallet) => ({ value: wallet.id, label: wallet.name }))] })}
@@ -518,7 +524,6 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
     </form>`, { variant: 'q', surface: 'app', title: 'Оформить депозит' }));
   if (!layer) return null;
   initDatePickers(layer);
-  bindUeiInput(layer, 'depositUei');
   const form = layer.querySelector('[data-deposit-fund-form]');
   layer.querySelector('[data-deposit-fund-save]')?.addEventListener('click', async () => {
     const errorNode = layer.querySelector('[data-deposit-fund-error]');
@@ -536,7 +541,6 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
       return;
     }
     try {
-      const code = ensureUeiAvailable(values.depositUei);
       const display = personDisplay(owner);
       const deposit = await fundDeposit({
         programId: program.id,
@@ -547,18 +551,12 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
         occurredAt: new Date(`${values.occurredAt}T12:00:00`),
       });
       if (!deposit?.depositId) throw new Error('Депозит не создан');
-      createUEI({
-        entityType: DEPOSIT_UEI_TYPE,
-        entityId: deposit.depositId,
-        value: code,
-        identifiers: [display.uei, programUei(program)].filter(Boolean),
-      });
       layer.v2Close?.();
       const available = Number(deposit?.balance || 0);
       const benefit = Number(deposit?.benefitBalance || 0);
       const message = benefit > 0.009
-        ? `Принято ${money(amount)}. Выгода ${money(benefit)}. Доступно ${money(available)}. UEI: ${code}`
-        : `Принято ${money(amount)}. Доступно ${money(available || amount)}. UEI: ${code}`;
+        ? `Принято ${money(amount)}. Выгода ${money(benefit)}. Доступно ${money(available)}. UEI: ${depositUei(deposit)}`
+        : `Принято ${money(amount)}. Доступно ${money(available || amount)}. UEI: ${depositUei(deposit)}`;
       openNotice({ title: 'Депозит оформлен', message });
       await onSaved?.(deposit);
     } catch (error) {
@@ -566,6 +564,62 @@ async function openFundQ(root, program, { person = null, onSaved = () => {} } = 
     }
   });
   notifyContext();
+  return layer;
+}
+
+async function openFundingQ(root, deposit, { entry = null, onSaved = () => {} } = {}) {
+  const wallets = getWallets();
+  const editing = Boolean(entry?.operationId);
+  const terms = deposit?.terms && typeof deposit.terms === 'object' ? deposit.terms : {};
+  const target = Number(terms?.amount || 0);
+  const remaining = target > 0 ? Math.max(0, target - Number(deposit?.fundedAmount || 0)) : 0;
+  const selectedWallet = String(entry?.walletId || '');
+  const layer = mountModal(root, modal(`<form class="form-grid" data-deposit-existing-fund-form>
+    ${field({ label: 'Сумма', name: 'amount', type: 'number', min: '0.01', step: '0.01', inputmode: 'decimal', value: editing ? entry.amount : (remaining || '') })}
+    ${select({ label: 'Кошелёк приёма денег', name: 'walletId', value: selectedWallet, options: [{ value: '', label: 'Выберите кошелёк' }, ...wallets.map((wallet) => ({ value: wallet.id, label: wallet.name }))] })}
+    ${datePicker({ label: 'Дата внесения', name: 'occurredAt', value: editing ? String(entry.occurredAt || '').slice(0, 10) : new Date().toISOString().slice(0, 10), showYear: true, modalVariant: 'q', modalSurface: 'app', allowClear: false })}
+    <div class="form-error" data-deposit-existing-fund-error></div>
+    ${actionBlock(button(editing ? 'Сохранить' : 'Добавить платёж', { type: 'submit' }))}
+  </form>`, { variant: 'q', surface: 'app', title: editing ? 'Корректировать платёж' : 'Добавить платёж' }));
+  if (!layer) return null;
+  initDatePickers(layer);
+  const form = layer.querySelector('[data-deposit-existing-fund-form]');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const values = formObject(form);
+    const errorNode = layer.querySelector('[data-deposit-existing-fund-error]');
+    const wallet = wallets.find((item) => String(item?.id) === String(values.walletId));
+    const amount = Math.max(0, Number(String(values.amount || '0').replace(',', '.')) || 0);
+    if (!wallet || amount <= 0) {
+      if (errorNode) errorNode.textContent = 'Укажите сумму и кошелёк';
+      return;
+    }
+    try {
+      if (editing) {
+        await correctDepositFunding({
+          depositId: deposit.depositId,
+          operationId: entry.operationId,
+          amount,
+          walletId: wallet.id,
+          walletName: wallet.name,
+          occurredAt: new Date(`${values.occurredAt}T12:00:00`),
+        });
+      } else {
+        await fundExistingDeposit({
+          depositId: deposit.depositId,
+          amount,
+          walletId: wallet.id,
+          walletName: wallet.name,
+          occurredAt: new Date(`${values.occurredAt}T12:00:00`),
+        });
+      }
+      layer.v2Close?.();
+      openNotice({ title: editing ? 'Платёж исправлен' : 'Платёж добавлен', message: `${money(amount)} · ${values.occurredAt}` });
+      await onSaved?.();
+    } catch (error) {
+      if (errorNode) errorNode.textContent = error instanceof Error ? error.message : 'Не удалось сохранить платёж';
+    }
+  });
   return layer;
 }
 
@@ -624,23 +678,42 @@ function openRootSettings(root, rerender) {
 }
 
 function openProgramSettings(root, program, rerender) {
-  return openLoyaltyProgramSettings({
+  return openSharedProfileSettingsMenu({
     title: program.name || 'Депозит',
-    status: program.status,
-    correctLabel: 'Создать копию',
-    onCorrect: () => openCreateProgramQ(root, rerender, program),
-    onToggle: async () => {
-      await setProgramStatus(program.id, program.status === 'paused' ? 'active' : 'paused');
-      await rerender();
-    },
-    onFinish: async () => {
-      await setProgramStatus(program.id, 'closed');
-      await rerender();
-    },
-    onDelete: async () => {
-      await deleteProgram(program.id);
-      await rerender();
-    },
+    actions: [
+      { id: 'code', label: `UEI · ${programUei(program) || 'не задан'}`, onSelect: () => openProgramCodeX(program, rerender) },
+      {
+        id: 'visibility',
+        label: program?.showToAll === false ? 'Показывать всем · Нет' : 'Показывать всем · Да',
+        onSelect: async () => {
+          await setProgramVisibility(program.id, program?.showToAll === false);
+          await rerender();
+        },
+      },
+      { id: 'copy', label: 'Создать копию', onSelect: () => openCreateProgramQ(root, rerender, program) },
+      ...(program.status === 'closed' || program.status === 'ended' ? [] : [
+        {
+          id: 'toggle',
+          label: program.status === 'paused' ? 'Возобновить' : 'Приостановить',
+          onSelect: async () => {
+            await setProgramStatus(program.id, program.status === 'paused' ? 'active' : 'paused');
+            await rerender();
+          },
+        },
+        {
+          id: 'finish', label: 'Завершить', onSelect: async () => {
+            await setProgramStatus(program.id, 'closed');
+            await rerender();
+          },
+        },
+      ]),
+      {
+        id: 'delete', label: 'Удалить', variant: 'danger', onSelect: async () => {
+          await deleteProgram(program.id);
+          await rerender();
+        },
+      },
+    ],
   });
 }
 
@@ -654,40 +727,79 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
       layer.v2Close?.();
       return;
     }
+    if (getUEI(LEGACY_DEPOSIT_UEI_TYPE, deposit.depositId)) {
+      releaseUEI({ entityType: LEGACY_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+    }
+    const program = getDepositPrograms().find((item) => String(item?.id) === String(deposit.programId)) || {};
+    const inheritedVisible = program?.showToAll !== false;
+    const effectiveVisible = typeof deposit.visibleToPersonOverride === 'boolean'
+      ? deposit.visibleToPersonOverride
+      : inheritedVisible;
     layer.innerHTML = page([
-      depositHeaderContext({
-        title: deposit.programName || 'Депозит',
-        settingsData: 'data-deposit-instance-settings',
-        settingsAria: 'Настройки депозита',
-      }),
+      depositHeaderContext({ title: deposit.programName || 'Депозит' }),
       depositInfo(deposit),
       v2Section('История', historyMarkup(deposit)),
       deposit?.canRefund ? actionBlock(button('Возврат', { type: 'button', data: 'data-deposit-withdraw', aria: 'Вернуть остаток депозита' })) : '',
     ]);
+    setV2ZHeaderRows(layer, [smallActionButton({ icon: 'settings', data: 'data-deposit-instance-settings', aria: 'Настройки депозита' })]);
     layer.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
       openSharedProfileSettingsMenu({
         title: deposit.programName || 'Депозит',
         actions: [
           {
-            id: 'code',
-            label: 'Код',
-            onSelect: () => openCodeX({ title: 'UEI депозита', entityType: DEPOSIT_UEI_TYPE, entityId: deposit.depositId, onCreated: render }),
+            id: 'fund', label: 'Добавить платёж', onSelect: () => openFundingQ(root, deposit, { onSaved: async () => {
+              await render(); await onChanged?.();
+            } }),
+          },
+          {
+            id: 'visibility',
+            label: effectiveVisible ? 'Показывать этому человеку · Да' : 'Показывать этому человеку · Нет',
+            onSelect: async () => {
+              await updateDepositSettings(deposit.depositId, { visibleToPerson: !effectiveVisible });
+              await render();
+              await onChanged?.();
+            },
           },
           {
             id: 'delete',
-            label: 'Удалить',
+            label: 'Удалить карту',
             variant: 'danger',
             onSelect: async () => {
-              const code = getUEI(DEPOSIT_UEI_TYPE, deposit.depositId) || '';
               await deleteDeposit(deposit.depositId);
-              if (code) {
-                try { detachUEI({ entityType: DEPOSIT_UEI_TYPE, entityId: deposit.depositId, uei: code, explicit: false }); } catch {}
-              }
+              releaseUEI({ entityType: LEGACY_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
               layer.v2Close?.();
               await onChanged?.();
             },
           },
         ],
+      });
+    });
+    layer.querySelectorAll('[data-deposit-funding]').forEach((node) => {
+      node.addEventListener('click', () => {
+        const operationId = String(node.dataset.depositFunding || '');
+        const entry = (deposit.history || []).find((item) => item?.kind === 'deposit-funding' && String(item?.operationId || '') === operationId);
+        if (!entry) return;
+        openSharedProfileSettingsMenu({
+          title: 'Внесение',
+          actions: [
+            {
+              id: 'correct', label: 'Корректировать', onSelect: () => openFundingQ(root, deposit, { entry, onSaved: async () => {
+                await render(); await onChanged?.();
+              } }),
+            },
+            {
+              id: 'delete', label: 'Удалить платёж', variant: 'danger', onSelect: async () => {
+                try {
+                  await deleteDepositFunding({ depositId: deposit.depositId, operationId });
+                  await render();
+                  await onChanged?.();
+                } catch (error) {
+                  openNotice({ title: 'Платёж не удалён', message: error instanceof Error ? error.message : 'Не удалось удалить платёж' });
+                }
+              },
+            },
+          ],
+        });
       });
     });
     layer.querySelector('[data-deposit-withdraw]')?.addEventListener('click', () => openWithdrawX(root, deposit, async () => {
@@ -713,6 +825,9 @@ async function openProgramLayer(root, programId, { person = null, onChanged = ()
     }
     const allDeposits = await listAllDeposits();
     const issued = allDeposits.filter((item) => String(item?.programId) === String(program.id));
+    for (const deposit of issued) {
+      if (getUEI(LEGACY_DEPOSIT_UEI_TYPE, deposit.depositId)) releaseUEI({ entityType: LEGACY_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+    }
     layer.innerHTML = page([
       depositHeaderContext({
         title: program.name || 'Депозит',
