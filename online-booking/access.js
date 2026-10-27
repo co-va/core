@@ -368,16 +368,24 @@ function showExit(state) {
   renderCurrent(state);
 }
 
+function workplaceHasSchedule(state, workplaceKey) {
+  return getBookingWorkingDates(state.context, workplaceKey).length > 0;
+}
+
 function renderWorkplace(state) {
   const workplaces = Array.isArray(state.context?.workplaces) ? state.context.workplaces : [];
-  const rows = workplaces.map((workplace) => v2ListEntry({
-    title: text(workplace?.name) || 'Рабочее пространство',
-    subtitle: [text(workplace?.city), text(workplace?.address)].filter(Boolean).join(', '),
-    interactive: true,
-    selected: text(workplace?.key) === state.workplaceKey,
-    data: `data-booking-workplace="${escapeHtml(text(workplace?.key))}"`,
-    aria: `Выбрать рабочее пространство ${text(workplace?.name)}`,
-  }));
+  const rows = workplaces.map((workplace) => {
+    const workplaceKey = text(workplace?.key);
+    const available = workplaceHasSchedule(state, workplaceKey);
+    return v2ListEntry({
+      title: text(workplace?.name) || 'Рабочее пространство',
+      subtitle: [text(workplace?.city), text(workplace?.address)].filter(Boolean).join(', '),
+      interactive: available,
+      selected: workplaceKey === state.workplaceKey,
+      data: available ? `data-booking-workplace="${escapeHtml(workplaceKey)}"` : '',
+      aria: available ? `Выбрать рабочее пространство ${text(workplace?.name)}` : '',
+    });
+  });
   const host = renderFrame(state, {
     title: 'Рабочее пространство',
     body: v2ListEntries(rows),
@@ -841,6 +849,14 @@ function renderPreview(state) {
   });
 }
 
+function openApplication(state) {
+  if (typeof state.onExitToAccount === 'function') {
+    state.onExitToAccount({ tab: 'journal' });
+    return;
+  }
+  location.assign('/');
+}
+
 function renderExit(state) {
   const host = renderFrame(state, {
     title: 'Запись не оформлена',
@@ -854,9 +870,7 @@ function renderExit(state) {
     persistDraft(state, false);
     renderCurrent(state);
   });
-  host?.querySelector('[data-booking-open-app]')?.addEventListener('click', () => {
-    location.assign('/');
-  });
+  host?.querySelector('[data-booking-open-app]')?.addEventListener('click', () => openApplication(state));
 }
 
 function renderSuccess(state) {
@@ -866,9 +880,7 @@ function renderSuccess(state) {
     action: actionBlock(button('Открыть приложение', { variant: 'secondary', data: 'data-booking-open-app' })),
     back: false,
   });
-  host?.querySelector('[data-booking-open-app]')?.addEventListener('click', () => {
-    location.assign('/');
-  });
+  host?.querySelector('[data-booking-open-app]')?.addEventListener('click', () => openApplication(state));
 }
 
 function renderCurrent(state) {
@@ -902,6 +914,7 @@ export async function renderAccess(root, {
   tenantId = '',
   workplaceKey = '',
   procedureIds = [],
+  onExitToAccount = null,
 } = {}) {
   const state = {
     tenantId: text(tenantId),
@@ -931,6 +944,7 @@ export async function renderAccess(root, {
     result: null,
     layer: null,
     hardClose: null,
+    onExitToAccount: typeof onExitToAccount === 'function' ? onExitToAccount : null,
   };
 
   if (!state.tenantId) {

@@ -18,6 +18,12 @@ type BookingParticipant = {
   procedureIds: string[];
 };
 
+type BookingConfirmOptions = {
+  legalVerified?: boolean;
+  source?: string;
+  createdBy?: JsonObject;
+};
+
 const PDN_CONSENT_DOCUMENT_ID = 'pdn-consent';
 const MARKETING_CONSENT_DOCUMENT_ID = 'messages-consent';
 
@@ -308,7 +314,7 @@ export class BookingFlowService {
     return { to, start };
   }
 
-  async confirm(tenantId: string, input: unknown) {
+  async confirm(tenantId: string, input: unknown, options: BookingConfirmOptions = {}) {
     await this.access.assertRealOperationsAllowed(tenantId);
     const source = objectValue(input);
     const workplaceKey = text(source.workplaceKey);
@@ -346,20 +352,23 @@ export class BookingFlowService {
     const totalDuration = prepared.reduce((sum, item) => sum + item.duration, 0);
     const slot = this.assertAvailability(context, workplaceKey, date, from, totalDuration);
 
-    const bookerIdentity = await this.resolvePerson(tenantId, {
-      id: 'booker-contact',
-      name: booker.name,
-      phone: booker.phone,
-      email: booker.email,
-      procedureIds: [],
-    });
-    const bookerPerson = await this.personByKey(tenantId, bookerIdentity.key);
-    if (!bookerPerson) throw new ConflictException('Не удалось определить контакт оформляющего запись');
-    await this.ensureLegalState(tenantId, bookerPerson, booker.phone, source.consents);
+    if (!options.legalVerified) {
+      const bookerIdentity = await this.resolvePerson(tenantId, {
+        id: 'booker-contact',
+        name: booker.name,
+        phone: booker.phone,
+        email: booker.email,
+        procedureIds: [],
+      });
+      const bookerPerson = await this.personByKey(tenantId, bookerIdentity.key);
+      if (!bookerPerson) throw new ConflictException('Не удалось определить контакт оформляющего запись');
+      await this.ensureLegalState(tenantId, bookerPerson, booker.phone, source.consents);
+    }
 
     const bookingSessionId = randomUUID();
     const createdBy = {
-      type: 'booking',
+      ...objectValue(options.createdBy),
+      type: text(objectValue(options.createdBy).type) || 'booking',
       bookingSessionId,
       booker: {
         name: booker.name,
@@ -368,6 +377,7 @@ export class BookingFlowService {
       },
       mode,
     };
+    const recordSource = text(options.source) || 'online-booking';
 
     const records = [] as JsonObject[];
     let cursor = slot.start;
@@ -384,7 +394,7 @@ export class BookingFlowService {
           to: recordTo,
           person,
           procedureIds: item.procedureIds,
-          source: 'online-booking',
+          source: recordSource,
           sourceRequestId: `${bookingSessionId}:${item.participant.id}`,
           createdBy,
         });
