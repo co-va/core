@@ -178,6 +178,50 @@ export async function fundDeposit({programId='',person=null,amount=0,walletId=''
       occurredAt:occurredAt instanceof Date?occurredAt.toISOString():occurredAt,
     }),
   }),'Не удалось оформить депозит');
+  await refreshFinance();
+  return upsertDeposit(result);
+}
+
+export async function fundExistingDeposit({depositId='',amount=0,walletId='',walletName='',occurredAt=null}={}){
+  if(!depositId||!walletId||!occurredAt)return null;
+  const result=await payload(await apiRequest(`/loyalty/deposits/${encodeURIComponent(depositId)}/fund`,{
+    method:'POST',
+    body:JSON.stringify({
+      amount,walletId,walletName,
+      occurredAt:occurredAt instanceof Date?occurredAt.toISOString():occurredAt,
+    }),
+  }),'Не удалось пополнить депозит');
+  await refreshFinance();
+  return upsertDeposit(result);
+}
+
+export async function correctDepositFunding({depositId='',operationId='',amount=0,walletId='',walletName='',occurredAt=null}={}){
+  if(!depositId||!operationId||!walletId||!occurredAt)return null;
+  const result=await payload(await apiRequest(`/loyalty/deposits/${encodeURIComponent(depositId)}/funding/${encodeURIComponent(operationId)}`,{
+    method:'PUT',
+    body:JSON.stringify({
+      amount,walletId,walletName,
+      occurredAt:occurredAt instanceof Date?occurredAt.toISOString():occurredAt,
+    }),
+  }),'Не удалось исправить внесение');
+  await refreshFinance();
+  return upsertDeposit(result);
+}
+
+export async function deleteDepositFunding({depositId='',operationId=''}={}){
+  if(!depositId||!operationId)return null;
+  const result=await payload(await apiRequest(`/loyalty/deposits/${encodeURIComponent(depositId)}/funding/${encodeURIComponent(operationId)}`,{
+    method:'DELETE',
+  }),'Не удалось удалить внесение');
+  await refreshFinance();
+  return upsertDeposit(result);
+}
+
+export async function updateDepositSettings(depositId='',settings={}){
+  if(!depositId)return null;
+  const result=await payload(await apiRequest(`/loyalty/deposits/${encodeURIComponent(depositId)}/settings`,{
+    method:'PUT',body:JSON.stringify(settings),
+  }),'Не удалось сохранить настройки депозита');
   return upsertDeposit(result);
 }
 
@@ -193,6 +237,7 @@ export async function withdrawDeposit({depositId='',amount=0,walletId='',walletN
       occurredAt:occurredAt instanceof Date?occurredAt.toISOString():occurredAt,
     }),
   }),'Не удалось вернуть остаток депозита');
+  await refreshFinance();
   return upsertDeposit(result);
 }
 
