@@ -1,0 +1,66 @@
+name: Temporary Simplify Account F
+on:
+  push:
+    branches: [staging]
+    paths: ['.github/workflows/tmp-simplify-account-f.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Simplify personal account navigation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('online-booking/account-shell.js')
+          s = p.read_text()
+
+          start = s.index('const GLOBAL_ACCOUNT_ROOTS = Object.freeze([')
+          end = s.index('\nfunction renderV2Shell(', start)
+          nav = '''const GLOBAL_ACCOUNT_ROOTS = Object.freeze([\n  { id: 'profile', label: 'Профиль' },\n  { id: 'journal', label: 'Журнал' },\n  { id: 'contacts', label: 'Контакты' },\n  { id: 'integrations', label: 'Интеграции' },\n]);\n\nfunction accountRootForTab(state) {\n  if (state.accountTab === 'profile' || state.accountTab === 'profile-settings') return 'profile';\n  if (state.accountTab === 'journal') return 'journal';\n  if (state.accountTab === 'contacts' || state.accountTab === 'contact-detail') return 'contacts';\n  if (state.accountTab === 'integrations') return 'integrations';\n  return 'journal';\n}\n\nfunction accountDeck(state) {\n  const fallback = accountRootForTab(state);\n  if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = fallback;\n  return v2CardDeck(GLOBAL_ACCOUNT_ROOTS, { axis: 'x', active: state.accountDeckActive, data: 'data-account-deck-item', level: 'f' });\n}\n'''
+          s = s[:start] + nav + s[end:]
+          s = s.replace("  const eDeckMarkup = deck ? accountEDeck(state) : '';", "  const eDeckMarkup = '';", 1)
+
+          start = s.index('function bindWorkspaceInteraction(')
+          end = s.index('\nasync function openChatSettings', start)
+          bind = '''function bindWorkspaceInteraction(root, state, handlers, { bindZ = true, onZRight = null, onZLeft = null } = {}) {\n  root.v2WorkspaceInteractionDispose?.();\n  const fallbackF = accountRootForTab(state);\n  const activeF = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)\n    ? state.accountDeckActive\n    : fallbackF;\n  state.accountDeckActive = activeF;\n  const dispose = initV2WorkspaceInteraction(root, {\n    activeId: activeF,\n    deckOpen: state.accountDeckOpen,\n    bindZ,\n    onZRight,\n    onZLeft,\n    onDeckOpenChange: (open) => { state.accountDeckOpen = open; },\n    onRootSelect: (id) => {\n      if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)) return;\n      state.accountDeckActive = id;\n      state.accountDeckOpen = false;\n      state.accountZEnter = true;\n      state.accountChatOpen = false;\n      state.accountTab = id;\n      void handlers.render();\n    },\n  });\n  root.v2WorkspaceInteractionDispose = dispose;\n  return () => { if (root.v2WorkspaceInteractionDispose === dispose) root.v2WorkspaceInteractionDispose = null; dispose?.(); };\n}\n'''
+          s = s[:start] + bind + s[end:]
+
+          messages = s.index('async function renderGlobalMessages')
+          chat_start = s.index('        const returnF = accountVisibleFItems()', messages)
+          chat_end = s.index('\n        void handlers.render();', chat_start)
+          chat = '''        const returnRoot = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)\n          ? state.accountDeckActive\n          : 'journal';\n        state.accountTab = returnRoot;\n        state.accountDeckOpen = true;\n        state.accountDeckActive = returnRoot;'''
+          s = s[:chat_start] + chat + s[chat_end:]
+
+          account = s.index('export async function renderGlobalAccount')
+          init_start = s.index('  state.accountDeckOpen =', account)
+          init_end = s.index("\n  if (state.accountTab !== 'journal')", init_start)
+          init = '''  state.accountDeckOpen = Boolean(state.accountDeckOpen);\n  state.accountEOpen = false;\n  state.accountEActive = '';\n  state.accountZEnter = Boolean(state.accountZEnter);\n  if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = accountRootForTab(state);'''
+          s = s[:init_start] + init + s[init_end:]
+          p.write_text(s)
+
+          t = Path('tests/account-calendar-sync.test.mjs')
+          x = t.read_text()
+          x = x.replace("const shell = fs.readFileSync('online-booking/account-shell.js', 'utf8');\n", '')
+          a = x.index("assert.doesNotMatch(shell, /accountIntegrationsCard/")
+          b = x.index('assert.match(integrations, /miniCard\\(/', a)
+          x = x[:a] + x[b:]
+          t.write_text(x)
+          PY
+      - name: Commit cleanup
+        run: |
+          rm .github/workflows/tmp-simplify-account-f.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add online-booking/account-shell.js tests/account-calendar-sync.test.mjs .github/workflows/tmp-simplify-account-f.yml
+          git commit -m "fix(navigation): keep personal tools as direct F"
+          git push origin HEAD:staging
