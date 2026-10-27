@@ -58,36 +58,34 @@ Result:
 
 Evidence: staging `dcc8771b66dfcc57abcde9ce796e1d80f9f779a3`; Check Book `40473273116` — PASS; Record View Account Runtime `40473273103` — PASS.
 
-### 3. Auxiliary split — `IN PROGRESS`
+### 3. Auxiliary split — `DONE`
 Goal: remove the shared auxiliary data bag so each owning surface loads only its own data.
 
-Current problem:
-- `/auxiliary-state` hydrates Wallets, Investments, Loans, Tags, Products, ProductHistory and CardAppearanceTemplates together;
-- People, Loyalty, Service, Finance/Cash and Settings/Tags can all trigger that same shared bundle.
+Result:
+- canonical auxiliary owner now exposes scoped read bundles for People, Loyalty, Service, Finance and Tags;
+- runtime caches those scopes independently;
+- a partial bundle hydrates only datasets actually returned and cannot clear a neighbouring owner cache;
+- Service no longer receives Wallets/Investments/Loans/Tags from its auxiliary read;
+- People no longer receives Products/Finance auxiliary data;
+- Finance/Cash no longer receives Products/Tags;
+- Settings/Tags receives Tags only;
+- Loyalty deposit program read uses the Loyalty scope rather than the full auxiliary bundle;
+- no second auxiliary owner or parallel business state was introduced;
+- regression `tests/auxiliary-split-boundary.test.mjs` is part of the full `npm test` chain.
 
-Acceptance:
-- Service does not load Wallets/Investments/Loans/Tags just to open;
-- People does not load Products/Finance data just to open;
-- Finance/Cash does not load Products/Tags just to open;
-- Settings/Tags does not load Finance/Products just to open;
-- no second owner or duplicate business state is introduced;
-- full Check Book is green.
+Evidence: staging `a9f255a32829976549dd04c8936f7d13769f17ee`; Check Book run `40479254564` — architecture/checks PASS, domain regression PASS, Browser FEZ PASS, server build PASS, modal-browser PASS, staging-smoke PASS.
 
-Evidence: pending.
-
-### 4. Journal — `RECHECK`
+### 4. Journal — `DONE`
 Goal: fast, stable Day / Month / List using canonical Record / Event / Note data, with no duplicate headers, parallel UI or unnecessary full entity loads.
 
-Work already completed before the queue mismatch was discovered:
+Result:
 - first Journal load uses canonical Journal data, minimal Profile/Workplace context, Days and the minimal Record payment projection;
-- full Procedures, ProcedureHistory and BookingSettings were removed from first Journal load and made lazy;
-- People was intentionally retained where current price calculation requires it.
+- full Procedures, ProcedureHistory and BookingSettings are outside first Journal load and lazy;
+- People remains only where current canonical price calculation requires it;
+- no parallel Journal UI/domain implementation was introduced;
+- Journal regressions were re-run after item 3 completed.
 
-Required before `DONE`:
-- re-run Journal regression after item 3 is DONE;
-- full Check Book green on that resulting HEAD.
-
-Prior evidence: code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; Check Book `40475653598` — SUCCESS; Record View Account Runtime `40475653608` — PASS.
+Evidence: prior Journal code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; post-item-3 recheck on staging `a9f255a32829976549dd04c8936f7d13769f17ee`; Check Book `40479254564` — PASS including domain regression and Browser FEZ.
 
 ### 5. Journal Booking — `TODO`
 Goal: Journal → Record creation uses one Q-flow with minimal data per step and no full Profile/People navigation.
@@ -115,6 +113,6 @@ Goal: do not add breadth; prove persistence and one complete end-to-end scenario
 
 ## Current cursor
 
-**Item 3 — Auxiliary split.**
+**Item 5 — Journal Booking.**
 
-PR #769 is open from `staging` to `main`, but it must not be merged while item 3 remains `IN PROGRESS` and item 4 remains `RECHECK`.
+PR #769 is the merge boundary for completed items 1–4. Do not merge without explicit owner approval. After merge and staging alignment, continuation starts from item 5 without a new whole-project analysis.
