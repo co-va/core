@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Put, Req, UseGuards } from '@nest
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { EventService } from '../event/event.service';
+import { journalFinanceProjection } from '../finance/journal-finance-projection';
 import { NoteService } from '../note/note.service';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PrismaService } from '../prisma.service';
@@ -142,13 +143,14 @@ export class BusinessStateController {
   @Get('journal-bootstrap')
   async journalBootstrap(@Req() request: AuthenticatedRequest) {
     const auth = request.auth!;
-    const [journal, profileContext, operational, access] = await Promise.all([
+    const [journal, profileContext, operational, finance, access] = await Promise.all([
       this.journalBundle(auth),
       this.journalProfileContext(auth),
       this.businessState.getOperational(auth.tenantId),
+      journalFinanceProjection(this.prisma, auth.tenantId),
       this.access.resolveTenantAccess(auth.tenantId),
     ]);
-    return { journal, profileContext, operational, finance: {}, access };
+    return { journal, profileContext, operational, finance, access };
   }
 
   @Get('records')
