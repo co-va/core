@@ -2,17 +2,26 @@
 
 ## Purpose
 
-This is the single ordered queue for bringing the existing CO-VA product to a competitive operational baseline. It is not a feature wishlist.
+This file is the single canonical repair queue for bringing the existing CO-VA product to a competitive operational baseline.
 
-Do not restart a whole-project analysis when continuing this work. Read this file, take the first item whose status is not `DONE`, verify the current repository state, work only on that item, run its regression checks, update the status/evidence here, and stop at the task boundary.
+The order below is the same order as the owner-facing spreadsheet sheet `Очередь ремонта`. Do not rename items, renumber them, merge them, split them, or skip ahead when continuing this work.
 
-Benchmark reference: EasyWeek operational baseline for the same user scenarios. The benchmark is used to expose friction, missing reliability, unnecessary loading and dead ends; it does not define CO-VA product architecture.
+## Continuation rule
+
+1. Read this file.
+2. Find the first item that is not `DONE`.
+3. Work only on that item.
+4. Run its targeted regression plus the repository-required full Check Book.
+5. Mark it `DONE` with evidence.
+6. Continue to the next number.
+
+No whole-project re-analysis is required between items.
 
 ## Status values
 
 - `TODO` — not started.
-- `IN PROGRESS` — current stabilization item.
-- `BLOCKED` — cannot complete without a concrete dependency; record it here.
+- `IN PROGRESS` — current item; this is the only item allowed to receive new work.
+- `RECHECK` — work was done earlier out of order; it is not considered closed until the current preceding item is DONE and this item is reverified.
 - `DONE` — implementation and required checks passed; evidence recorded.
 
 ## Guard
@@ -24,77 +33,88 @@ Benchmark reference: EasyWeek operational baseline for the same user scenarios. 
 - Do not create parallel UI/domain implementations.
 - Existing Shared UI/domain owners remain canonical.
 - A file/test existing is not proof that runtime works.
-- Each item is closed only after targeted regression checks and the repository-required full check are green.
+- PR/merge boundaries do not change the queue order.
 
-## Ordered queue
+## Ordered repair queue
 
-### 1. Startup / first Journal load — `DONE`
-Goal: the first useful Journal screen must not be blocked by unrelated full-domain loading.
-
-Result:
-- startup receives only minimal `profileContext` (Profile header fields + Workplace context), not the full Profile/profession/reference payload;
-- full Profile is loaded lazily when Profile opens;
-- full Finance is loaded lazily when Finance opens;
-- Journal startup keeps only the minimal Finance payment projection needed for correct paid/debt state: Record settlements plus payment/refund operations, with no full Finance ledger/articles;
-- regression `tests/startup-journal-load-boundary.test.mjs` is part of the full `npm test` chain.
-
-Evidence: initial boundary staging `5dd221d32dddf78f0220ec90963e549a75c2e584`; final corrected startup/Journal boundary is included in Journal evidence below.
-
-### 2. Profile + Workplaces — `DONE`
-Goal: Profile and Workplace stay separate canonical entities even when presented in one UI area; Profile opens and edits predictably; full Profile data is loaded only when needed.
+### 1. Runtime bootstrap — `DONE`
+Goal: first useful Journal screen is not blocked by unrelated full-domain loading.
 
 Result:
-- Profile and Workplace remain separate canonical owners/endpoints despite sharing the Profile presentation area;
-- Profile save hydrates the canonical server response and does not rewrite Workplace;
-- Workplace save hydrates the canonical server response and does not rewrite Profile;
-- both changes survive a fresh full server read after session reset;
-- full Profile remains lazy and therefore does not return to the first-Journal startup path;
-- regression `tests/profile-workplace-roundtrip.test.mjs` is part of the full `npm test` chain.
+- startup receives minimal Profile/Workplace context instead of the full Profile payload;
+- full Profile and full Finance load lazily in their owning surfaces;
+- Journal keeps only the minimal Finance payment projection required for correct paid/debt state.
 
-Evidence: staging `dcc8771b66dfcc57abcde9ce796e1d80f9f779a3`; Check Book run `40473273116` — architecture/checks PASS, Profile/Workplace round-trip PASS in domain regression, Browser FEZ PASS, server build PASS, modal browser PASS, staging-smoke PASS. Record View Account Runtime run `40473273103` — PASS.
+Evidence: covered by staging changes and successful Check Book runs recorded below under Journal baseline.
 
-### 3. Journal — `DONE`
+### 2. Profile — `DONE`
+Goal: Profile and Workplace remain separate canonical entities even when shown in one UI area; edits persist through a fresh server read.
+
+Result:
+- Profile save does not rewrite Workplace;
+- Workplace save does not rewrite Profile;
+- both survive a fresh server read;
+- full Profile remains outside the first-Journal bootstrap.
+
+Evidence: staging `dcc8771b66dfcc57abcde9ce796e1d80f9f779a3`; Check Book `40473273116` — PASS; Record View Account Runtime `40473273103` — PASS.
+
+### 3. Auxiliary split — `IN PROGRESS`
+Goal: remove the shared auxiliary data bag so each owning surface loads only its own data.
+
+Current problem:
+- `/auxiliary-state` hydrates Wallets, Investments, Loans, Tags, Products, ProductHistory and CardAppearanceTemplates together;
+- People, Loyalty, Service, Finance/Cash and Settings/Tags can all trigger that same shared bundle.
+
+Acceptance:
+- Service does not load Wallets/Investments/Loans/Tags just to open;
+- People does not load Products/Finance data just to open;
+- Finance/Cash does not load Products/Tags just to open;
+- Settings/Tags does not load Finance/Products just to open;
+- no second owner or duplicate business state is introduced;
+- full Check Book is green.
+
+Evidence: pending.
+
+### 4. Journal — `RECHECK`
 Goal: fast, stable Day / Month / List using canonical Record / Event / Note data, with no duplicate headers, parallel UI or unnecessary full entity loads.
 
-Result:
+Work already completed before the queue mismatch was discovered:
 - first Journal load uses canonical Journal data, minimal Profile/Workplace context, Days and the minimal Record payment projection;
-- full Procedures, ProcedureHistory and BookingSettings are removed from the first Journal payload and loaded lazily only when Service, Online Booking settings or Record creation needs them;
-- full Finance remains lazy; Journal payment status still stays correct through the dedicated minimal projection;
-- People remains in the current Journal business state because canonical settlement currently uses the current Person discount when calculating Record price; it was not removed at the cost of money correctness;
-- Journal keeps the existing Shared Day / Month / List and Shared Record/Event/Note paths; no parallel Journal UI/domain implementation was introduced;
-- `tests/startup-journal-load-boundary.test.mjs` protects the startup boundary and the existing browser/runtime regressions cover Journal navigation and Shared Journal View behavior.
+- full Procedures, ProcedureHistory and BookingSettings were removed from first Journal load and made lazy;
+- People was intentionally retained where current price calculation requires it.
 
-Evidence: staging code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; Check Book run `40475653598` — SUCCESS: architecture/checks PASS, domain regression PASS, Browser FEZ PASS, server build PASS, modal-browser PASS, staging-smoke PASS. Record View Account Runtime run `40475653608` — PASS.
+Required before `DONE`:
+- re-run Journal regression after item 3 is DONE;
+- full Check Book green on that resulting HEAD.
 
-### 4. Journal → Booking — `TODO`
-Goal: one in-app booking flow from Journal: professional summary → workplace summary (skip if one) → procedure → availability → confirmation; no navigation through full Profile/People cards.
+Prior evidence: code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; Check Book `40475653598` — SUCCESS; Record View Account Runtime `40475653608` — PASS.
 
-Evidence: pending.
+### 5. Journal Booking — `TODO`
+Goal: Journal → Record creation uses one Q-flow with minimal data per step and no full Profile/People navigation.
 
-### 5. Public Booking — `TODO`
-Goal: professional public link performs guest Booking only; no App Runtime, registration or full Profile application load; booking completes and appears in Journal.
+### 6. Public Booking — `TODO`
+Goal: public professional link performs guest Booking only; no App Runtime, mandatory registration or full Profile application load.
 
-Evidence: pending.
+### 7. Notifications — `TODO`
+Goal: booking-created/rescheduled/cancelled facts reach intended recipients through configured channels, including closed-app delivery where supported, with observable delivery state.
 
-### 6. Notifications — `TODO`
-Goal: booking-created / rescheduled / cancelled facts reach the intended recipient through the configured channel, including when the app is closed; delivery state is observable.
+### 8. Persistence / edits — `TODO`
+Goal: every existing business edit is confirmed by the server and survives a fresh reload; no local-only success state.
 
-Evidence: pending.
+### 9. Data Transfer — `TODO`
+Goal: import has preview, mapping, validation, canonical owner writes and a clear result report without hidden duplicates.
 
-### 7. Persistence + Data Transfer — `TODO`
-Goal: existing edits survive fresh reload, and Data Transfer clearly previews, validates, imports and reports what happened without hidden duplicates.
+### 10. Demo → Live — `TODO`
+Goal: a new professional can register, start DEMO, understand calculation/terms, request Live and reach the approved working state without an undocumented detour.
 
-Evidence: pending.
+### 11. Finance — `TODO`
+Goal: prove Record → payment → Settlement/Operation/Ledger → Cash/DDS/Z end to end before expanding finance features.
 
-### 8. Demo → Live / commercial path — `TODO`
-Goal: a new professional can register, start DEMO, understand the calculation/terms, request Live and reach the approved working state without an undocumented admin detour.
+### 12. Loyalty / Inventory — `TODO`
+Goal: do not add breadth; prove persistence and one complete end-to-end scenario for each existing loyalty and inventory operation.
 
-Evidence: pending.
+## Current cursor
 
-## Later parity gaps (after 1–8)
+**Item 3 — Auxiliary split.**
 
-Do not start these while P0 stabilization above is unfinished:
-- broader analytics/read model;
-- mature staff/team management;
-- marketplace/site-builder breadth;
-- additional third-party integrations beyond the integrations required by real users.
+PR #769 is open from `staging` to `main`, but it must not be merged while item 3 remains `IN PROGRESS` and item 4 remains `RECHECK`.
