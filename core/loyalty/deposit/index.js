@@ -38,7 +38,6 @@ import { getAllPeople } from '../../people/data.js';
 import { personDisplay } from '../../people/presentation.js';
 import { getCardAppearanceTemplate, saveCardAppearanceTemplate } from '../../card-appearance-templates.js';
 import { createUEI, getUEI, listUEIs, normalizeUEI, releaseUEI, replaceUEI } from '../../uei.js';
-import { openLoyaltyProgramSettings } from '../shared.js';
 import {
   correctDepositFunding,
   deleteDeposit,
@@ -61,7 +60,7 @@ import {
 } from './card-presentation.js';
 
 const PROGRAM_UEI_TYPE = 'loyalty-deposit-program';
-const LEGACY_DEPOSIT_UEI_TYPE = 'loyalty-deposit';
+const ASSIGNED_DEPOSIT_UEI_TYPE = 'loyalty-deposit';
 
 const money = (value) => `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value || 0)).replaceAll('\u00a0', ' ')} ₽`;
 const uid = () => globalThis.crypto?.randomUUID?.() || `deposit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -727,8 +726,8 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
       layer.v2Close?.();
       return;
     }
-    if (getUEI(LEGACY_DEPOSIT_UEI_TYPE, deposit.depositId)) {
-      releaseUEI({ entityType: LEGACY_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+    if (getUEI(ASSIGNED_DEPOSIT_UEI_TYPE, deposit.depositId)) {
+      releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
     }
     const program = getDepositPrograms().find((item) => String(item?.id) === String(deposit.programId)) || {};
     const inheritedVisible = program?.showToAll !== false;
@@ -766,7 +765,7 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
             variant: 'danger',
             onSelect: async () => {
               await deleteDeposit(deposit.depositId);
-              releaseUEI({ entityType: LEGACY_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+              releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
               layer.v2Close?.();
               await onChanged?.();
             },
@@ -826,7 +825,7 @@ async function openProgramLayer(root, programId, { person = null, onChanged = ()
     const allDeposits = await listAllDeposits();
     const issued = allDeposits.filter((item) => String(item?.programId) === String(program.id));
     for (const deposit of issued) {
-      if (getUEI(LEGACY_DEPOSIT_UEI_TYPE, deposit.depositId)) releaseUEI({ entityType: LEGACY_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+      if (getUEI(ASSIGNED_DEPOSIT_UEI_TYPE, deposit.depositId)) releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
     }
     layer.innerHTML = page([
       depositHeaderContext({
