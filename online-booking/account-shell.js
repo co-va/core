@@ -238,7 +238,6 @@ function accountDeck(state) {
 
 function renderV2Shell(root, state, { header, body = '', deck = true, className = '', v = null } = {}) {
   const deckMarkup = deck ? accountDeck(state) : '';
-  const eDeckMarkup = '';
   const vMarkup = v ? v2V(v) : '';
   let shell = root.querySelector(':scope > [data-v2-app]');
   const canReuseScene = Boolean(deck && shell?.querySelector('[data-v2-card-deck][data-v2-deck-level="f"]'));
@@ -250,9 +249,7 @@ function renderV2Shell(root, state, { header, body = '', deck = true, className 
       header,
       body,
       deck: deckMarkup,
-      eDeck: eDeckMarkup,
       deckOpen: Boolean(state.accountDeckOpen && deck),
-      eOpen: Boolean(state.accountDeckOpen && state.accountEOpen && eDeckMarkup),
       zEnter: Boolean(state.accountZEnter),
       className,
       v: vMarkup,
@@ -266,19 +263,7 @@ function renderV2Shell(root, state, { header, body = '', deck = true, className 
     const vHost = shell.querySelector(':scope > [data-v2-v-host]');
     if (vHost) { vHost.innerHTML = vMarkup; vHost.hidden = !vMarkup; }
 
-    const feHost = shell.querySelector('[data-v2-fe]');
-    const currentE = feHost?.querySelector('[data-v2-card-deck][data-v2-deck-level="e"]');
-    const nextEIds = [...(eDeckMarkup.matchAll(/data-v2-card-item="([^"]+)"/g))].map((match) => match[1]).join('|');
-    const currentEIds = [...(currentE?.querySelectorAll('[data-v2-card-item]') || [])]
-      .map((card) => String(card.dataset.v2CardItem || '')).join('|');
-    if (nextEIds !== currentEIds) {
-      currentE?.remove();
-      if (eDeckMarkup && feHost) feHost.insertAdjacentHTML('beforeend', eDeckMarkup);
-    }
-
     setV2DeckOpen(shell, Boolean(state.accountDeckOpen));
-    shell.classList.toggle('has-e-deck', Boolean(eDeckMarkup));
-    shell.classList.toggle('is-e-open', Boolean(eDeckMarkup && state.accountDeckOpen && state.accountEOpen));
     shell.classList.toggle('is-z-entering', Boolean(state.accountZEnter && !state.accountDeckOpen));
     const preserved = ['v2-app', 'v2-app--with-deck'];
     String(className || '').split(/\s+/).filter(Boolean).forEach((name) => preserved.push(name));
@@ -1553,8 +1538,6 @@ export async function renderGlobalAccount(root, state, callbacks = {}) {
   state.globalAccount = true;
   state.accountTab ||= 'journal';
   state.accountDeckOpen = Boolean(state.accountDeckOpen);
-  state.accountEOpen = false;
-  state.accountEActive = '';
   state.accountZEnter = Boolean(state.accountZEnter);
   if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)) state.accountDeckActive = accountRootForTab(state);
   if (state.accountTab !== 'journal') disposeGlobalAccountJournal(root);
