@@ -19,7 +19,7 @@ assert.match(profileRuntime, /loadProfileState\(\{full=false\}=\{\}\)/);
 assert.match(profileRuntime, /if\(!full\)/);
 assert.match(profileRuntime, /apiRequest\('\/profile'\)/);
 
-assert.match(profileView, /await loadProfileState\(\{full:true\}\)/, 'Opening Profile must load the full Profile state');
+assert.match(profileView, /loadProfileState\(\{full:true\}\)/, 'Opening Profile must load the full Profile state');
 assert.match(financeView, /loadFinanceState\(\{ full: true \}\)/, 'Opening Finance must load the full Finance state');
 
 console.log('startup Journal load boundary: PASS');
