@@ -25,9 +25,8 @@ function demoRemainingText(access){
   return `DEMO · осталось ${Math.ceil(hours/24)} дн.`;
 }
 
-export async function render(root,navigateBack=()=>{},options={}){
-  await loadProfileState({full:true});
-  renderProfile(root,navigateBack,options);
+export function render(root,navigateBack=()=>{},options={}){
+  return loadProfileState({full:true}).then(()=>renderProfile(root,navigateBack,options));
 }
 
 function profileContext(p,title=fullName(p)){
