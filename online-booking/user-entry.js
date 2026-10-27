@@ -162,9 +162,7 @@ function newParticipant(id, source = {}) {
 function participantFields(participant, index, { removable = false } = {}) {
   return `<section class="booking-participant" data-account-booking-participant="${index}">
     <div class="booking-participant__heading"><strong>Участник ${index + 1}</strong>${removable ? button('Удалить', { variant: 'secondary', data: `data-account-booking-remove-participant="${index}"` }) : ''}</div>
-    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: true, autocomplete: 'given-name' })}
-    ${field({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, type: 'tel', required: false, autocomplete: 'tel', inputmode: 'tel' })}
-    ${field({ label: 'Email', name: `participantEmail${index}`, value: participant.email, type: 'email', required: false, autocomplete: 'email' })}
+    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: false, autocomplete: 'given-name' })}
   </section>`;
 }
 
@@ -220,6 +218,10 @@ async function startJournalBooking(tenantId, creationOwner) {
   const destroyParticipantProcedureController = () => {
     participantProcedureController?.destroy?.();
     participantProcedureController = null;
+  };
+
+  const clearParticipantProcedures = () => {
+    for (const participant of participants) participant.procedures = [];
   };
 
   const resolveAccount = async () => {
@@ -439,6 +441,7 @@ async function startJournalBooking(tenantId, creationOwner) {
       });
       creationOwner.setBackHandler?.(() => {
         if (index > 0) return renderParticipantProcedures(index - 1);
+        clearParticipantProcedures();
         return renderParticipantData();
       });
       const view = creationOwner.render({
@@ -459,7 +462,6 @@ async function startJournalBooking(tenantId, creationOwner) {
           });
           selected.clear();
           next.forEach((value, key) => selected.set(key, value));
-          participant.procedures = [...selected.values()];
           const nextButton = view?.layer?.querySelector('[data-account-booking-procedures-next]');
           if (nextButton) nextButton.disabled = selected.size === 0;
         },
@@ -518,11 +520,11 @@ async function startJournalBooking(tenantId, creationOwner) {
     }));
     view?.layer?.querySelector('[data-account-booking-participant-next]')?.addEventListener('click', () => {
       const validationError = syncParticipantForm(form, { validate: true });
-      const missingName = extras.some((participant) => !participant.name);
-      if (validationError || missingName) {
-        renderParticipantData(validationError || 'Укажите имя каждого участника.');
+      if (validationError) {
+        renderParticipantData(validationError);
         return;
       }
+      clearParticipantProcedures();
       void renderParticipantProcedures(0);
     });
     return true;
