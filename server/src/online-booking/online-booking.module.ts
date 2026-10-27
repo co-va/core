@@ -17,6 +17,10 @@ import { FinanceModule } from '../finance/finance.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { AccountGuard } from './account.guard';
 import { AccountBookingTargetsController } from './account-booking-targets.controller';
+import { AccountCalendarController } from './account-calendar.controller';
+import { AccountCalendarGoogleAdapter } from './account-calendar-google.adapter';
+import { AccountCalendarService } from './account-calendar.service';
+import { AccountCalendarYandexAdapter } from './account-calendar-yandex.adapter';
 import { AccountDepositController } from './account-deposit.controller';
 import { AccountEventController } from './account-event.controller';
 import { AccountNoteController } from './account-note.controller';
@@ -34,7 +38,7 @@ import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
   imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, PlatformNoticeModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
-  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController],
-  providers: [OnlineBookingService, BookingFlowService, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
+  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController],
+  providers: [OnlineBookingService, BookingFlowService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })
 export class OnlineBookingModule {}

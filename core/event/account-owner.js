@@ -45,6 +45,10 @@ async function request(path, options = {}) {
   return payload;
 }
 
+function syncCalendars() {
+  void request('/online-booking/account/calendar/sync', { method: 'POST' }).catch(() => {});
+}
+
 function replaceRow(value) {
   const event = normalize(value);
   const index = rows.findIndex((item) => item.id === event.id);
@@ -92,7 +96,9 @@ export async function createAccountEvent(input = {}) {
     body: JSON.stringify({ event }),
   });
   loaded = true;
-  return replaceRow(saved);
+  const result = replaceRow(saved);
+  syncCalendars();
+  return result;
 }
 
 export async function updateAccountEvent(id, patch = {}) {
@@ -104,7 +110,9 @@ export async function updateAccountEvent(id, patch = {}) {
     body: JSON.stringify({ event }),
   });
   loaded = true;
-  return replaceRow(saved);
+  const result = replaceRow(saved);
+  syncCalendars();
+  return result;
 }
 
 export async function removeAccountEvent(id) {
@@ -113,6 +121,7 @@ export async function removeAccountEvent(id) {
   await request(`/online-booking/account/events/${encodeURIComponent(key)}`, { method: 'DELETE' });
   rows = rows.filter((item) => item.id !== key);
   loaded = true;
+  syncCalendars();
   return true;
 }
 

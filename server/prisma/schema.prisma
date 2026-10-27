@@ -237,11 +237,83 @@ model Account {
   updatedAt          DateTime @updatedAt
 
   createdViaTenant Tenant?             @relation("AccountCreatedViaTenant", fields: [createdViaTenantId], references: [id], onDelete: SetNull)
-  contacts         AccountContact[]
-  tenantLinks      AccountTenantLink[]
-  requests         BookingRequest[]
+  contacts            AccountContact[]
+  tenantLinks         AccountTenantLink[]
+  requests            BookingRequest[]
+  calendarConnections AccountCalendarConnection[]
 
   @@index([createdViaTenantId])
+}
+
+model AccountCalendarConnection {
+  id                   String   @id @default(cuid())
+  accountId            String
+  provider             String
+  label                String   @default("")
+  status               String   @default("active")
+  encryptedCredentials String
+  credentialsIv        String
+  credentialsTag       String
+  exportCalendarId     String   @default("")
+  lastSyncAt           DateTime?
+  lastError            String   @default("")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  account  Account                       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bindings AccountCalendarBinding[]
+  links    AccountCalendarItemLink[]
+
+  @@unique([accountId, provider])
+  @@index([accountId, status])
+}
+
+model AccountCalendarBinding {
+  id                String   @id @default(cuid())
+  connectionId      String
+  externalCalendarId String
+  name              String   @default("")
+  enabled           Boolean  @default(true)
+  writable          Boolean  @default(false)
+  primary           Boolean  @default(false)
+  timeZone          String   @default("UTC")
+  collectionUrl     String   @default("")
+  syncToken         String   @default("")
+  channelId         String   @default("")
+  channelResourceId String   @default("")
+  channelToken      String   @default("")
+  channelExpiresAt  DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  connection AccountCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  links      AccountCalendarItemLink[]
+
+  @@unique([connectionId, externalCalendarId])
+  @@index([connectionId, enabled])
+}
+
+model AccountCalendarItemLink {
+  id                    String   @id @default(cuid())
+  connectionId          String
+  bindingId             String
+  localType             String
+  localId               String
+  externalId            String
+  externalHref          String   @default("")
+  externalEtag          String   @default("")
+  lastExternalUpdatedAt String   @default("")
+  lastLocalUpdatedAt    String   @default("")
+  payloadHash           String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  connection AccountCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  binding    AccountCalendarBinding    @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+
+  @@unique([bindingId, externalId])
+  @@unique([connectionId, localType, localId])
+  @@index([connectionId, localType])
 }
 
 model AccountTenantLink {
