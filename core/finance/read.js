@@ -1,8 +1,17 @@
-import { readFinanceState } from './data.js';
+import { getFinanceRevision, readFinanceState } from './data.js';
 import { financialNumber } from './rules.js';
+
+let cachedOperationRevision = -1;
+let cachedOperationMovements = [];
+let cachedActiveMovements = [];
+let cachedActiveBySource = new Map();
 
 function sourceKey(source = null) {
   return `${String(source?.type || '')}:${String(source?.id || '')}`;
+}
+
+function cloneRows(rows = []) {
+  return JSON.parse(JSON.stringify(Array.isArray(rows) ? rows : []));
 }
 
 function isActiveMovement(item = null) {
@@ -75,11 +84,33 @@ function operationMovement(operation = null) {
   };
 }
 
-function operationMovements(state = readFinanceState()) {
+function projectOperationMovements(state = {}) {
   return (Array.isArray(state.operations) ? state.operations : [])
     .map(operationMovement)
     .filter(Boolean)
     .sort((a, b) => String(a?.occurredAt || '').localeCompare(String(b?.occurredAt || '')));
+}
+
+function ensureOperationProjection() {
+  const revision = getFinanceRevision();
+  if (cachedOperationRevision === revision) return;
+
+  cachedOperationMovements = projectOperationMovements(readFinanceState());
+  cachedActiveMovements = cachedOperationMovements.filter(isActiveMovement);
+  cachedActiveBySource = new Map();
+  for (const movement of cachedActiveMovements) {
+    const key = sourceKey(movement?.source);
+    const bucket = cachedActiveBySource.get(key) || [];
+    bucket.push(movement);
+    cachedActiveBySource.set(key, bucket);
+  }
+  cachedOperationRevision = revision;
+}
+
+function operationMovements(state = null) {
+  if (state) return projectOperationMovements(state);
+  ensureOperationProjection();
+  return cachedOperationMovements;
 }
 
 function refundsForPayment(state, paymentId) {
@@ -90,29 +121,31 @@ function refundsForPayment(state, paymentId) {
 }
 
 export function getDDSIncome() {
-  return operationMovements().filter((item) => item.movementType === 'income').map((item) => ({ ...item }));
+  return cloneRows(operationMovements().filter((item) => item.movementType === 'income'));
 }
 
 export function getDDSExpenses() {
-  return operationMovements().filter((item) => item.movementType === 'expense').map((item) => ({ ...item }));
+  return cloneRows(operationMovements().filter((item) => item.movementType === 'expense'));
 }
 
 export function getDDSMovements() {
-  return operationMovements().map((item) => ({ ...item }));
+  return cloneRows(operationMovements());
 }
 
 export function getDDSMovementsForSource(type, id) {
   const key = `${String(type || '')}:${String(id || '')}`;
-  return getDDSMovements().filter((item) => sourceKey(item?.source) === key);
+  return cloneRows(operationMovements().filter((item) => sourceKey(item?.source) === key));
 }
 
 export function getActiveDDSMovements() {
-  return getDDSMovements().filter(isActiveMovement);
+  ensureOperationProjection();
+  return cloneRows(cachedActiveMovements);
 }
 
 export function getActiveDDSMovementsForSource(type, id) {
+  ensureOperationProjection();
   const key = `${String(type || '')}:${String(id || '')}`;
-  return getActiveDDSMovements().filter((item) => sourceKey(item?.source) === key);
+  return cloneRows(cachedActiveBySource.get(key) || []);
 }
 
 function projectLedgerEntry(state, entry) {
@@ -196,7 +229,6 @@ export function getPaymentRemaining(paymentId) {
     .reduce((sum, item) => sum + Math.max(0, financialNumber(item?.total)), 0);
   return Math.max(0, financialNumber(payment.total) - refunded);
 }
-
 
 function reportBoundary(value, fallback) {
   if (value instanceof Date) return value.getTime();
