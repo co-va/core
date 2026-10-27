@@ -74,7 +74,7 @@ import {
 import { getGlobalPersonalAccounts } from './personal-account-data.js';
 import { getGlobalDeposits } from './deposit-data.js';
 import { renderJournal } from '../journal/journal.js';
-import { accountIntegrationsCard, bindAccountIntegrationsCard } from './calendar-integrations.js';
+import { renderAccountCalendarIntegrations } from './calendar-integrations.js';
 
 function money(value) {
   const number = Number(value || 0);
@@ -219,12 +219,14 @@ const GLOBAL_ACCOUNT_ROOTS = Object.freeze([
   { id: 'profile', label: 'Профиль' },
   { id: 'journal', label: 'Журнал' },
   { id: 'contacts', label: 'Контакты' },
+  { id: 'integrations', label: 'Интеграции' },
 ]);
 
 function accountRootForTab(state) {
   if (state.accountTab === 'profile' || state.accountTab === 'profile-settings') return 'profile';
   if (state.accountTab === 'journal') return 'journal';
   if (state.accountTab === 'contacts' || state.accountTab === 'contact-detail') return 'contacts';
+  if (state.accountTab === 'integrations') return 'integrations';
   return 'journal';
 }
 
@@ -260,6 +262,7 @@ function renderV2Shell(root, state, { header, body = '', deck = true, className 
     if (z) z.innerHTML = body;
     const vHost = shell.querySelector(':scope > [data-v2-v-host]');
     if (vHost) { vHost.innerHTML = vMarkup; vHost.hidden = !vMarkup; }
+
     setV2DeckOpen(shell, Boolean(state.accountDeckOpen));
     shell.classList.toggle('is-z-entering', Boolean(state.accountZEnter && !state.accountDeckOpen));
     const preserved = ['v2-app', 'v2-app--with-deck'];
@@ -275,30 +278,30 @@ function renderV2Shell(root, state, { header, body = '', deck = true, className 
 
 function bindWorkspaceInteraction(root, state, handlers, { bindZ = true, onZRight = null, onZLeft = null } = {}) {
   root.v2WorkspaceInteractionDispose?.();
+  const fallbackF = accountRootForTab(state);
+  const activeF = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === state.accountDeckActive)
+    ? state.accountDeckActive
+    : fallbackF;
+  state.accountDeckActive = activeF;
   const dispose = initV2WorkspaceInteraction(root, {
-    activeId: state.accountDeckActive || accountRootForTab(state),
+    activeId: activeF,
     deckOpen: state.accountDeckOpen,
     bindZ,
     onZRight,
     onZLeft,
-    onDeckOpenChange: (open) => {
-      state.accountDeckOpen = open;
-    },
+    onDeckOpenChange: (open) => { state.accountDeckOpen = open; },
     onRootSelect: (id) => {
-      const next = GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id) ? id : 'journal';
-      state.accountDeckActive = next;
+      if (!GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)) return;
+      state.accountDeckActive = id;
       state.accountDeckOpen = false;
       state.accountZEnter = true;
       state.accountChatOpen = false;
-      state.accountTab = next;
+      state.accountTab = id;
       void handlers.render();
     },
   });
   root.v2WorkspaceInteractionDispose = dispose;
-  return () => {
-    if (root.v2WorkspaceInteractionDispose === dispose) root.v2WorkspaceInteractionDispose = null;
-    dispose?.();
-  };
+  return () => { if (root.v2WorkspaceInteractionDispose === dispose) root.v2WorkspaceInteractionDispose = null; dispose?.(); };
 }
 
 async function openChatSettings(state) {
@@ -716,10 +719,9 @@ async function renderGlobalProfile(root, state, handlers) {
   renderV2Shell(root, state, {
     header,
     v: { data: 'data-account-profile-settings', aria: 'Настройки профиля' },
-    body: entityCardStack([profileSummary(state), accountIntegrationsCard()]),
+    body: entityCardStack([profileSummary(state)]),
   });
   bindWorkspaceInteraction(root, state, handlers);
-  bindAccountIntegrationsCard(root);
   bindGlobalProfileSettingsEntry(root, state, handlers);
   bindGlobalChatButton(root, state, handlers);
 
@@ -736,6 +738,22 @@ async function renderGlobalProfile(root, state, handlers) {
     if (editor) editor.dataset.accountDirty = 'false';
     syncGlobalProfileHeader(root, state, handlers);
   });
+}
+
+async function renderGlobalIntegrations(root, state, handlers) {
+  const header = v2Header({
+    a: { kind: 'avatar', label: accountName(state), image: accountPhoto(state) },
+    b: 'Интеграции',
+    d: { kind: 'chat', data: 'data-account-open-chat-root', aria: 'Чат' },
+  });
+  renderV2Shell(root, state, {
+    header,
+    body: '<div data-account-calendar-integrations-root></div>',
+  });
+  bindWorkspaceInteraction(root, state, handlers);
+  bindGlobalChatButton(root, state, handlers);
+  const host = root.querySelector('[data-account-calendar-integrations-root]');
+  if (host) await renderAccountCalendarIntegrations(host);
 }
 
 async function renderGlobalProfileSettings(root, state, handlers) {
@@ -1533,6 +1551,7 @@ export async function renderGlobalAccount(root, state, callbacks = {}) {
   if (state.accountTab === 'messages') return renderGlobalMessages(root, state, handlers);
   if (state.accountTab === 'profile-settings') return renderGlobalProfileSettings(root, state, handlers);
   if (state.accountTab === 'profile') return renderGlobalProfile(root, state, handlers);
+  if (state.accountTab === 'integrations') return renderGlobalIntegrations(root, state, handlers);
   if (state.accountTab === 'journal') return renderGlobalJournal(root, state, handlers);
   if (state.accountTab === 'contact-detail') return renderGlobalContactDetail(root, state, handlers);
   if (state.accountTab === 'contacts') return renderGlobalContacts(root, state, handlers);
