@@ -593,6 +593,555 @@ function renderAccountEntry(root, state) {
     };
     state.error = '';
     try {
+      await loadAccountTerms(state);
+      renderAccountDetails(root, state);
+    } catch (error) {
+      state.error = accountFlowError(error, 'Не удалось открыть регистрацию');
+      renderAccountEntry(root, state);
+    }
+  });
+  root.querySelector('[data-booking-forgot]')?.addEventListener('click', () => {
+    openNotice({
+      title: 'Восстановление пароля',
+      message: 'Восстановление пароля пока недоступно.',
+      action: 'Закрыть',
+      variant: 'technical',
+    });
+  });
+  authForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const validationError = formValidationMessage(authForm);
+    if (validationError) {
+      state.error = validationError;
+      renderAccountEntry(root, state);
+      return;
+    }
+    const data = new FormData(authForm);
+    const identifier = String(data.get('identifier') || '').trim();
+    const password = String(data.get('password') || '');
+    const submit = authForm.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+      const prepared = await prepareAccount(state.tenantId, { identifier });
+      if (!prepared.exists) {
+        state.accountDraft = {
+          ...(state.accountDraft || {}),
+          identifier,
+          ...(prepared.identifierType === 'EMAIL' ? { email: identifier.toLowerCase() } : {}),
+          ...(prepared.identifierType === 'PHONE' ? { phone: identifier } : {}),
+        };
+        state.error = 'Аккаунт не найден. Выберите «Зарегистрироваться».';
+        renderAccountEntry(root, state);
+        return;
+      }
+      const payload = await loginAccount(state.tenantId, identifier, password);
+      state.accountDraft = { ...(state.accountDraft || {}), identifier };
+      state.account = payload.account;
+      state.error = '';
+      await continueAfterIdentity(root, state);
+    } catch (error) {
+      state.error = accountFlowError(error, 'Не удалось войти');
+      renderAccountEntry(root, state);
+    }
+  });
+}
+
+function renderAccountDetails(root, state) {
+  state.bookingStep = 'registration';
+  const draft = state.accountDraft || {};
+  const contactErrors = state.contactErrors || {};
+  renderFlowPage(root, state, {
+    title: 'Регистрация',
+    action: { label: 'Подтвердить', data: 'data-booking-account-submit' },
+    step: 'registration',
+    body: formView(`
+      ${field({ label: 'Имя', name: 'name', value: draft.name || '', required: true, autocomplete: 'given-name' })}
+      ${field({ label: 'Фамилия', name: 'surname', value: draft.surname || '', autocomplete: 'family-name' })}
+      ${phoneField({ label: 'Телефон', name: 'phone', value: draft.phone || '', required: true })}
+      ${formError(contactErrors.phone || '')}
+      ${field({ label: 'Email', name: 'email', value: draft.email || '', type: 'email', required: true, autocomplete: 'email' })}
+      ${formError(contactErrors.email || '')}
+      ${passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'new-password' })}
+      ${passwordField({ label: 'Повтор пароля', name: 'repeatPassword', required: true, autocomplete: 'new-password' })}
+      ${formError(state.error)}
+    `, { data: 'data-booking-account-form' }),
+  });
+  initV2Swipe(root, {
+    onRight: () => {
+      state.error = '';
+      state.contactErrors = {};
+      renderAccountEntry(root, state);
+    },
+  });
+  initPasswordFields(root);
+  const form = root.querySelector('[data-booking-account-form]');
+  root.querySelector('[data-booking-account-submit]')?.addEventListener('click', () => form?.requestSubmit());
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const validationError = formValidationMessage(form);
+    if (validationError) {
+      state.error = validationError;
+      renderAccountDetails(root, state);
+      return;
+    }
+    const data = new FormData(form);
+    const email = String(data.get('email') || '').trim().toLowerCase();
+    const phone = String(data.get('phone') || '').trim();
+    const password = String(data.get('password') || '');
+    const repeatPassword = String(data.get('repeatPassword') || '');
+    if (password !== repeatPassword) {
+      state.error = 'Пароли не совпадают.';
+      renderAccountDetails(root, state);
+      return;
+    }
+    state.accountDraft = {
+      ...(state.accountDraft || {}),
+      name: String(data.get('name') || '').trim(),
+      surname: String(data.get('surname') || '').trim(),
+      email,
+      phone,
+      password,
+    };
+    const submit = root.querySelector('[data-booking-account-submit]');
+    if (submit) submit.disabled = true;
+    try {
+      const prepared = await prepareAccount(state.tenantId, { email, phone });
+      const contactMessage = 'Этот контакт уже зарегистрирован. Войдите в учетную запись или восстановите пароль.';
+      state.contactErrors = {
+        email: prepared?.conflicts?.email ? contactMessage : '',
+        phone: prepared?.conflicts?.phone ? contactMessage : '',
+      };
+      if (state.contactErrors.email || state.contactErrors.phone) {
+        state.error = '';
+        renderAccountDetails(root, state);
+        return;
+      }
+      state.contactErrors = {};
+      state.error = '';
+      if (!state.accountTerms) await loadAccountTerms(state);
+      renderLegalSticker(root, state);
+    } catch (error) {
+      state.error = accountFlowError(error, 'Не удалось проверить контакты');
+      renderAccountDetails(root, state);
+    }
+  });
+}
+
+async function continueAfterIdentity(root, state) {
+  if (!state.account) {
+    renderAccountEntry(root, state);
+    return;
+  }
+
+  try {
+    const platformState = await getAccountPlatformState(state.tenantId);
+    state.accountTerms = platformState?.document || state.accountTerms;
+    state.accountTermsAccepted = Boolean(platformState?.accepted);
+
+    if (!platformState?.accepted) {
+      state.platformOnlyLegal = state.identityDestination === 'profile' || state.identityDestination === 'booking-start';
+      renderLegalSticker(root, state);
+      return;
+    }
+
+    if (state.identityDestination === 'booking-start') {
+      state.platformOnlyLegal = false;
+      state.identityDestination = 'booking';
+      nextBookingStep(root, state);
+      return;
+    }
+
+    if (state.identityDestination === 'profile') {
+      state.platformOnlyLegal = false;
+      exitBookingContext(state, {
+        tab: state.entry === 'chat' ? 'messages' : 'contact-detail',
+        tenantId: state.tenantId,
+      });
+      return;
+    }
+
+    state.platformOnlyLegal = false;
+    const consentState = await refreshTenantConsentState(state);
+    if (!consentState.pdnActive) {
+      renderLegalSticker(root, state);
+      return;
+    }
+
+    const hasBookingSelection = Boolean(
+      state.workplaceKey
+      && state.procedureIds.length
+      && state.date
+      && state.from
+      && state.to
+    );
+    if (hasBookingSelection) {
+      await finalizeBookingRequest(root, state);
+      return;
+    }
+    nextBookingStep(root, state);
+  } catch (error) {
+    state.error = accountFlowError(error, 'Не удалось проверить юридический статус');
+    try {
+      if (!state.accountTerms) await loadAccountTerms(state);
+      await refreshTenantConsentState(state).catch(() => ({ pdnActive: false }));
+      renderLegalSticker(root, state);
+    } catch {
+      renderFlowPage(root, state, {
+        title: 'Проверка учетной записи',
+        body: formError(state.error),
+        step: state.bookingStep || 'times',
+      });
+      initV2Swipe(root, {
+        onRight: () => {
+          if (state.identityDestination === 'booking' && state.from) renderConfirmation(root, state);
+          else nextBookingStep(root, state);
+        },
+      });
+    }
+  }
+}
+
+function renderWorkplaces(root, state) {
+  const workplaces = Array.isArray(state.context.workplaces) ? state.context.workplaces : [];
+  const profile = state.context?.profile || {};
+  const content = recordWorkplaceCards(workplaces.map((workplace) => ({
+    ...workplace,
+    appearance: workplaceCardAppearance(workplace),
+    fields: workplaceCardFields(workplace, workplace.cardProfile || profile),
+    image: workplace.photo || '',
+    imagePosition: `${Number(workplace.photoCropX || 50)}% ${Number(workplace.photoCropY || 50)}%`,
+  })), {
+    data: 'data-booking-workplace',
+  });
+  const layer = renderBookingStep(root, state, {
+    step: 'workplaces',
+    body: content || emptyState('Нет доступных пространств', 'Рабочие пространства для онлайн-записи не найдены.'),
+    onFirstBack: () => backFromFirstBookingStep(root, state),
+  });
+  layer?.querySelectorAll('[data-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
+    state.workplaceKey = node.dataset.bookingWorkplace || '';
+    state.procedureIds = [];
+    state.date = '';
+    state.from = '';
+    renderProcedures(root, state);
+  }));
+}
+
+function renderProcedures(root, state) {
+  const procedures = getBookingProcedures(state.context, state.workplaceKey);
+  const content = recordProcedureList(procedures.map((procedure) => {
+    const cost = bookingProcedureCost(procedure, state.workplaceKey);
+    return {
+      id: String(procedure.id || ''),
+      name: procedure.name || '',
+      durationText: procedure.duration ? `${Number(procedure.duration)} мин` : '',
+      costText: cost !== '' ? money(cost) : '',
+    };
+  }), {
+    selected: state.procedureIds,
+    data: 'data-booking-procedure',
+    empty: 'Для этого рабочего пространства процедуры не настроены.',
+  });
+  const layer = renderBookingStep(root, state, {
+    step: 'procedures',
+    body: content || emptyState('Процедур нет', 'Для этого рабочего пространства процедуры не настроены.'),
+    onFirstBack: () => backFromFirstBookingStep(root, state),
+  });
+  layer?.querySelectorAll('[data-booking-procedure]').forEach((node) => node.addEventListener('click', () => {
+    const id = String(node.dataset.bookingProcedure || '');
+    const next = new Set(state.procedureIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    state.procedureIds = [...next];
+    state.date = '';
+    state.from = '';
+    renderProcedures(root, state);
+  }));
+  layer?.querySelector('[data-booking-procedures-next]')?.addEventListener('click', () => {
+    if (!state.procedureIds.length) return;
+    state.date = '';
+    state.from = '';
+    renderDates(root, state);
+  });
+}
+
+function renderDates(root, state) {
+  const dates = getBookingWorkingDates(state.context, state.workplaceKey);
+  const first = state.date || dates[0] || '2000-01-01';
+  const firstDate = new Date(`${first}T00:00:00`);
+  const layer = renderBookingStep(root, state, {
+    step: 'dates',
+    body: dates.length ? '<div data-booking-calendar></div>' : emptyState('Свободных дат нет', 'В графике пока нет доступных дат.'),
+    onFirstBack: () => backFromFirstBookingStep(root, state),
+  });
+  const calendarRoot = layer?.querySelector('[data-booking-calendar]');
+  if (!calendarRoot) return;
+  initCalendar(calendarRoot, {
+    month: new Date(firstDate.getFullYear(), firstDate.getMonth(), 1),
+    selectedValue: state.date || '',
+    workingDates: dates,
+    onDateSelect: (date) => {
+      if (!dates.includes(date)) return;
+      state.date = date;
+      state.from = '';
+      renderTimes(root, state);
+    },
+  });
+}
+
+function renderTimes(root, state) {
+  const slots = getBookingSlots(state.context, {
+    workplaceKey: state.workplaceKey,
+    date: state.date,
+    procedureIds: state.procedureIds,
+    step: state.settings.slotStep,
+  });
+  const layer = renderBookingStep(root, state, {
+    step: 'times',
+    body: `${slots.length
+      ? recordTimeRows(slots, { data: 'data-booking-time', accentEvery: 0 })
+      : emptyState('Свободного времени нет', 'На эту дату нет интервала для выбранных процедур.')}${formError(state.error)}`,
+    onFirstBack: () => backFromFirstBookingStep(root, state),
+  });
+  layer?.querySelectorAll('[data-booking-time]').forEach((node) => {
+    if (String(node.dataset.bookingTime || '') === String(state.from || '')) node.classList.add('is-selected');
+    node.addEventListener('click', () => {
+      const slot = slots.find((item) => item.from === node.dataset.bookingTime);
+      if (!slot) return;
+      state.from = slot.from;
+      state.to = slot.to;
+      state.error = '';
+      state.identityDestination = 'booking';
+      renderConfirmation(root, state);
+    });
+  });
+}
+
+function confirmationCard(state) {
+  const workplace = getBookingWorkplace(state.context, state.workplaceKey) || {};
+  const procedures = bookingSelection(state.context, state.workplaceKey, state.procedureIds);
+  const subtotal = selectedSubtotal(state.context, state.workplaceKey, state.procedureIds);
+  const discount = accountDiscount(state.account);
+  const total = discountedTotal(subtotal, discount);
+  const duration = procedures.reduce((sum, procedure) => sum + Math.max(0, Number(procedure.duration || 0)), 0);
+  const accountName = [state.account?.name, state.account?.surname].filter(Boolean).join(' ').trim();
+  const accountPhone = String(state.account?.phone || state.account?.phones?.[0] || '');
+  const uei = String(state.account?.uei || state.account?.person?.uei || '');
+  return recordConfirmationMiniCard({
+    workplace: workplace.name || representativeName(state),
+    date: formatDate(state.date),
+    period: `${state.from || ''} - ${state.to || ''}`,
+    uei,
+    name: accountName || 'Запись',
+    phone: accountPhone,
+    duration: duration ? `${duration} мин` : '—',
+    discount: `${discount}%`,
+    total: money(total),
+    procedures: procedures.map((procedure) => ({
+      name: procedure.name || '',
+      durationText: procedure.duration ? `${Number(procedure.duration)} мин` : '',
+      right: money(bookingProcedureCost(procedure, state.workplaceKey)),
+    })),
+  });
+}
+
+function renderConfirmation(root, state) {
+  const layer = renderBookingStep(root, state, {
+    step: 'confirmation',
+    body: `${confirmationCard(state)}${formError(state.error)}`,
+    onFirstBack: () => backFromFirstBookingStep(root, state),
+  });
+  layer?.querySelector('[data-booking-confirm]')?.addEventListener('click', async (event) => {
+    event.currentTarget.disabled = true;
+    state.identityDestination = 'booking';
+    state.error = '';
+    if (!state.account) {
+      renderAccountEntry(root, state);
+      return;
+    }
+    await continueAfterIdentity(root, state);
+  });
+}
+
+async function finalizeBookingRequest(root, state) {
+  const slotStillAvailable = () => getBookingSlots(state.context, {
+    workplaceKey: state.workplaceKey,
+    date: state.date,
+    procedureIds: state.procedureIds,
+    step: state.settings.slotStep,
+  }).some((slot) => String(slot.from || '') === String(state.from || ''));
+
+  try {
+    state.lastRequest = await createBookingRequest(state.tenantId, {
+      workplaceKey: state.workplaceKey,
+      date: state.date,
+      from: state.from,
+      procedureIds: state.procedureIds,
+    });
+    state.notice = 'Запись отправлена в журнал.';
+    state.error = '';
+    exitBookingContext(state, {
+      tab: 'journal',
+      journalDate: String(state.date || ''),
+    });
+  } catch (error) {
+    await refreshContext(state).catch(() => {});
+    if (state.from && !slotStillAvailable()) {
+      state.error = 'Выбранное время уже занято или стало недоступно. Выберите другое.';
+      state.from = '';
+      state.to = '';
+      renderTimes(root, state);
+      return;
+    }
+    state.error = accountFlowError(error, 'Не удалось подтвердить запись');
+    renderConfirmation(root, state);
+  }
+}
+
+async function refreshContext(state) {
+  state.context = await getBookingContext(state.tenantId, state.lockedWorkplaceKey);
+  state.settings = normalizeBookingSettings(state.context.settings);
+}
+
+function globalAccountState(initial = {}) {
+  const journalDate = String(initial.journalDate || '').trim();
+  return {
+    tenantId: '',
+    context: {},
+    settings: normalizeBookingSettings(),
+    accountDraft: {},
+    contactErrors: {},
+    account: null,
+    accountTerms: null,
+    accountTermsAccepted: false,
+    relationships: [],
+    accountRecords: [],
+    error: '',
+    accountJournalDate: /^\d{4}-\d{2}-\d{2}$/.test(journalDate) ? new Date(`${journalDate}T12:00:00`) : null,
+    accountTab: String(initial.tab || 'journal'),
+    accountDeckOpen: false,
+    accountDeckActive: String(initial.tab === 'profile' ? 'profile' : initial.tab === 'history' ? 'history' : initial.tab === 'contacts' || initial.tab === 'contact-detail' ? 'contacts' : 'journal'),
+    accountSelectedContactTenantId: String(initial.tab === 'contact-detail' ? initial.tenantId || '' : ''),
+    accountSelectedChatTenantId: String(initial.tab === 'messages' ? initial.tenantId || '' : ''),
+  };
+}
+
+function globalTermsFact(state) {
+  const document = state.accountTerms || {};
+  return {
+    key: String(document.key || ''),
+    version: Math.max(1, Number(document.version || 1)),
+    accepted: Boolean(state.accountTermsAccepted),
+    acceptedAt: new Date().toISOString(),
+  };
+}
+
+async function renderGlobalClientHome(root, state) {
+  const account = state.account || await getGlobalAccount();
+  if (!account) {
+    renderGlobalClientEntry(root, state);
+    return;
+  }
+  state.account = account;
+
+  const tab = String(state.accountTab || 'journal');
+  const profileOnly = tab === 'profile' || tab === 'profile-settings';
+  const needsRecords = tab === 'journal' || tab === 'contact-detail';
+  const relationships = profileOnly
+    ? await getGlobalAccountBookingTargets().catch(() => [])
+    : await getGlobalAccountRelationships().catch(() => []);
+  const records = needsRecords
+    ? await getGlobalAccountRecords().catch(() => [])
+    : [];
+
+  state.relationships = Array.isArray(relationships) ? relationships : [];
+  state.accountRecords = Array.isArray(records) ? records : [];
+  await renderGlobalAccount(root, state, {
+    onStartBooking: (tenantId, options = {}) => {
+      const id = String(tenantId || '').trim();
+      if (!id) return;
+      const repeatRequest = options?.repeatRequest && typeof options.repeatRequest === 'object'
+        ? options.repeatRequest
+        : null;
+      const workplaceKey = String(
+        options?.workplaceKey
+        || repeatRequest?.workplaceId
+        || repeatRequest?.workplaceKey
+        || ''
+      ).trim();
+      window.dispatchEvent(new CustomEvent('cova:account-booking-start', {
+        detail: {
+          tenantId: id,
+          workplaceKey,
+          repeatRequest,
+          entry: repeatRequest ? 'repeat' : workplaceKey ? 'workplace' : 'profile',
+        },
+      }));
+    },
+    onLogout: () => {
+      clearAccount('');
+      state.account = null;
+      state.relationships = [];
+      state.accountRecords = [];
+      state.error = '';
+      renderGlobalClientEntry(root, state);
+    },
+  });
+}
+
+async function continueGlobalIdentity(root, state) {
+  const platformState = await getGlobalAccountPlatformState();
+  state.accountTerms = platformState?.document || state.accountTerms;
+  state.accountTermsAccepted = Boolean(platformState?.accepted);
+  if (!platformState?.accepted) {
+    renderGlobalClientLegal(root, state);
+    return;
+  }
+  await renderGlobalClientHome(root, state);
+}
+
+function renderGlobalClientEntry(root, state) {
+  const rememberedIdentifier = state.accountDraft?.identifier
+    || state.accountDraft?.email
+    || getRememberedAccountEmail('')
+    || '';
+  const form = formView(`
+    ${field({ label: 'Телефон или email', name: 'identifier', value: rememberedIdentifier, required: true, autocomplete: 'username' })}
+    ${passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'current-password' })}
+    ${formError(state.error)}
+    <button type="button" class="v2-sticker-link" data-global-account-forgot>Забыли пароль?</button>
+    <button type="button" class="v2-sticker-link" data-global-account-register>Зарегистрироваться</button>
+  `, { data: 'id="global-account-entry" data-global-account-entry' });
+  root.innerHTML = `<section class="${flowThemeClasses(state)}">${v2Sticker({
+    title: 'Вход',
+    body: form,
+    action: '<button class="ui-button" type="submit" form="global-account-entry">Войти</button>',
+    className: 'v2-sticker-screen--auth',
+    closeData: 'data-global-account-u-close',
+  })}</section>`;
+  initPasswordFields(root);
+  root.querySelector('[data-global-account-u-close]')?.addEventListener('click', () => {
+    if (window.history.length > 1) window.history.back();
+  });
+  root.querySelector('[data-global-account-forgot]')?.addEventListener('click', () => {
+    openNotice({
+      title: 'Восстановление пароля',
+      message: 'Восстановление пароля пока недоступно.',
+      action: 'Закрыть',
+      variant: 'technical',
+    });
+  });
+  const authForm = root.querySelector('[data-global-account-entry]');
+  root.querySelector('[data-global-account-register]')?.addEventListener('click', async () => {
+    const data = new FormData(authForm);
+    const identifier = String(data.get('identifier') || '').trim();
+    state.accountDraft = {
+      ...(state.accountDraft || {}),
+      identifier,
+      ...(identifier.includes('@') ? { email: identifier.toLowerCase() } : {}),
+    };
+    state.error = '';
+    try {
       state.accountTerms = await getAccountTerms();
       state.accountTermsAccepted = false;
       renderGlobalClientDetails(root, state);
@@ -609,7 +1158,7 @@ function renderAccountEntry(root, state) {
       renderGlobalClientEntry(root, state);
       return;
     }
-    const data = new FormData(authForm);
+    const data = new FormData(form);
     const identifier = String(data.get('identifier') || '').trim();
     const password = String(data.get('password') || '');
     try {
