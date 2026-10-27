@@ -61,6 +61,41 @@ function usageSegment(usage, day = '') {
   return { start: clippedStart, end: clippedEnd };
 }
 
+function usageLaneLayout(values = [], day = '') {
+  const entries = (Array.isArray(values) ? values : []).map((usage, index) => ({
+    usage,
+    index,
+    segment: usageSegment(usage, day),
+  })).filter((entry) => entry.segment && entry.usage?.overlap === true)
+    .sort((a, b) => a.segment.start - b.segment.start || a.segment.end - b.segment.end || a.index - b.index);
+  const layout = new Map();
+  let group = [];
+  let groupEnd = -1;
+
+  const flush = () => {
+    if (!group.length) return;
+    const laneEnds = [];
+    group.forEach((entry) => {
+      let lane = laneEnds.findIndex((end) => end <= entry.segment.start);
+      if (lane < 0) lane = laneEnds.length;
+      laneEnds[lane] = entry.segment.end;
+      entry.lane = lane;
+    });
+    const laneCount = Math.max(1, laneEnds.length);
+    group.forEach((entry) => layout.set(entry.index, { lane: entry.lane, laneCount }));
+    group = [];
+    groupEnd = -1;
+  };
+
+  entries.forEach((entry) => {
+    if (group.length && entry.segment.start >= groupEnd) flush();
+    group.push(entry);
+    groupEnd = Math.max(groupEnd, entry.segment.end);
+  });
+  flush();
+  return layout;
+}
+
 function renderUsage(usage, options, renderer) {
   return String((typeof renderer === 'function' ? renderer : usageMarkup)(usage, options) ?? '');
 }
@@ -158,15 +193,25 @@ export function journalDayTimeline({
   const start = clipUsagesToWorkRange ? workStart : naturalRange.start;
   const end = clipUsagesToWorkRange ? workEnd : naturalRange.end;
   const total = end - start;
-  const overlays = values.map((usage) => {
-    const segment = usageSegment(usage, day);
-    if (!segment) return '';
-    const clippedStart = Math.max(start, segment.start), clippedEnd = Math.min(end, segment.end);
-    if (clippedEnd <= clippedStart) return '';
-    const top = ((clippedStart - start) / total) * 100;
-    const height = ((clippedEnd - clippedStart) / total) * 100;
-    return `<div class="time-timeline__usage" style="top:${top}%;height:${height}%" data-time-usage="${escape(usage.sourceId || usage.id)}">${renderUsage(usage, { interactive: true }, usageRenderer)}</div>`;
-  }).join('');
+  const laneLayout = usageLaneLayout(values, day);
+const overlays = values.map((usage, index) => {
+  const segment = usageSegment(usage, day);
+  if (!segment) return '';
+  const clippedStart = Math.max(start, segment.start), clippedEnd = Math.min(end, segment.end);
+  if (clippedEnd <= clippedStart) return '';
+  const top = ((clippedStart - start) / total) * 100;
+  const height = ((clippedEnd - clippedStart) / total) * 100;
+  const lane = laneLayout.get(index);
+  let horizontal = '';
+  if (lane && lane.laneCount > 1) {
+    const left = (lane.lane / lane.laneCount) * 100;
+    const right = ((lane.laneCount - lane.lane - 1) / lane.laneCount) * 100;
+    const leftValue = lane.lane > 0 ? `calc(${left}% + 2px)` : '0';
+    const rightValue = lane.lane < lane.laneCount - 1 ? `calc(${right}% + 2px)` : '0';
+    horizontal = `;left:${leftValue};right:${rightValue};z-index:${lane.lane + 1}`;
+  }
+  return `<div class="time-timeline__usage" style="top:${top}%;height:${height}%${horizontal}" data-time-usage="${escape(usage.sourceId || usage.id)}">${renderUsage(usage, { interactive: true }, usageRenderer)}</div>`;
+}).join('');
 
   return `<section class="time-timeline" data-time-timeline data-time-from="${escape(minutesToTime(start))}" data-time-to="${escape(minutesToTime(end))}" style="--time-total-minutes:${total}">${slotsMarkup(start, end, { workStart, workEnd })}<div class="time-timeline__usages">${overlays}</div></section>`;
 }
