@@ -111,22 +111,18 @@ async function startJournalBooking(tenantId, creationOwner) {
   const id = String(tenantId || '').trim();
   if (!id || !creationOwner?.isOpen?.()) return;
 
+  const accountResultPromise = getAccount(id)
+    .then((account) => ({ account, error: null }))
+    .catch((error) => ({ account: null, error }));
+
   let context;
-  let account;
   try {
-    [context, account] = await Promise.all([
-      getBookingContext(id),
-      getAccount(id),
-    ]);
+    context = await getBookingContext(id);
   } catch (error) {
     openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось открыть запись.') });
     return;
   }
   if (!creationOwner.isOpen()) return;
-  if (!account) {
-    openNotice({ title: 'Запись недоступна', message: 'Не удалось определить пользователя приложения.' });
-    return;
-  }
 
   let bookingContext = context && typeof context === 'object' ? context : {};
   const workplaces = Array.isArray(bookingContext.workplaces) ? bookingContext.workplaces : [];
@@ -135,6 +131,16 @@ async function startJournalBooking(tenantId, creationOwner) {
     return;
   }
   const settings = normalizeBookingSettings(bookingContext.settings);
+  let account = null;
+
+  const resolveAccount = async () => {
+    if (account) return account;
+    const result = await accountResultPromise;
+    if (result.error) throw result.error;
+    account = result.account;
+    if (!account) throw new Error('Account is unavailable');
+    return account;
+  };
 
   const provider = {
     kind: 'online',
@@ -194,16 +200,32 @@ async function startJournalBooking(tenantId, creationOwner) {
     },
   };
 
-  const openBooking = (workplaceKey) => {
+  const showProfessionals = () => {
+    if (!creationOwner.isOpen()) return false;
+    void openAccountBookingProfessionalSelector(creationOwner);
+    return true;
+  };
+
+  const openBooking = async (workplaceKey) => {
+    if (!creationOwner.isOpen()) return;
+    let resolvedAccount;
+    try {
+      resolvedAccount = await resolveAccount();
+    } catch (error) {
+      openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось определить пользователя приложения.') });
+      return;
+    }
     if (!creationOwner.isOpen()) return;
     openRecords({
       context: 'online',
-      person: account,
+      person: resolvedAccount,
       workplaceId: String(workplaceKey || ''),
       procedures: [],
       professionalActions: false,
       provider,
       creationOwner,
+      stepBack: true,
+      onBackFromStart: () => workplaces.length > 1 ? renderWorkplaces() : showProfessionals(),
       onCreated: async (result) => {
         await renderGlobalClientRoot({
           tab: 'journal',
@@ -213,25 +235,33 @@ async function startJournalBooking(tenantId, creationOwner) {
     });
   };
 
+  const renderWorkplaces = () => {
+    if (!creationOwner.isOpen()) return false;
+    creationOwner.setBackHandler?.(() => showProfessionals());
+    const view = creationOwner.render({
+      step: 'workplace',
+      title: 'Выбор пространства',
+      body: workplaceRows(workplaces),
+    });
+    view?.body?.querySelectorAll('[data-account-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
+      const workplaceKey = String(node.dataset.accountBookingWorkplace || '');
+      if (workplaceKey) void openBooking(workplaceKey);
+    }));
+    return true;
+  };
+
   if (workplaces.length === 1) {
-    openBooking(String(workplaces[0]?.key || ''));
+    await openBooking(String(workplaces[0]?.key || ''));
     return;
   }
 
-  const view = creationOwner.render({
-    step: 'workplace',
-    title: 'Выбор пространства',
-    body: workplaceRows(workplaces),
-  });
-  view?.body?.querySelectorAll('[data-account-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
-    const workplaceKey = String(node.dataset.accountBookingWorkplace || '');
-    if (workplaceKey) openBooking(workplaceKey);
-  }));
+  renderWorkplaces();
 }
 
-async function openAccountBookingProfessionalSelector() {
-  const owner = openRecordCreationOwner();
+async function openAccountBookingProfessionalSelector(existingOwner = null) {
+  const owner = existingOwner || openRecordCreationOwner();
   if (!owner) return null;
+  owner.setBackHandler?.(null);
 
   const view = owner.render({
     step: 'person',
@@ -283,4 +313,6 @@ window.addEventListener('cova:account-journal-open-contacts', () => {
 });
 
 syncViewport();
+const bookingTargetsPrefetch = getGlobalAccountBookingTargets().catch(() => []);
 await renderGlobalClientRoot();
+void bookingTargetsPrefetch;

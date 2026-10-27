@@ -333,6 +333,8 @@ export function openRecords({
   onCreated = () => {},
   onSaved = null,
   onCancel = () => {},
+  stepBack = false,
+  onBackFromStart = null,
 } = {}) {
   const source = normalizeProvider(provider);
   const existing = record?.id ? record : null;
@@ -864,6 +866,46 @@ export function openRecords({
     });
   };
 
+  const backFromCurrentStep = () => {
+    if (!stepBack || state.recordId) return false;
+    const step = String(owner.layer?.dataset?.recordCreationStep || '');
+    if (step === 'confirmation') {
+      state.from = '';
+      state.to = '';
+      renderTimes();
+      return true;
+    }
+    if (step === 'person') {
+      state.from = '';
+      state.to = '';
+      renderTimes();
+      return true;
+    }
+    if (step === 'time') {
+      state.date = '';
+      state.from = '';
+      state.to = '';
+      renderDates();
+      return true;
+    }
+    if (step === 'date') {
+      state.date = '';
+      state.from = '';
+      state.to = '';
+      renderProcedures();
+      return true;
+    }
+    if (step === 'procedures' && typeof onBackFromStart === 'function') {
+      return onBackFromStart({
+        ...state,
+        procedures: state.procedures.map((item) => ({ ...item })),
+        person: state.person ? { ...state.person } : null,
+        people: state.people.map((item) => ({ ...item })),
+      }) !== false;
+    }
+    return false;
+  };
+
   const start = () => {
     const workplaces = source.workplaces();
     if (!workplaces.length) {
@@ -907,6 +949,7 @@ export function openRecords({
     people: state.people.map((item) => ({ ...item })),
   });
 
+  owner.setBackHandler?.(stepBack ? backFromCurrentStep : null);
   start();
   return owner;
 }

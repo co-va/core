@@ -7,6 +7,8 @@ const entry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
 const access = fs.readFileSync('online-booking/access.js', 'utf8');
 const publicEntry = fs.readFileSync('online-booking/booking-entry.js', 'utf8');
 const records = fs.readFileSync('core/records/records.js', 'utf8');
+const creationFlow = fs.readFileSync('ui/record/creation-flow.js', 'utf8');
+const recordService = fs.readFileSync('server/src/record/record.service.ts', 'utf8');
 const targetsClient = fs.readFileSync('core/account/booking-targets.js', 'utf8');
 const targetsController = fs.readFileSync('server/src/online-booking/account-booking-targets.controller.ts', 'utf8');
 const bookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
@@ -24,6 +26,7 @@ assert.match(bookingAction, /cova:account-journal-open-contacts/, 'Journal booki
 assert.doesNotMatch(bookingAction, /\bdate\b|\bfrom\b|timeHint|detail\s*:/, 'Journal booking must not inherit the tapped day or time');
 
 assert.match(targetsClient, /\/online-booking\/account\/booking-targets/, 'Professional selector must keep the existing Account booking-targets endpoint');
+assert.match(targetsClient, /cachedTargets/, 'Professional targets must be cached while the account session is unchanged');
 assert.match(entry, /getGlobalAccountBookingTargets/, 'App Journal professional selector must use the narrow Account booking-targets projection');
 assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal must start inside the existing Shared Record Q owner');
 assert.match(entry, /title: 'Выбор специалиста'/, 'App Journal first selector step must be professional selection');
@@ -43,10 +46,11 @@ const selectorStart = entry.indexOf('async function openAccountBookingProfession
 assert.ok(journalStart >= 0 && selectorStart > journalStart, 'Journal booking handoff must exist');
 const journalBooking = entry.slice(journalStart, selectorStart);
 assert.match(journalBooking, /getBookingContext\(id\)/, 'Journal Booking must use the lean canonical Booking context');
-assert.match(journalBooking, /getAccount\(id\)/, 'Journal Booking must resolve the already-authenticated App account without asking for identity again');
+assert.match(journalBooking, /accountResultPromise = getAccount\(id\)/, 'Journal Booking must start Account loading in parallel without blocking the workplace context');
+assert.doesNotMatch(journalBooking, /Promise\.all\(\[\s*getBookingContext\(id\),\s*getAccount\(id\)/, 'Workplace selection must not wait for the tenant Account request');
 assert.match(journalBooking, /openRecords\(\{/, 'Journal Booking must continue through the existing canonical Records flow');
 assert.match(journalBooking, /context: 'online'/, 'Journal Booking must use the online Records provider semantics');
-assert.match(journalBooking, /person: account/, 'Journal Booking must carry the known App account into confirmation instead of asking for name or phone');
+assert.match(journalBooking, /person: resolvedAccount/, 'Journal Booking must carry the known App account into confirmation instead of asking for name or phone');
 assert.match(journalBooking, /professionalActions: false/, 'Journal Booking must not expose professional Record actions');
 assert.match(journalBooking, /creationOwner,/, 'Journal Booking must reuse the already-open Shared Q owner');
 assert.match(journalBooking, /if \(workplaces\.length === 1\)/, 'One workplace must skip the workplace selector in App Journal Booking');
@@ -58,6 +62,12 @@ assert.doesNotMatch(entry, /from '\.\/access\.js'/, 'App user entry must not imp
 assert.doesNotMatch(entry, /phoneField|passwordField|account\/login|account\/register/, 'Journal Booking must not render identity, password, login or registration steps');
 assert.match(entry, /v2ListEntry\(/, 'App workplace selection must use the Shared list owner');
 assert.match(records, /const owner = creationOwner \|\| openRecordCreationOwner/, 'Canonical Records must keep support for an externally owned Shared Q');
+assert.match(records, /stepBack = false/, 'Canonical Records must expose opt-in step-back navigation without changing other Record flows');
+assert.match(records, /onBackFromStart/, 'Account Journal Booking must be able to return from procedures to its outer professional/workplace steps');
+assert.match(creationFlow, /setBackHandler\(handler = null\)/, 'Shared Q must distinguish its back control from hard close');
+assert.match(creationFlow, /data-modal-close.*handleBackControl/s, 'Shared Q header control must use the registered step-back handler');
+assert.match(recordService, /bookedByMatch/, 'End-user Journal must include the same Record when the account booked it for another person');
+assert.match(recordService, /record\.group.*participants/s, 'End-user Journal visibility must include non-primary group participants');
 
 const requestRouteStart = bookingController.indexOf("@UseGuards(AccountGuard, BookingPdnConsentGuard)");
 const requestRouteEnd = bookingController.indexOf('\n  }\n}', requestRouteStart);
