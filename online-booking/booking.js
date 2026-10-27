@@ -295,8 +295,7 @@ function representativePhoto(state) {
 
 function subtitleBlock(value = '') {
   const valueText = String(value || '').trim();
-  return valueText ? `<div class="v2-flow-subtitle">${escapeHtml(valueText).replaceAll('\
-', '<br>')}</div>` : '';
+  return valueText ? `<div class="v2-flow-subtitle">${escapeHtml(valueText).replaceAll('\n', '<br>')}</div>` : '';
 }
 
 function actionMarkup(action = null) {
@@ -529,8 +528,7 @@ function renderWelcome(root, state) {
   root.innerHTML = `<section class="${flowThemeClasses()}">${v2Sticker({
     eyebrow: owner ? `Приглашение от ${owner}` : '',
     title: state.settings.welcomeTitle || '',
-    body: state.settings.welcomeText ? `<p>${escapeHtml(state.settings.welcomeText).replaceAll('\
-', '<br>')}</p>` : '',
+    body: state.settings.welcomeText ? `<p>${escapeHtml(state.settings.welcomeText).replaceAll('\n', '<br>')}</p>` : '',
     className: 'v2-sticker-screen--welcome',
     closeData: 'data-booking-welcome-u-close',
   })}</section>`;
