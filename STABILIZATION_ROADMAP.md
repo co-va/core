@@ -87,10 +87,22 @@ Result:
 
 Evidence: prior Journal code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; post-item-3 recheck on staging `a9f255a32829976549dd04c8936f7d13769f17ee`; Check Book `40479254564` — PASS including domain regression and Browser FEZ.
 
-### 5. Journal Booking — `IN PROGRESS`
+### 5. Journal Booking — `DONE`
 Goal: Journal → Record creation uses one Q-flow with minimal data per step and no full Profile/People navigation.
 
-### 6. Public Booking — `TODO`
+Result:
+- Account Journal `Записаться` hands off from Shared X without inheriting the tapped date/time;
+- first Q step uses the narrow Account booking-targets projection for professional selection;
+- selected professional loads lean canonical Booking context rather than full Profile/Card;
+- one workplace is skipped; multiple workplaces stay inside the same Shared Q owner;
+- Procedure / availability / confirmation continue through the existing canonical Records flow;
+- the known App Account is carried into confirmation without identity/login/registration steps;
+- successful creation returns to the Account Journal;
+- no second Record/Booking owner was introduced and Public Booking remains isolated.
+
+Evidence: staging `6fc23a6ed3107551b4382f2d79069bf16ee81e2f`; Check Book `40484068946` — PASS including domain regression, FEZ, server build, modal-browser and staging-smoke; Record View Account Runtime `40484069036` — PASS.
+
+### 6. Public Booking — `IN PROGRESS`
 Goal: public professional link performs guest Booking only; no App Runtime, mandatory registration or full Profile application load.
 
 ### 7. Notifications — `TODO`
@@ -113,6 +125,6 @@ Goal: do not add breadth; prove persistence and one complete end-to-end scenario
 
 ## Current cursor
 
-**Item 5 — Journal Booking.**
+**Item 6 — Public Booking.**
 
-PR #769 is the merge boundary for completed items 1–4. Continuation starts from item 5 without a new whole-project analysis.
+PR #769 is the merge boundary for completed items 1–4. The next PR boundary is after items 5–6 are both DONE and fully verified.
