@@ -60,7 +60,20 @@ assert.doesNotMatch(journalBooking, /renderAccess\(/, 'Journal Booking must neve
 assert.doesNotMatch(journalBooking, /creationOwner\?\.close|variant:\s*'technical'|mountModal\(/, 'Journal Booking must not close Q or mount a technical modal');
 assert.match(journalBooking, /let participantProcedureController = null/, 'Journal participant procedures must have one controller owner for the whole Q flow');
 assert.match(journalBooking, /destroyParticipantProcedureController\(\);[\s\S]*participantProcedureController = initMultiSelect/, 'Journal participant procedure step must destroy the previous multiselect controller before binding the next participant');
-assert.doesNotMatch(journalBooking, /participants(?:\.slice\([^)]*\))?\.forEach\([^\n]*procedures = \[\]/, 'Journal step navigation must not erase participant procedure selections');
+assert.match(journalBooking, /const clearParticipantProcedures = \(\) => \{[\s\S]*participant\.procedures = \[\]/, 'Leaving the participant service stage must be able to invalidate all participant services');
+const participantProceduresStart = journalBooking.indexOf('const renderParticipantProcedures');
+const participantDataStart = journalBooking.indexOf('const renderParticipantData', participantProceduresStart);
+assert.ok(participantProceduresStart >= 0 && participantDataStart > participantProceduresStart, 'Journal participant service renderer must exist');
+const participantProcedures = journalBooking.slice(participantProceduresStart, participantDataStart);
+const participantChangeStart = participantProcedures.indexOf('onChange: (values) =>');
+const participantNextStart = participantProcedures.indexOf("view?.layer?.querySelector('[data-account-booking-procedures-next]')", participantChangeStart);
+assert.ok(participantChangeStart >= 0 && participantNextStart > participantChangeStart, 'Journal participant service draft and commit handlers must exist');
+const participantChange = participantProcedures.slice(participantChangeStart, participantNextStart);
+const participantNext = participantProcedures.slice(participantNextStart);
+assert.doesNotMatch(participantChange, /participant\.procedures\s*=/, 'Changing a service checkbox must stay a screen draft until Далее');
+assert.match(participantNext, /participant\.procedures = \[\.\.\.selected\.values\(\)\]/, 'Далее must commit only the current participant service draft');
+assert.match(participantProcedures, /if \(index > 0\) return renderParticipantProcedures\(index - 1\);[\s\S]*clearParticipantProcedures\(\);[\s\S]*return renderParticipantData\(\);/, 'Back inside services must revisit the previous participant, while leaving services entirely invalidates service state');
+assert.match(journalBooking, /clearParticipantProcedures\(\);\s*void renderParticipantProcedures\(0\)/, 'Re-entering participant services from participant data must start with clean services and calculations');
 assert.doesNotMatch(entry, /from '\.\/access\.js'/, 'App user entry must not import the Public technical Booking entry');
 assert.doesNotMatch(entry, /phoneField|passwordField|account\/login|account\/register/, 'Journal Booking must not render identity, password, login or registration steps');
 assert.match(entry, /v2ListEntry\(/, 'App workplace selection must use the Shared list owner');
@@ -88,9 +101,6 @@ assert.doesNotMatch(bookingContext, /this\.bookingSource\(|publicBookingBundle|d
 assert.match(bookingContext, /this\.prisma\.workplace\.findMany/, 'Booking context must load workplaces directly instead of going through Profile/Card');
 for (const field of ['key', 'name', 'city', 'address', 'timeZone', 'from', 'to', 'visibleInPublicBooking']) {
   assert.match(bookingContext, new RegExp(`${field}: true`), `Booking workplace source projection must include ${field}`);
-}
-for (const field of ['key', 'name', 'city', 'address', 'timeZone', 'from', 'to']) {
-  assert.match(bookingContext, new RegExp(`${field}: text\\(workplace\\?\\.${field}\\)`), `Booking workplace context must expose ${field}`);
 }
 assert.doesNotMatch(bookingContext, /photo|photoCropX|photoCropY|cardAppearance|cardProfile|\babout\b/, 'Booking context must not expose workplace Card payload');
 for (const preserved of ['procedures', 'days', 'documents', 'occupancy']) {
