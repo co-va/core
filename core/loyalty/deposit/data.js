@@ -92,7 +92,7 @@ export function getPersonDepositPriceConditions(personKey=''){
 }
 
 export async function loadDepositPrograms(){
-  const remote=await payload(await apiRequest('/auxiliary-state'),'Не удалось загрузить депозитные программы');
+  const remote=await payload(await apiRequest('/auxiliary-state/loyalty'),'Не удалось загрузить депозитные программы');
   programs=list(remote.depositPrograms).map((item)=>clone(item));
   return getDepositPrograms();
 }
