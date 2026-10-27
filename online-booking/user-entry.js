@@ -163,7 +163,7 @@ function participantFields(participant, index, { removable = false } = {}) {
   return `<section class="booking-participant" data-account-booking-participant="${index}">
     <div class="booking-participant__heading"><strong>Участник ${index + 1}</strong>${removable ? button('Удалить', { variant: 'secondary', data: `data-account-booking-remove-participant="${index}"` }) : ''}</div>
     ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: true, autocomplete: 'given-name' })}
-    ${field({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, type: 'tel', required: false, autocomplete: 'tel' })}
+    ${field({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, type: 'tel', required: false, autocomplete: 'tel', inputmode: 'tel' })}
     ${field({ label: 'Email', name: `participantEmail${index}`, value: participant.email, type: 'email', required: false, autocomplete: 'email' })}
   </section>`;
 }
