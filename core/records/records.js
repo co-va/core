@@ -326,6 +326,7 @@ export function openRecords({
   date = '',
   timeHint = '',
   procedures = [],
+  bookingParticipants = [],
   professionalActions = context !== 'online',
   actionContext = null,
   provider = {},
@@ -343,6 +344,18 @@ export function openRecords({
     ? existing.group.participants
     : initialPerson ? [initialPerson] : [];
   const initialProcedures = existing ? existing.procedures : procedures;
+  const initialBookingParticipants = !existing && source.kind === 'online' && Array.isArray(bookingParticipants)
+    ? bookingParticipants.map((participant, index) => ({
+        ...participant,
+        id: String(participant?.id || `participant-${index + 1}`),
+        name: String(participant?.name || '').trim(),
+        phone: String(participant?.phone || '').trim(),
+        email: String(participant?.email || '').trim(),
+        procedures: Array.isArray(participant?.procedures)
+          ? participant.procedures.map((entry) => ({ ...entry }))
+          : [],
+      }))
+    : [];
   const state = {
     recordId: String(existing?.id || ''),
     workplaceId: String(existing?.workplaceId ?? workplaceId ?? ''),
@@ -350,15 +363,34 @@ export function openRecords({
     timeHint: String(timeHint || ''),
     from: String(existing?.from || ''),
     to: String(existing?.to || ''),
-    procedures: Array.isArray(initialProcedures) ? initialProcedures.map((entry) => ({ ...entry })) : [],
+    procedures: initialBookingParticipants.length
+      ? initialBookingParticipants.flatMap((participant) => participant.procedures.map((entry) => ({ ...entry })))
+      : Array.isArray(initialProcedures) ? initialProcedures.map((entry) => ({ ...entry })) : [],
     person: initialPerson ? { ...initialPerson } : null,
     people: initialPeople.map((item) => ({ ...item })),
+    bookingParticipants: initialBookingParticipants,
+    bookingParticipantIndex: 0,
     correcting: false,
   };
 
   const owner = creationOwner || openRecordCreationOwner({ onCancel });
   if (!owner) return null;
   let currentRenderer = null;
+
+  const hasBookingParticipants = () => source.kind === 'online' && state.bookingParticipants.length > 0;
+  const currentBookingParticipant = () => hasBookingParticipants()
+    ? state.bookingParticipants[Math.max(0, Math.min(state.bookingParticipantIndex, state.bookingParticipants.length - 1))]
+    : null;
+  const syncBookingProcedures = () => {
+    if (!hasBookingParticipants()) return;
+    state.procedures = state.bookingParticipants.flatMap((participant) => participant.procedures.map((entry) => ({ ...entry })));
+  };
+  const clearBookingProcedures = () => {
+    if (!hasBookingParticipants()) return;
+    state.bookingParticipants.forEach((participant) => { participant.procedures = []; });
+    state.bookingParticipantIndex = 0;
+    syncBookingProcedures();
+  };
 
   const renderFooter = (view, handlers = {}) => {
     for (const [selector, handler] of Object.entries(handlers)) {
@@ -411,6 +443,7 @@ export function openRecords({
     view?.body?.querySelectorAll('[data-records-workplace]').forEach((node) => node.addEventListener('click', () => {
       state.workplaceId = String(node.dataset.recordsWorkplace || '');
       state.procedures = [];
+      clearBookingProcedures();
       state.date = '';
       state.from = '';
       state.to = '';
@@ -473,7 +506,9 @@ export function openRecords({
   const renderProcedures = () => {
     currentRenderer = renderProcedures;
     const available = source.procedures(state.workplaceId);
-    const selected = new Map(state.procedures.map((entry) => [String(entry.id || ''), entry]));
+    const participant = currentBookingParticipant();
+    const selectedSource = participant ? participant.procedures : state.procedures;
+    const selected = new Map(selectedSource.map((entry) => [String(entry.id || ''), entry]));
     let controller = null;
 
     const render = () => {
@@ -493,6 +528,7 @@ export function openRecords({
       ] : [];
       const view = owner.render({
         step: 'procedures',
+        title: participant ? `Выбор услуг — ${participant.name || `Участник ${state.bookingParticipantIndex + 1}`}` : '',
         body,
         secondaryActions,
         action: { label: 'Далее', data: 'data-records-procedures-next', disabled: selected.size === 0 },
@@ -510,7 +546,12 @@ export function openRecords({
           });
           selected.clear();
           next.forEach((value, key) => selected.set(key, value));
-          state.procedures = [...selected.values()];
+          if (participant) {
+            participant.procedures = [...selected.values()];
+            syncBookingProcedures();
+          } else {
+            state.procedures = [...selected.values()];
+          }
           render();
         },
       });
@@ -519,7 +560,17 @@ export function openRecords({
         '[data-records-add-procedure]': openAddProcedure,
         '[data-records-procedures-next]': () => {
           if (!selected.size) return;
-          state.procedures = [...selected.values()];
+          if (participant) {
+            participant.procedures = [...selected.values()];
+            syncBookingProcedures();
+            if (state.bookingParticipantIndex + 1 < state.bookingParticipants.length) {
+              state.bookingParticipantIndex += 1;
+              renderProcedures();
+              return;
+            }
+          } else {
+            state.procedures = [...selected.values()];
+          }
           nextAfterProcedures();
         },
       });
@@ -725,12 +776,14 @@ export function openRecords({
         if (step === 'workplace') {
           state.workplaceId = '';
           state.procedures = [];
+          clearBookingProcedures();
           state.date = '';
           state.from = '';
           state.to = '';
           renderWorkplaces();
         } else if (step === 'procedures') {
           state.procedures = [];
+          clearBookingProcedures();
           state.from = '';
           state.to = '';
           renderProcedures();
@@ -757,47 +810,81 @@ export function openRecords({
     ? source.personDisplay(confirmationPerson())
     : personDisplay(confirmationPerson());
 
-  const renderConfirmation = () => {
-    currentRenderer = renderConfirmation;
-    const contact = confirmationPerson();
-    const personInfo = confirmationDisplay();
-    const settlement = source.settlement
-      ? source.settlement(state)
-      : resolveRecordSettlement({
-        person: contact,
-        procedures: state.procedures.map((entry) => ({
-          id: entry.id,
+  const participantConfirmationCards = () => {
+    if (!hasBookingParticipants()) return '';
+    let cursor = timeToMinutes(state.from);
+    return state.bookingParticipants.map((participant, index) => {
+      const procedures = participant.procedures;
+      const minutes = totalDuration(procedures);
+      const from = cursor == null ? state.from : minutesToTime(cursor) || state.from;
+      const to = cursor == null ? state.to : minutesToTime(cursor + minutes) || state.to;
+      if (cursor != null) cursor += minutes;
+      const display = source.personDisplay ? source.personDisplay(participant) : personDisplay(participant);
+      const identity = [String(display?.uei || '').trim(), String(display?.name || participant.name || '').trim()].filter(Boolean).join('; ');
+      const total = source.participantTotal
+        ? source.participantTotal(participant, state)
+        : procedures.reduce((sum, entry) => sum + (Number(entry?.cost) || 0), 0);
+      return recordConfirmationMiniCard({
+        workplace: index === 0 ? source.workplaceName(state.workplaceId) : '',
+        date: index === 0 ? formatDate(state.date) : '',
+        period: `${from} - ${to}`,
+        identity,
+        phone: display?.phone || participant.phone || '',
+        duration: durationText(minutes),
+        total: formatMoney(total),
+        procedures: procedures.map((entry) => ({
           name: entry.name,
-          cost: entry.cost,
-          duration: entry.duration,
+          durationText: durationText(entry.duration),
+          right: entry.cost === '' || entry.cost == null ? '' : formatMoney(entry.cost),
         })),
       });
-    const contactDiscountPercent = Math.max(0, Math.min(100, Number(contact?.discountPercent) || 0));
-    const discountMoney = Math.max(0, (Number(settlement?.serviceTotal) || 0) - (Number(settlement?.planTotal) || 0));
-    const grossTotal = Number(settlement?.serviceTotal ?? (source.total ? source.total(state) : 0)) || 0;
-    const identityNameParts = [contact?.name, contact?.surname].map((value) => String(value || '').trim()).filter(Boolean);
-    const identity = [
-      String(personInfo.uei || '').trim(),
-      ...(identityNameParts.length
-        ? identityNameParts
-        : [String(personInfo.name || '').trim()].filter((value) => value && value !== 'Без имени')),
-    ].filter(Boolean).join('; ');
-    const card = recordConfirmationMiniCard({
-      workplace: source.workplaceName(state.workplaceId),
-      contactDiscount: contactDiscountPercent > 0 ? `${contactDiscountPercent}%` : '',
-      date: formatDate(state.date),
-      period: `${state.from} - ${state.to}`,
-      identity,
-      phone: personInfo.phone || '',
-      duration: durationText(totalDuration(state.procedures)),
-      discountMoney: discountMoney > 0.009 ? formatMoney(discountMoney) : '',
-      total: formatMoney(grossTotal),
-      procedures: state.procedures.map((entry) => ({
-        name: entry.name,
-        durationText: durationText(entry.duration),
-        right: entry.cost === '' || entry.cost == null ? '' : formatMoney(entry.cost),
-      })),
-    });
+    }).join('');
+  };
+
+  const renderConfirmation = () => {
+    currentRenderer = renderConfirmation;
+    let card = participantConfirmationCards();
+    if (!card) {
+      const contact = confirmationPerson();
+      const personInfo = confirmationDisplay();
+      const settlement = source.settlement
+        ? source.settlement(state)
+        : resolveRecordSettlement({
+          person: contact,
+          procedures: state.procedures.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            cost: entry.cost,
+            duration: entry.duration,
+          })),
+        });
+      const contactDiscountPercent = Math.max(0, Math.min(100, Number(contact?.discountPercent) || 0));
+      const discountMoney = Math.max(0, (Number(settlement?.serviceTotal) || 0) - (Number(settlement?.planTotal) || 0));
+      const grossTotal = Number(settlement?.serviceTotal ?? (source.total ? source.total(state) : 0)) || 0;
+      const identityNameParts = [contact?.name, contact?.surname].map((value) => String(value || '').trim()).filter(Boolean);
+      const identity = [
+        String(personInfo.uei || '').trim(),
+        ...(identityNameParts.length
+          ? identityNameParts
+          : [String(personInfo.name || '').trim()].filter((value) => value && value !== 'Без имени')),
+      ].filter(Boolean).join('; ');
+      card = recordConfirmationMiniCard({
+        workplace: source.workplaceName(state.workplaceId),
+        contactDiscount: contactDiscountPercent > 0 ? `${contactDiscountPercent}%` : '',
+        date: formatDate(state.date),
+        period: `${state.from} - ${state.to}`,
+        identity,
+        phone: personInfo.phone || '',
+        duration: durationText(totalDuration(state.procedures)),
+        discountMoney: discountMoney > 0.009 ? formatMoney(discountMoney) : '',
+        total: formatMoney(grossTotal),
+        procedures: state.procedures.map((entry) => ({
+          name: entry.name,
+          durationText: durationText(entry.duration),
+          right: entry.cost === '' || entry.cost == null ? '' : formatMoney(entry.cost),
+        })),
+      });
+    }
     const view = owner.render({
       step: 'confirmation',
       body: `<div class="record-screen record-screen--state-view"><div role="button" tabindex="0" data-records-correction>${card}</div></div>`,
@@ -892,6 +979,12 @@ export function openRecords({
       state.date = '';
       state.from = '';
       state.to = '';
+      if (hasBookingParticipants()) state.bookingParticipantIndex = Math.max(0, state.bookingParticipants.length - 1);
+      renderProcedures();
+      return true;
+    }
+    if (step === 'procedures' && hasBookingParticipants() && state.bookingParticipantIndex > 0) {
+      state.bookingParticipantIndex -= 1;
       renderProcedures();
       return true;
     }
@@ -901,6 +994,10 @@ export function openRecords({
         procedures: state.procedures.map((item) => ({ ...item })),
         person: state.person ? { ...state.person } : null,
         people: state.people.map((item) => ({ ...item })),
+        bookingParticipants: state.bookingParticipants.map((participant) => ({
+          ...participant,
+          procedures: participant.procedures.map((item) => ({ ...item })),
+        })),
       }) !== false;
     }
     return false;
@@ -932,6 +1029,7 @@ export function openRecords({
     }
 
     if (!state.workplaceId) renderWorkplaces();
+    else if (hasBookingParticipants()) renderProcedures();
     else if (!state.procedures.length) renderProcedures();
     else if (!state.date) renderDates();
     else if (!state.from) renderTimes();
@@ -947,6 +1045,10 @@ export function openRecords({
     procedures: state.procedures.map((item) => ({ ...item })),
     person: state.person ? { ...state.person } : null,
     people: state.people.map((item) => ({ ...item })),
+    bookingParticipants: state.bookingParticipants.map((participant) => ({
+      ...participant,
+      procedures: participant.procedures.map((item) => ({ ...item })),
+    })),
   });
 
   owner.setBackHandler?.(stepBack ? backFromCurrentStep : null);
