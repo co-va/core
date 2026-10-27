@@ -102,8 +102,20 @@ Result:
 
 Evidence: staging `6fc23a6ed3107551b4382f2d79069bf16ee81e2f`; Check Book `40484068946` — PASS including domain regression, FEZ, server build, modal-browser and staging-smoke; Record View Account Runtime `40484069036` — PASS.
 
-### 6. Public Booking — `IN PROGRESS`
+### 6. Public Booking — `DONE`
 Goal: public professional link performs guest Booking only; no App Runtime, mandatory registration or full Profile application load.
+
+Result:
+- public entry resolves the professional/workplace route and starts only the Booking access flow;
+- App Runtime, Journal and Account application entry are not loaded by the public entry;
+- public Booking requires only booking identity/data needed for the booking; Account login/registration is not part of the flow;
+- booking context is a lean projection of workplaces, procedures, days, consent documents, occupancy and booking settings, not full Profile/Card;
+- public `booking-state` and `confirm` endpoints are guest endpoints without `AccountGuard`;
+- guest confirm resolves/creates Person identity behind the scenes, applies required PDN consent and optional marketing consent, and creates the canonical Record through `RecordService`;
+- successful Public Booking remains in the booking surface and does not enter Journal/App Runtime;
+- no parallel Record owner or App dependency was introduced.
+
+Evidence: staging `566b53a5f3fd98e8b5478797006e2eb03245d0bc`; Check Book `40484499756` — PASS including domain regression, FEZ, server build, modal-browser and staging-smoke; Record View Account Runtime `40484499768` — PASS including isolated Public Booking browser cases.
 
 ### 7. Notifications — `TODO`
 Goal: booking-created/rescheduled/cancelled facts reach intended recipients through configured channels, including closed-app delivery where supported, with observable delivery state.
@@ -125,6 +137,6 @@ Goal: do not add breadth; prove persistence and one complete end-to-end scenario
 
 ## Current cursor
 
-**Item 6 — Public Booking.**
+**Item 7 — Notifications.**
 
-PR #769 is the merge boundary for completed items 1–4. The next PR boundary is after items 5–6 are both DONE and fully verified.
+PR #769 is the merge boundary for completed items 1–4. The next PR contains completed items 5–6. Do not start item 7 before that PR is merged and `staging` is realigned to the new `main` HEAD.
