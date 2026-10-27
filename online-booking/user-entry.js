@@ -117,14 +117,18 @@ function numericCost(value) {
   return Number.isFinite(number) ? Math.max(0, number) : 0;
 }
 
-function workplaceRows(workplaces = []) {
-  return v2ListEntries(workplaces.map((workplace) => v2ListEntry({
-    title: String(workplace?.name || '').trim() || 'Рабочее пространство',
-    subtitle: [workplace?.city, workplace?.address].map((value) => String(value || '').trim()).filter(Boolean).join(', '),
-    interactive: true,
-    data: `data-account-booking-workplace="${String(workplace?.key || '')}"`,
-    aria: `Выбрать рабочее пространство ${String(workplace?.name || '').trim()}`,
-  })));
+function workplaceRows(context = {}, workplaces = []) {
+  return v2ListEntries(workplaces.map((workplace) => {
+    const workplaceKey = String(workplace?.key || '');
+    const available = getBookingWorkingDates(context, workplaceKey).length > 0;
+    return v2ListEntry({
+      title: String(workplace?.name || '').trim() || 'Рабочее пространство',
+      subtitle: [workplace?.city, workplace?.address].map((value) => String(value || '').trim()).filter(Boolean).join(', '),
+      interactive: available,
+      data: available ? `data-account-booking-workplace="${workplaceKey}"` : '',
+      aria: available ? `Выбрать рабочее пространство ${String(workplace?.name || '').trim()}` : '',
+    });
+  }));
 }
 
 async function renderGlobalClientRoot(initial = {}) {
@@ -379,8 +383,14 @@ async function startJournalBooking(tenantId, creationOwner) {
       creationOwner,
       stepBack: true,
       onBackFromStart: () => {
-        if (mode === MODE_SELF) return renderMode();
-        return renderParticipantProcedures(Math.max(0, participants.length - 1));
+        if (mode === MODE_SELF) {
+          mode = '';
+          participants = [];
+          return renderMode();
+        }
+        const lastIndex = Math.max(0, participants.length - 1);
+        participants.slice(lastIndex).forEach((participant) => { participant.procedures = []; });
+        return renderParticipantProcedures(lastIndex);
       },
       onCreated: async (result) => {
         await renderGlobalClientRoot({
@@ -422,7 +432,11 @@ async function startJournalBooking(tenantId, creationOwner) {
         empty: 'Для этого рабочего пространства процедуры не настроены.',
       });
       creationOwner.setBackHandler?.(() => {
-        if (index > 0) return renderParticipantProcedures(index - 1);
+        if (index > 0) {
+          participants.slice(index - 1).forEach((item) => { item.procedures = []; });
+          return renderParticipantProcedures(index - 1);
+        }
+        participants.forEach((item) => { item.procedures = []; });
         return renderParticipantData();
       });
       const view = creationOwner.render({
@@ -445,13 +459,15 @@ async function startJournalBooking(tenantId, creationOwner) {
           selected.clear();
           next.forEach((value, key) => selected.set(key, value));
           participant.procedures = [...selected.values()];
-          render();
+          const nextButton = view?.layer?.querySelector('[data-account-booking-procedures-next]');
+          if (nextButton) nextButton.disabled = selected.size === 0;
         },
       });
       view?.layer?.querySelector('[data-account-booking-procedures-next]')?.addEventListener('click', () => {
         if (!selected.size) return;
         participant.procedures = [...selected.values()];
         if (index + 1 < participants.length) {
+          participants.slice(index + 1).forEach((item) => { item.procedures = []; });
           renderParticipantProcedures(index + 1);
           return;
         }
@@ -474,6 +490,8 @@ async function startJournalBooking(tenantId, creationOwner) {
       ${errorMessage ? `<p class="form-error" role="alert">${escapeHtml(errorMessage)}</p>` : ''}
     </form>`;
     creationOwner.setBackHandler?.(() => {
+      mode = '';
+      participants = [];
       renderMode();
       return true;
     });
@@ -504,6 +522,7 @@ async function startJournalBooking(tenantId, creationOwner) {
         renderParticipantData(validationError || 'Укажите имя каждого участника.');
         return;
       }
+      participants.forEach((participant) => { participant.procedures = []; });
       void renderParticipantProcedures(0);
     });
     return true;
@@ -519,7 +538,12 @@ async function startJournalBooking(tenantId, creationOwner) {
       return false;
     }
     if (!creationOwner.isOpen()) return false;
-    creationOwner.setBackHandler?.(() => workplaces.length > 1 ? renderWorkplaces() : showProfessionals());
+    creationOwner.setBackHandler?.(() => {
+      mode = '';
+      participants = [];
+      activeWorkplaceKey = '';
+      return workplaces.length > 1 ? renderWorkplaces() : showProfessionals();
+    });
     const rows = [
       { value: MODE_SELF, label: 'Записаться' },
       { value: MODE_OTHER, label: 'Записать другого человека' },
@@ -561,11 +585,16 @@ async function startJournalBooking(tenantId, creationOwner) {
 
   const renderWorkplaces = () => {
     if (!creationOwner.isOpen()) return false;
-    creationOwner.setBackHandler?.(() => showProfessionals());
+    creationOwner.setBackHandler?.(() => {
+      activeWorkplaceKey = '';
+      mode = '';
+      participants = [];
+      return showProfessionals();
+    });
     const view = creationOwner.render({
       step: 'workplace',
       title: 'Выбор пространства',
-      body: workplaceRows(workplaces),
+      body: workplaceRows(bookingContext, workplaces),
     });
     view?.body?.querySelectorAll('[data-account-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
       const workplaceKey = String(node.dataset.accountBookingWorkplace || '');

@@ -389,7 +389,6 @@ export function openRecords({
     }
     const current = stepHistory.at(-1);
     if (current?.step === step && current?.renderer === renderer) return;
-    if (current) current.snapshot = stateSnapshot();
     stepHistory.push({ step, renderer, snapshot: stateSnapshot() });
   };
 
@@ -559,7 +558,8 @@ export function openRecords({
           selected.clear();
           next.forEach((value, key) => selected.set(key, value));
           state.procedures = [...selected.values()];
-          render();
+          const nextButton = view?.layer?.querySelector('[data-records-procedures-next]');
+          if (nextButton) nextButton.disabled = selected.size === 0;
         },
       });
       renderFooter(view, {

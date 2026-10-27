@@ -60,7 +60,8 @@ export function getBookingWorkingDates(context = {}, workplaceKey = '', { fromDa
   return [...new Set((Array.isArray(context.days) ? context.days : [])
     .filter((day) => key(day?.workplaceId) === target)
     .map((day) => String(day?.date || '').slice(0, 10))
-    .filter((date) => date && (!minimum || date >= minimum)))]
+    .filter((date) => date && (!minimum || date >= minimum))
+    .filter((date) => Boolean(getBookingDayPlan(context, target, date))))]
     .sort();
 }
 
@@ -73,7 +74,9 @@ export function getBookingDayPlan(context = {}, workplaceKey = '', date = '') {
   const workplace = getBookingWorkplace(context, workplaceKey);
   const from = String(day.from || workplace?.from || '');
   const to = String(day.to || workplace?.to || '');
-  return from && to ? { from, to } : null;
+  const start = timeToMinutes(from);
+  const end = timeToMinutes(to);
+  return start != null && end != null && end > start ? { from, to } : null;
 }
 
 export function getBookingOccupancy(context = {}, workplaceKey = '', date = '') {
