@@ -40,14 +40,20 @@ Result:
 
 Evidence: staging `5dd221d32dddf78f0220ec90963e549a75c2e584`; Check Book run `40472015085` — architecture/checks PASS, domain regression PASS, Browser FEZ PASS, server build PASS, modal browser PASS, staging-smoke PASS. Record View Account Runtime run `40472015092` — PASS.
 
-### 2. Profile + Workplaces — `IN PROGRESS`
+### 2. Profile + Workplaces — `DONE`
 Goal: Profile and Workplace stay separate canonical entities even when presented in one UI area; Profile opens and edits predictably; full Profile data is loaded only when needed.
 
-Close only when Profile/Workplace reads, edits and persistence survive reload and do not slow unrelated Journal work.
+Result:
+- Profile and Workplace remain separate canonical owners/endpoints despite sharing the Profile presentation area;
+- Profile save hydrates the canonical server response and does not rewrite Workplace;
+- Workplace save hydrates the canonical server response and does not rewrite Profile;
+- both changes survive a fresh full server read after session reset;
+- full Profile remains lazy and therefore does not return to the first-Journal startup path;
+- regression `tests/profile-workplace-roundtrip.test.mjs` is part of the full `npm test` chain.
 
-Evidence: pending.
+Evidence: staging `dcc8771b66dfcc57abcde9ce796e1d80f9f779a3`; Check Book run `40473273116` — architecture/checks PASS, Profile/Workplace round-trip PASS in domain regression, Browser FEZ PASS, server build PASS, modal browser PASS, staging-smoke PASS. Record View Account Runtime run `40473273103` — PASS.
 
-### 3. Journal — `TODO`
+### 3. Journal — `IN PROGRESS`
 Goal: fast, stable Day / Month / List using canonical Record / Event / Note data, with no duplicate headers, parallel UI or unnecessary full entity loads.
 
 Evidence: pending.
