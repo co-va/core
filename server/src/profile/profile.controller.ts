@@ -17,8 +17,13 @@ export class ProfileController {
   }
 
   @Put()
-  updateProfile(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    return this.profile.updateProfile(request.auth!.tenantId, request.auth!.platformAccountId, body);
+  async updateProfile(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const saved = await this.profile.updateProfile(request.auth!.tenantId, request.auth!.platformAccountId, body);
+    return {
+      profile: saved.profile,
+      customProfessions: saved.customProfessions,
+      professionCatalog: saved.professionCatalog,
+    };
   }
 
   @Get('account-controls')
