@@ -2,7 +2,18 @@ import { accountErrorMessage, createBookingRequest, getAccount, getBookingContex
 import { getGlobalAccountBookingTargets } from '../core/account/booking-targets.js';
 import { normalizeBookingSettings } from '../core/booking-settings/index.js';
 import { openRecords } from '../core/records/records.js';
-import { field, openNotice, openRecordCreationOwner, recordPersonList, v2ListEntry, v2ListEntries } from '../ui/ui.js';
+import {
+  button,
+  escapeHtml,
+  field,
+  formValidationMessage,
+  openNotice,
+  openRecordCreationOwner,
+  phoneField,
+  recordPersonList,
+  v2ListEntry,
+  v2ListEntries,
+} from '../ui/ui.js';
 import { renderGlobalClient } from './booking.js';
 import {
   bookingProcedureCost,
@@ -13,7 +24,14 @@ import {
 } from './model.js';
 
 const app = document.querySelector('#app');
+const MODE_SELF = 'self';
+const MODE_OTHER = 'other';
+const MODE_JOINT = 'joint';
 let disposeView = () => {};
+
+function text(value) {
+  return String(value ?? '').trim();
+}
 
 function syncViewport() {
   const vv = window.visualViewport;
@@ -118,6 +136,27 @@ function selectedProcedures(context, workplaceKey, ids = []) {
     }));
 }
 
+function newParticipant(id, source = {}) {
+  return {
+    id: text(id),
+    name: text(source.name),
+    surname: text(source.surname),
+    phone: text(source.phone),
+    email: text(source.email),
+    uei: text(source.uei),
+    procedures: Array.isArray(source.procedures) ? source.procedures.map((entry) => ({ ...entry })) : [],
+  };
+}
+
+function participantFields(participant, index, { removable = false } = {}) {
+  return `<section class="booking-participant" data-account-booking-participant="${index}">
+    <div class="booking-participant__heading"><strong>Участник ${index + 1}</strong>${removable ? button('Удалить', { variant: 'secondary', data: `data-account-booking-remove-participant="${index}"` }) : ''}</div>
+    ${field({ label: 'Имя', name: `participantName${index}`, value: participant.name, required: true, autocomplete: 'given-name' })}
+    ${phoneField({ label: 'Телефон', name: `participantPhone${index}`, value: participant.phone, required: false })}
+    ${field({ label: 'Email', name: `participantEmail${index}`, value: participant.email, type: 'email', required: false, autocomplete: 'email' })}
+  </section>`;
+}
+
 async function startJournalBooking(tenantId, creationOwner, options = {}) {
   const id = String(tenantId || '').trim();
   if (!id || !creationOwner?.isOpen?.()) return;
@@ -143,6 +182,9 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
   }
   const settings = normalizeBookingSettings(bookingContext.settings);
   let account = null;
+  let mode = '';
+  let participants = [];
+  let activeWorkplaceKey = '';
 
   const resolveAccount = async () => {
     if (account) return account;
@@ -171,7 +213,7 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
     timeRows: ({ workplaceId, date, procedures }) => getBookingTimeRows(bookingContext, {
       workplaceKey: workplaceId,
       date,
-      procedureIds: procedures.map((entry) => String(entry.id || '')),
+      duration: procedures.reduce((sum, entry) => sum + Math.max(0, Number(entry?.duration) || 0), 0),
       step: settings.slotStep,
     }),
     personDisplay: (person = {}) => ({
@@ -185,6 +227,23 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
       return Math.max(0, subtotal * (1 - accountDiscount(account) / 100));
     },
     async create(recordsState) {
+      const bookingParticipants = Array.isArray(recordsState.bookingParticipants) ? recordsState.bookingParticipants : [];
+      if (bookingParticipants.length) {
+        return createBookingRequest(id, {
+          workplaceKey: recordsState.workplaceId,
+          date: recordsState.date,
+          from: recordsState.from,
+          mode,
+          procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')).filter(Boolean),
+          participants: bookingParticipants.map((participant) => ({
+            id: text(participant.id),
+            name: text(participant.name),
+            phone: text(participant.phone),
+            email: text(participant.email),
+            procedureIds: participant.procedures.map((entry) => text(entry?.id)).filter(Boolean),
+          })),
+        });
+      }
       return createBookingRequest(id, {
         workplaceKey: recordsState.workplaceId,
         date: recordsState.date,
@@ -194,10 +253,11 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
     },
     async onCreateError(error, recordsState, { renderTimes, renderConfirmation }) {
       bookingContext = await getBookingContext(id, recordsState.workplaceId).catch(() => bookingContext);
+      const duration = recordsState.procedures.reduce((sum, entry) => sum + Math.max(0, Number(entry?.duration) || 0), 0);
       const stillAvailable = getBookingSlots(bookingContext, {
         workplaceKey: recordsState.workplaceId,
         date: recordsState.date,
-        procedureIds: recordsState.procedures.map((entry) => String(entry.id || '')),
+        duration,
         step: settings.slotStep,
       }).some((slot) => String(slot.from || '') === String(recordsState.from || ''));
       if (!stillAvailable) {
@@ -217,27 +277,47 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
     return true;
   };
 
-  const openBooking = async (workplaceKey) => {
-    if (!creationOwner.isOpen()) return;
-    let resolvedAccount;
-    try {
-      resolvedAccount = await resolveAccount();
-    } catch (error) {
-      openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось определить пользователя приложения.') });
-      return;
+  const selfParticipant = (resolvedAccount, procedures = []) => newParticipant('booker', {
+    name: accountDisplayName(resolvedAccount),
+    phone: resolvedAccount?.phone,
+    email: resolvedAccount?.email,
+    uei: resolvedAccount?.uei || resolvedAccount?.person?.uei,
+    procedures,
+  });
+
+  const syncParticipantForm = (form, { validate = false } = {}) => {
+    if (!form) return '';
+    if (validate) {
+      const error = formValidationMessage(form);
+      if (error) return error;
     }
+    const data = new FormData(form);
+    const extras = mode === MODE_JOINT ? participants.filter((participant) => participant.id !== 'booker') : participants;
+    extras.forEach((participant, index) => {
+      participant.name = text(data.get(`participantName${index}`));
+      participant.phone = text(data.get(`participantPhone${index}`));
+      participant.email = text(data.get(`participantEmail${index}`));
+    });
+    return '';
+  };
+
+  const openCanonicalRecords = async () => {
     if (!creationOwner.isOpen()) return;
-    const procedures = selectedProcedures(bookingContext, workplaceKey, options.procedureIds);
+    const resolvedAccount = await resolveAccount();
     openRecords({
       context: 'online',
       person: resolvedAccount,
-      workplaceId: String(workplaceKey || ''),
-      procedures,
+      workplaceId: activeWorkplaceKey,
+      bookingParticipants: participants,
       professionalActions: false,
       provider,
       creationOwner,
       stepBack: true,
-      onBackFromStart: () => workplaces.length > 1 ? renderWorkplaces() : showProfessionals(),
+      onBackFromStart: () => {
+        if (mode === MODE_SELF) renderMode();
+        else renderParticipantData();
+        return true;
+      },
       onCreated: async (result) => {
         await renderGlobalClientRoot({
           tab: 'journal',
@@ -245,6 +325,103 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
         });
       },
     });
+  };
+
+  const renderParticipantData = (errorMessage = '') => {
+    if (!creationOwner.isOpen()) return false;
+    const extras = mode === MODE_JOINT ? participants.filter((participant) => participant.id !== 'booker') : participants;
+    const body = `<form data-account-booking-participant-form>
+      ${extras.map((participant, index) => participantFields(participant, index, {
+        removable: mode === MODE_JOINT && extras.length > 1,
+      })).join('')}
+      ${mode === MODE_JOINT ? button('Добавить участника', { variant: 'secondary', data: 'data-account-booking-add-participant' }) : ''}
+      ${errorMessage ? `<p class="form-error" role="alert">${escapeHtml(errorMessage)}</p>` : ''}
+    </form>`;
+    creationOwner.setBackHandler?.(() => {
+      renderMode();
+      return true;
+    });
+    const view = creationOwner.render({
+      step: 'person',
+      title: 'Данные участников',
+      body,
+      action: { label: 'Далее', data: 'data-account-booking-participant-next' },
+    });
+    const form = view?.body?.querySelector('[data-account-booking-participant-form]');
+    view?.body?.querySelector('[data-account-booking-add-participant]')?.addEventListener('click', () => {
+      syncParticipantForm(form);
+      participants.push(newParticipant(`recipient-${participants.length + 1}`));
+      renderParticipantData();
+    });
+    view?.body?.querySelectorAll('[data-account-booking-remove-participant]').forEach((node) => node.addEventListener('click', () => {
+      syncParticipantForm(form);
+      const index = Math.max(0, Number(node.dataset.accountBookingRemoveParticipant) || 0);
+      const booker = participants.find((participant) => participant.id === 'booker');
+      const remaining = participants.filter((participant) => participant.id !== 'booker').filter((_, itemIndex) => itemIndex !== index);
+      participants = [booker, ...remaining].filter(Boolean);
+      renderParticipantData();
+    }));
+    view?.layer?.querySelector('[data-account-booking-participant-next]')?.addEventListener('click', () => {
+      const validationError = syncParticipantForm(form, { validate: true });
+      const missingName = extras.some((participant) => !participant.name);
+      if (validationError || missingName) {
+        renderParticipantData(validationError || 'Укажите имя каждого участника.');
+        return;
+      }
+      void openCanonicalRecords();
+    });
+    return true;
+  };
+
+  const renderMode = async () => {
+    if (!creationOwner.isOpen()) return false;
+    let resolvedAccount;
+    try {
+      resolvedAccount = await resolveAccount();
+    } catch (error) {
+      openNotice({ title: 'Запись недоступна', message: accountErrorMessage(error, 'Не удалось определить пользователя приложения.') });
+      return false;
+    }
+    if (!creationOwner.isOpen()) return false;
+    creationOwner.setBackHandler?.(() => workplaces.length > 1 ? renderWorkplaces() : showProfessionals());
+    const rows = [
+      { value: MODE_SELF, label: 'Записаться' },
+      { value: MODE_OTHER, label: 'Записать другого человека' },
+      { value: MODE_JOINT, label: 'Совместная запись' },
+    ].map((option) => v2ListEntry({
+      title: option.label,
+      interactive: true,
+      selected: mode === option.value,
+      data: `data-account-booking-mode="${option.value}"`,
+      aria: option.label,
+    }));
+    const view = creationOwner.render({
+      step: 'person',
+      title: 'Как оформить запись?',
+      body: v2ListEntries(rows),
+    });
+    view?.body?.querySelectorAll('[data-account-booking-mode]').forEach((node) => node.addEventListener('click', () => {
+      mode = text(node.dataset.accountBookingMode);
+      const preset = selectedProcedures(bookingContext, activeWorkplaceKey, options.procedureIds);
+      if (mode === MODE_SELF) {
+        participants = [selfParticipant(resolvedAccount, preset)];
+        void openCanonicalRecords();
+      } else if (mode === MODE_OTHER) {
+        participants = [newParticipant('recipient-1', { procedures: preset })];
+        renderParticipantData();
+      } else {
+        participants = [selfParticipant(resolvedAccount, preset), newParticipant('recipient-1')];
+        renderParticipantData();
+      }
+    }));
+    return true;
+  };
+
+  const enterWorkplace = (workplaceKey) => {
+    activeWorkplaceKey = text(workplaceKey);
+    mode = '';
+    participants = [];
+    void renderMode();
   };
 
   const renderWorkplaces = () => {
@@ -257,18 +434,18 @@ async function startJournalBooking(tenantId, creationOwner, options = {}) {
     });
     view?.body?.querySelectorAll('[data-account-booking-workplace]').forEach((node) => node.addEventListener('click', () => {
       const workplaceKey = String(node.dataset.accountBookingWorkplace || '');
-      if (workplaceKey) void openBooking(workplaceKey);
+      if (workplaceKey) enterWorkplace(workplaceKey);
     }));
     return true;
   };
 
   const requestedWorkplace = String(options.workplaceKey || '').trim();
   if (requestedWorkplace && workplaces.some((item) => String(item?.key || '') === requestedWorkplace)) {
-    await openBooking(requestedWorkplace);
+    enterWorkplace(requestedWorkplace);
     return;
   }
   if (workplaces.length === 1) {
-    await openBooking(String(workplaces[0]?.key || ''));
+    enterWorkplace(String(workplaces[0]?.key || ''));
     return;
   }
 
