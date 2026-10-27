@@ -1,9 +1,11 @@
 import {
+  emptyState,
   initViewNavigation,
   openSharedProfileSettingsMenu,
   page,
   viewNavigation,
 } from '../../ui/ui.js';
+import { loadOperationalState } from '../runtime/operational-state.js';
 import { serviceHeaderContext, notifyServiceContext } from './context.js';
 
 const views = [
@@ -51,8 +53,10 @@ function openServiceSettings(root, rerender) {
 export function renderService(root, navigateBack = () => {}) {
   let disposeCatalog = () => {};
   let renderVersion = 0;
+  let disposed = false;
 
   const renderCurrent = () => {
+    if (disposed) return;
     const version = ++renderVersion;
     disposeCatalog?.();
     disposeCatalog = () => {};
@@ -108,8 +112,19 @@ export function renderService(root, navigateBack = () => {}) {
     notifyServiceContext();
   };
 
-  renderCurrent();
+  root.innerHTML = page([serviceHeaderContext({ title: 'Сервис' }), emptyState('Загрузка', 'Загружаем сервис.')]);
+  void loadOperationalState({ full: true })
+    .then(renderCurrent)
+    .catch((error) => {
+      if (disposed) return;
+      root.innerHTML = page([
+        serviceHeaderContext({ title: 'Сервис' }),
+        emptyState('Не удалось открыть сервис', error instanceof Error ? error.message : 'Ошибка загрузки'),
+      ]);
+    });
+
   return () => {
+    disposed = true;
     renderVersion += 1;
     disposeCatalog?.();
   };
