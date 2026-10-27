@@ -1,5 +1,5 @@
 import { button, field, mountModal, modal, phoneField } from '../../ui/ui.js';
-import { createPerson, getAllPeople, savePeople } from './data.js';
+import { createPerson, findPeopleByPhone, getAllPeople, savePeople } from './data.js';
 
 export function personCreateForm(preset = {}) {
   return `<form class="form-grid" data-person-create-form>
@@ -18,14 +18,21 @@ export function bindPersonCreateForm(root, { onCreated = () => {} } = {}) {
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const data = new FormData(form);
+    const name = String(data.get('name') || '').trim();
+    const surname = String(data.get('surname') || '').trim();
+    const phone = String(data.get('phone') || '').trim();
     const all = getAllPeople();
     try {
-      const person = createPerson(
-        String(data.get('name') || '').trim(),
-        String(data.get('surname') || '').trim(),
-        String(data.get('phone') || '').trim(),
-      );
-      if (!person.name) throw Error('Имя обязательно.');
+      if (!name) throw Error('Имя обязательно.');
+      const phoneMatches = phone ? findPeopleByPhone(phone) : [];
+      if (phoneMatches.length > 1) {
+        throw Error('Телефон уже связан с несколькими людьми. Выберите существующего человека.');
+      }
+      if (phoneMatches.length === 1) {
+        onCreated(phoneMatches[0]);
+        return;
+      }
+      const person = createPerson(name, surname, phone);
       all.push(person);
       savePeople(all);
       onCreated(person);

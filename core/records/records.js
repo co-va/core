@@ -360,6 +360,7 @@ export function openRecords({
 
   const owner = creationOwner || openRecordCreationOwner({ onCancel });
   if (!owner) return null;
+  const backEnabled = Boolean(stepBack || state.recordId);
   let currentRenderer = null;
   const stepHistory = [];
   let restoringHistory = false;
@@ -382,7 +383,7 @@ export function openRecords({
 
   const enterStep = (step, renderer) => {
     currentRenderer = renderer;
-    if (!stepBack || state.recordId) return;
+    if (!backEnabled) return;
     if (restoringHistory) {
       restoringHistory = false;
       return;
@@ -685,12 +686,14 @@ export function openRecords({
         className: 'modal--form-sheet',
         onCreated: (created) => {
           const item = getPeople().find((entry) => entry.key === created.key) || created;
-          if (groupMode) selected.set(String(item.key || item.id || ''), item);
-          else {
+          if (!groupMode) {
             state.person = item;
             state.people = [item];
             renderConfirmation();
+            return;
           }
+          selected.set(String(item.key || item.id || ''), item);
+          state.people = [...selected.values()];
           render();
         },
       });
@@ -860,7 +863,9 @@ export function openRecords({
       }
     });
     renderFooter(view, {
-      '[data-records-confirm]': async () => {
+      '[data-records-confirm]': async (event) => {
+        const submit = event.currentTarget;
+        if (!submit || submit.dataset.recordsBusy === 'true') return;
         if (source.kind === 'professional' && !checkTimeAvailability({
           date: state.date,
           workplaceId: state.workplaceId,
@@ -871,6 +876,15 @@ export function openRecords({
           openNotice({ title: 'Запись недоступна', message: 'Выбранное время уже занято или недоступно.' });
           return;
         }
+        submit.dataset.recordsBusy = 'true';
+        submit.disabled = true;
+        submit.setAttribute('aria-busy', 'true');
+        const releaseSubmit = () => {
+          if (!submit.isConnected) return;
+          delete submit.dataset.recordsBusy;
+          submit.disabled = false;
+          submit.removeAttribute('aria-busy');
+        };
         try {
           let saved;
           if (state.recordId) {
@@ -899,7 +913,10 @@ export function openRecords({
           } else {
             saved = await source.create(state, actionContext);
           }
-          if (!saved) return;
+          if (!saved) {
+            releaseSubmit();
+            return;
+          }
           owner.commit();
           const callback = typeof onSaved === 'function' ? onSaved : onCreated;
           callback(saved, stateSnapshot());
@@ -909,13 +926,14 @@ export function openRecords({
             title: 'Запись недоступна',
             message: state.recordId ? 'Не удалось сохранить.' : 'Не удалось создать.',
           });
+          releaseSubmit();
         }
       },
     });
   };
 
   const backFromCurrentStep = () => {
-    if (!stepBack || state.recordId) return false;
+    if (!backEnabled) return false;
     if (stepHistory.length > 1) {
       stepHistory.pop();
       const previous = stepHistory.at(-1);
@@ -966,11 +984,12 @@ export function openRecords({
   };
 
   owner.resumeRecord = () => {
+    owner.setBackHandler?.(backEnabled ? backFromCurrentStep : null);
     currentRenderer?.();
   };
   owner.getRecordState = stateSnapshot;
 
-  owner.setBackHandler?.(stepBack ? backFromCurrentStep : null);
+  owner.setBackHandler?.(backEnabled ? backFromCurrentStep : null);
   start();
   return owner;
 }
