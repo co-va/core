@@ -9,6 +9,12 @@ type AccountRequest = Request & {
   accountAuth?: { accountId: string; tenantId: string };
 };
 
+function objectValue(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 @Controller('online-booking/account/deposits')
 @UseGuards(AccountGuard)
 export class AccountDepositController {
@@ -34,8 +40,19 @@ export class AccountDepositController {
         : {};
       const personId = String(person.key ?? person.id ?? '').trim();
       if (!personId) return [];
-      const deposits = await this.deposits.list(tenantId, personId);
-      return deposits.map((deposit: Record<string, unknown>) => ({ tenantId, ...deposit }));
+      const [deposits, programRows] = await Promise.all([
+        this.deposits.list(tenantId, personId),
+        this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
+      ]);
+      const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
+      return deposits
+        .filter((deposit: Record<string, any>) => {
+          const override = deposit.visibleToPersonOverride;
+          if (typeof override === 'boolean') return override;
+          const program = programs.get(String(deposit.programId || '')) || {};
+          return program.showToAll !== false;
+        })
+        .map((deposit: Record<string, unknown>) => ({ tenantId, ...deposit }));
     }));
 
     return rows.flat();

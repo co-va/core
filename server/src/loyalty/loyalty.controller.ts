@@ -34,6 +34,43 @@ export class LoyaltyController {
     return this.deposits.fund(request.auth!.tenantId, body);
   }
 
+  @Post('deposits/:depositId/fund')
+  fundExistingDeposit(
+    @Req() request: AuthenticatedRequest,
+    @Param('depositId') depositId: string,
+    @Body() body: unknown,
+  ) {
+    return this.deposits.fundExisting(request.auth!.tenantId, depositId, body);
+  }
+
+  @Put('deposits/:depositId/funding/:operationId')
+  correctDepositFunding(
+    @Req() request: AuthenticatedRequest,
+    @Param('depositId') depositId: string,
+    @Param('operationId') operationId: string,
+    @Body() body: unknown,
+  ) {
+    return this.deposits.correctFunding(request.auth!.tenantId, depositId, operationId, body);
+  }
+
+  @Delete('deposits/:depositId/funding/:operationId')
+  deleteDepositFunding(
+    @Req() request: AuthenticatedRequest,
+    @Param('depositId') depositId: string,
+    @Param('operationId') operationId: string,
+  ) {
+    return this.deposits.deleteFunding(request.auth!.tenantId, depositId, operationId);
+  }
+
+  @Put('deposits/:depositId/settings')
+  updateDepositSettings(
+    @Req() request: AuthenticatedRequest,
+    @Param('depositId') depositId: string,
+    @Body() body: unknown,
+  ) {
+    return this.deposits.updateSettings(request.auth!.tenantId, depositId, body);
+  }
+
   @Post('deposits/:depositId/withdraw')
   withdrawDeposit(
     @Req() request: AuthenticatedRequest,

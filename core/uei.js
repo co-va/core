@@ -34,7 +34,6 @@ export function hydrateUEIFromServer(value = {}) {
 
 function relationKey(type, id) { return `${String(type)}:${String(id)}`; }
 
-
 export function isValidUEI(value) {
   try { return normalizeUEI(value) !== EMPTY; } catch { return false; }
 }
@@ -58,6 +57,26 @@ function recordHistory(entity, entityType, entityId, identifiers = []) {
 function addRevocation(store, entityType, entityId, uei) {
   const item = { key: relationKey(entityType, entityId), uei };
   if (!store.revoked.some(x => x.key === item.key && x.uei === item.uei)) store.revoked.push(item);
+}
+
+function releaseRelation(store, entityType, entityId, normalized) {
+  const key = relationKey(entityType, entityId);
+  if (store.relations[key] !== normalized) return;
+  const entity = store.entities[normalized];
+  if (entity) {
+    entity.members = entity.members.filter(member => member !== key);
+    if (entity.owner?.type === entityType && entity.owner?.id === entityId) {
+      const nextOwner = entity.members[0] || null;
+      if (nextOwner) {
+        const separator = nextOwner.indexOf(':');
+        entity.owner = { type: nextOwner.slice(0, separator), id: nextOwner.slice(separator + 1) };
+      } else {
+        entity.owner = null;
+      }
+    }
+    if (!entity.members.length) delete store.entities[normalized];
+  }
+  delete store.relations[key];
 }
 
 export function listUEIs() {
@@ -131,6 +150,35 @@ export function detachUEI({ entityType, entityId, uei, explicit = true } = {}) {
   if (explicit) addRevocation(store, entityType, entityId, normalized);
   writeStore(store);
   return '';
+}
+
+export function releaseUEI({ entityType, entityId } = {}) {
+  const current = getUEI(entityType, entityId);
+  if (!current) return '';
+  const normalized = normalizeUEI(current);
+  if (normalized === EMPTY) return '';
+  const store = readStore();
+  releaseRelation(store, entityType, entityId, normalized);
+  store.revoked = store.revoked.filter(item => !(item.key === relationKey(entityType, entityId) && item.uei === normalized));
+  writeStore(store);
+  return '';
+}
+
+export function replaceUEI({ entityType, entityId, value, identifiers = [] } = {}) {
+  const requested = normalizeUEI(value);
+  if (requested === EMPTY) throw Error('0000 не является действительным UEI.');
+  const store = readStore();
+  const key = relationKey(entityType, entityId);
+  const current = store.relations[key] || '';
+  if (current === requested) return requested;
+  if (store.entities[requested]) throw Error('Этот UEI уже используется');
+  if (current) releaseRelation(store, entityType, entityId, current);
+  const entity = ensureEntity(store, requested, entityType, entityId);
+  recordHistory(entity, entityType, entityId, identifiers);
+  store.relations[key] = requested;
+  store.revoked = store.revoked.filter(item => item.key !== key);
+  writeStore(store);
+  return requested;
 }
 
 export function findHistoricalUEI(entityType, identifier) {
