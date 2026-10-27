@@ -87,11 +87,35 @@ Result:
 
 Evidence: prior Journal code `fd06348afc4d156abb1c0ea62a3a544e5a21c64e`; post-item-3 recheck on staging `a9f255a32829976549dd04c8936f7d13769f17ee`; Check Book `40479254564` — PASS including domain regression and Browser FEZ.
 
-### 5. Journal Booking — `TODO`
+### 5. Journal Booking — `DONE`
 Goal: Journal → Record creation uses one Q-flow with minimal data per step and no full Profile/People navigation.
 
-### 6. Public Booking — `TODO`
+Result:
+- Account Journal `Записаться` hands off from Shared X without inheriting the tapped date/time;
+- first Q step uses the narrow Account booking-targets projection for professional selection;
+- selected professional loads lean canonical Booking context rather than full Profile/Card;
+- one workplace is skipped; multiple workplaces stay inside the same Shared Q owner;
+- Procedure / availability / confirmation continue through the existing canonical Records flow;
+- the known App Account is carried into confirmation without identity/login/registration steps;
+- successful creation returns to the Account Journal;
+- no second Record/Booking owner was introduced and Public Booking remains isolated.
+
+Evidence: staging `6fc23a6ed3107551b4382f2d79069bf16ee81e2f`; Check Book `40484068946` — PASS including domain regression, FEZ, server build, modal-browser and staging-smoke; Record View Account Runtime `40484069036` — PASS.
+
+### 6. Public Booking — `DONE`
 Goal: public professional link performs guest Booking only; no App Runtime, mandatory registration or full Profile application load.
+
+Result:
+- public entry resolves the professional/workplace route and starts only the Booking access flow;
+- App Runtime, Journal and Account application entry are not loaded by the public entry;
+- public Booking requires only booking identity/data needed for the booking; Account login/registration is not part of the flow;
+- booking context is a lean projection of workplaces, procedures, days, consent documents, occupancy and booking settings, not full Profile/Card;
+- public `booking-state` and `confirm` endpoints are guest endpoints without `AccountGuard`;
+- guest confirm resolves/creates Person identity behind the scenes, applies required PDN consent and optional marketing consent, and creates the canonical Record through `RecordService`;
+- successful Public Booking remains in the booking surface and does not enter Journal/App Runtime;
+- no parallel Record owner or App dependency was introduced.
+
+Evidence: staging `566b53a5f3fd98e8b5478797006e2eb03245d0bc`; Check Book `40484499756` — PASS including domain regression, FEZ, server build, modal-browser and staging-smoke; Record View Account Runtime `40484499768` — PASS including isolated Public Booking browser cases.
 
 ### 7. Notifications — `TODO`
 Goal: booking-created/rescheduled/cancelled facts reach intended recipients through configured channels, including closed-app delivery where supported, with observable delivery state.
@@ -113,6 +137,6 @@ Goal: do not add breadth; prove persistence and one complete end-to-end scenario
 
 ## Current cursor
 
-**Item 5 — Journal Booking.**
+**Item 7 — Notifications.**
 
-PR #769 is the merge boundary for completed items 1–4. Do not merge without explicit owner approval. After merge and staging alignment, continuation starts from item 5 without a new whole-project analysis.
+PR #769 is the merge boundary for completed items 1–4. The next PR contains completed items 5–6. Do not start item 7 before that PR is merged and `staging` is realigned to the new `main` HEAD.
