@@ -1,6 +1,7 @@
 import { buildBookingLink } from '../../core/booking-link/index.js';
 import { apiRequest, getCurrentAccount } from '../../core/auth.js';
 import { ACCOUNT_APP_ORIGIN } from '../../core/environment.js';
+import { loadOperationalState } from '../../core/runtime/operational-state.js';
 import {
   getBookingSettings,
   normalizeBookingSettings,
@@ -185,8 +186,8 @@ function renderUnavailable(root, title, message) {
 export function render(root) {
   root.innerHTML = `${workspaceHeaderContext({ title: 'Онлайн-запись' })}${emptyState('Загрузка', 'Формируем ссылки онлайн-записи.')}`;
 
-  void Promise.all([getCurrentAccount(), loadOwnerPublicRoute()])
-    .then(([account, publicRoute]) => {
+  void Promise.all([loadOperationalState({ full: true }), getCurrentAccount(), loadOwnerPublicRoute()])
+    .then(([, account, publicRoute]) => {
       const tenantId = String(account?.tenant?.id || '');
       if (!tenantId || !publicRoute.profileSlug) {
         renderUnavailable(root, 'Ссылка недоступна', 'Не удалось определить адрес онлайн-записи.');

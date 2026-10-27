@@ -10,13 +10,17 @@ const finance = text('core/finance/data.js');
 const wallets = text('core/finance/cash/data.js');
 const cashEntities = text('core/finance/cash/entities.js');
 const auxiliaryService = text('server/src/auxiliary-state/auxiliary-state.service.ts');
+const auxiliaryController = text('server/src/auxiliary-state/auxiliary-state.controller.ts');
 const tags = text('settings/tags/data.js');
 const products = text('core/service/products/data.js');
 const schema = text('server/prisma/schema.prisma');
 const moduleFile = text('server/src/auxiliary-state/auxiliary-state.module.ts');
 
 assert(core.includes('loadAuxiliaryState'), 'Core must load server-owned Finance and auxiliary state before workspace render.');
-assert(runtime.includes("apiRequest('/auxiliary-state')"), 'Auxiliary runtime must read the canonical server owner directly.');
+assert(runtime.includes("'/auxiliary-state'")
+  && runtime.includes('`/auxiliary-state/${encodeURIComponent(key)}`')
+  && runtime.includes('apiRequest(path)'), 'Auxiliary runtime must read the canonical auxiliary server owner, including scoped reads.');
+assert(auxiliaryController.includes("@Controller('auxiliary-state')") && auxiliaryController.includes("@Get(':scope')"), 'Scoped auxiliary reads must remain inside the canonical auxiliary server owner.');
 assert(!/localStorage|readLegacy|\/migrate/.test(runtime), 'Auxiliary runtime must not contain transition paths.');
 assert(runtime.includes("apiRequest('/finance')") && runtime.includes('hydrateFinanceFromServer'), 'Finance startup must hydrate the dedicated canonical Finance owner.');
 assert(runtime.includes('hydrateWalletsFromServer') && runtime.includes('hydrateCashEntitiesFromServer') && runtime.includes('hydrateTagsFromServer') && runtime.includes('hydrateProductsFromServer'), 'Auxiliary startup must hydrate Wallets, cash entities, Tags and Products from the auxiliary owner.');

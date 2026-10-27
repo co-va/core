@@ -6,6 +6,7 @@ import { getWorkplaces, saveWorkplaces, upsertWorkplace } from './workplaces/dat
 import { bindWorkplaceForm, openWorkplaceSettingsMenu, workplaceForm } from './workplaces/workplaces.js';
 import { profileCardAppearance, profileCardFields, workplaceCardAppearance, workplaceCardFields, workplaceCardPhoto } from './card-presentation.js';
 import { getCardAppearanceTemplate, saveCardAppearanceTemplate } from '../../core/card-appearance-templates.js';
+import { loadProfileState } from './runtime.js';
 
 const EXPERIENCES=['Без опыта','До 1 года','1–3 года','3–5 лет','5–10 лет','10–15 лет','15–20 лет','Более 20 лет'];
 const fullName=p=>[p.name,p.surname].filter(Boolean).join(' ')||'Ваш профиль';
@@ -24,7 +25,9 @@ function demoRemainingText(access){
   return `DEMO · осталось ${Math.ceil(hours/24)} дн.`;
 }
 
-export function render(root,navigateBack=()=>{},options={}){renderProfile(root,navigateBack,options)}
+export function render(root,navigateBack=()=>{},options={}){
+  return loadProfileState({full:true}).then(()=>renderProfile(root,navigateBack,options));
+}
 
 function profileContext(p,title=fullName(p)){
   return workspaceHeaderContext({

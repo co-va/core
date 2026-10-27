@@ -1,5 +1,6 @@
 import { initViewNavigation, openRecordCreationOwner, viewNavigation } from '../ui/ui.js';
 import { openRecords } from '../core/records/records.js';
+import { loadOperationalState } from '../core/runtime/operational-state.js';
 import { createJournalEventFlow } from './event-create.js';
 import { createJournalNoteFlow } from './note-create.js';
 
@@ -9,7 +10,7 @@ const JOURNAL_CREATE_MODES = [
   { id: 'note', label: 'Заметка' },
 ];
 
-export function openJournalCreation({
+export async function openJournalCreation({
   date = '',
   workplaceId = '',
   timeHint = '',
@@ -18,6 +19,7 @@ export function openJournalCreation({
   onCreated = () => {},
   onCancel = () => {},
 } = {}) {
+  await loadOperationalState({ full: true });
   const owner = openRecordCreationOwner({ onCancel, surfaceRoot, bodyRoot });
   if (!owner) return null;
 
