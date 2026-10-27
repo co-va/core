@@ -109,6 +109,11 @@ export class BusinessStateController {
     };
   }
 
+  private async journalOperationalContext(tenantId: string) {
+    const operational = await this.businessState.getOperational(tenantId);
+    return { days: Array.isArray(operational?.days) ? operational.days : [] };
+  }
+
   private async notifyRecordEvent(tenantId: string, type: string, recordValue: unknown) {
     const record = objectValue(recordValue);
     const person = objectValue(record.person);
@@ -143,14 +148,14 @@ export class BusinessStateController {
   @Get('journal-bootstrap')
   async journalBootstrap(@Req() request: AuthenticatedRequest) {
     const auth = request.auth!;
-    const [journal, profileContext, operational, finance, access] = await Promise.all([
+    const [journal, profileContext, operationalContext, finance, access] = await Promise.all([
       this.journalBundle(auth),
       this.journalProfileContext(auth),
-      this.businessState.getOperational(auth.tenantId),
+      this.journalOperationalContext(auth.tenantId),
       journalFinanceProjection(this.prisma, auth.tenantId),
       this.access.resolveTenantAccess(auth.tenantId),
     ]);
-    return { journal, profileContext, operational, finance, access };
+    return { journal, profileContext, operationalContext, finance, access };
   }
 
   @Get('records')
