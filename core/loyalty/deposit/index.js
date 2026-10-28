@@ -84,11 +84,11 @@ function depositHeaderContext({ title = 'Депозит', settingsData = '', set
       image: String(profile?.photo || ''),
       imagePosition: `${crop(profile?.photoCropX)}% ${crop(profile?.photoCropY)}%`,
       initials: profileName.slice(0, 1).toUpperCase() || '?',
-      settingsTag: Boolean(settingsData),
+    },
+    v: settingsData ? {
       data: settingsData,
       aria: settingsAria,
-      disabled: !settingsData,
-    },
+    } : null,
     c,
   });
 }
@@ -223,7 +223,6 @@ function depositInfo(deposit = {}) {
     { label: 'Контакт', value: contactLabel(depositPerson(deposit)) },
     { label: 'Дата оформления', value: shortDateTime(deposit?.fundedAt, '—') },
     { label: 'Внесено', value: money(deposit?.fundedAmount) },
-    { label: 'Остаток', value: money(deposit?.balance) },
     { label: 'Срок', value: terms?.termRule || 'Бессрочно' },
     { label: 'Условие выгоды', value: terms?.benefit || 'Без дополнительной выгоды' },
   ];
@@ -237,27 +236,84 @@ function depositInfo(deposit = {}) {
   return details(rows);
 }
 
+function historyKindLabel(kind) {
+  if (kind === 'deposit-funding') return 'Внесение';
+  if (kind === 'deposit-benefit') return 'Выгода';
+  if (kind === 'deposit-benefit-reversal') return 'Отмена выгоды';
+  if (kind === 'deposit-withdrawal') return 'Возврат остатка';
+  if (kind === 'refund') return 'Возврат оплаты';
+  if (kind === 'payment') return 'Использование при оплате';
+  return 'Операция';
+}
+
 function historyMarkup(deposit = {}) {
   const items = Array.isArray(deposit?.history) ? deposit.history : [];
   if (!items.length) return emptyState('Истории пока нет', 'Движения депозита появятся здесь.');
-  const kindLabel = (kind) => {
-    if (kind === 'deposit-funding') return 'Внесение';
-    if (kind === 'deposit-benefit') return 'Выгода';
-    if (kind === 'deposit-benefit-reversal') return 'Отмена выгоды';
-    if (kind === 'deposit-withdrawal') return 'Возврат остатка';
-    if (kind === 'refund') return 'Возврат оплаты';
-    if (kind === 'payment') return 'Использование при оплате';
-    return 'Операция';
-  };
   return miniCardRail([...items].reverse().map((item) => miniCard({
-    title: kindLabel(item?.kind),
+    title: historyKindLabel(item?.kind),
     value: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
     subtitle: shortDateTime(item?.occurredAt, '—'),
-    interactive: item?.kind === 'deposit-funding',
-    data: item?.kind === 'deposit-funding' ? `data-deposit-funding="${escapeHtml(item.operationId || '')}"` : '',
-    aria: item?.kind === 'deposit-funding' ? 'Настройки внесения' : '',
-    actionLabel: item?.kind === 'deposit-funding' ? 'Настройки' : '',
+    interactive: false,
+    data: '',
+    aria: '',
+    actionLabel: '',
   })));
+}
+
+function historyListMarkup(deposit = {}) {
+  const items = Array.isArray(deposit?.history) ? deposit.history : [];
+  if (!items.length) return emptyState('Истории пока нет', 'Движения депозита появятся здесь.');
+  return v2ListEntries([...items]
+    .sort((a, b) => String(b?.occurredAt || '').localeCompare(String(a?.occurredAt || '')))
+    .map((item) => v2ListEntry({
+      title: historyKindLabel(item?.kind),
+      subtitle: shortDateTime(item?.occurredAt, '—'),
+      rightTop: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
+      initial: '',
+    })));
+}
+
+function depositBalanceMiniCard(deposit = {}) {
+  return miniCardRail([miniCard({
+    title: 'Остаток',
+    value: money(deposit?.balance),
+    subtitle: depositStatusLabel(deposit?.status),
+    interactive: true,
+    data: 'data-deposit-history',
+    aria: 'Открыть историю депозита',
+  })]);
+}
+
+function openDepositHistoryQ(root, deposit) {
+  return mountModal(root, modal(historyListMarkup(deposit), {
+    variant: 'q',
+    surface: 'app',
+    title: 'История',
+  }));
+}
+
+function fundingEntries(deposit = {}) {
+  return (Array.isArray(deposit?.history) ? deposit.history : [])
+    .filter((item) => item?.kind === 'deposit-funding' && String(item?.operationId || ''))
+    .sort((a, b) => String(b?.occurredAt || '').localeCompare(String(a?.occurredAt || '')));
+}
+
+function fundingEntryLabel(entry = {}) {
+  return `${shortDateTime(entry?.occurredAt, '—')} · ${money(entry?.amount)}`;
+}
+
+function chooseFundingEntry(deposit, title, onSelect) {
+  const entries = fundingEntries(deposit);
+  if (!entries.length) return null;
+  if (entries.length === 1) return onSelect(entries[0]);
+  return openSharedProfileSettingsMenu({
+    title,
+    actions: entries.map((entry, index) => ({
+      id: `funding-${index}`,
+      label: fundingEntryLabel(entry),
+      onSelect: () => onSelect(entry),
+    })),
+  });
 }
 
 function issuedList(items = []) {
@@ -622,6 +678,82 @@ async function openFundingQ(root, deposit, { entry = null, onSaved = () => {} } 
   return layer;
 }
 
+function paymentForm(entry, wallets, { title = 'Платёж', amount = '' } = {}) {
+  const operationId = String(entry?.operationId || '');
+  const selectedWallet = String(entry?.walletId || '');
+  const occurredAt = operationId ? String(entry?.occurredAt || '').slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const body = `<form class="form-grid" data-deposit-payment-form data-operation-id="${escapeHtml(operationId)}">
+    ${field({ label: 'Сумма', name: 'amount', type: 'number', min: '0.01', step: '0.01', inputmode: 'decimal', value: operationId ? entry.amount : amount })}
+    ${select({ label: 'Кошелёк', name: 'walletId', value: selectedWallet, options: [{ value: '', label: 'Выберите кошелёк' }, ...wallets.map((wallet) => ({ value: wallet.id, label: wallet.name }))] })}
+    ${datePicker({ label: 'Дата', name: 'occurredAt', value: occurredAt, showYear: true, modalVariant: 'q', modalSurface: 'app', allowClear: false })}
+    <div class="form-error" data-deposit-payment-error></div>
+    ${actionBlock(button(operationId ? 'Сохранить' : 'Внести', { type: 'submit' }))}
+  </form>`;
+  return v2Section(title, body);
+}
+
+async function openPaymentsQ(root, deposit, { onSaved = () => {} } = {}) {
+  const wallets = getWallets();
+  const entries = fundingEntries(deposit).slice().reverse();
+  const terms = deposit?.terms && typeof deposit.terms === 'object' ? deposit.terms : {};
+  const target = Math.max(0, Number(terms?.amount || 0));
+  const funded = Math.max(0, Number(deposit?.fundedAmount || 0));
+  const remaining = target > 0 ? Math.max(0, target - funded) : 0;
+  const sections = entries.map((entry, index) => paymentForm(entry, wallets, { title: entries.length > 1 ? `Платёж ${index + 1}` : 'Платёж' }));
+  if (!entries.length || remaining > 0.009) {
+    sections.push(paymentForm(null, wallets, {
+      title: entries.length ? 'Доплата' : 'Платёж',
+      amount: remaining > 0.009 ? remaining : '',
+    }));
+  }
+  const layer = mountModal(root, modal(sections.join(''), {
+    variant: 'q',
+    surface: 'app',
+    title: 'Платёж',
+  }));
+  if (!layer) return null;
+  initDatePickers(layer);
+  layer.querySelectorAll('[data-deposit-payment-form]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = formObject(form);
+      const errorNode = form.querySelector('[data-deposit-payment-error]');
+      const wallet = wallets.find((item) => String(item?.id) === String(values.walletId));
+      const amount = Math.max(0, Number(String(values.amount || '0').replace(',', '.')) || 0);
+      if (!wallet || amount <= 0) {
+        if (errorNode) errorNode.textContent = 'Укажите сумму и кошелёк';
+        return;
+      }
+      const operationId = String(form.dataset.operationId || '');
+      try {
+        if (operationId) {
+          await correctDepositFunding({
+            depositId: deposit.depositId,
+            operationId,
+            amount,
+            walletId: wallet.id,
+            walletName: wallet.name,
+            occurredAt: new Date(`${values.occurredAt}T12:00:00`),
+          });
+        } else {
+          await fundExistingDeposit({
+            depositId: deposit.depositId,
+            amount,
+            walletId: wallet.id,
+            walletName: wallet.name,
+            occurredAt: new Date(`${values.occurredAt}T12:00:00`),
+          });
+        }
+        layer.v2Close?.();
+        await onSaved?.();
+      } catch (error) {
+        if (errorNode) errorNode.textContent = error instanceof Error ? error.message : 'Не удалось сохранить платёж';
+      }
+    });
+  });
+  return layer;
+}
+
 async function openWithdrawX(root, deposit, onSaved = () => {}) {
   const wallets = getWallets();
   const refundable = Math.max(0, Number(deposit?.refundableAmount ?? deposit?.principalBalance ?? 0));
@@ -676,49 +808,114 @@ function openRootSettings(root, rerender) {
   });
 }
 
-function openProgramSettings(root, program, rerender) {
+function openProgramSettings(root, program, { person = null, rerender = async () => {}, onChanged = () => {} } = {}) {
   return openSharedProfileSettingsMenu({
     title: program.name || 'Депозит',
-    actions: [
-      { id: 'code', label: `UEI · ${programUei(program) || 'не задан'}`, onSelect: () => openProgramCodeX(program, rerender) },
+    controls: [
       {
         id: 'visibility',
-        label: program?.showToAll === false ? 'Показывать всем · Нет' : 'Показывать всем · Да',
-        onSelect: async () => {
-          await setProgramVisibility(program.id, program?.showToAll === false);
+        label: 'Показать',
+        checked: program?.showToAll !== false,
+        onToggle: async (checked) => {
+          await setProgramVisibility(program.id, checked);
           await rerender();
+          await onChanged?.();
+          return checked;
         },
       },
-      { id: 'copy', label: 'Создать копию', onSelect: () => openCreateProgramQ(root, rerender, program) },
-      ...(program.status === 'closed' || program.status === 'ended' ? [] : [
-        {
-          id: 'toggle',
-          label: program.status === 'paused' ? 'Возобновить' : 'Приостановить',
-          onSelect: async () => {
-            await setProgramStatus(program.id, program.status === 'paused' ? 'active' : 'paused');
-            await rerender();
-          },
-        },
-        {
-          id: 'finish', label: 'Завершить', onSelect: async () => {
-            await setProgramStatus(program.id, 'closed');
-            await rerender();
-          },
-        },
-      ]),
+    ],
+    actions: [
+      { id: 'code', label: `UEI · ${programUei(program) || 'не задан'}`, onSelect: () => openProgramCodeX(program, async () => {
+        await rerender();
+        await onChanged?.();
+      }) },
+      { id: 'copy', label: 'Создать копию', onSelect: () => openCreateProgramQ(root, async () => {
+        await rerender();
+        await onChanged?.();
+      }, program) },
       {
-        id: 'delete', label: 'Удалить', variant: 'danger', onSelect: async () => {
+        id: 'fund',
+        label: 'Оформить',
+        onSelect: () => openFundQ(root, program, {
+          person,
+          onSaved: async () => {
+            await rerender();
+            await onChanged?.();
+          },
+        }),
+      },
+      {
+        id: 'delete', label: 'Удалить депозит', variant: 'danger', onSelect: async () => {
           await deleteProgram(program.id);
           await rerender();
+          await onChanged?.();
         },
       },
     ],
   });
 }
 
-async function openDepositLayer(root, depositId, onChanged = () => {}) {
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-deposit-instance-z' }), { stack: true });
+function openDepositSettings(root, layer, deposit, effectiveVisible, render, onChanged) {
+  return openSharedProfileSettingsMenu({
+    title: deposit.programName || 'Депозит',
+    controls: [
+      {
+        id: 'visibility',
+        label: 'Показать',
+        checked: effectiveVisible,
+        onToggle: async (checked) => {
+          await updateDepositSettings(deposit.depositId, { visibleToPerson: checked });
+          await render();
+          await onChanged?.();
+          return checked;
+        },
+      },
+    ],
+    actions: [
+      {
+        id: 'payment',
+        label: 'Платёж',
+        onSelect: () => openPaymentsQ(root, deposit, { onSaved: async () => {
+          await render();
+          await onChanged?.();
+        } }),
+      },
+      ...(deposit?.canRefund ? [{
+        id: 'refund',
+        label: 'Возврат',
+        onSelect: () => openWithdrawX(root, deposit, async () => {
+          await render();
+          await onChanged?.();
+        }),
+      }] : []),
+      {
+        id: 'delete',
+        label: 'Удалить карту',
+        variant: 'danger',
+        onSelect: async () => {
+          await deleteDeposit(deposit.depositId);
+          releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+          layer.v2Close?.();
+          await onChanged?.();
+        },
+      },
+    ],
+  });
+}
+
+async function openDepositQ(root, depositId, onChanged = () => {}) {
+  const initialDeposits = await listAllDeposits();
+  const initialDeposit = initialDeposits.find((item) => String(item?.depositId) === String(depositId));
+  if (!initialDeposit) return null;
+
+  const layer = mountModal(root, modal('<div data-deposit-instance-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: initialDeposit.programName || 'Депозит',
+    className: 'loyalty-deposit-instance-q',
+  }));
   if (!layer) return null;
+
   const render = async () => {
     const deposits = await listAllDeposits();
     const deposit = deposits.find((item) => String(item?.depositId) === String(depositId));
@@ -734,79 +931,24 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
     const effectiveVisible = typeof deposit.visibleToPersonOverride === 'boolean'
       ? deposit.visibleToPersonOverride
       : inheritedVisible;
-    layer.innerHTML = page([
-      depositHeaderContext({ title: deposit.programName || 'Депозит' }),
-      depositInfo(deposit),
-      v2Section('История', historyMarkup(deposit)),
-      deposit?.canRefund ? actionBlock(button('Возврат', { type: 'button', data: 'data-deposit-withdraw', aria: 'Вернуть остаток депозита' })) : '',
-    ]);
-    setV2ZHeaderRows(layer, [smallActionButton({ icon: 'settings', data: 'data-deposit-instance-settings', aria: 'Настройки депозита' })]);
-    layer.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
-      openSharedProfileSettingsMenu({
+    const host = layer.querySelector('[data-deposit-instance-q-host]');
+    if (!host) return;
+    host.innerHTML = page([
+      depositHeaderContext({
         title: deposit.programName || 'Депозит',
-        actions: [
-          {
-            id: 'fund', label: 'Добавить платёж', onSelect: () => openFundingQ(root, deposit, { onSaved: async () => {
-              await render(); await onChanged?.();
-            } }),
-          },
-          {
-            id: 'visibility',
-            label: effectiveVisible ? 'Показывать этому человеку · Да' : 'Показывать этому человеку · Нет',
-            onSelect: async () => {
-              await updateDepositSettings(deposit.depositId, { visibleToPerson: !effectiveVisible });
-              await render();
-              await onChanged?.();
-            },
-          },
-          {
-            id: 'delete',
-            label: 'Удалить карту',
-            variant: 'danger',
-            onSelect: async () => {
-              await deleteDeposit(deposit.depositId);
-              releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
-              layer.v2Close?.();
-              await onChanged?.();
-            },
-          },
-        ],
-      });
+        settingsData: 'data-deposit-instance-settings',
+        settingsAria: 'Настройки депозита',
+      }),
+      depositInfo(deposit),
+      depositBalanceMiniCard(deposit),
+    ]);
+    host.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
+      openDepositSettings(root, layer, deposit, effectiveVisible, render, onChanged);
     });
-    layer.querySelectorAll('[data-deposit-funding]').forEach((node) => {
-      node.addEventListener('click', () => {
-        const operationId = String(node.dataset.depositFunding || '');
-        const entry = (deposit.history || []).find((item) => item?.kind === 'deposit-funding' && String(item?.operationId || '') === operationId);
-        if (!entry) return;
-        openSharedProfileSettingsMenu({
-          title: 'Внесение',
-          actions: [
-            {
-              id: 'correct', label: 'Корректировать', onSelect: () => openFundingQ(root, deposit, { entry, onSaved: async () => {
-                await render(); await onChanged?.();
-              } }),
-            },
-            {
-              id: 'delete', label: 'Удалить платёж', variant: 'danger', onSelect: async () => {
-                try {
-                  await deleteDepositFunding({ depositId: deposit.depositId, operationId });
-                  await render();
-                  await onChanged?.();
-                } catch (error) {
-                  openNotice({ title: 'Платёж не удалён', message: error instanceof Error ? error.message : 'Не удалось удалить платёж' });
-                }
-              },
-            },
-          ],
-        });
-      });
-    });
-    layer.querySelector('[data-deposit-withdraw]')?.addEventListener('click', () => openWithdrawX(root, deposit, async () => {
-      await render();
-      await onChanged?.();
-    }));
+    host.querySelector('[data-deposit-history]')?.addEventListener('click', () => openDepositHistoryQ(root, deposit));
     notifyContext();
   };
+
   await render();
   return layer;
 }
@@ -834,23 +976,14 @@ async function openProgramLayer(root, programId, { person = null, onChanged = ()
         settingsAria: 'Настройки депозитной программы',
       }),
       v2Section('Оформленные депозиты', issuedList(issued)),
-      program.status === 'active' ? actionBlock(button('Оформить', { type: 'button', data: 'data-deposit-program-fund', aria: 'Оформить депозит' })) : '',
     ]);
-    setV2ZHeaderRows(layer, [smallActionButton({ icon: 'info', data: 'data-deposit-info', aria: 'Условия депозитной программы' })]);
-    layer.querySelector('[data-deposit-info]')?.addEventListener('click', () => openProgramConditions(program, issued.length));
-    layer.querySelector('[data-deposit-program-settings]')?.addEventListener('click', () => openProgramSettings(root, program, async () => {
-      await render();
-      await onChanged?.();
-    }));
-    layer.querySelector('[data-deposit-program-fund]')?.addEventListener('click', () => openFundQ(root, program, {
+    layer.querySelector('[data-deposit-program-settings]')?.addEventListener('click', () => openProgramSettings(root, program, {
       person,
-      onSaved: async () => {
-        await render();
-        await onChanged?.();
-      },
+      rerender: render,
+      onChanged,
     }));
     layer.querySelectorAll('[data-deposit-instance]').forEach((node) => {
-      node.addEventListener('click', () => openDepositLayer(root, node.dataset.depositInstance, async () => {
+      node.addEventListener('click', () => openDepositQ(layer, node.dataset.depositInstance, async () => {
         await render();
         await onChanged?.();
       }));
