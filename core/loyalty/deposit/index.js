@@ -84,11 +84,11 @@ function depositHeaderContext({ title = 'Депозит', settingsData = '', set
       image: String(profile?.photo || ''),
       imagePosition: `${crop(profile?.photoCropX)}% ${crop(profile?.photoCropY)}%`,
       initials: profileName.slice(0, 1).toUpperCase() || '?',
-      settingsTag: Boolean(settingsData),
+    },
+    v: settingsData ? {
       data: settingsData,
       aria: settingsAria,
-      disabled: !settingsData,
-    },
+    } : null,
     c,
   });
 }
@@ -735,12 +735,15 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
       ? deposit.visibleToPersonOverride
       : inheritedVisible;
     layer.innerHTML = page([
-      depositHeaderContext({ title: deposit.programName || 'Депозит' }),
+      depositHeaderContext({
+        title: deposit.programName || 'Депозит',
+        settingsData: 'data-deposit-instance-settings',
+        settingsAria: 'Настройки депозита',
+      }),
       depositInfo(deposit),
       v2Section('История', historyMarkup(deposit)),
       deposit?.canRefund ? actionBlock(button('Возврат', { type: 'button', data: 'data-deposit-withdraw', aria: 'Вернуть остаток депозита' })) : '',
     ]);
-    setV2ZHeaderRows(layer, [smallActionButton({ icon: 'settings', data: 'data-deposit-instance-settings', aria: 'Настройки депозита' })]);
     layer.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
       openSharedProfileSettingsMenu({
         title: deposit.programName || 'Депозит',
