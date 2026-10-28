@@ -13,11 +13,15 @@ function activeQSurface(app) {
   return qLayers.at(-1) || null;
 }
 
+function activeZSurface(app) {
+  const layers = [...(app?.querySelectorAll?.('[data-v2-z-layer]') || [])];
+  return layers.at(-1) || app?.querySelector?.('[data-v2-front] > [data-v2-z]') || null;
+}
+
 function activeWorkspaceSurface(app) {
   const qSurface = activeQSurface(app);
   if (qSurface) return qSurface;
-  const layers = [...(app?.querySelectorAll?.('[data-v2-z-layer]') || [])];
-  return layers.at(-1) || app?.querySelector?.('[data-v2-front] > [data-v2-z]') || null;
+  return activeZSurface(app);
 }
 
 function syncControlState(control, source) {
@@ -55,8 +59,32 @@ export function bindV2VContext(root) {
   let queued = false;
   let externalSurface = null;
   let externalObserver = null;
+  let suspendedManualNodes = null;
+  let suspendedManualHidden = true;
 
-  const hostControl = () => app.querySelector?.(':scope > [data-v2-v-host] [data-v2-v]') || null;
+  const hostNode = () => app.querySelector?.(':scope > [data-v2-v-host]') || null;
+  const hostControl = () => hostNode()?.querySelector?.('[data-v2-v]') || null;
+
+  const suspendManualV = () => {
+    if (suspendedManualNodes) return;
+    const host = hostNode();
+    if (!host) return;
+    suspendedManualNodes = [...host.childNodes];
+    suspendedManualHidden = Boolean(host.hidden);
+    host.replaceChildren();
+    host.hidden = true;
+  };
+
+  const restoreManualV = () => {
+    if (!suspendedManualNodes) return false;
+    const host = hostNode();
+    if (!host) return false;
+    host.replaceChildren(...suspendedManualNodes);
+    host.hidden = suspendedManualHidden;
+    suspendedManualNodes = null;
+    suspendedManualHidden = true;
+    return true;
+  };
 
   const observeExternalSurface = (surface, schedule) => {
     const next = surface && !app.contains(surface) ? surface : null;
@@ -77,15 +105,27 @@ export function bindV2VContext(root) {
   const sync = () => {
     queued = false;
     if (!app.isConnected) return;
-    const surface = activeWorkspaceSurface(app);
+    const qSurface = activeQSurface(app);
+    if (!qSurface && suspendedManualNodes) {
+      restoreManualV();
+      source = null;
+      control = null;
+      return;
+    }
+
+    const surface = qSurface || activeZSurface(app);
     observeExternalSurface(surface, schedule);
     const nextSource = surface?.querySelector?.('[data-workspace-v-action]') || null;
     const currentControl = hostControl();
 
     if (currentControl && currentControl !== control) {
-      source = nextSource;
-      control = null;
-      return;
+      if (qSurface) {
+        suspendManualV();
+      } else {
+        source = nextSource;
+        control = null;
+        return;
+      }
     }
 
     if (!nextSource || nextSource.hidden) {
@@ -132,7 +172,7 @@ export function bindV2VContext(root) {
     externalObserver = null;
     externalSurface = null;
     window.removeEventListener('book:v2-context-changed', schedule);
-    if (control?.isConnected && hostControl() === control) clearV2V(app);
+    if (!restoreManualV() && control?.isConnected && hostControl() === control) clearV2V(app);
     source = null;
     control = null;
   };
