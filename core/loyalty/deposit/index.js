@@ -32,14 +32,13 @@ import {
   v2ZLayer,
   workspaceHeaderContext,
 } from '../../../ui/ui.js';
-import { compactCheck } from '../../../ui/selection/check-list.js';
-import { settingsPanel } from '../../../ui/settings/index.js';
 import { getFinanceOperation, getWallets, refreshFinanceState } from '../../finance/index.js';
 import { getProfile } from '../../profile/data.js';
 import { getAllPeople } from '../../people/data.js';
 import { personDisplay } from '../../people/presentation.js';
 import { getCardAppearanceTemplate, saveCardAppearanceTemplate } from '../../card-appearance-templates.js';
 import { createUEI, getUEI, listUEIs, normalizeUEI, releaseUEI, replaceUEI } from '../../uei.js';
+import { openLoyaltySettingsMenu } from '../shared.js';
 import {
   correctDepositFunding,
   deleteDeposit,
@@ -877,47 +876,8 @@ function openRootSettings(root, rerender) {
   });
 }
 
-function openDepositSettingsMenu({ title = 'Депозит', checked = true, onToggle = async (value) => value, actions = [] } = {}) {
-  const actionItems = (Array.isArray(actions) ? actions : []).filter((item) => item?.id && item?.label);
-  const body = `<div class="form-grid" data-deposit-settings-menu>
-    ${compactCheck({ label: 'Показать', checked, data: 'data-deposit-visibility', aria: 'Показать' })}
-    ${settingsPanel(actionItems.map((item) => ({
-      label: item.label,
-      variant: item.variant || 'outline',
-      data: `data-deposit-settings-action="${escapeHtml(item.id)}"`,
-      disabled: Boolean(item.disabled),
-    })))}
-  </div>`;
-  const menu = mountModal(document.body, modal(body, {
-    variant: 'x',
-    title,
-    className: 'modal--profile-settings-sheet',
-    xRole: 'action',
-  }));
-  if (!menu) return null;
-
-  const visibility = menu.querySelector('[data-deposit-visibility]');
-  visibility?.addEventListener('change', async () => {
-    const requested = visibility.checked;
-    visibility.disabled = true;
-    try {
-      const result = await onToggle(requested);
-      visibility.checked = typeof result === 'boolean' ? result : requested;
-    } catch {
-      visibility.checked = !requested;
-    } finally {
-      visibility.disabled = false;
-    }
-  });
-
-  actionItems.forEach((item) => {
-    if (item.disabled) return;
-    menu.querySelector(`[data-deposit-settings-action="${CSS.escape(String(item.id))}"]`)?.addEventListener('click', () => {
-      menu.v2Close?.();
-      void item.onSelect?.();
-    });
-  });
-  return menu;
+function openDepositSettingsMenu(options = {}) {
+  return openLoyaltySettingsMenu(options);
 }
 
 function openProgramSettings(root, program, { person = null, rerender = async () => {}, onChanged = () => {} } = {}) {
