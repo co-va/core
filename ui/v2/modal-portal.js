@@ -228,6 +228,8 @@ export function mountV2Layer(html, { root = null } = {}) {
     if (foreignLayer && foreignLayer !== node) return true;
     const sheet = node.querySelector(':scope > .v2-layer');
     if (sheet?.contains(event.target)) return true;
+    const vHost = event.target.closest?.('[data-v2-v-host]');
+    if (vHost && app && vHost.parentElement === app) return true;
     return false;
   };
 
