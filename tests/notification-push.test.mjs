@@ -127,6 +127,9 @@ assert.match(platformNoticesUi, /intervalMs = 15_000/);
 assert.match(platformNoticesUi, /data-platform-push-enable/);
 assert.match(platformNoticesUi, /Уведомления на телефоне/);
 assert.match(platformNoticesUi, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
+assert.match(platformNoticesUi, /Notification\.permission === 'granted'/);
+assert.match(platformNoticesUi, /void enablePlatformPush\(\)\.catch\(\(\) => undefined\)/);
+assert.doesNotMatch(platformNoticesUi, /pushPromptAttempts/);
 const enablePushSource = platformNoticesUi.slice(
   platformNoticesUi.indexOf('export async function enablePlatformPush'),
   platformNoticesUi.indexOf('export async function disablePlatformPush'),

@@ -131,30 +131,40 @@ export function startPlatformNotices({
   let busy = false;
   let timer = null;
   let pushPromptShown = false;
-  let pushPromptAttempts = 0;
   const shown = new Set();
 
   if (platformPushSupported()) {
     void navigator.serviceWorker.register('/service-worker.js', { scope:'/' }).catch(() => undefined);
+    if (Notification.permission === 'granted') {
+      void enablePlatformPush().catch(() => undefined);
+    }
   }
 
   const offerPush = async () => {
-    if (disposed || pushPromptShown || pushPromptAttempts >= 4) return;
-    pushPromptAttempts += 1;
+    if (disposed || pushPromptShown) return;
     if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
       window.setTimeout(() => void offerPush(), 1_500);
       return;
     }
+    if (!platformPushSupported() || Notification.permission === 'denied') return;
+
     try {
-      const state = await getPlatformPushState();
-      if (!state.supported || !state.enabled || state.subscribed || state.permission === 'denied') return;
+      if (Notification.permission === 'granted') {
+        const state = await enablePlatformPush();
+        if (state?.subscribed) return;
+      }
+
       pushPromptShown = true;
       const layer = mountModal(document.body, modal(pushSetupModal(), {
         title: 'Уведомления на телефоне',
         variant: 's',
         surface: 'app',
       }));
-      if (!layer) return;
+      if (!layer) {
+        pushPromptShown = false;
+        window.setTimeout(() => void offerPush(), 1_500);
+        return;
+      }
       layer.dataset.platformPushSetupModal = 'true';
       const enable = layer.querySelector('[data-platform-push-enable]');
       const later = layer.querySelector('[data-platform-push-later]');
