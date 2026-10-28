@@ -190,7 +190,8 @@ export function startPlatformNotices({
     pushPromptShown = true;
     const layer = mountModal(document.body, modal(pushSetupModal(initialStatus), {
       title: 'Уведомления на телефоне',
-      variant: 's',
+      variant: 'x',
+      xRole: 'action',
       surface: 'app',
     }));
     if (!layer) {
@@ -235,7 +236,8 @@ export function startPlatformNotices({
       shown.add(item.id);
       const layer = mountModal(document.body, modal(noticeModal(item), {
         title: item.title || 'Системное уведомление',
-        variant: 's',
+        variant: 'x',
+        xRole: 'action',
         surface: 'app',
       }));
       if (!layer) return;
