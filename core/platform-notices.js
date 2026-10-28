@@ -146,9 +146,14 @@ export function startPlatformNotices({
       window.setTimeout(() => void offerPush(), 1_500);
       return;
     }
+    if (!platformPushSupported() || Notification.permission === 'denied') return;
+
     try {
-      const state = await getPlatformPushState();
-      if (!state.supported || !state.enabled || state.subscribed || state.permission === 'denied') return;
+      if (Notification.permission === 'granted') {
+        const state = await enablePlatformPush();
+        if (state?.subscribed) return;
+      }
+
       pushPromptShown = true;
       const layer = mountModal(document.body, modal(pushSetupModal(), {
         title: 'Уведомления на телефоне',
