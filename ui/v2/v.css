@@ -1,4 +1,4 @@
-/* V — independent Shared floating utility control. It never participates in Header/Y/Z geometry. */
+/* V — independent Shared floating utility control. It belongs to H and never participates in Header/Y/Z/Q geometry. */
 .v2-app{--v2-v-bottom:36px}
 
 /* Keep V above the shared bottom action stack instead of overlapping it. */
@@ -9,7 +9,7 @@
 
 .v2-v-host{
   position:absolute;
-  z-index:11;
+  z-index:1301;
   inset:0;
   pointer-events:none;
 }
@@ -48,7 +48,7 @@
 }
 .v2-v:focus-visible{outline:2px solid var(--v2-yellow);outline-offset:0;border-radius:14px}
 .v2-app.is-deck-open .v2-v,
-.v2-app.has-v2-modal .v2-v,
+.v2-app.has-v2-modal:not(.has-v2-q-modal) .v2-v,
 html.keyboard-open .v2-v{visibility:hidden;pointer-events:none}
 
 @media(max-width:360px){
