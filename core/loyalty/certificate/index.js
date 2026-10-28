@@ -44,6 +44,7 @@ import {
   notifyLoyaltyContext,
   normalizeOptionalUei,
   openLoyaltyProgramSettings,
+  openLoyaltySettingsMenu,
   optionalUeiField,
   personLabel,
   personOption,
@@ -139,14 +140,38 @@ function instanceInfo(instance = {}) {
   ]);
 }
 
+function certificateHistory(instance = {}) {
+  return [...(Array.isArray(instance.history) ? instance.history : [])].reverse();
+}
+
 function historyMarkup(instance = {}) {
-  const history = Array.isArray(instance.history) ? instance.history : [];
+  const history = certificateHistory(instance);
   if (!history.length) return emptyState('Истории пока нет', 'Использования сертификата появятся здесь.');
-  return miniCardRail(history.map((item) => miniCard({
+  return miniCardRail(history.map((item, index) => miniCard({
     title: item.title || 'Использование',
     value: item.amount ? `−${money(item.amount)}` : 'Использование',
     subtitle: shortDateTime(item.occurredAt, '—'),
+    interactive: true,
+    data: `data-certificate-history-entry="${index}"`,
+    aria: `Открыть ${String(item.title || 'использование').toLowerCase()}`,
   })));
+}
+
+function historyEventMarkup(item = {}) {
+  const rows = [{ label: 'Дата', value: shortDateTime(item.occurredAt, '—') }];
+  if (item.procedure || item.service || item.product) rows.push({ label: 'Позиция', value: item.procedure || item.service || item.product });
+  if (item.amount != null) rows.push({ label: 'Сумма', value: `−${money(item.amount)}` });
+  if (item.balanceAfter != null) rows.push({ label: 'Остаток', value: money(item.balanceAfter) });
+  rows.push({ label: 'Дата формирования', value: shortDateTime(item.recordedAt || item.createdAt || item.occurredAt, '—') });
+  return details(rows);
+}
+
+function openHistoryEventS(root, item = {}) {
+  return mountModal(root, modal(historyEventMarkup(item), {
+    variant: 's',
+    surface: 'app',
+    title: item.title || 'Использование',
+  }));
 }
 
 function issuedList(items = []) {
@@ -266,6 +291,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       termEndDate: term.endDate,
       partial: values.partial !== 'no',
       description: values.description || '',
+      showToAll: editingProgram?.showToAll !== false,
       status: editingProgram?.status || 'active',
       createdAt: editingProgram?.createdAt || new Date().toISOString(),
     };
@@ -328,14 +354,41 @@ async function openInstanceLayer(root, instanceId) {
   const instance = instances.find((item) => item.id === instanceId);
   if (!instance) return null;
   const program = programs.find((item) => item.id === instance.programId) || {};
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-certificate-instance-z' }), { stack: true });
+  const layer = mountModal(root, modal('<div data-certificate-instance-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: program.name || 'Сертификат',
+    className: 'loyalty-certificate-instance-q',
+  }));
   if (!layer) return null;
-  layer.innerHTML = page([
-    loyaltyHeader(program.name || 'Сертификат'),
-    instanceInfo(instance),
-    v2Section('История', historyMarkup(instance)),
-  ]);
-  notifyLoyaltyContext();
+
+  const render = () => {
+    const effectiveVisible = typeof instance.visibleToPersonOverride === 'boolean'
+      ? instance.visibleToPersonOverride
+      : program.showToAll !== false;
+    const history = certificateHistory(instance);
+    const host = layer.querySelector('[data-certificate-instance-q-host]');
+    if (!host) return;
+    host.innerHTML = page([
+      loyaltyHeader(program.name || 'Сертификат', { settings: true, settingsData: 'data-certificate-instance-settings' }),
+      instanceInfo(instance),
+      v2Section('История', historyMarkup(instance)),
+    ]);
+    host.querySelector('[data-certificate-instance-settings]')?.addEventListener('click', () => openLoyaltySettingsMenu({
+      title: program.name || 'Сертификат',
+      checked: effectiveVisible,
+      onToggle: async (value) => {
+        instance.visibleToPersonOverride = value;
+        return value;
+      },
+    }));
+    host.querySelectorAll('[data-certificate-history-entry]').forEach((node) => node.addEventListener('click', () => {
+      const item = history[Number(node.dataset.certificateHistoryEntry)];
+      if (item) openHistoryEventS(layer, item);
+    }));
+    notifyLoyaltyContext();
+  };
+  render();
   return layer;
 }
 
@@ -359,6 +412,12 @@ async function openProgramLayer(root, programId, onChanged) {
     layer.querySelector('[data-certificate-program-settings]')?.addEventListener('click', () => openLoyaltyProgramSettings({
       title: program.name || 'Сертификат',
       status: program.status,
+      visible: program.showToAll !== false,
+      onVisibility: async (value) => {
+        program.showToAll = value;
+        await onChanged?.();
+        return value;
+      },
       onCorrect: () => openCreateProgramQ(root, async () => { await render(); await onChanged?.(); }, program),
       onToggle: async () => { program.status = program.status === 'paused' ? 'active' : 'paused'; await render(); await onChanged?.(); },
       onFinish: async () => { program.status = 'ended'; await render(); await onChanged?.(); },
@@ -384,6 +443,12 @@ export function getCertificateAssignmentsForPerson(personKey = '') {
   const key = String(personKey || '');
   return instances
     .filter((instance) => String(instance?.ownerKey || '') === key)
+    .filter((instance) => {
+      const program = programs.find((item) => item.id === instance.programId) || {};
+      return typeof instance.visibleToPersonOverride === 'boolean'
+        ? instance.visibleToPersonOverride
+        : program.showToAll !== false;
+    })
     .map((instance) => ({
       instance: { ...instance },
       program: { ...(programs.find((program) => program.id === instance.programId) || {}) },
