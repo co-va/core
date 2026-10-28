@@ -1,3 +1,5 @@
+import type { MessagePurpose } from '../communication/message-purpose';
+
 export type NotificationEventDefinition = {
   type: string;
   group: string;
@@ -6,10 +8,17 @@ export type NotificationEventDefinition = {
   defaultTitle: string;
   defaultBody: string;
   variables: string[];
+  purpose: MessagePurpose;
 };
 
+type NotificationEventDefinitionInput = Omit<NotificationEventDefinition, 'purpose'>;
+
+function serviceEvent(definition: NotificationEventDefinitionInput): NotificationEventDefinition {
+  return Object.freeze({ ...definition, purpose: 'SERVICE' as const });
+}
+
 export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] = Object.freeze([
-  {
+  serviceEvent({
     type: 'booking.created',
     group: 'Запись',
     title: 'Запись создана',
@@ -17,8 +26,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Запись создана',
     defaultBody: 'Запись создана на {{date}} в {{time}}.',
     variables: ['date', 'time', 'workplace', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'booking.rescheduled',
     group: 'Запись',
     title: 'Запись перенесена',
@@ -26,8 +35,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Запись перенесена',
     defaultBody: 'Запись перенесена на {{date}} в {{time}}.',
     variables: ['date', 'time', 'workplace', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'booking.cancelled',
     group: 'Запись',
     title: 'Запись отменена',
@@ -35,8 +44,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Запись отменена',
     defaultBody: 'Запись на {{date}} в {{time}} отменена.',
     variables: ['date', 'time', 'workplace', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'booking.confirmed',
     group: 'Запись',
     title: 'Запись подтверждена',
@@ -44,8 +53,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Запись подтверждена',
     defaultBody: 'Запись на {{date}} в {{time}} подтверждена.',
     variables: ['date', 'time', 'workplace', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'booking.no-show',
     group: 'Запись',
     title: 'Неявка на запись',
@@ -53,8 +62,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Запись не состоялась',
     defaultBody: 'Запись {{date}} в {{time}} отмечена как не состоявшаяся.',
     variables: ['date', 'time', 'workplace', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'booking.reminder',
     group: 'Запись',
     title: 'Напоминание о записи',
@@ -62,8 +71,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Напоминание о записи',
     defaultBody: 'Напоминаем о записи {{date}} в {{time}}.',
     variables: ['date', 'time', 'workplace', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'finance.payment',
     group: 'Финансы',
     title: 'Оплата проведена',
@@ -71,8 +80,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Оплата проведена',
     defaultBody: 'Оплата на сумму {{amount}} проведена.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'finance.refund',
     group: 'Финансы',
     title: 'Возврат проведён',
@@ -80,8 +89,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Возврат проведён',
     defaultBody: 'Возврат на сумму {{amount}} проведён.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'loan.received',
     group: 'Займы',
     title: 'Займ получен',
@@ -89,8 +98,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Займ получен',
     defaultBody: 'Получение займа на сумму {{amount}} проведено.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'loan.repaid',
     group: 'Займы',
     title: 'Займ возвращён',
@@ -98,8 +107,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Займ возвращён',
     defaultBody: 'Возврат займа на сумму {{amount}} проведён.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'investment.received',
     group: 'Инвестиции',
     title: 'Инвестиция получена',
@@ -107,8 +116,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Инвестиция получена',
     defaultBody: 'Инвестиция на сумму {{amount}} получена.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'investment.returned',
     group: 'Инвестиции',
     title: 'Инвестиция возвращена',
@@ -116,8 +125,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Инвестиция возвращена',
     defaultBody: 'Возврат инвестиции на сумму {{amount}} проведён.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'investment.income',
     group: 'Инвестиции',
     title: 'Доход по инвестиции',
@@ -125,8 +134,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Доход по инвестиции',
     defaultBody: 'Операция по доходу инвестиции на сумму {{amount}} проведена.',
     variables: ['amount', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'consent.accepted',
     group: 'Документы и согласия',
     title: 'Согласие принято',
@@ -134,8 +143,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Согласие принято',
     defaultBody: 'Согласие «{{document}}» принято.',
     variables: ['document', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'consent.revoked',
     group: 'Документы и согласия',
     title: 'Согласие отозвано',
@@ -143,8 +152,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Согласие отозвано',
     defaultBody: 'Согласие «{{document}}» отозвано. Дальнейший контакт может быть ограничен.',
     variables: ['document', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'document.assigned',
     group: 'Документы и согласия',
     title: 'Документ назначен',
@@ -152,8 +161,8 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'Новый документ',
     defaultBody: 'Вам назначен документ «{{document}}».',
     variables: ['document', 'date', 'person.name', 'person.surname'],
-  },
-  {
+  }),
+  serviceEvent({
     type: 'person.birthday',
     group: 'Люди',
     title: 'День рождения',
@@ -161,7 +170,7 @@ export const NOTIFICATION_EVENT_CATALOG: readonly NotificationEventDefinition[] 
     defaultTitle: 'С днём рождения!',
     defaultBody: '{{person.name}}, поздравляем вас с днём рождения!',
     variables: ['person.name', 'person.surname'],
-  },
+  }),
 ]);
 
 export const NOTIFICATION_EVENT_TYPES = Object.freeze(NOTIFICATION_EVENT_CATALOG.map((event) => event.type));
