@@ -129,14 +129,15 @@ export function openLoyaltySettingsMenu({
 } = {}) {
   const actionItems = (Array.isArray(actions) ? actions : []).filter((item) => item?.id && item?.label);
   const showToggle = typeof onToggle === 'function';
+  const actionsMarkup = actionItems.length ? settingsPanel(actionItems.map((item) => ({
+    label: item.label,
+    variant: item.variant || 'outline',
+    data: `data-loyalty-settings-action="${escapeHtml(item.id)}"`,
+    disabled: Boolean(item.disabled),
+  }))) : '';
   const body = `<div class="form-grid" data-loyalty-settings-menu>
     ${showToggle ? compactCheck({ label: 'Показать', checked, data: 'data-loyalty-visibility', aria: 'Показать' }) : ''}
-    ${settingsPanel(actionItems.map((item) => ({
-      label: item.label,
-      variant: item.variant || 'outline',
-      data: `data-loyalty-settings-action="${escapeHtml(item.id)}"`,
-      disabled: Boolean(item.disabled),
-    })))}
+    ${actionsMarkup}
   </div>`;
   const menu = mountModal(document.body, modal(body, {
     variant: 'x',
