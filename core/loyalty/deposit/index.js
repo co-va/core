@@ -34,8 +34,7 @@ import {
 } from '../../../ui/ui.js';
 import { compactCheck } from '../../../ui/selection/check-list.js';
 import { settingsPanel } from '../../../ui/settings/index.js';
-import { getWallets, refreshFinanceState } from '../../finance/index.js';
-import { getFinanceOperation } from '../../finance/data.js';
+import { getFinanceOperation, getWallets, refreshFinanceState } from '../../finance/index.js';
 import { getProfile } from '../../profile/data.js';
 import { getAllPeople } from '../../people/data.js';
 import { personDisplay } from '../../people/presentation.js';
