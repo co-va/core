@@ -64,6 +64,11 @@ expect(
     && modalPortal.includes("app?.classList.remove('has-v2-q-modal');"),
   'Q lifecycle must continue publishing context changes to the independent Shared V owner.',
 );
+expect(
+  modalPortal.includes("const vHost = qLayer ? event.target.closest?.('[data-v2-v-host]') : null;")
+    && modalPortal.includes('if (vHost && app && vHost.parentElement === app) return true;'),
+  'Q veil must treat the direct H/app V host as owned interaction; X/S must not receive this exemption.',
+);
 
 if (failures.length) {
   console.error('V architecture check failed:');
