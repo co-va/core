@@ -1253,7 +1253,8 @@ function openGlobalContactDepositLayer(root, state, handlers, relationship, depo
     b: String(deposit?.programName || 'Депозит'),
     d: { kind: 'chat', data: 'data-global-deposit-chat', aria: 'Чат' },
   }));
-  clearV2V(root);
+  setV2V(root, { data: 'data-global-contact-settings', aria: 'Настройки' });
+  bindContactHeaderActions(root, state, handlers, relationship, { actionRoot: layer });
   root.querySelector('[data-global-deposit-chat]')?.addEventListener('click', () => {
     state.accountSelectedChatTenantId = tenantId;
     state.accountTab = 'messages';
