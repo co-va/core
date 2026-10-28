@@ -142,6 +142,8 @@ export function openLoyaltySettingsMenu({
     variant: 'x',
     surface: 'app',
     title,
+    className: 'modal--profile-settings-sheet',
+    xRole: 'action',
   }));
   if (!menu) return null;
 
