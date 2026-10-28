@@ -32,7 +32,7 @@ export {
   recordAmountDue,
   resolveRecordSettlement,
 } from './settlement.js';
-export { getFinanceArticles, hydrateFinanceFromServer } from './data.js';
+export { getFinanceArticles, getFinanceOperation, hydrateFinanceFromServer } from './data.js';
 export { archiveFinanceArticle, cancelFinanceOperation, cancelPaymentOperation, correctFinanceOperation, createFinanceArticle, hardDeleteFinanceOperation, recordManualFinanceOperation, recordPaymentIncome, recordSpecialFinanceOperation, recordRefundExpense, refreshFinanceState, saveSettlementSnapshot, updateFinanceArticle } from './service.js';
 
 export {
