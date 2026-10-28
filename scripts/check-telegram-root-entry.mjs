@@ -6,21 +6,34 @@ const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 
 expect(
-  runtime.includes("params.get('tg_tenant')") && runtime.includes("params.get('tg_entry')"),
-  'Telegram browser linking must read tenant and one-time ticket from dedicated Telegram parameters.',
+  !telegramBot.includes('web_app:')
+    && !telegramBot.includes("text: 'Открыть приложение'"),
+  'Telegram must remain a plain BotFather bot and must not restore Telegram Mini App launch buttons.',
 );
 expect(
-  runtime.includes("if (path !== '/') return null;"),
-  'Automatic Telegram browser linking must be restricted to the global account root.',
+  !telegramBot.includes('createTelegramEntry(')
+    && !telegramBot.includes('ACCOUNT_APP_URL'),
+  'Telegram bot identity linking must not use the retired browser ticket/app flow.',
 );
 expect(
-  runtime.includes('clearAccount(rootTelegramRoute.tenantId);'),
-  'Telegram linking must not inherit an unrelated browser Account.',
+  telegramBot.includes("text: 'Поделиться номером'")
+    && telegramBot.includes('request_contact: true'),
+  'Unlinked Telegram users must be identified by Telegram native phone sharing.',
 );
 expect(
-  runtime.includes('await bindAccountTelegramEntry(tenant, entry);')
-    && runtime.includes('completeTelegramEntry();'),
-  'Explicit login must finish the same Telegram ticket after authentication.',
+  telegramBot.includes("String(message.contact.user_id || '') === telegramUserId"),
+  'Telegram phone linking must only accept the sender own shared contact.',
+);
+expect(
+  telegramBot.includes('bindVerifiedTelegramPhone')
+    && telegramBot.includes('this.prisma.person.findMany')
+    && telegramBot.includes('this.prisma.account.findMany'),
+  'Telegram phone linking must resolve existing Person/Account before adding Telegram identity.',
+);
+expect(
+  telegramBot.includes("text: 'Записаться'")
+    && telegramBot.includes('url: bookingUrl'),
+  'Telegram chat must expose ordinary Public Booking URL.',
 );
 expect(
   !runtime.includes("params.get('booking')")
@@ -29,20 +42,8 @@ expect(
   'Retired Telegram Mini App booking query route must stay removed.',
 );
 expect(
-  !telegramBot.includes('web_app:')
-    && !telegramBot.includes("text: 'Открыть приложение'"),
-  'Telegram must remain a plain BotFather bot and must not restore Telegram Mini App launch buttons.',
-);
-expect(
-  telegramBot.includes("text: 'Подключить Telegram'")
-    && telegramBot.includes("text: 'Записаться'")
-    && telegramBot.includes('url: bookingUrl'),
-  'Telegram /start must expose ordinary browser links for identity linking and Public Booking.',
-);
-expect(
-  !telegramBot.includes("throw new ServiceUnavailableException('Не настроен ACCOUNT_APP_URL для Telegram-входа')")
-    && telegramBot.includes('ready: credentialsKeyConfigured'),
-  'BotFather token connection must not depend on the account application URL.',
+  telegramBot.includes('ready: credentialsKeyConfigured'),
+  'BotFather token connection must depend only on Telegram credentials configuration.',
 );
 
 if (failures.length) {
