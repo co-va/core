@@ -253,11 +253,35 @@ function historyMarkup(deposit = {}) {
     title: kindLabel(item?.kind),
     value: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
     subtitle: shortDateTime(item?.occurredAt, '—'),
-    interactive: item?.kind === 'deposit-funding',
-    data: item?.kind === 'deposit-funding' ? `data-deposit-funding="${escapeHtml(item.operationId || '')}"` : '',
-    aria: item?.kind === 'deposit-funding' ? 'Настройки внесения' : '',
-    actionLabel: item?.kind === 'deposit-funding' ? 'Настройки' : '',
+    interactive: false,
+    data: '',
+    aria: '',
+    actionLabel: '',
   })));
+}
+
+function fundingEntries(deposit = {}) {
+  return (Array.isArray(deposit?.history) ? deposit.history : [])
+    .filter((item) => item?.kind === 'deposit-funding' && String(item?.operationId || ''))
+    .sort((a, b) => String(b?.occurredAt || '').localeCompare(String(a?.occurredAt || '')));
+}
+
+function fundingEntryLabel(entry = {}) {
+  return `${shortDateTime(entry?.occurredAt, '—')} · ${money(entry?.amount)}`;
+}
+
+function chooseFundingEntry(deposit, title, onSelect) {
+  const entries = fundingEntries(deposit);
+  if (!entries.length) return null;
+  if (entries.length === 1) return onSelect(entries[0]);
+  return openSharedProfileSettingsMenu({
+    title,
+    actions: entries.map((entry, index) => ({
+      id: `funding-${index}`,
+      label: fundingEntryLabel(entry),
+      onSelect: () => onSelect(entry),
+    })),
+  });
 }
 
 function issuedList(items = []) {
@@ -716,9 +740,86 @@ function openProgramSettings(root, program, rerender) {
   });
 }
 
-async function openDepositLayer(root, depositId, onChanged = () => {}) {
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-deposit-instance-z' }), { stack: true });
+function openDepositSettings(root, layer, deposit, effectiveVisible, render, onChanged) {
+  const entries = fundingEntries(deposit);
+  return openSharedProfileSettingsMenu({
+    title: deposit.programName || 'Депозит',
+    actions: [
+      {
+        id: 'fund',
+        label: 'Добавить платёж',
+        onSelect: () => openFundingQ(root, deposit, { onSaved: async () => {
+          await render();
+          await onChanged?.();
+        } }),
+      },
+      ...(deposit?.canRefund ? [{
+        id: 'refund',
+        label: 'Возврат',
+        onSelect: () => openWithdrawX(root, deposit, async () => {
+          await render();
+          await onChanged?.();
+        }),
+      }] : []),
+      ...(entries.length ? [{
+        id: 'correct',
+        label: 'Коррекция',
+        onSelect: () => chooseFundingEntry(deposit, 'Коррекция', (entry) => openFundingQ(root, deposit, { entry, onSaved: async () => {
+          await render();
+          await onChanged?.();
+        } })),
+      }] : []),
+      {
+        id: 'visibility',
+        label: effectiveVisible ? 'Показывать этому человеку · Да' : 'Показывать этому человеку · Нет',
+        onSelect: async () => {
+          await updateDepositSettings(deposit.depositId, { visibleToPerson: !effectiveVisible });
+          await render();
+          await onChanged?.();
+        },
+      },
+      ...(entries.length ? [{
+        id: 'delete-funding',
+        label: 'Удалить платёж',
+        variant: 'danger',
+        onSelect: () => chooseFundingEntry(deposit, 'Удалить платёж', async (entry) => {
+          try {
+            await deleteDepositFunding({ depositId: deposit.depositId, operationId: entry.operationId });
+            await render();
+            await onChanged?.();
+          } catch (error) {
+            openNotice({ title: 'Платёж не удалён', message: error instanceof Error ? error.message : 'Не удалось удалить платёж' });
+          }
+        }),
+      }] : []),
+      {
+        id: 'delete',
+        label: 'Удалить карту',
+        variant: 'danger',
+        onSelect: async () => {
+          await deleteDeposit(deposit.depositId);
+          releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
+          layer.v2Close?.();
+          await onChanged?.();
+        },
+      },
+    ],
+  });
+}
+
+async function openDepositQ(root, depositId, onChanged = () => {}) {
+  const initialDeposits = await listAllDeposits();
+  const initialDeposit = initialDeposits.find((item) => String(item?.depositId) === String(depositId));
+  if (!initialDeposit) return null;
+
+  const layer = mountModal(root, modal('<div data-deposit-instance-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: initialDeposit.programName || 'Депозит',
+    className: 'loyalty-deposit-instance-q',
+  }));
   if (!layer) return null;
+
   const render = async () => {
     const deposits = await listAllDeposits();
     const deposit = deposits.find((item) => String(item?.depositId) === String(depositId));
@@ -734,7 +835,9 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
     const effectiveVisible = typeof deposit.visibleToPersonOverride === 'boolean'
       ? deposit.visibleToPersonOverride
       : inheritedVisible;
-    layer.innerHTML = page([
+    const host = layer.querySelector('[data-deposit-instance-q-host]');
+    if (!host) return;
+    host.innerHTML = page([
       depositHeaderContext({
         title: deposit.programName || 'Депозит',
         settingsData: 'data-deposit-instance-settings',
@@ -742,74 +845,13 @@ async function openDepositLayer(root, depositId, onChanged = () => {}) {
       }),
       depositInfo(deposit),
       v2Section('История', historyMarkup(deposit)),
-      deposit?.canRefund ? actionBlock(button('Возврат', { type: 'button', data: 'data-deposit-withdraw', aria: 'Вернуть остаток депозита' })) : '',
     ]);
-    layer.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
-      openSharedProfileSettingsMenu({
-        title: deposit.programName || 'Депозит',
-        actions: [
-          {
-            id: 'fund', label: 'Добавить платёж', onSelect: () => openFundingQ(root, deposit, { onSaved: async () => {
-              await render(); await onChanged?.();
-            } }),
-          },
-          {
-            id: 'visibility',
-            label: effectiveVisible ? 'Показывать этому человеку · Да' : 'Показывать этому человеку · Нет',
-            onSelect: async () => {
-              await updateDepositSettings(deposit.depositId, { visibleToPerson: !effectiveVisible });
-              await render();
-              await onChanged?.();
-            },
-          },
-          {
-            id: 'delete',
-            label: 'Удалить карту',
-            variant: 'danger',
-            onSelect: async () => {
-              await deleteDeposit(deposit.depositId);
-              releaseUEI({ entityType: ASSIGNED_DEPOSIT_UEI_TYPE, entityId: deposit.depositId });
-              layer.v2Close?.();
-              await onChanged?.();
-            },
-          },
-        ],
-      });
+    host.querySelector('[data-deposit-instance-settings]')?.addEventListener('click', () => {
+      openDepositSettings(root, layer, deposit, effectiveVisible, render, onChanged);
     });
-    layer.querySelectorAll('[data-deposit-funding]').forEach((node) => {
-      node.addEventListener('click', () => {
-        const operationId = String(node.dataset.depositFunding || '');
-        const entry = (deposit.history || []).find((item) => item?.kind === 'deposit-funding' && String(item?.operationId || '') === operationId);
-        if (!entry) return;
-        openSharedProfileSettingsMenu({
-          title: 'Внесение',
-          actions: [
-            {
-              id: 'correct', label: 'Корректировать', onSelect: () => openFundingQ(root, deposit, { entry, onSaved: async () => {
-                await render(); await onChanged?.();
-              } }),
-            },
-            {
-              id: 'delete', label: 'Удалить платёж', variant: 'danger', onSelect: async () => {
-                try {
-                  await deleteDepositFunding({ depositId: deposit.depositId, operationId });
-                  await render();
-                  await onChanged?.();
-                } catch (error) {
-                  openNotice({ title: 'Платёж не удалён', message: error instanceof Error ? error.message : 'Не удалось удалить платёж' });
-                }
-              },
-            },
-          ],
-        });
-      });
-    });
-    layer.querySelector('[data-deposit-withdraw]')?.addEventListener('click', () => openWithdrawX(root, deposit, async () => {
-      await render();
-      await onChanged?.();
-    }));
     notifyContext();
   };
+
   await render();
   return layer;
 }
@@ -853,7 +895,7 @@ async function openProgramLayer(root, programId, { person = null, onChanged = ()
       },
     }));
     layer.querySelectorAll('[data-deposit-instance]').forEach((node) => {
-      node.addEventListener('click', () => openDepositLayer(root, node.dataset.depositInstance, async () => {
+      node.addEventListener('click', () => openDepositQ(layer, node.dataset.depositInstance, async () => {
         await render();
         await onChanged?.();
       }));
