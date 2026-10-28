@@ -32,7 +32,10 @@ import {
   v2ZLayer,
   workspaceHeaderContext,
 } from '../../../ui/ui.js';
-import { getWallets } from '../../finance/index.js';
+import { compactCheck } from '../../../ui/selection/check-list.js';
+import { settingsPanel } from '../../../ui/settings/index.js';
+import { getWallets, refreshFinanceState } from '../../finance/index.js';
+import { getFinanceOperation } from '../../finance/data.js';
 import { getProfile } from '../../profile/data.js';
 import { getAllPeople } from '../../people/data.js';
 import { personDisplay } from '../../people/presentation.js';
@@ -240,37 +243,43 @@ function historyKindLabel(kind) {
   if (kind === 'deposit-funding') return 'Внесение';
   if (kind === 'deposit-benefit') return 'Выгода';
   if (kind === 'deposit-benefit-reversal') return 'Отмена выгоды';
-  if (kind === 'deposit-withdrawal') return 'Возврат остатка';
-  if (kind === 'refund') return 'Возврат оплаты';
-  if (kind === 'payment') return 'Использование при оплате';
+  if (kind === 'deposit-withdrawal') return 'Возврат';
+  if (kind === 'refund') return 'Возврат';
+  if (kind === 'payment') return 'Списание';
   return 'Операция';
 }
 
-function historyMarkup(deposit = {}) {
-  const items = Array.isArray(deposit?.history) ? deposit.history : [];
-  if (!items.length) return emptyState('Истории пока нет', 'Движения депозита появятся здесь.');
-  return miniCardRail([...items].reverse().map((item) => miniCard({
-    title: historyKindLabel(item?.kind),
-    value: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
-    subtitle: shortDateTime(item?.occurredAt, '—'),
-    interactive: false,
-    data: '',
-    aria: '',
-    actionLabel: '',
-  })));
+function depositHistoryWithBalance(deposit = {}) {
+  const source = Array.isArray(deposit?.history) ? deposit.history : [];
+  const chronological = source
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => String(left.item?.occurredAt || '').localeCompare(String(right.item?.occurredAt || '')) || left.index - right.index);
+  let balance = 0;
+  return chronological.map(({ item }) => {
+    const amount = Math.max(0, Number(item?.amount || 0));
+    const direction = String(item?.direction || '').toUpperCase();
+    if (item?.kind === 'deposit-withdrawal') balance = 0;
+    else balance = Math.max(0, balance + (direction === 'IN' ? amount : -amount));
+    return { ...item, balanceAfter: balance };
+  });
+}
+
+function depositHistoryNewest(deposit = {}) {
+  return depositHistoryWithBalance(deposit).slice().reverse();
 }
 
 function historyListMarkup(deposit = {}) {
-  const items = Array.isArray(deposit?.history) ? deposit.history : [];
+  const items = depositHistoryNewest(deposit);
   if (!items.length) return emptyState('Истории пока нет', 'Движения депозита появятся здесь.');
-  return v2ListEntries([...items]
-    .sort((a, b) => String(b?.occurredAt || '').localeCompare(String(a?.occurredAt || '')))
-    .map((item) => v2ListEntry({
-      title: historyKindLabel(item?.kind),
-      subtitle: shortDateTime(item?.occurredAt, '—'),
-      rightTop: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
-      initial: '',
-    })));
+  return v2ListEntries(items.map((item, index) => v2ListEntry({
+    title: historyKindLabel(item?.kind),
+    subtitle: shortDateTime(item?.occurredAt, '—'),
+    rightTop: `${String(item?.direction || '').toUpperCase() === 'IN' ? '+' : '−'}${money(item?.amount)}`,
+    initial: '',
+    interactive: true,
+    data: `data-deposit-history-entry="${index}"`,
+    aria: `Открыть ${historyKindLabel(item?.kind).toLowerCase()}`,
+  })));
 }
 
 function depositBalanceMiniCard(deposit = {}) {
@@ -284,12 +293,75 @@ function depositBalanceMiniCard(deposit = {}) {
   })]);
 }
 
+function historyOperationId(item = {}) {
+  return String(item?.operationId || '').replace(/:benefit$/, '');
+}
+
+async function resolveHistoryOperation(item = {}) {
+  const id = historyOperationId(item);
+  if (!id) return null;
+  let operation = getFinanceOperation(id);
+  if (operation) return operation;
+  try {
+    await refreshFinanceState();
+  } catch {}
+  operation = getFinanceOperation(id);
+  return operation;
+}
+
+function settlementRows(operation = null) {
+  const settlement = operation?.data?.settlement && typeof operation.data.settlement === 'object'
+    ? operation.data.settlement
+    : null;
+  const items = Array.isArray(settlement?.items) ? settlement.items : [];
+  return items.map((item) => ({
+    label: String(item?.name || (String(item?.sourceType || '') === 'product' ? 'Товар' : 'Процедура')),
+    value: money(item?.planAmount ?? item?.correctedPrice ?? item?.price),
+  }));
+}
+
+function historyEventMarkup(item = {}, operation = null) {
+  const incoming = String(item?.direction || '').toUpperCase() === 'IN';
+  const rows = [
+    { label: 'Дата', value: shortDateTime(item?.occurredAt, '—') },
+  ];
+  if (item?.kind === 'payment') {
+    rows.push(...settlementRows(operation));
+    rows.push({ label: 'Итого', value: `−${money(item?.amount)}` });
+  } else {
+    rows.push({ label: 'Сумма', value: `${incoming ? '+' : '−'}${money(item?.amount)}` });
+    const walletName = String(item?.walletName || operation?.data?.walletName || '').trim();
+    if (walletName) rows.push({ label: 'Кошелёк', value: walletName });
+  }
+  rows.push({ label: 'Остаток', value: money(item?.balanceAfter) });
+  rows.push({ label: 'Дата формирования', value: shortDateTime(operation?.recordedAt || item?.occurredAt, '—') });
+  return details(rows);
+}
+
+async function openDepositHistoryEventS(root, item) {
+  const operation = await resolveHistoryOperation(item);
+  return mountModal(root, modal(historyEventMarkup(item, operation), {
+    variant: 's',
+    surface: 'app',
+    title: historyKindLabel(item?.kind),
+  }));
+}
+
 function openDepositHistoryQ(root, deposit) {
-  return mountModal(root, modal(historyListMarkup(deposit), {
+  const items = depositHistoryNewest(deposit);
+  const layer = mountModal(root, modal(historyListMarkup(deposit), {
     variant: 'q',
     surface: 'app',
     title: 'История',
   }));
+  if (!layer) return null;
+  layer.querySelectorAll('[data-deposit-history-entry]').forEach((node) => {
+    node.addEventListener('click', () => {
+      const item = items[Number(node.dataset.depositHistoryEntry)];
+      if (item) void openDepositHistoryEventS(layer, item);
+    });
+  });
+  return layer;
 }
 
 function fundingEntries(deposit = {}) {
@@ -678,18 +750,17 @@ async function openFundingQ(root, deposit, { entry = null, onSaved = () => {} } 
   return layer;
 }
 
-function paymentForm(entry, wallets, { title = 'Платёж', amount = '' } = {}) {
+function paymentForm(entry, wallets, { amount = '' } = {}) {
   const operationId = String(entry?.operationId || '');
   const selectedWallet = String(entry?.walletId || '');
   const occurredAt = operationId ? String(entry?.occurredAt || '').slice(0, 10) : new Date().toISOString().slice(0, 10);
-  const body = `<form class="form-grid" data-deposit-payment-form data-operation-id="${escapeHtml(operationId)}">
+  return `<form class="form-grid" data-deposit-payment-form data-operation-id="${escapeHtml(operationId)}">
     ${field({ label: 'Сумма', name: 'amount', type: 'number', min: '0.01', step: '0.01', inputmode: 'decimal', value: operationId ? entry.amount : amount })}
     ${select({ label: 'Кошелёк', name: 'walletId', value: selectedWallet, options: [{ value: '', label: 'Выберите кошелёк' }, ...wallets.map((wallet) => ({ value: wallet.id, label: wallet.name }))] })}
     ${datePicker({ label: 'Дата', name: 'occurredAt', value: occurredAt, showYear: true, modalVariant: 'q', modalSurface: 'app', allowClear: false })}
     <div class="form-error" data-deposit-payment-error></div>
     ${actionBlock(button(operationId ? 'Сохранить' : 'Внести', { type: 'submit' }))}
   </form>`;
-  return v2Section(title, body);
 }
 
 async function openPaymentsQ(root, deposit, { onSaved = () => {} } = {}) {
@@ -699,14 +770,13 @@ async function openPaymentsQ(root, deposit, { onSaved = () => {} } = {}) {
   const target = Math.max(0, Number(terms?.amount || 0));
   const funded = Math.max(0, Number(deposit?.fundedAmount || 0));
   const remaining = target > 0 ? Math.max(0, target - funded) : 0;
-  const sections = entries.map((entry, index) => paymentForm(entry, wallets, { title: entries.length > 1 ? `Платёж ${index + 1}` : 'Платёж' }));
+  const sections = entries.map((entry) => paymentForm(entry, wallets));
   if (!entries.length || remaining > 0.009) {
     sections.push(paymentForm(null, wallets, {
-      title: entries.length ? 'Доплата' : 'Платёж',
       amount: remaining > 0.009 ? remaining : '',
     }));
   }
-  const layer = mountModal(root, modal(sections.join(''), {
+  const layer = mountModal(root, modal(page(sections), {
     variant: 'q',
     surface: 'app',
     title: 'Платёж',
@@ -808,22 +878,59 @@ function openRootSettings(root, rerender) {
   });
 }
 
+function openDepositSettingsMenu({ title = 'Депозит', checked = true, onToggle = async (value) => value, actions = [] } = {}) {
+  const actionItems = (Array.isArray(actions) ? actions : []).filter((item) => item?.id && item?.label);
+  const body = `<div class="form-grid" data-deposit-settings-menu>
+    ${compactCheck({ label: 'Показать', checked, data: 'data-deposit-visibility', aria: 'Показать' })}
+    ${settingsPanel(actionItems.map((item) => ({
+      label: item.label,
+      variant: item.variant || 'outline',
+      data: `data-deposit-settings-action="${escapeHtml(item.id)}"`,
+      disabled: Boolean(item.disabled),
+    })))}
+  </div>`;
+  const menu = mountModal(document.body, modal(body, {
+    variant: 'x',
+    title,
+    className: 'modal--profile-settings-sheet',
+    xRole: 'action',
+  }));
+  if (!menu) return null;
+
+  const visibility = menu.querySelector('[data-deposit-visibility]');
+  visibility?.addEventListener('change', async () => {
+    const requested = visibility.checked;
+    visibility.disabled = true;
+    try {
+      const result = await onToggle(requested);
+      visibility.checked = typeof result === 'boolean' ? result : requested;
+    } catch {
+      visibility.checked = !requested;
+    } finally {
+      visibility.disabled = false;
+    }
+  });
+
+  actionItems.forEach((item) => {
+    if (item.disabled) return;
+    menu.querySelector(`[data-deposit-settings-action="${CSS.escape(String(item.id))}"]`)?.addEventListener('click', () => {
+      menu.v2Close?.();
+      void item.onSelect?.();
+    });
+  });
+  return menu;
+}
+
 function openProgramSettings(root, program, { person = null, rerender = async () => {}, onChanged = () => {} } = {}) {
-  return openSharedProfileSettingsMenu({
+  return openDepositSettingsMenu({
     title: program.name || 'Депозит',
-    controls: [
-      {
-        id: 'visibility',
-        label: 'Показать',
-        checked: program?.showToAll !== false,
-        onToggle: async (checked) => {
-          await setProgramVisibility(program.id, checked);
-          await rerender();
-          await onChanged?.();
-          return checked;
-        },
-      },
-    ],
+    checked: program?.showToAll !== false,
+    onToggle: async (checked) => {
+      await setProgramVisibility(program.id, checked);
+      await rerender();
+      await onChanged?.();
+      return checked;
+    },
     actions: [
       { id: 'code', label: `UEI · ${programUei(program) || 'не задан'}`, onSelect: () => openProgramCodeX(program, async () => {
         await rerender();
@@ -856,21 +963,15 @@ function openProgramSettings(root, program, { person = null, rerender = async ()
 }
 
 function openDepositSettings(root, layer, deposit, effectiveVisible, render, onChanged) {
-  return openSharedProfileSettingsMenu({
+  return openDepositSettingsMenu({
     title: deposit.programName || 'Депозит',
-    controls: [
-      {
-        id: 'visibility',
-        label: 'Показать',
-        checked: effectiveVisible,
-        onToggle: async (checked) => {
-          await updateDepositSettings(deposit.depositId, { visibleToPerson: checked });
-          await render();
-          await onChanged?.();
-          return checked;
-        },
-      },
-    ],
+    checked: effectiveVisible,
+    onToggle: async (checked) => {
+      await updateDepositSettings(deposit.depositId, { visibleToPerson: checked });
+      await render();
+      await onChanged?.();
+      return checked;
+    },
     actions: [
       {
         id: 'payment',
