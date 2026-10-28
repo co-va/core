@@ -23,6 +23,7 @@ type TelegramBotRow = {
 type TelegramIdentityRow = { personPhone: string; uei: string };
 const TELEGRAM_API_TIMEOUT_MS = 10_000;
 const TELEGRAM_INBOUND_POLL_MS = 2_000;
+const DEFAULT_PUBLIC_BOOKING_ORIGIN = 'https://user.va-tools.ru';
 function text(value: unknown) { return String(value ?? '').trim(); }
 function canonicalPhone(value: unknown) {
   const digits = text(value).replace(/\D/g, '');
@@ -100,7 +101,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       credentialsKeyConfigured,
       publicApiUrlConfigured,
       accountAppUrlConfigured,
-      ready: credentialsKeyConfigured && accountAppUrlConfigured,
+      ready: credentialsKeyConfigured,
     };
   }
 
@@ -155,6 +156,23 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     return rows[0] || null;
   }
 
+  private async publicBookingUrl(tenantId: string) {
+    const rows = await this.prisma.$queryRaw<Array<{ slug: string }>>`
+      SELECT "slug" FROM "BookingPublicRoute"
+      WHERE "tenantId" = ${tenantId} AND "entityType" = 'PROFILE'
+      LIMIT 1
+    `;
+    const slug = text(rows[0]?.slug);
+    if (!slug) return '';
+    const origin = text(process.env.PUBLIC_BOOKING_URL || DEFAULT_PUBLIC_BOOKING_ORIGIN).replace(/\/$/, '');
+    if (!/^https:\/\//i.test(origin)) return '';
+    const url = new URL(origin);
+    url.pathname = `/${encodeURIComponent(slug)}`;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  }
+
   private async activatePolling(row: TelegramBotRow) {
     if (this.pollingActivated.has(row.tenantId)) return row;
     const token = this.decryptToken(row);
@@ -179,9 +197,6 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     const base = this.publicConnection(row);
     if (!configuration.credentialsKeyConfigured) {
       return { ...base, status: 'error', inboundActive: false, transport: 'polling', webhookActive: false, webhookError: 'Не настроен ключ шифрования Telegram', webhookPendingUpdateCount: 0, configuration };
-    }
-    if (!configuration.accountAppUrlConfigured) {
-      return { ...base, status: 'error', inboundActive: false, transport: 'polling', webhookActive: false, webhookError: 'Не настроен ACCOUNT_APP_URL', webhookPendingUpdateCount: 0, configuration };
     }
     try {
       await this.activatePolling(row);
@@ -209,7 +224,6 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   async connect(tenantId: string, rawToken: unknown) {
     const configuration = this.configurationStatus();
     if (!configuration.credentialsKeyConfigured) throw new ServiceUnavailableException('Не настроен ключ шифрования Telegram');
-    if (!configuration.accountAppUrlConfigured) throw new ServiceUnavailableException('Не настроен ACCOUNT_APP_URL для Telegram-входа');
     const token = text(rawToken);
     if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) throw new BadRequestException('Некорректный токен Telegram-бота');
     if (await this.rowForTenant(tenantId)) {
@@ -237,7 +251,6 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   async repairConnection(tenantId: string) {
     const configuration = this.configurationStatus();
     if (!configuration.credentialsKeyConfigured) throw new ServiceUnavailableException('Не настроен ключ шифрования Telegram');
-    if (!configuration.accountAppUrlConfigured) throw new ServiceUnavailableException('Не настроен ACCOUNT_APP_URL для Telegram-входа');
     const row = await this.rowForTenant(tenantId);
     if (!row) throw new NotFoundException('Telegram-бот не подключён');
     this.pollingActivated.delete(tenantId);
@@ -441,24 +454,29 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
     const linkedIdentity = Boolean(identity && (canonicalPhone(identity.personPhone) || text(identity.uei)));
     this.logger.log(`[telegram-${source}] update=${updateId} tenant=${connection.tenantId} identity-found=${Boolean(identity)} linked=${linkedIdentity}`);
-    if (!identity || isStart) {
-      const entry = await this.communications.createTelegramEntry(connection.tenantId, { telegramUserId, username });
-      const accountAppUrl = text(process.env.ACCOUNT_APP_URL).replace(/\/$/, '');
-      if (!accountAppUrl) throw new ServiceUnavailableException('Не настроен ACCOUNT_APP_URL для Telegram-входа');
-      const url = new URL(accountAppUrl); url.searchParams.set('booking', connection.tenantId); url.searchParams.set('tg_entry', entry.token);
-      const launchButton = message.chat.type === 'private'
-        ? { text: 'Открыть приложение', web_app: { url: url.toString() } }
-        : { text: 'Открыть приложение', url: url.toString() };
+    if (isStart) {
+      const buttons: Array<Record<string, any>> = [];
+      const bookingUrl = await this.publicBookingUrl(connection.tenantId);
+      if (!linkedIdentity) {
+        const accountAppUrl = text(process.env.ACCOUNT_APP_URL).replace(/\/$/, '');
+        if (accountAppUrl && /^https:\/\//i.test(accountAppUrl)) {
+          const entry = await this.communications.createTelegramEntry(connection.tenantId, { telegramUserId, username });
+          const url = new URL(accountAppUrl);
+          url.searchParams.set('tg_tenant', connection.tenantId);
+          url.searchParams.set('tg_entry', entry.token);
+          buttons.push({ text: 'Подключить Telegram', url: url.toString() });
+        }
+      }
+      if (bookingUrl) buttons.push({ text: 'Записаться', url: bookingUrl });
+      const body = linkedIdentity
+        ? 'Telegram подключён. Здесь можно писать сообщения и быстро перейти к записи.'
+        : 'Подключите Telegram один раз, чтобы сообщения и уведомления приходили сюда.';
       await this.sendSystemMessage(
         connection,
         message.chat.id,
-        'Откройте приложение, чтобы продолжить.',
-        { inline_keyboard: [[launchButton]] },
+        body,
+        buttons.length ? { inline_keyboard: buttons.map((button) => [button]) } : null,
       );
-      if (!identity) {
-        this.logger.log(`[telegram-${source}] update=${updateId} tenant=${connection.tenantId} completed-unlinked ${Date.now() - startedAt}ms`);
-        return { ok: true, linked: false };
-      }
     }
     if (messageBody && !isStart) {
       await this.communications.recordMessage(connection.tenantId, { phone: identity!.personPhone, uei: identity!.uei, direction: 'inbound', kind: 'message', purpose: 'DIRECT', channel: 'TELEGRAM', body: messageBody, externalMessageId: String(message.message_id || ''), externalThreadId: String(message.chat.id), status: 'delivered' });
