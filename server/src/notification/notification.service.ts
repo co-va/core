@@ -4,6 +4,7 @@ import { AccountContactType } from '@prisma/client';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 import { PrismaService } from '../prisma.service';
 import { WebPushService } from './web-push.service';
+import { NOTIFICATION_EVENT_TYPES, notificationEventDefinition } from './notification-events';
 import { normalizeMessagePurpose, type MessagePurpose } from '../communication/message-purpose';
 
 type JsonObject = Record<string, any>;
@@ -79,22 +80,6 @@ const ROUTING_MODES = new Set(['always', 'fallback']);
 const ROUTING_CHANNELS = new Set(['PUSH', 'TELEGRAM', 'EMAIL']);
 const ACTIVE_EXTERNAL_CHANNELS = new Set(['TELEGRAM', 'EMAIL']);
 const DELIVERY_POLICY_TYPE = '__delivery__';
-const SYSTEM_EVENT_TYPES = ['booking.created', 'booking.rescheduled', 'booking.cancelled'] as const;
-
-const DEFAULT_TEMPLATES: Record<string, { title: string; body: string }> = {
-  'booking.created': {
-    title: 'Запись создана',
-    body: 'Запись создана на {{date}} в {{time}}.',
-  },
-  'booking.rescheduled': {
-    title: 'Запись перенесена',
-    body: 'Запись перенесена на {{date}} в {{time}}.',
-  },
-  'booking.cancelled': {
-    title: 'Запись отменена',
-    body: 'Запись на {{date}} в {{time}} отменена.',
-  },
-};
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -147,7 +132,10 @@ function phonesMatch(left: unknown, right: unknown) {
 }
 
 function defaultTemplate(eventType: string) {
-  return DEFAULT_TEMPLATES[eventType] || { title: 'Уведомление', body: '' };
+  const definition = notificationEventDefinition(eventType);
+  return definition
+    ? { title: definition.defaultTitle, body: definition.defaultBody }
+    : { title: 'Уведомление', body: '' };
 }
 
 function renderTemplate(template: unknown, context: JsonObject) {
@@ -288,8 +276,8 @@ export class NotificationService {
       ORDER BY "eventType" ASC
     `;
     const byType = new Map(rows.map((row) => [row.eventType, row]));
-    const systemTypes = new Set<string>(SYSTEM_EVENT_TYPES);
-    const types = [...SYSTEM_EVENT_TYPES, ...rows.map((row) => row.eventType).filter((type) => !systemTypes.has(type))];
+    const knownTypes = new Set<string>(NOTIFICATION_EVENT_TYPES);
+    const types = [...NOTIFICATION_EVENT_TYPES, ...rows.map((row) => row.eventType).filter((type) => !knownTypes.has(type))];
     return types.map((type) => this.projectPolicy(byType.get(type) || null, type));
   }
 
@@ -522,6 +510,7 @@ export class NotificationService {
     }
     if (!accountId) return { notification: null, routed: [], blocked: 'ACCOUNT_REQUIRED' };
 
+    const definition = notificationEventDefinition(type);
     const policy = await this.getRoutingPolicy(tenantId, type);
     const context = {
       ...objectValue(input?.context),
@@ -532,7 +521,7 @@ export class NotificationService {
       },
     };
     return this.createForAccount(tenantId, accountId, {
-      purpose: 'SERVICE',
+      purpose: definition?.purpose || 'SERVICE',
       type,
       title: renderTemplate(policy.titleTemplate, context),
       body: renderTemplate(policy.bodyTemplate, context),

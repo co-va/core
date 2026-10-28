@@ -11,6 +11,7 @@ const controller = read('server/src/communication/communication.controller.ts');
 const broadcast = read('server/src/communication/communication-broadcast.service.ts');
 const telegram = read('server/src/communication/telegram-bot.service.ts');
 const notification = read('server/src/notification/notification.service.ts');
+const notificationEvents = read('server/src/notification/notification-events.ts');
 const bookingAccount = read('server/src/online-booking/online-booking.controller.ts');
 const bookingFlow = read('server/src/online-booking/booking-flow.controller.ts');
 const consentPolicy = read('server/src/tenant-document-archive/consent-policy.service.ts');
@@ -32,8 +33,18 @@ assert.match(controller, /purpose: 'DIRECT'/);
 assert.match(broadcast, /purpose: 'MARKETING'/);
 assert.match(bookingAccount, /purpose: 'DIRECT'/);
 assert.match(bookingFlow, /createEventForPerson\([\s\S]*type: 'booking\.created'/);
-assert.match(notification, /createEventForPerson\([\s\S]*purpose: 'SERVICE'[\s\S]*type,/);
 
+// Lifecycle events have one classification source: the event catalog. They are SERVICE, not SYSTEM.
+assert.match(notificationEvents, /purpose: MessagePurpose/);
+assert.match(notificationEvents, /function serviceEvent\(/);
+assert.match(notificationEvents, /purpose: 'SERVICE' as const/);
+assert.match(notification, /NOTIFICATION_EVENT_TYPES, notificationEventDefinition/);
+assert.match(notification, /const definition = notificationEventDefinition\(type\)/);
+assert.match(notification, /purpose: definition\?\.purpose \|\| 'SERVICE'/);
+assert.doesNotMatch(notification, /SYSTEM_EVENT_TYPES/);
+assert.doesNotMatch(notification, /const DEFAULT_TEMPLATES/);
+
+// SYSTEM remains reserved for platform-generated internal messages.
 assert.match(telegram, /const purpose: MessagePurpose = 'SYSTEM'/);
 assert.match(telegram, /purpose: 'DIRECT'/);
 assert.match(telegram, /purpose, channel: 'TELEGRAM'/);
