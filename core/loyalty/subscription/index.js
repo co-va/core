@@ -42,6 +42,7 @@ import {
   notifyLoyaltyContext,
   normalizeOptionalUei,
   openLoyaltyProgramSettings,
+  openLoyaltySettingsMenu,
   optionalUeiField,
   personLabel,
   personOption,
@@ -150,14 +151,38 @@ function instanceInfo(instance = {}, program = {}) {
   ]);
 }
 
+function subscriptionHistory(instance = {}) {
+  return [...(Array.isArray(instance.history) ? instance.history : [])].reverse();
+}
+
 function historyMarkup(instance = {}) {
-  const history = Array.isArray(instance.history) ? instance.history : [];
+  const history = subscriptionHistory(instance);
   if (!history.length) return emptyState('Истории пока нет', 'Использования абонемента появятся здесь.');
-  return miniCardRail([...history].reverse().map((item) => miniCard({
+  return miniCardRail(history.map((item, index) => miniCard({
     title: item.title || 'Использование',
     value: item.procedure || 'Использование',
     subtitle: shortDateTime(item.occurredAt, '—'),
+    interactive: true,
+    data: `data-subscription-history-entry="${index}"`,
+    aria: `Открыть ${String(item.title || 'использование').toLowerCase()}`,
   })));
+}
+
+function historyEventMarkup(item = {}) {
+  const rows = [{ label: 'Дата', value: shortDateTime(item.occurredAt, '—') }];
+  if (item.procedure) rows.push({ label: 'Процедура / товар', value: item.procedure });
+  if (item.quantity != null) rows.push({ label: 'Количество', value: String(item.quantity) });
+  if (item.remainingAfter != null) rows.push({ label: 'Остаток', value: String(item.remainingAfter) });
+  rows.push({ label: 'Дата формирования', value: shortDateTime(item.recordedAt || item.createdAt || item.occurredAt, '—') });
+  return details(rows);
+}
+
+function openHistoryEventS(root, item = {}) {
+  return mountModal(root, modal(historyEventMarkup(item), {
+    variant: 's',
+    surface: 'app',
+    title: item.title || 'Использование',
+  }));
 }
 
 function issuedList(items = [], program = {}) {
@@ -370,6 +395,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       frequencyPeriod: values.frequencyPeriod || 'none',
       frequencyLimit,
       multiplePerEvent: values.multiplePerEvent === 'yes',
+      showToAll: editingProgram?.showToAll !== false,
       status: editingProgram?.status || 'active',
       createdAt: editingProgram?.createdAt || new Date().toISOString(),
     };
@@ -442,14 +468,41 @@ async function openInstanceLayer(root, instanceId) {
   const instance = instances.find((item) => item.id === instanceId);
   if (!instance) return null;
   const program = programs.find((item) => item.id === instance.programId) || {};
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-subscription-instance-z' }), { stack: true });
+  const layer = mountModal(root, modal('<div data-subscription-instance-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: program.name || 'Абонемент',
+    className: 'loyalty-subscription-instance-q',
+  }));
   if (!layer) return null;
-  layer.innerHTML = page([
-    loyaltyHeader(program.name || 'Абонемент'),
-    instanceInfo(instance, program),
-    v2Section('История', historyMarkup(instance)),
-  ]);
-  notifyLoyaltyContext();
+
+  const render = () => {
+    const effectiveVisible = typeof instance.visibleToPersonOverride === 'boolean'
+      ? instance.visibleToPersonOverride
+      : program.showToAll !== false;
+    const history = subscriptionHistory(instance);
+    const host = layer.querySelector('[data-subscription-instance-q-host]');
+    if (!host) return;
+    host.innerHTML = page([
+      loyaltyHeader(program.name || 'Абонемент', { settings: true, settingsData: 'data-subscription-instance-settings' }),
+      instanceInfo(instance, program),
+      v2Section('История', historyMarkup(instance)),
+    ]);
+    host.querySelector('[data-subscription-instance-settings]')?.addEventListener('click', () => openLoyaltySettingsMenu({
+      title: program.name || 'Абонемент',
+      checked: effectiveVisible,
+      onToggle: async (value) => {
+        instance.visibleToPersonOverride = value;
+        return value;
+      },
+    }));
+    host.querySelectorAll('[data-subscription-history-entry]').forEach((node) => node.addEventListener('click', () => {
+      const item = history[Number(node.dataset.subscriptionHistoryEntry)];
+      if (item) openHistoryEventS(layer, item);
+    }));
+    notifyLoyaltyContext();
+  };
+  render();
   return layer;
 }
 
@@ -473,6 +526,12 @@ async function openProgramLayer(root, programId, onChanged) {
     layer.querySelector('[data-subscription-program-settings]')?.addEventListener('click', () => openLoyaltyProgramSettings({
       title: program.name || 'Абонемент',
       status: program.status,
+      visible: program.showToAll !== false,
+      onVisibility: async (value) => {
+        program.showToAll = value;
+        await onChanged?.();
+        return value;
+      },
       onCorrect: () => openCreateProgramQ(root, async () => { await render(); await onChanged?.(); }, program),
       onToggle: async () => { program.status = program.status === 'paused' ? 'active' : 'paused'; await render(); await onChanged?.(); },
       onFinish: async () => { program.status = 'ended'; await render(); await onChanged?.(); },
@@ -498,6 +557,12 @@ export function getSubscriptionAssignmentsForPerson(personKey = '') {
   const key = String(personKey || '');
   return instances
     .filter((instance) => String(instance?.personKey || '') === key)
+    .filter((instance) => {
+      const program = programs.find((item) => item.id === instance.programId) || {};
+      return typeof instance.visibleToPersonOverride === 'boolean'
+        ? instance.visibleToPersonOverride
+        : program.showToAll !== false;
+    })
     .map((instance) => ({
       instance: { ...instance },
       program: { ...(programs.find((program) => program.id === instance.programId) || {}) },
