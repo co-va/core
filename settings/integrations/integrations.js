@@ -22,14 +22,14 @@ import {
   workspaceHeaderContext,
 } from '../../ui/ui.js';
 
-const TELEGRAM_SETUP_GUIDE = `1. Откройте Telegram.\n\nВ поиске найдите официального бота @BotFather и откройте его.\n\n2. Создайте нового бота.\n\nОтправьте BotFather команду /newbot.\n\n3. Укажите название.\n\nBotFather попросит написать название бота. Введите любое понятное вам название. Это название будут видеть пользователи в Telegram.\n\n4. Создайте username.\n\nBotFather попросит придумать уникальное имя пользователя. Username обязательно должен заканчиваться на bot. Если выбранное имя занято, Telegram попросит выбрать другое.\n\n5. Получите токен.\n\nПосле создания BotFather пришлёт токен бота — длинную строку из цифр и символов.\n\n6. Скопируйте токен.\n\nСкопируйте его целиком. Не изменяйте токен и не передавайте его другим людям: он даёт доступ к управлению ботом.\n\n7. Вернитесь в приложение.\n\nОткройте Интеграции → Telegram, вставьте токен в поле «Токен Telegram-бота» и нажмите «Подключить».\n\n8. Готово.\n\nПосле подключения приложение самостоятельно выполнит необходимые технические настройки Telegram. Дополнительно настраивать технические параметры не требуется.`;
+const TELEGRAM_SETUP_GUIDE = `1. Откройте Telegram.\n\nВ поиске найдите официального бота @BotFather и откройте его.\n\n2. Создайте нового бота.\n\nОтправьте BotFather команду /newbot.\n\n3. Укажите название.\n\nBotFather попросит написать название бота. Введите любое понятное вам название. Это название будут видеть пользователи в Telegram.\n\n4. Создайте username.\n\nBotFather попросит придумать уникальное имя пользователя. Username обязательно должен заканчиваться на bot. Если выбранное имя занято, Telegram попросит выбрать другое.\n\n5. Получите токен.\n\nПосле создания BotFather пришлёт токен бота — длинную строку из цифр и символов.\n\n6. Скопируйте токен.\n\nСкопируйте его целиком. Не изменяйте токен и не передавайте его другим людям: он даёт доступ к управлению ботом.\n\n7. Вернитесь в приложение.\n\nОткройте Интеграции → Telegram, вставьте токен в поле «Токен Telegram-бота» и нажмите «Подключить».\n\n8. Готово.\n\nПосле подключения бот принимает и отправляет сообщения через Telegram. Дополнительно настраивать Mini App или другие параметры Telegram не требуется.`;
 
 const EMAIL_SETUP_GUIDE = `1. Вставьте рабочую почту\n\n2. Нажмите «Подключить»\n\n3. Подтвердите подключение в вашем почтовом сервисе\n\n4. Готово`;
 
 function telegramSubtitle(state = {}) {
   if (state?.error) return 'Связь недоступна';
   if (!state?.connected) return 'Не подключён';
-  if ((state?.inboundActive || state?.webhookActive) && state?.configuration?.accountAppUrlConfigured) return 'Подключён';
+  if (state?.inboundActive || state?.webhookActive) return 'Подключён';
   return 'Связь недоступна';
 }
 
@@ -89,7 +89,6 @@ function telegramTechnicalDiagnostics(state = {}) {
     ...transportRows,
     `TELEGRAM_CREDENTIALS_KEY: ${configured(config?.credentialsKeyConfigured)}`,
     `PUBLIC_API_URL: ${configured(config?.publicApiUrlConfigured)}`,
-    `ACCOUNT_APP_URL: ${configured(config?.accountAppUrlConfigured)}`,
   ].join('\n');
 }
 
@@ -107,11 +106,11 @@ function telegramInfoDocument(state = {}) {
   }
 
   const bot = String(state?.botUsername || '').trim();
-  const works = Boolean((state?.inboundActive || state?.webhookActive) && state?.configuration?.accountAppUrlConfigured);
+  const works = Boolean(state?.inboundActive || state?.webhookActive);
   if (works) {
     return {
       title: 'Подключено',
-      content: `${bot ? `Бот ${bot} подключён.` : 'Бот подключён.'}\n\nПриложение выполняет необходимые технические настройки автоматически. Дополнительных действий не требуется.\n\nЧтобы подключить другого бота, сначала отключите текущего.\n\n${diagnostics}`,
+      content: `${bot ? `Бот ${bot} подключён.` : 'Бот подключён.'}\n\nБот принимает и отправляет сообщения через Telegram. Дополнительный Mini App не используется и не требуется.\n\nЧтобы подключить другого бота, сначала отключите текущего.\n\n${diagnostics}`,
     };
   }
 
