@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import { AccountContactType } from '@prisma/client';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma.service';
@@ -25,11 +26,16 @@ const TELEGRAM_API_TIMEOUT_MS = 10_000;
 const TELEGRAM_INBOUND_POLL_MS = 2_000;
 const DEFAULT_PUBLIC_BOOKING_ORIGIN = 'https://user.va-tools.ru';
 function text(value: unknown) { return String(value ?? '').trim(); }
+function objectValue(value: unknown): Record<string, any> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {}; }
 function canonicalPhone(value: unknown) {
   const digits = text(value).replace(/\D/g, '');
   if (digits.length === 10) return `7${digits}`;
   if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
   return digits;
+}
+function personHasPhone(person: Record<string, any>, phone: string) {
+  const phones = Array.isArray(person.phones) ? person.phones : [];
+  return phones.some((value) => canonicalPhone(value) === phone);
 }
 function sha256(value: string) { return createHash('sha256').update(value).digest('hex'); }
 function telegramUsername(value: unknown) { const clean = text(value).replace(/^@+/, ''); return clean ? `@${clean}` : ''; }
@@ -93,14 +99,11 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
   private configurationStatus() {
     const publicApiUrl = text(process.env.PUBLIC_API_URL).replace(/\/$/, '');
-    const accountAppUrl = text(process.env.ACCOUNT_APP_URL).replace(/\/$/, '');
     const credentialsKeyConfigured = Boolean(text(process.env.TELEGRAM_CREDENTIALS_KEY));
     const publicApiUrlConfigured = /^https:\/\//i.test(publicApiUrl);
-    const accountAppUrlConfigured = /^https:\/\//i.test(accountAppUrl);
     return {
       credentialsKeyConfigured,
       publicApiUrlConfigured,
-      accountAppUrlConfigured,
       ready: credentialsKeyConfigured,
     };
   }
@@ -171,6 +174,77 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     url.search = '';
     url.hash = '';
     return url.toString();
+  }
+
+  private async bindVerifiedTelegramPhone(tenantId: string, input: { telegramUserId: string; username: string; phone: unknown }) {
+    const telegramUserId = text(input.telegramUserId);
+    const personPhone = canonicalPhone(input.phone);
+    if (!/^\d+$/.test(telegramUserId)) throw new BadRequestException('Некорректный Telegram ID');
+    if (!personPhone) throw new BadRequestException('Telegram не передал номер телефона');
+
+    const [peopleRows, ueiRow, accounts, existingTelegramContact] = await Promise.all([
+      this.prisma.person.findMany({ where: { tenantId }, select: { key: true, data: true } }),
+      this.prisma.ueiState.findUnique({ where: { tenantId }, select: { data: true } }),
+      this.prisma.account.findMany({ select: { id: true, phone: true } }),
+      this.prisma.accountContact.findUnique({
+        where: { type_value: { type: AccountContactType.TELEGRAM, value: telegramUserId } },
+        select: { accountId: true },
+      }),
+    ]);
+
+    const matchedPersonRow = peopleRows.find((row) => personHasPhone(objectValue(row.data), personPhone)) || null;
+    const relations = objectValue(objectValue(ueiRow?.data).relations);
+    const matchedUei = matchedPersonRow ? text(relations[`person:${matchedPersonRow.key}`]) : '';
+    const matchedAccount = accounts.find((account) => canonicalPhone(account.phone) === personPhone) || null;
+
+    if (existingTelegramContact && matchedAccount && existingTelegramContact.accountId !== matchedAccount.id) {
+      throw new ConflictException('Этот Telegram уже связан с другим аккаунтом');
+    }
+
+    if (matchedAccount) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.accountContact.deleteMany({
+          where: {
+            accountId: matchedAccount.id,
+            type: AccountContactType.TELEGRAM,
+            value: { not: telegramUserId },
+          },
+        });
+        await tx.accountContact.upsert({
+          where: { type_value: { type: AccountContactType.TELEGRAM, value: telegramUserId } },
+          create: { accountId: matchedAccount.id, type: AccountContactType.TELEGRAM, value: telegramUserId, isPrimary: true },
+          update: { isPrimary: true },
+        });
+        await tx.account.update({ where: { id: matchedAccount.id }, data: { telegramId: telegramUserId } });
+      });
+    }
+
+    const display = telegramUsername(input.username);
+    const rows = await this.prisma.$queryRaw<TelegramIdentityRow[]>`
+      INSERT INTO "CommunicationIdentity" (
+        "id", "tenantId", "personPhone", "uei", "channel", "externalUserId", "display", "verifiedAt", "createdAt", "updatedAt"
+      ) VALUES (
+        ${randomUUID()}, ${tenantId}, ${personPhone}, ${matchedUei}, 'TELEGRAM', ${telegramUserId}, ${display}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT ("tenantId", "channel", "externalUserId") DO UPDATE
+      SET "personPhone" = EXCLUDED."personPhone",
+          "uei" = CASE WHEN EXCLUDED."uei" <> '' THEN EXCLUDED."uei" ELSE "CommunicationIdentity"."uei" END,
+          "display" = CASE WHEN EXCLUDED."display" <> '' THEN EXCLUDED."display" ELSE "CommunicationIdentity"."display" END,
+          "verifiedAt" = CURRENT_TIMESTAMP,
+          "updatedAt" = CURRENT_TIMESTAMP
+      RETURNING "personPhone", "uei"
+    `;
+    const identity = rows[0] || { personPhone, uei: matchedUei };
+    await this.prisma.$executeRaw`
+      UPDATE "CommunicationMessage"
+      SET "personPhone" = ${personPhone}, "uei" = ${text(identity.uei)}
+      WHERE "tenantId" = ${tenantId}
+        AND "channel" = 'TELEGRAM'
+        AND "externalThreadId" = ${telegramUserId}
+        AND "personPhone" = ''
+        AND "uei" = ''
+    `;
+    return identity;
   }
 
   private async activatePolling(row: TelegramBotRow) {
@@ -442,7 +516,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
     const telegramUserId = String(message.from.id); const username = telegramUsername(message.from.username); const messageBody = text(message.text || message.caption);
     const isStart = /^\/start(?:@\w+)?(?:\s|$)/i.test(messageBody);
-    this.logger.log(`[telegram-${source}] update=${updateId} tenant=${connection.tenantId} message-received start=${isStart}`);
+    const sharedOwnContact = message.chat.type === 'private'
+      && message.contact
+      && String(message.contact.user_id || '') === telegramUserId;
+    this.logger.log(`[telegram-${source}] update=${updateId} tenant=${connection.tenantId} message-received start=${isStart} contact=${Boolean(sharedOwnContact)}`);
     const identities = await this.prisma.$queryRaw<TelegramIdentityRow[]>`
       SELECT "personPhone", "uei" FROM "CommunicationIdentity"
       WHERE "tenantId" = ${connection.tenantId} AND "channel" = 'TELEGRAM' AND "externalUserId" = ${telegramUserId} LIMIT 1
@@ -452,31 +529,53 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     if (message.chat.type === 'private' && (!identity || !identityLinked)) {
       identity = await this.communications.ensureTelegramInboundIdentity(connection.tenantId, { telegramUserId, username });
     }
-    const linkedIdentity = Boolean(identity && (canonicalPhone(identity.personPhone) || text(identity.uei)));
-    this.logger.log(`[telegram-${source}] update=${updateId} tenant=${connection.tenantId} identity-found=${Boolean(identity)} linked=${linkedIdentity}`);
-    if (isStart) {
-      const buttons: Array<Record<string, any>> = [];
-      const bookingUrl = await this.publicBookingUrl(connection.tenantId);
-      if (!linkedIdentity) {
-        const accountAppUrl = text(process.env.ACCOUNT_APP_URL).replace(/\/$/, '');
-        if (accountAppUrl && /^https:\/\//i.test(accountAppUrl)) {
-          const entry = await this.communications.createTelegramEntry(connection.tenantId, { telegramUserId, username });
-          const url = new URL(accountAppUrl);
-          url.searchParams.set('tg_tenant', connection.tenantId);
-          url.searchParams.set('tg_entry', entry.token);
-          buttons.push({ text: 'Подключить Telegram', url: url.toString() });
-        }
-      }
-      if (bookingUrl) buttons.push({ text: 'Записаться', url: bookingUrl });
-      const body = linkedIdentity
-        ? 'Telegram подключён. Здесь можно писать сообщения и быстро перейти к записи.'
-        : 'Подключите Telegram один раз, чтобы сообщения и уведомления приходили сюда.';
+    if (sharedOwnContact) {
+      identity = await this.bindVerifiedTelegramPhone(connection.tenantId, {
+        telegramUserId,
+        username,
+        phone: message.contact.phone_number,
+      });
       await this.sendSystemMessage(
         connection,
         message.chat.id,
-        body,
-        buttons.length ? { inline_keyboard: buttons.map((button) => [button]) } : null,
+        'Telegram подключён. Теперь это тот же человек, что и по номеру телефона.',
+        { remove_keyboard: true },
       );
+      const bookingUrl = await this.publicBookingUrl(connection.tenantId);
+      if (bookingUrl) {
+        await this.sendSystemMessage(connection, message.chat.id, 'Можно продолжать общение здесь или записаться.', {
+          inline_keyboard: [[{ text: 'Записаться', url: bookingUrl }]],
+        });
+      }
+    }
+    const linkedIdentity = Boolean(identity && (canonicalPhone(identity.personPhone) || text(identity.uei)));
+    this.logger.log(`[telegram-${source}] update=${updateId} tenant=${connection.tenantId} identity-found=${Boolean(identity)} linked=${linkedIdentity}`);
+    if (isStart) {
+      const bookingUrl = await this.publicBookingUrl(connection.tenantId);
+      if (!linkedIdentity && message.chat.type === 'private') {
+        await this.sendSystemMessage(
+          connection,
+          message.chat.id,
+          'Чтобы не создавать второго человека, подтвердите свой номер телефона.',
+          {
+            keyboard: [[{ text: 'Поделиться номером', request_contact: true }]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+          },
+        );
+      } else {
+        await this.sendSystemMessage(
+          connection,
+          message.chat.id,
+          'Telegram подключён. Здесь можно писать сообщения и быстро перейти к записи.',
+          bookingUrl ? { inline_keyboard: [[{ text: 'Записаться', url: bookingUrl }]] } : null,
+        );
+      }
+      if (!linkedIdentity && bookingUrl) {
+        await this.sendSystemMessage(connection, message.chat.id, 'Записаться можно и сразу:', {
+          inline_keyboard: [[{ text: 'Записаться', url: bookingUrl }]],
+        });
+      }
     }
     if (messageBody && !isStart) {
       await this.communications.recordMessage(connection.tenantId, { phone: identity!.personPhone, uei: identity!.uei, direction: 'inbound', kind: 'message', purpose: 'DIRECT', channel: 'TELEGRAM', body: messageBody, externalMessageId: String(message.message_id || ''), externalThreadId: String(message.chat.id), status: 'delivered' });
