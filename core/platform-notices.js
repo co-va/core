@@ -24,6 +24,13 @@ function platformPushSupported() {
     && 'Notification' in window;
 }
 
+function installedAppMode() {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
+  const displayStandalone = typeof window.matchMedia === 'function'
+    && window.matchMedia('(display-mode: standalone)').matches;
+  return displayStandalone || navigator.standalone === true;
+}
+
 function platformPushUnavailableMessage() {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') {
     return 'Push недоступен в этом запуске приложения.';
@@ -159,7 +166,7 @@ export function startPlatformNotices({
   }
 
   const offerPush = async () => {
-    if (disposed || pushPromptShown) return;
+    if (disposed || pushPromptShown || !installedAppMode()) return;
     if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
       window.setTimeout(() => void offerPush(), 1_500);
       return;
