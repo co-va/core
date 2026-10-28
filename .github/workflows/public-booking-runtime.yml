@@ -9,6 +9,7 @@ on:
       - 'tests/public-booking-variants-runtime-browser.html'
       - 'online-booking/**'
       - 'ui/booking/**'
+      - 'server/src/online-booking/**'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +18,7 @@ on:
       - 'tests/public-booking-variants-runtime-browser.html'
       - 'online-booking/**'
       - 'ui/booking/**'
+      - 'server/src/online-booking/**'
   workflow_dispatch:
 
 permissions:
