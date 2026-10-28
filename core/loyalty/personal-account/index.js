@@ -12,15 +12,12 @@ import {
   miniCardRail,
   modal,
   mountModal,
-  mountV2ZLayer,
-  openSharedProfileSettingsMenu,
   page,
   select,
   shortDateTime,
   v2ListEntries,
   v2ListEntry,
   v2Section,
-  v2ZLayer,
 } from '../../../ui/ui.js';
 import { getWallets } from '../../finance/index.js';
 import {
@@ -32,6 +29,7 @@ import {
   loyaltyVisualCard,
   money,
   notifyLoyaltyContext,
+  openLoyaltySettingsMenu,
   personLabel,
 } from '../shared.js';
 import {
@@ -113,10 +111,14 @@ export function personalAccountVisualCard({
   });
 }
 
+function movementHistory(account = {}) {
+  return Array.isArray(account?.movements) ? account.movements : [];
+}
+
 function historyRail(account = {}) {
-  const items = Array.isArray(account?.movements) ? account.movements : [];
+  const items = movementHistory(account);
   if (!items.length) return emptyState('Истории пока нет', 'Движения появятся после использования Личного счёта.');
-  return miniCardRail(items.map((item) => {
+  return miniCardRail(items.map((item, index) => {
     const incoming = String(item?.direction || '').toUpperCase() === 'IN';
     return miniCard({
       title: movementTitle(item),
@@ -126,7 +128,48 @@ function historyRail(account = {}) {
         { label: 'Источник', value: movementSource(item) },
         { label: 'Остаток', value: money(item?.balanceAfter) },
       ],
+      interactive: true,
+      data: `data-personal-account-history-entry="${index}"`,
+      aria: `Открыть ${movementTitle(item).toLowerCase()}`,
     });
+  }));
+}
+
+function settlementRows(item = {}) {
+  const data = item?.data && typeof item.data === 'object' ? item.data : {};
+  const settlement = data?.settlement && typeof data.settlement === 'object' ? data.settlement : null;
+  const items = Array.isArray(settlement?.items) ? settlement.items : [];
+  return items.map((entry) => ({
+    label: String(entry?.name || (String(entry?.sourceType || '') === 'product' ? 'Товар' : 'Процедура')),
+    value: money(entry?.planAmount ?? entry?.correctedPrice ?? entry?.price),
+  }));
+}
+
+function movementEventMarkup(item = {}) {
+  const incoming = String(item?.direction || '').toUpperCase() === 'IN';
+  const data = item?.data && typeof item.data === 'object' ? item.data : {};
+  const rows = [{ label: 'Дата', value: shortDateTime(item?.occurredAt, '—') }];
+  const settlement = settlementRows(item);
+  if (String(item?.kind || '') === 'payment' && settlement.length) {
+    rows.push(...settlement);
+    rows.push({ label: 'Итого', value: `−${money(item?.amount)}` });
+  } else {
+    rows.push({ label: 'Сумма', value: `${incoming ? '+' : '−'}${money(item?.amount)}` });
+    const wallet = String(item?.walletName || data?.walletName || '').trim();
+    if (wallet) rows.push({ label: 'Кошелёк', value: wallet });
+    const source = movementSource(item);
+    if (source && source !== 'Операция') rows.push({ label: 'Источник', value: source });
+  }
+  rows.push({ label: 'Остаток', value: money(item?.balanceAfter) });
+  rows.push({ label: 'Дата формирования', value: shortDateTime(item?.recordedAt || item?.createdAt || item?.occurredAt, '—') });
+  return details(rows);
+}
+
+function openMovementEventS(root, item = {}) {
+  return mountModal(root, modal(movementEventMarkup(item), {
+    variant: 's',
+    surface: 'app',
+    title: movementTitle(item),
   }));
 }
 
@@ -160,10 +203,6 @@ function accountInfo(person = {}, account = {}) {
 function openSettingsX(root, person, account, onSaved) {
   const layer = mountModal(root, modal(`<form class="form-grid" data-personal-account-settings-form>
     ${field({ label: 'Лимит оплаты, %', name: 'spendLimitPercent', type: 'number', min: '0', max: '100', step: '1', inputmode: 'decimal', value: account?.spendLimitPercent ?? 100, required: true })}
-    ${select({ label: 'Показывать конечному пользователю', name: 'visibleToEndUser', value: account?.visibleToEndUser === false ? 'no' : 'yes', options: [
-      { value: 'yes', label: 'Да' },
-      { value: 'no', label: 'Нет' },
-    ] })}
     ${button('Сохранить', { type: 'submit' })}
     <div class="form-error" data-personal-account-settings-error></div>
   </form>`, { title: 'Настройки Личного счёта', variant: 'x', surface: 'app' }));
@@ -180,7 +219,7 @@ function openSettingsX(root, person, account, onSaved) {
     try {
       const saved = await updatePersonalAccountSettings(personKey(person), {
         spendLimitPercent: Number(values.spendLimitPercent),
-        visibleToEndUser: values.visibleToEndUser !== 'no',
+        visibleToEndUser: account?.visibleToEndUser !== false,
       });
       layer.v2Close?.();
       await onSaved?.(saved);
@@ -282,7 +321,8 @@ function openDebtSettleX(root, debt, onSaved) {
 }
 
 function renderDetail(layer, root, person, account) {
-  layer.innerHTML = page([
+  const host = layer.querySelector('[data-personal-account-q-host]') || layer;
+  host.innerHTML = page([
     loyaltyHeader(personLabel(person), { settings: true, settingsData: 'data-personal-account-actions' }),
     accountInfo(person, account || {}),
     v2Section('Задолженности', debtList(account || {})),
@@ -292,25 +332,49 @@ function renderDetail(layer, root, person, account) {
     const next = saved?.personKey ? saved : await loadPersonalAccount(personKey(person));
     renderDetail(layer, root, person, next || {});
   };
-  layer.querySelector('[data-personal-account-actions]')?.addEventListener('click', () => {
+  host.querySelector('[data-personal-account-actions]')?.addEventListener('click', () => {
     const actions = [
       { id: 'fund', label: 'Пополнить', onSelect: () => openMoneyX(root, person, account, 'fund', refresh) },
       { id: 'withdraw', label: 'Вернуть деньги', onSelect: () => openMoneyX(root, person, account, 'withdraw', refresh) },
       { id: 'settings', label: 'Настройки', onSelect: () => openSettingsX(root, person, account, refresh) },
     ];
-    openSharedProfileSettingsMenu({ title: 'Личный счёт', actions });
+    openLoyaltySettingsMenu({
+      title: 'Личный счёт',
+      checked: account?.visibleToEndUser !== false,
+      onToggle: async (value) => {
+        const saved = await updatePersonalAccountSettings(personKey(person), {
+          spendLimitPercent: account?.spendLimitPercent ?? 100,
+          visibleToEndUser: value,
+        });
+        await refresh(saved);
+        return saved?.visibleToEndUser !== false;
+      },
+      actions,
+    });
   });
-  layer.querySelectorAll('[data-personal-account-debt]').forEach((node) => {
+  host.querySelectorAll('[data-personal-account-debt]').forEach((node) => {
     node.addEventListener('click', () => {
       const debt = (Array.isArray(account?.debts) ? account.debts : []).find((item) => String(item?.id || '') === String(node.dataset.personalAccountDebt || ''));
       if (debt) openDebtSettleX(root, debt, refresh);
+    });
+  });
+  const movements = movementHistory(account);
+  host.querySelectorAll('[data-personal-account-history-entry]').forEach((node) => {
+    node.addEventListener('click', () => {
+      const item = movements[Number(node.dataset.personalAccountHistoryEntry)];
+      if (item) openMovementEventS(layer, item);
     });
   });
   notifyLoyaltyContext();
 }
 
 export async function openPersonalAccountForPerson(root, person = {}, snapshot = null) {
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-personal-account-z' }), { stack: true });
+  const layer = mountModal(root, modal('<div data-personal-account-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: personLabel(person),
+    className: 'loyalty-personal-account-q',
+  }));
   if (!layer) return null;
   const account = snapshot || await loadPersonalAccount(personKey(person));
   renderDetail(layer, root, person, account || {});

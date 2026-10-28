@@ -39,6 +39,7 @@ import {
   notifyLoyaltyContext,
   normalizeOptionalUei,
   openLoyaltyProgramSettings,
+  openLoyaltySettingsMenu,
   optionalUeiField,
   text,
   uid,
@@ -306,7 +307,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       capType: values.capType || 'none', capValue: values.capType === 'none' ? 0 : Math.max(0, Number(String(values.capValue || '0').replace(',', '.')) || 0),
       rewardExpiryType, rewardExpiryCount, rewardExpiryUnit, rewardExpiryValue: rewardExpiryType === 'duration' ? periodLabel(rewardExpiryCount, rewardExpiryUnit) : '',
       inviteeBenefit: values.inviteeBenefit || 'none', inviteeBenefitValue: values.inviteeBenefit === 'none' ? 0 : Math.max(0, Number(String(values.inviteeBenefitValue || '0').replace(',', '.')) || 0),
-      rewardTiming: values.rewardTiming || 'paid-and-completed', recurrence, recurrenceValue, recurrenceCount: values.recurrenceCount || '', recurrencePeriodCount: values.recurrencePeriodCount || '', recurrencePeriodUnit: values.recurrencePeriodUnit || 'days', recurrenceCap: values.recurrenceCap || '', assignment: values.assignment || 'all', status: editingProgram?.status || 'active', createdAt: editingProgram?.createdAt || new Date().toISOString(),
+      rewardTiming: values.rewardTiming || 'paid-and-completed', recurrence, recurrenceValue, recurrenceCount: values.recurrenceCount || '', recurrencePeriodCount: values.recurrencePeriodCount || '', recurrencePeriodUnit: values.recurrencePeriodUnit || 'days', recurrenceCap: values.recurrenceCap || '', assignment: values.assignment || 'all', showToAll: editingProgram?.showToAll !== false, status: editingProgram?.status || 'active', createdAt: editingProgram?.createdAt || new Date().toISOString(),
     };
     if (editing) programs = programs.map((item) => item.id === next.id ? next : item);
     else programs.push(next);
@@ -321,9 +322,31 @@ async function openRelationLayer(root, relationId) {
   const relation = relations.find((item) => item.id === relationId);
   if (!relation) return null;
   const program = programs.find((item) => item.id === relation.programId) || {};
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-referral-relation-z' }), { stack: true });
+  const layer = mountModal(root, modal('<div data-referral-relation-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: `${relation.inviterName || '—'} → ${relation.inviteeName || '—'}`,
+    className: 'loyalty-referral-relation-q',
+  }));
   if (!layer) return null;
-  layer.innerHTML = page([loyaltyHeader(`${relation.inviterName || '—'} → ${relation.inviteeName || '—'}`), relationInfo(relation, program)]);
+
+  const effectiveVisible = typeof relation.visibleToPersonOverride === 'boolean'
+    ? relation.visibleToPersonOverride
+    : program.showToAll !== false;
+  const host = layer.querySelector('[data-referral-relation-q-host]');
+  if (!host) return layer;
+  host.innerHTML = page([
+    loyaltyHeader(`${relation.inviterName || '—'} → ${relation.inviteeName || '—'}`, { settings: true, settingsData: 'data-referral-relation-settings' }),
+    relationInfo(relation, program),
+  ]);
+  host.querySelector('[data-referral-relation-settings]')?.addEventListener('click', () => openLoyaltySettingsMenu({
+    title: 'Реферальная связь',
+    checked: effectiveVisible,
+    onToggle: async (value) => {
+      relation.visibleToPersonOverride = value;
+      return value;
+    },
+  }));
   notifyLoyaltyContext();
   return layer;
 }
@@ -344,6 +367,12 @@ async function openProgramLayer(root, programId, onChanged) {
     layer.querySelector('[data-referral-program-settings]')?.addEventListener('click', () => openLoyaltyProgramSettings({
       title: program.name || 'Реферальная программа',
       status: program.status,
+      visible: program.showToAll !== false,
+      onVisibility: async (value) => {
+        program.showToAll = value;
+        await onChanged?.();
+        return value;
+      },
       onCorrect: () => openCreateProgramQ(root, async () => { await render(); await onChanged?.(); }, program),
       onToggle: async () => { program.status = program.status === 'paused' ? 'active' : 'paused'; await render(); await onChanged?.(); },
       onFinish: async () => { program.status = 'ended'; await render(); await onChanged?.(); },
@@ -369,6 +398,10 @@ export function getReferralAssignmentsForPerson(personKey = '') {
       const relation = relations.find((item) => String(item?.programId || '') === String(program.id)
         && [item?.inviterKey, item?.inviteeKey, item?.personKey].some((value) => String(value || '') === key)) || null;
       if (program.assignment !== 'all' && !relation) return null;
+      const visible = typeof relation?.visibleToPersonOverride === 'boolean'
+        ? relation.visibleToPersonOverride
+        : program.showToAll !== false;
+      if (!visible) return null;
       return { program: { ...program }, relation: relation ? { ...relation } : null };
     })
     .filter(Boolean);

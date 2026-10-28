@@ -43,6 +43,7 @@ import {
   notifyLoyaltyContext,
   normalizeOptionalUei,
   openLoyaltyProgramSettings,
+  openLoyaltySettingsMenu,
   optionalUeiField,
   text,
   uid,
@@ -157,15 +158,47 @@ function participantInfo(participant = {}, program = {}) {
   ]);
 }
 
+function bonusHistory(participant = {}) {
+  return [...(Array.isArray(participant.history) ? participant.history : [])].reverse();
+}
+
 function historyMarkup(participant = {}) {
-  const history = Array.isArray(participant.history) ? participant.history : [];
+  const history = bonusHistory(participant);
   if (!history.length) return emptyState('Истории пока нет', 'Начисления, списания и корректировки появятся здесь.');
-  return miniCardRail([...history].reverse().map((item) => miniCard({
-    title: item.title || 'Операция программы',
-    value: `${Number(item.amount || 0) >= 0 ? '+' : '−'}${Math.abs(Number(item.amount || 0))} бонусов`,
-    subtitle: shortDateTime(item.occurredAt, '—'),
-    rows: [{ label: 'Источник', value: item.source || '—' }],
-  })));
+  return miniCardRail(history.map((item, index) => {
+    const amount = Number(item.amount || 0);
+    return miniCard({
+      title: item.title || 'Операция программы',
+      value: `${amount >= 0 ? '+' : '−'}${Math.abs(amount)} бонусов`,
+      subtitle: shortDateTime(item.occurredAt, '—'),
+      rows: [{ label: 'Источник', value: item.source || '—' }],
+      interactive: true,
+      data: `data-bonus-history-entry="${index}"`,
+      aria: `Открыть ${String(item.title || 'операция').toLowerCase()}`,
+    });
+  }));
+}
+
+function historyEventMarkup(item = {}) {
+  const amount = Number(item.amount || 0);
+  const rows = [
+    { label: 'Дата', value: shortDateTime(item.occurredAt, '—') },
+    { label: 'Сумма', value: `${amount >= 0 ? '+' : '−'}${Math.abs(amount)} бонусов` },
+  ];
+  if (item.source) rows.push({ label: 'Источник', value: item.source });
+  if (item.balanceAfter != null || item.availableAfter != null) {
+    rows.push({ label: 'Остаток', value: `${Math.max(0, Number(item.balanceAfter ?? item.availableAfter ?? 0))} бонусов` });
+  }
+  rows.push({ label: 'Дата формирования', value: shortDateTime(item.recordedAt || item.createdAt || item.occurredAt, '—') });
+  return details(rows);
+}
+
+function openHistoryEventS(root, item = {}) {
+  return mountModal(root, modal(historyEventMarkup(item), {
+    variant: 's',
+    surface: 'app',
+    title: item.title || (Number(item.amount || 0) >= 0 ? 'Начисление' : 'Списание'),
+  }));
 }
 
 function participantList(items = []) {
@@ -400,7 +433,7 @@ async function openCreateProgramQ(root, rerender, editingProgram = null) {
       rewardType, rewardValue, rewardBase, rewardPositionRules, rewardTiers,
       rewardExpiryType, rewardExpiryCount, rewardExpiryUnit, rewardExpiryValue: rewardExpiryType === 'duration' ? periodLabel(rewardExpiryCount, rewardExpiryUnit) : '',
       recurrence, recurrenceValue, recurrenceCount: values.recurrenceCount || '', recurrenceLimit: values.recurrenceLimit || '', recurrencePeriod: values.recurrencePeriod || 'day',
-      timing: values.timing || 'paid-and-completed', status: editingProgram?.status || 'active', createdAt: editingProgram?.createdAt || new Date().toISOString(),
+      timing: values.timing || 'paid-and-completed', showToAll: editingProgram?.showToAll !== false, status: editingProgram?.status || 'active', createdAt: editingProgram?.createdAt || new Date().toISOString(),
     };
     if (editing) programs = programs.map((item) => item.id === next.id ? next : item);
     else programs.push(next);
@@ -415,14 +448,41 @@ async function openParticipantLayer(root, participantId) {
   const participant = participants.find((item) => item.id === participantId);
   if (!participant) return null;
   const program = programs.find((item) => item.id === participant.programId) || {};
-  const layer = mountV2ZLayer(root, v2ZLayer('', { className: 'loyalty-bonus-participant-z' }), { stack: true });
+  const layer = mountModal(root, modal('<div data-bonus-participant-q-host></div>', {
+    variant: 'q',
+    surface: 'app',
+    title: participant.personName || 'Участник программы',
+    className: 'loyalty-bonus-participant-q',
+  }));
   if (!layer) return null;
-  layer.innerHTML = page([
-    loyaltyHeader(participant.personName || 'Участник программы'),
-    participantInfo(participant, program),
-    v2Section('История', historyMarkup(participant)),
-  ]);
-  notifyLoyaltyContext();
+
+  const render = () => {
+    const effectiveVisible = typeof participant.visibleToPersonOverride === 'boolean'
+      ? participant.visibleToPersonOverride
+      : program.showToAll !== false;
+    const history = bonusHistory(participant);
+    const host = layer.querySelector('[data-bonus-participant-q-host]');
+    if (!host) return;
+    host.innerHTML = page([
+      loyaltyHeader(participant.personName || 'Участник программы', { settings: true, settingsData: 'data-bonus-participant-settings' }),
+      participantInfo(participant, program),
+      v2Section('История', historyMarkup(participant)),
+    ]);
+    host.querySelector('[data-bonus-participant-settings]')?.addEventListener('click', () => openLoyaltySettingsMenu({
+      title: participant.personName || 'Бонусная программа',
+      checked: effectiveVisible,
+      onToggle: async (value) => {
+        participant.visibleToPersonOverride = value;
+        return value;
+      },
+    }));
+    host.querySelectorAll('[data-bonus-history-entry]').forEach((node) => node.addEventListener('click', () => {
+      const item = history[Number(node.dataset.bonusHistoryEntry)];
+      if (item) openHistoryEventS(layer, item);
+    }));
+    notifyLoyaltyContext();
+  };
+  render();
   return layer;
 }
 
@@ -442,6 +502,12 @@ async function openProgramLayer(root, programId, onChanged) {
     layer.querySelector('[data-bonus-program-settings]')?.addEventListener('click', () => openLoyaltyProgramSettings({
       title: program.name || 'Бонусная программа',
       status: program.status,
+      visible: program.showToAll !== false,
+      onVisibility: async (value) => {
+        program.showToAll = value;
+        await onChanged?.();
+        return value;
+      },
       onCorrect: () => openCreateProgramQ(root, async () => { await render(); await onChanged?.(); }, program),
       onToggle: async () => { program.status = program.status === 'paused' ? 'active' : 'paused'; await render(); await onChanged?.(); },
       onFinish: async () => { program.status = 'ended'; await render(); await onChanged?.(); },
@@ -467,6 +533,10 @@ export function getBonusAssignmentsForPerson(personKey = '') {
       const participant = participants.find((item) => String(item?.programId || '') === String(program.id)
         && String(item?.personKey || '') === key) || null;
       if (program.assignment !== 'all' && !participant) return null;
+      const visible = typeof participant?.visibleToPersonOverride === 'boolean'
+        ? participant.visibleToPersonOverride
+        : program.showToAll !== false;
+      if (!visible) return null;
       return { program: { ...program }, participant: participant ? { ...participant } : null };
     })
     .filter(Boolean);

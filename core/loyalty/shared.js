@@ -1,8 +1,11 @@
 import {
   datePicker,
   entityVisualCard,
+  escapeHtml,
   field,
   initDatePickers,
+  modal,
+  mountModal,
   openEntityCardAppearanceQ,
   openSharedProfileSettingsMenu,
   select,
@@ -11,6 +14,8 @@ import {
   v2ListEntry,
   workspaceHeaderContext,
 } from '../../ui/ui.js';
+import { compactCheck } from '../../ui/selection/check-list.js';
+import { settingsPanel } from '../../ui/settings/index.js';
 import { flushBusinessPersistence } from '../business-persistence.js';
 import { getCardAppearanceTemplate, saveCardAppearanceTemplate } from '../card-appearance-templates.js';
 import { getAllPeople } from '../people/data.js';
@@ -48,11 +53,11 @@ export function loyaltyHeader(title, { settings = false, c = null, settingsData 
       image: String(profile?.photo || ''),
       imagePosition: `${crop(profile?.photoCropX)}% ${crop(profile?.photoCropY)}%`,
       initials: name.slice(0, 1).toUpperCase() || '?',
-      settingsTag: settings,
-      data: settings ? settingsData : '',
-      aria: settings ? `Настройки ${title}` : title,
-      disabled: !settings,
     },
+    v: settings ? {
+      data: settingsData,
+      aria: `Настройки ${title}`,
+    } : null,
     c,
   });
 }
@@ -116,9 +121,62 @@ export function bindViewSettings(root, title, { type, fields, onSaved = () => {}
   });
 }
 
+export function openLoyaltySettingsMenu({
+  title = 'Настройки',
+  checked = true,
+  onToggle = null,
+  actions = [],
+} = {}) {
+  const actionItems = (Array.isArray(actions) ? actions : []).filter((item) => item?.id && item?.label);
+  const showToggle = typeof onToggle === 'function';
+  const actionsMarkup = actionItems.length ? settingsPanel(actionItems.map((item) => ({
+    label: item.label,
+    variant: item.variant || 'outline',
+    data: `data-loyalty-settings-action="${escapeHtml(item.id)}"`,
+    disabled: Boolean(item.disabled),
+  }))) : '';
+  const body = `<div class="form-grid" data-loyalty-settings-menu>
+    ${showToggle ? compactCheck({ label: 'Показать', checked, data: 'data-loyalty-visibility', aria: 'Показать' }) : ''}
+    ${actionsMarkup}
+  </div>`;
+  const menu = mountModal(document.body, modal(body, {
+    variant: 'x',
+    surface: 'app',
+    title,
+    className: 'modal--profile-settings-sheet',
+    xRole: 'action',
+  }));
+  if (!menu) return null;
+
+  const visibility = menu.querySelector('[data-loyalty-visibility]');
+  visibility?.addEventListener('change', async () => {
+    const requested = Boolean(visibility.checked);
+    visibility.disabled = true;
+    try {
+      const resolved = await onToggle?.(requested);
+      if (typeof resolved === 'boolean') visibility.checked = resolved;
+    } catch {
+      visibility.checked = !requested;
+    } finally {
+      visibility.disabled = false;
+    }
+  });
+
+  actionItems.forEach((item) => {
+    if (item.disabled) return;
+    menu.querySelector(`[data-loyalty-settings-action="${CSS.escape(String(item.id))}"]`)?.addEventListener('click', () => {
+      menu.v2Close?.();
+      void item.onSelect?.();
+    });
+  });
+  return menu;
+}
+
 export function openLoyaltyProgramSettings({
   title = 'Программа',
   status = 'active',
+  visible = true,
+  onVisibility = null,
   correctLabel = 'Корректировать',
   onCorrect = () => {},
   onToggle = () => {},
@@ -138,7 +196,12 @@ export function openLoyaltyProgramSettings({
     actions.push({ id: 'finish', label: 'Завершить', onSelect: onFinish });
   }
   actions.push({ id: 'delete', label: 'Удалить', variant: 'danger', onSelect: onDelete });
-  return openSharedProfileSettingsMenu({ title, actions });
+  return openLoyaltySettingsMenu({
+    title,
+    checked: visible,
+    onToggle: onVisibility,
+    actions,
+  });
 }
 
 export function normalizeOptionalUei(value = '') {
