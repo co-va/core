@@ -15,6 +15,14 @@ export function checkList(items = [], { className = '' } = {}) {
   }).join('')}</div>`;
 }
 
+export function compactCheck({ label = '', checked = false, data = '', aria = '', disabled = false } = {}) {
+  return `<label class="ui-compact-check${disabled ? ' is-disabled' : ''}">
+    <input type="checkbox"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}${data ? ` ${data}` : ''}${aria || label ? ` aria-label="${escapeHtml(aria || label)}"` : ''}>
+    <span class="ui-compact-check__mark" aria-hidden="true"></span>
+    <span class="ui-compact-check__label">${escapeHtml(label)}</span>
+  </label>`;
+}
+
 export function collectCheckList(root, selector = '.ui-check-list input[type="checkbox"]') {
   return [...root.querySelectorAll(selector)].filter((input) => input.checked).map((input) => input.value).filter(Boolean);
 }
