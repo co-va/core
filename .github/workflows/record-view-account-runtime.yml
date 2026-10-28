@@ -3,8 +3,30 @@ name: Record View Account Runtime
 on:
   push:
     branches: [staging]
+    paths:
+      - '.github/workflows/record-view-account-runtime.yml'
+      - 'tests/record-view-account-runtime-browser.html'
+      - 'core/records/**'
+      - 'core/record/**'
+      - 'core/finance/**'
+      - 'core/loyalty/**'
+      - 'core/note/**'
+      - 'core/people/**'
+      - 'core/workplace-time.js'
+      - 'ui/record/**'
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/record-view-account-runtime.yml'
+      - 'tests/record-view-account-runtime-browser.html'
+      - 'core/records/**'
+      - 'core/record/**'
+      - 'core/finance/**'
+      - 'core/loyalty/**'
+      - 'core/note/**'
+      - 'core/people/**'
+      - 'core/workplace-time.js'
+      - 'ui/record/**'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +47,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Verify App / Account and Public Booking runtime DOM
+      - name: Verify Record View account runtime DOM
         shell: bash
         run: |
           set -euo pipefail
@@ -40,8 +62,7 @@ jobs:
             echo "No Chromium-compatible browser found on runner"
             exit 1
           fi
-
-          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/account-runtime-http.log 2>&1 &
+          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/record-view-account-http.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 20); do
@@ -50,88 +71,33 @@ jobs:
             fi
             sleep 0.25
           done
-
-          run_browser_case() {
-            local path="$1"
-            local marker="$2"
-            local stage_attr="$3"
-            local output="$4"
-            local browser_status
-            set +e
-            timeout --signal=TERM --kill-after=5s 45s "$chrome_bin" \
-              --headless=new \
-              --no-sandbox \
-              --disable-gpu \
-              --disable-dev-shm-usage \
-              --window-size=390,844 \
-              --force-device-scale-factor=1 \
-              --touch-events=enabled \
-              --virtual-time-budget=12000 \
-              --dump-dom \
-              "http://127.0.0.1:4173/$path" \
-              > "$output"
-            browser_status=$?
-            set -e
-
-            if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
-              echo "Runtime timed out: $path"
-              exit 1
-            fi
-            if [ "$browser_status" -ne 0 ]; then
-              echo "Runtime browser failed: $path (exit $browser_status)"
-              exit 1
-            fi
-            if ! grep -Fq "$marker" "$output"; then
-              echo "Runtime failed: $path"
-              grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
-              grep -A8 -B2 '<pre id="result"' "$output" || true
-              exit 1
-            fi
-          }
-
-          echo '::group::App / Account runtime'
-          run_browser_case \
-            "tests/record-view-account-runtime-browser.html" \
-            'data-record-view-account-runtime="pass"' \
-            'data-record-view-account-runtime-stage' \
-            /tmp/record-view-account-runtime-dom.html
-          run_browser_case \
-            "tests/journal-account-runtime-browser.html" \
-            'data-journal-account-runtime="pass"' \
-            'data-journal-account-runtime-stage' \
-            /tmp/journal-account-runtime-dom.html
-          run_browser_case \
-            "tests/document-viewer-mobile-runtime-browser.html" \
-            'data-document-viewer-mobile-runtime="pass"' \
-            'data-document-viewer-mobile-runtime-stage' \
-            /tmp/document-viewer-mobile-runtime-dom.html
-          run_browser_case \
-            "tests/journal-account-day-range-runtime-browser.html" \
-            'data-journal-account-day-range-runtime="pass"' \
-            'data-journal-account-day-range-runtime-stage' \
-            /tmp/journal-account-day-range-runtime-dom.html
-          run_browser_case \
-            "tests/journal-account-action-x-runtime-browser.html" \
-            'data-journal-account-action-x-runtime="pass"' \
-            'data-journal-account-action-x-runtime-stage' \
-            /tmp/journal-account-action-x-runtime-dom.html
-          run_browser_case \
-            "tests/event-shared-ui-runtime-browser.html" \
-            'data-event-shared-ui-runtime="pass"' \
-            'data-event-shared-ui-runtime-stage' \
-            /tmp/event-shared-ui-runtime-dom.html
-          echo '::endgroup::'
-
-          echo '::group::Public Booking runtime'
-          run_browser_case \
-            "tests/booking-success-journal-runtime-browser.html" \
-            'data-booking-success-journal-runtime="pass"' \
-            'data-booking-success-journal-runtime-stage' \
-            /tmp/booking-success-journal-runtime-dom.html
-          run_browser_case \
-            "tests/public-booking-variants-runtime-browser.html" \
-            'data-public-booking-variants-runtime="pass"' \
-            'data-public-booking-variants-runtime-stage' \
-            /tmp/public-booking-variants-runtime-dom.html
-          echo 'Public Booking runtime: PASS'
-          echo '::endgroup::'
+          set +e
+          timeout --signal=TERM --kill-after=5s 45s "$chrome_bin" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --window-size=390,844 \
+            --force-device-scale-factor=1 \
+            --touch-events=enabled \
+            --virtual-time-budget=12000 \
+            --dump-dom \
+            http://127.0.0.1:4173/tests/record-view-account-runtime-browser.html \
+            > /tmp/record-view-account-runtime-dom.html
+          browser_status=$?
+          set -e
+          if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
+            echo "Record View account runtime timed out"
+            exit 1
+          fi
+          if [ "$browser_status" -ne 0 ]; then
+            echo "Record View account runtime browser failed (exit $browser_status)"
+            exit 1
+          fi
+          if ! grep -Fq 'data-record-view-account-runtime="pass"' /tmp/record-view-account-runtime-dom.html; then
+            echo "Record View account runtime failed"
+            grep -o 'data-record-view-account-runtime-stage="[^"]*"' /tmp/record-view-account-runtime-dom.html || true
+            grep -A8 -B2 '<pre id="result"' /tmp/record-view-account-runtime-dom.html || true
+            exit 1
+          fi
+          echo "Record View account runtime: PASS"

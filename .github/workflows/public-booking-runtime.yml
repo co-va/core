@@ -1,0 +1,102 @@
+name: Public Booking Runtime
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - '.github/workflows/public-booking-runtime.yml'
+      - 'tests/booking-success-journal-runtime-browser.html'
+      - 'tests/public-booking-variants-runtime-browser.html'
+      - 'online-booking/**'
+      - 'ui/booking/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/public-booking-runtime.yml'
+      - 'tests/booking-success-journal-runtime-browser.html'
+      - 'tests/public-booking-variants-runtime-browser.html'
+      - 'online-booking/**'
+      - 'ui/booking/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-booking-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify Public Booking runtime DOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome_bin="$(command -v "$candidate")"
+              break
+            fi
+          done
+          if [ -z "$chrome_bin" ]; then
+            echo "No Chromium-compatible browser found on runner"
+            exit 1
+          fi
+          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/public-booking-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4173/tests/booking-success-journal-runtime-browser.html >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          run_browser_case() {
+            local path="$1"
+            local marker="$2"
+            local stage_attr="$3"
+            local output="$4"
+            local browser_status
+            set +e
+            timeout --signal=TERM --kill-after=5s 45s "$chrome_bin" \
+              --headless=new \
+              --no-sandbox \
+              --disable-gpu \
+              --disable-dev-shm-usage \
+              --window-size=390,844 \
+              --force-device-scale-factor=1 \
+              --touch-events=enabled \
+              --virtual-time-budget=12000 \
+              --dump-dom \
+              "http://127.0.0.1:4173/$path" \
+              > "$output"
+            browser_status=$?
+            set -e
+            if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
+              echo "Public Booking runtime timed out: $path"
+              exit 1
+            fi
+            if [ "$browser_status" -ne 0 ]; then
+              echo "Public Booking runtime browser failed: $path (exit $browser_status)"
+              exit 1
+            fi
+            if ! grep -Fq "$marker" "$output"; then
+              echo "Public Booking runtime failed: $path"
+              grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
+              grep -A8 -B2 '<pre id="result"' "$output" || true
+              exit 1
+            fi
+          }
+          run_browser_case "tests/booking-success-journal-runtime-browser.html" 'data-booking-success-journal-runtime="pass"' 'data-booking-success-journal-runtime-stage' /tmp/booking-success-journal-runtime-dom.html
+          run_browser_case "tests/public-booking-variants-runtime-browser.html" 'data-public-booking-variants-runtime="pass"' 'data-public-booking-variants-runtime-stage' /tmp/public-booking-variants-runtime-dom.html
+          echo "Public Booking runtime: PASS"

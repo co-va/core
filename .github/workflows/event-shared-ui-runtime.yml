@@ -1,0 +1,93 @@
+name: Event Shared UI Runtime
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - '.github/workflows/event-shared-ui-runtime.yml'
+      - 'tests/event-shared-ui-runtime-browser.html'
+      - 'journal/event-create.js'
+      - 'journal/event-view.js'
+      - 'core/event/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/event-shared-ui-runtime.yml'
+      - 'tests/event-shared-ui-runtime-browser.html'
+      - 'journal/event-create.js'
+      - 'journal/event-view.js'
+      - 'core/event/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: event-shared-ui-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify Event shared UI runtime DOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome_bin="$(command -v "$candidate")"
+              break
+            fi
+          done
+          if [ -z "$chrome_bin" ]; then
+            echo "No Chromium-compatible browser found on runner"
+            exit 1
+          fi
+          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/event-shared-ui-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4173/tests/event-shared-ui-runtime-browser.html >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          set +e
+          timeout --signal=TERM --kill-after=5s 45s "$chrome_bin" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --window-size=390,844 \
+            --force-device-scale-factor=1 \
+            --touch-events=enabled \
+            --virtual-time-budget=12000 \
+            --dump-dom \
+            http://127.0.0.1:4173/tests/event-shared-ui-runtime-browser.html \
+            > /tmp/event-shared-ui-runtime-dom.html
+          browser_status=$?
+          set -e
+          if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
+            echo "Event shared UI runtime timed out"
+            exit 1
+          fi
+          if [ "$browser_status" -ne 0 ]; then
+            echo "Event shared UI runtime browser failed (exit $browser_status)"
+            exit 1
+          fi
+          if ! grep -Fq 'data-event-shared-ui-runtime="pass"' /tmp/event-shared-ui-runtime-dom.html; then
+            echo "Event shared UI runtime failed"
+            grep -o 'data-event-shared-ui-runtime-stage="[^"]*"' /tmp/event-shared-ui-runtime-dom.html || true
+            grep -A8 -B2 '<pre id="result"' /tmp/event-shared-ui-runtime-dom.html || true
+            exit 1
+          fi
+          echo "Event shared UI runtime: PASS"
