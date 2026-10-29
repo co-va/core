@@ -235,9 +235,15 @@ export function startPlatformNotices({
       const rows = await listNotices();
       const unread = (Array.isArray(rows) ? rows : [])
         .filter((item) => !item.readAt && !shown.has(item.id))
-        .sort((a, b) => Date.parse(a.createdAt || 0) - Date.parse(b.createdAt || 0));
+        .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
       const item = unread[0];
       if (!item) return;
+
+      const stale = unread.slice(1);
+      stale.forEach((oldItem) => shown.add(oldItem.id));
+      if (stale.length) {
+        void Promise.allSettled(stale.map((oldItem) => markRead(oldItem.id)));
+      }
 
       shown.add(item.id);
       const layer = mountModal(document.body, modal(noticeModal(item), {
@@ -261,7 +267,6 @@ export function startPlatformNotices({
         if (item.type === 'CAPABILITY_CHANGED' || item.type === 'ACCESS_STATUS_CHANGED') {
           await onAccessChanged(item).catch(() => undefined);
         }
-        window.setTimeout(() => void showNext(), 60);
         window.setTimeout(() => void offerPush(), 500);
       };
 
