@@ -5,6 +5,7 @@ const accountApi = fs.readFileSync('core/account/index.js', 'utf8');
 const accountPush = fs.readFileSync('core/notifications/web-push.js', 'utf8');
 const accountRuntime = fs.readFileSync('online-booking/account-runtime.js', 'utf8');
 const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
+const userHtml = fs.readFileSync('user.html', 'utf8');
 const onlineBookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const accountPushController = fs.readFileSync('server/src/online-booking/account-push.controller.ts', 'utf8');
 const webPushService = fs.readFileSync('server/src/notification/web-push.service.ts', 'utf8');
@@ -28,6 +29,9 @@ assert.match(subscriptionOwner, /"accountId"/);
 assert.match(migration, /DROP COLUMN IF EXISTS "tenantId"/);
 assert.match(notificationService, /listAccountEndpoints\(identity\.accountId\)/);
 assert.match(notificationService, /dispatchNotification\(tenantId, notificationId\)/);
+
+// End-user app entry must actually load the Account runtime that owns the Push prompt and startup sync.
+assert.match(userHtml, /<script type="module" src="online-booking\/account-runtime\.js"><\/script>/);
 
 // App entry owns the prompt. A professional relationship must not be needed to offer or enable it.
 const accountSetupRuntime = accountRuntime.slice(
@@ -88,7 +92,7 @@ assert.match(accountPush, /export async function enableWebPush\(\{ strict = true
 assert.match(accountPush, /strict && !state\?\.subscribed/);
 assert.match(accountPush, /syncWebPush\(permission\)/);
 
-// Explicit OS denial or manual Profile disable is sticky for that Account only;
+// Explicit OS denial or manual Account disable is sticky for that Account only;
 // automatic startup must not undo it and another Account on the same device must stay eligible.
 assert.match(accountPush, /permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('denied'\)/);
 assert.match(accountPush, /export async function disableWebPush\(\)[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('manual'\)/);
