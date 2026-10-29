@@ -1,5 +1,7 @@
 import { getGlobalAccountUnreadSummary } from '../account/index.js';
 import { USER_ORIGIN } from '../environment.js';
+import { publishChatUnreadCount, syncApplicationBadge } from '../notifications/app-badge.js';
+import { refreshServiceUnseen } from '../notifications/service-unseen.js';
 import { getProfessionalMessengerConversations } from './messenger-api.js';
 
 const USER_HOST = new URL(USER_ORIGIN).hostname;
@@ -21,16 +23,6 @@ function normalizedCount(value) {
 function professionalUnread(conversations = []) {
   return (Array.isArray(conversations) ? conversations : [])
     .reduce((sum, conversation) => sum + normalizedCount(conversation?.unreadCount), 0);
-}
-
-function syncInstalledBadge(total) {
-  if (typeof navigator === 'undefined') return;
-  const count = normalizedCount(total);
-  if (count > 0 && typeof navigator.setAppBadge === 'function') {
-    void navigator.setAppBadge(count).catch(() => {});
-  } else if (count === 0 && typeof navigator.clearAppBadge === 'function') {
-    void navigator.clearAppBadge().catch(() => {});
-  }
 }
 
 function syncHeaderBadges(total) {
@@ -68,11 +60,10 @@ function syncThreadUnreadRows() {
 }
 
 function publish(total) {
-  const count = normalizedCount(total);
-  if (typeof globalThis !== 'undefined') globalThis[CHAT_UNREAD_KEY] = { total: count };
+  const count = publishChatUnreadCount(total);
   syncHeaderBadges(count);
   syncThreadUnreadRows();
-  syncInstalledBadge(count);
+  syncApplicationBadge();
   return count;
 }
 
@@ -134,6 +125,7 @@ if (typeof document !== 'undefined') {
     const current = normalizedCount(globalThis[CHAT_UNREAD_KEY]?.total);
     syncHeaderBadges(current);
     syncThreadUnreadRows();
+    syncApplicationBadge();
     if (!appReadyRefreshDone && document.querySelector('[data-v2-app]')) {
       appReadyRefreshDone = true;
       scheduleRefresh();
@@ -155,11 +147,12 @@ if (typeof window !== 'undefined') {
 
   navigator.serviceWorker?.addEventListener?.('message', (event) => {
     if (event.data?.type !== 'va-tools:push-unread') return;
-    if (event.data?.count != null) publish(event.data.count);
     void refreshChatUnread();
+    void refreshServiceUnseen();
   });
 
   void refreshChatUnread();
+  void refreshServiceUnseen();
   window.setInterval(() => {
     if (!document.hidden) void refreshChatUnread();
   }, 15_000);
