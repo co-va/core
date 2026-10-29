@@ -272,7 +272,7 @@ Object.defineProperty(globalThis, 'fetch', {
   },
 });
 
-const runtimePush = await import('../core/notifications/web-push.js?notification-push-runtime');
+const runtimePush = await import('../core/notifications/web-push.js');
 assert.equal(runtimePush.shouldOfferWebPushSetup(), true, 'fresh Account must be offered Push without professional relationships');
 const enabledRuntimePush = await runtimePush.enableWebPush();
 assert.equal(enabledRuntimePush.subscribed, true, 'global Account Push enable must create a browser subscription');
