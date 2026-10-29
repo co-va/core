@@ -99,7 +99,7 @@ export class WebPushService {
     if (!validEndpoint(endpoint) || !p256dh || !auth) throw new BadRequestException('Некорректная Push-подписка');
 
     // A browser Push endpoint belongs to the global Account/device. tenantId is
-    // optional legacy registration context only; delivery routing uses accountId.
+    // optional registration context only; delivery routing uses accountId.
     await this.prisma.$executeRaw`
       INSERT INTO "WebPushSubscription" (
         "id", "tenantId", "accountId", "endpoint", "p256dh", "auth", "userAgent", "createdAt", "updatedAt"
