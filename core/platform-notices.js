@@ -146,11 +146,18 @@ async function listNotices() {
   return jsonResponse(await apiRequest('/platform-notices'), 'Не удалось получить системные уведомления');
 }
 
+export async function getUnreadPlatformNoticeCount() {
+  const rows = await listNotices();
+  return (Array.isArray(rows) ? rows : []).filter((item) => !item?.readAt).length;
+}
+
 async function markRead(id) {
-  return jsonResponse(await apiRequest(`/platform-notices/${encodeURIComponent(id)}/read`, {
+  const result = await jsonResponse(await apiRequest(`/platform-notices/${encodeURIComponent(id)}/read`, {
     method: 'POST',
     body: JSON.stringify({}),
   }), 'Не удалось отметить уведомление');
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('va-tools:chat-unread-refresh'));
+  return result;
 }
 
 function noticeModal(item) {

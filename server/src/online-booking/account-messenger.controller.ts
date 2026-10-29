@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { MessengerCoreService } from '../communication/messenger-core.service';
+import { markMessengerConversationRead } from '../communication/messenger-read';
+import { PrismaService } from '../prisma.service';
 import { AccountGuard } from './account.guard';
 import { OnlineBookingService } from './online-booking.service';
 
@@ -11,6 +13,7 @@ export class AccountMessengerController {
   constructor(
     private readonly booking: OnlineBookingService,
     private readonly messenger: MessengerCoreService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private async identity(tenantId: string, accountId: string) {
@@ -36,6 +39,18 @@ export class AccountMessengerController {
   ) {
     const identity = await this.identity(tenantId, request.accountAuth!.accountId);
     return this.messenger.messages(tenantId, conversationId, 'person', identity, Number(limit));
+  }
+
+  @UseGuards(AccountGuard)
+  @Post(':tenantId/account/messenger/conversations/:conversationId/read')
+  async markRead(
+    @Param('tenantId') tenantId: string,
+    @Param('conversationId') conversationId: string,
+    @Req() request: AccountRequest,
+  ) {
+    const identity = await this.identity(tenantId, request.accountAuth!.accountId);
+    await this.messenger.messages(tenantId, conversationId, 'person', identity, 1);
+    return markMessengerConversationRead(this.prisma, tenantId, conversationId, 'outbound');
   }
 
   @UseGuards(AccountGuard)

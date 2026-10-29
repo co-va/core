@@ -1,3 +1,4 @@
+import './unread-runtime.js';
 import { getGlobalAccountRelationships } from '../account/index.js';
 import {
   createProfessionalMessengerGroup,
@@ -13,6 +14,8 @@ import {
   getEndUserMessengerMessages,
   getProfessionalMessengerConversations,
   getProfessionalMessengerMessages,
+  markEndUserMessengerConversationRead,
+  markProfessionalMessengerConversationRead,
   pinEndUserMessengerMessage,
   pinProfessionalMessengerMessage,
   reactEndUserMessengerMessage,
@@ -33,6 +36,13 @@ function directConversation(conversations = []) {
   return (Array.isArray(conversations) ? conversations : []).find((item) => String(item?.type || '').toUpperCase() === 'DIRECT') || null;
 }
 
+function notifyThreadRead(conversationId) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('va-tools:chat-thread-read', {
+    detail: { conversationId: String(conversationId || '') },
+  }));
+}
+
 export async function getProfessionalChatThreads() {
   return getProfessionalMessengerConversations();
 }
@@ -44,7 +54,10 @@ export async function ensureProfessionalChatThread(identity = {}) {
 
 export async function getProfessionalChatThread(identity = {}) {
   const conversation = await ensureProfessionalChatThread(identity);
-  return getProfessionalMessengerMessages(conversation.id);
+  const messages = await getProfessionalMessengerMessages(conversation.id);
+  await markProfessionalMessengerConversationRead(conversation.id);
+  notifyThreadRead(conversation.id);
+  return messages;
 }
 
 export async function sendProfessionalChatMessage({ conversationId = '', phone = '', uei = '', body = '', attachments = [], replyToId = '' } = {}) {
@@ -71,7 +84,10 @@ export async function getEndUserChatConversation(tenantId) {
 
 export async function getEndUserChatThread(tenantId, conversationId = '') {
   const conversation = conversationId ? { id: conversationId } : await getEndUserChatConversation(tenantId);
-  return getEndUserMessengerMessages(tenantId, conversation.id);
+  const messages = await getEndUserMessengerMessages(tenantId, conversation.id);
+  await markEndUserMessengerConversationRead(tenantId, conversation.id);
+  notifyThreadRead(conversation.id);
+  return messages;
 }
 
 export async function sendEndUserChatMessage(tenantId, body, attachments = [], { conversationId = '', replyToId = '' } = {}) {

@@ -145,14 +145,33 @@ export class WebPushService {
 
   private async globalUnreadCount(accountId: string) {
     const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number | string }>>`
-      SELECT COUNT(*) AS "count"
-      FROM "NotificationDelivery" d
-      INNER JOIN "AccountContact" c
-        ON c."accountId" = ${accountId}
-       AND c."type" = 'PHONE'
-       AND c."value" = d."recipientKey"
-      WHERE d."channel" = 'IN_APP'
-        AND d."readAt" IS NULL
+      SELECT (
+        (
+          SELECT COUNT(*)
+          FROM "NotificationDelivery" d
+          INNER JOIN "AccountContact" c
+            ON c."accountId" = ${accountId}
+           AND c."type" = 'PHONE'
+           AND c."value" = d."recipientKey"
+          WHERE d."channel" = 'IN_APP'
+            AND d."readAt" IS NULL
+        ) + (
+          SELECT COUNT(*)
+          FROM "CommunicationMessage" m
+          INNER JOIN "AccountTenantLink" l
+            ON l."accountId" = ${accountId}
+           AND l."tenantId" = m."tenantId"
+          INNER JOIN "AccountContact" c
+            ON c."accountId" = ${accountId}
+           AND c."type" = 'PHONE'
+           AND c."value" = m."personPhone"
+          WHERE m."direction" = 'outbound'
+            AND m."purpose" = 'DIRECT'
+            AND m."readAt" IS NULL
+            AND m."failedAt" IS NULL
+            AND m."status" <> 'failed'
+        )
+      )::int AS "count"
     `;
     const count = Number(rows[0]?.count || 0);
     return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;

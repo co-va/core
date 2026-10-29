@@ -1,11 +1,21 @@
 async function syncAppBadge(count) {
   const value = Math.max(0, Math.trunc(Number(count) || 0));
   try {
-    if (value > 0 && typeof self.registration.setAppBadge === 'function') {
-      await self.registration.setAppBadge(value);
-    } else if (value <= 0 && typeof self.registration.clearAppBadge === 'function') {
-      await self.registration.clearAppBadge();
+    if (value > 0 && typeof self.navigator?.setAppBadge === 'function') {
+      await self.navigator.setAppBadge(value);
+    } else if (value <= 0 && typeof self.navigator?.clearAppBadge === 'function') {
+      await self.navigator.clearAppBadge();
     }
+  } catch {}
+}
+
+async function notifyUnreadClients(count) {
+  try {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    clients.forEach((client) => client.postMessage({
+      type: 'va-tools:push-unread',
+      count: Math.max(0, Math.trunc(Number(count) || 0)),
+    }));
   } catch {}
 }
 
@@ -31,6 +41,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(Promise.all([
     self.registration.showNotification(title, options),
     syncAppBadge(payload.badgeCount),
+    notifyUnreadClients(payload.badgeCount),
   ]));
 });
 
