@@ -103,27 +103,17 @@ export class PlatformNoticeService {
 
   private async unreadCount(platformAccountId: string, tenantId: string) {
     const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number | string }>>`
-      SELECT (
-        (
-          SELECT COUNT(*)
-          FROM "PlatformNotice" n
-          WHERE n."platformAccountId" = ${platformAccountId}
-            AND (${tenantId} = '' OR n."tenantId" = ${tenantId})
-            AND n."readAt" IS NULL
-        ) + (
-          SELECT COUNT(*)
-          FROM "CommunicationMessage" m
-          INNER JOIN "Membership" membership
-            ON membership."tenantId" = m."tenantId"
-           AND membership."platformAccountId" = ${platformAccountId}
-          WHERE (${tenantId} = '' OR m."tenantId" = ${tenantId})
-            AND m."direction" = 'inbound'
-            AND m."purpose" = 'DIRECT'
-            AND m."readAt" IS NULL
-            AND m."failedAt" IS NULL
-            AND m."status" <> 'failed'
-        )
-      )::int AS "count"
+      SELECT COUNT(*)::int AS "count"
+      FROM "CommunicationMessage" m
+      INNER JOIN "Membership" membership
+        ON membership."tenantId" = m."tenantId"
+       AND membership."platformAccountId" = ${platformAccountId}
+      WHERE (${tenantId} = '' OR m."tenantId" = ${tenantId})
+        AND m."direction" = 'inbound'
+        AND m."purpose" = 'DIRECT'
+        AND m."readAt" IS NULL
+        AND m."failedAt" IS NULL
+        AND m."status" <> 'failed'
     `;
     const count = Number(rows[0]?.count || 0);
     return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
