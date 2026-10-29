@@ -10,7 +10,6 @@ import {
   syncWebPush,
   webPushFailureMessage,
 } from '../core/notifications/web-push.js';
-import { USER_ORIGIN } from '../core/environment.js';
 import { button, escapeHtml, modal, mountModal } from '../ui/ui.js';
 
 function removeTelegramEntryFromUrl({ removeBooking = false } = {}) {
@@ -71,13 +70,10 @@ export async function startAccountRuntime({
         return;
       }
 
-      // An unknown Telegram must never inherit whichever Account happened to
-      // be left authenticated in this browser. Force explicit identity first.
       clearAccount(tenant);
       telegramReadyForBind = true;
     } catch {
-      // Do not bind an unresolved Telegram ticket to an arbitrary existing
-      // browser session. Resolution will retry while the ticket remains valid.
+      // Do not bind an unresolved Telegram ticket to an arbitrary existing browser session.
     } finally {
       telegramResolving = false;
     }
@@ -106,16 +102,8 @@ export async function startAccountRuntime({
   };
 }
 
-function endUserRootApp() {
-  if (typeof window === 'undefined') return false;
-  const path = String(location.pathname || '/').replace(/\/+$/, '') || '/';
-  const host = String(location.hostname || '').toLowerCase();
-  const userHost = new URL(USER_ORIGIN).hostname.toLowerCase();
-  return host === userHost && path === '/' && !new URLSearchParams(location.search).has('tg_entry');
-}
-
 function accountAppReady() {
-  return Boolean(document.querySelector('#app [data-v2-app]'));
+  return Boolean(document.querySelector('[data-v2-app] [data-account-deck-item]'));
 }
 
 function pushSetupModal(initialStatus = '') {
@@ -131,8 +119,6 @@ function pushSetupModal(initialStatus = '') {
 }
 
 export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
-  if (!endUserRootApp()) return () => {};
-
   let disposed = false;
   let busy = false;
   let promptShown = false;
@@ -210,8 +196,6 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
 let disposeRootTelegramRuntime = () => {};
 const rootTelegramRoute = rootTelegramEntryRoute();
 if (rootTelegramRoute) {
-  // Telegram entry at user.va-tools.ru root is a real account-entry route.
-  // Drop any unrelated browser Account before the async ticket is resolved.
   clearAccount(rootTelegramRoute.tenantId);
   void startAccountRuntime({
     ...rootTelegramRoute,
@@ -226,7 +210,7 @@ if (rootTelegramRoute) {
 }
 
 let disposeGlobalAccountPushRuntime = () => {};
-if (!rootTelegramRoute && endUserRootApp()) {
+if (!rootTelegramRoute) {
   disposeGlobalAccountPushRuntime = startGlobalAccountPushRuntime();
   window.addEventListener('pagehide', () => disposeGlobalAccountPushRuntime(), { once: true });
 }
