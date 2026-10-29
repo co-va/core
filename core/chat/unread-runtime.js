@@ -8,6 +8,7 @@ let refreshBusy = false;
 let refreshQueued = false;
 let pendingReadRow = null;
 let timer = null;
+let appReadyRefreshDone = false;
 
 function isEndUserRuntime() {
   return String(globalThis.location?.hostname || '').toLowerCase() === USER_HOST;
@@ -46,7 +47,8 @@ function syncHeaderBadges(total) {
       badge.className = 'v2-header__badge';
       button.append(badge);
     }
-    badge.textContent = String(Math.min(99, count));
+    const next = String(Math.min(99, count));
+    if (badge.textContent !== next) badge.textContent = next;
   });
 }
 
@@ -55,7 +57,9 @@ function syncThreadUnreadRows() {
   document.querySelectorAll('[data-chat-thread]').forEach((row) => {
     const indicator = row.querySelector('.list-entry__right small');
     const unread = /\b(?:новое|новых|нов)\b/i.test(String(indicator?.textContent || ''));
-    row.classList.toggle('chat-thread--unread', unread);
+    if (row.classList.contains('chat-thread--unread') !== unread) {
+      row.classList.toggle('chat-thread--unread', unread);
+    }
   });
 }
 
@@ -126,7 +130,10 @@ if (typeof document !== 'undefined') {
     const current = normalizedCount(globalThis[CHAT_UNREAD_KEY]?.total);
     syncHeaderBadges(current);
     syncThreadUnreadRows();
-    if (document.querySelector('[data-v2-app]')) scheduleRefresh();
+    if (!appReadyRefreshDone && document.querySelector('[data-v2-app]')) {
+      appReadyRefreshDone = true;
+      scheduleRefresh();
+    }
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }
