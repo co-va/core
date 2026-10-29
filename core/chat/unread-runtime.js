@@ -57,7 +57,11 @@ function syncThreadUnreadRows() {
   if (typeof document === 'undefined') return;
   document.querySelectorAll('[data-chat-thread]').forEach((row) => {
     const indicator = row.querySelector('.list-entry__right small');
-    const unread = /\d+\s+нов/i.test(String(indicator?.textContent || ''));
+    const label = String(indicator?.textContent || '').replace(/^🔴\s*/u, '');
+    const unread = /\d+\s+нов/i.test(label);
+    if (indicator && unread && indicator.textContent !== `🔴 ${label}`) {
+      indicator.textContent = `🔴 ${label}`;
+    }
     if (row.classList.contains('chat-thread--unread') !== unread) {
       row.classList.toggle('chat-thread--unread', unread);
     }
