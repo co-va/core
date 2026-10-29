@@ -33,7 +33,7 @@ function scopedWebPushStorageKey(baseKey) {
   return scope ? `${baseKey}:${encodeURIComponent(scope)}` : '';
 }
 
-function clearLegacyWebPushOptOut() {
+function clearUnscopedWebPushOptOut() {
   if (typeof localStorage === 'undefined') return;
   try {
     // Older builds stored one refusal for the whole browser. It cannot be safely
@@ -48,7 +48,7 @@ function clearLegacyWebPushOptOut() {
 function setWebPushOptOut(value) {
   if (typeof localStorage === 'undefined') return;
   try {
-    clearLegacyWebPushOptOut();
+    clearUnscopedWebPushOptOut();
     const optOutKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_KEY);
     const sourceKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_SOURCE_KEY);
     if (!optOutKey || !sourceKey) return;
@@ -65,7 +65,7 @@ function setWebPushOptOut(value) {
 function setWebPushOptOutSource(source = '') {
   if (typeof localStorage === 'undefined') return;
   try {
-    clearLegacyWebPushOptOut();
+    clearUnscopedWebPushOptOut();
     const sourceKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_SOURCE_KEY);
     if (!sourceKey) return;
     const normalized = String(source || '').trim();
@@ -79,7 +79,7 @@ function setWebPushOptOutSource(source = '') {
 export function webPushOptedOut() {
   if (typeof localStorage === 'undefined') return false;
   try {
-    clearLegacyWebPushOptOut();
+    clearUnscopedWebPushOptOut();
     const optOutKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_KEY);
     const sourceKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_SOURCE_KEY);
     if (!optOutKey || !sourceKey) return false;
@@ -90,7 +90,7 @@ export function webPushOptedOut() {
     if (source === 'manual' || source === 'denied') return true;
 
     // Earlier scoped builds may have stored bare `1` without a reliable refusal
-    // source. Migrate it instead of suppressing Push forever.
+    // source. Clear it instead of suppressing Push forever.
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
       setWebPushOptOutSource('denied');
       return true;
