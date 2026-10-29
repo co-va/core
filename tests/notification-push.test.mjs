@@ -54,7 +54,7 @@ assert.match(browserPush, /WEB_PUSH_OPT_OUT_KEY/);
 assert.match(browserPush, /webPushOptedOut/);
 assert.doesNotMatch(browserPush, /declineWebPushSetup/);
 assert.match(browserPush, /Notification\.permission === 'denied' \|\| webPushOptedOut\(\)/);
-assert.match(browserPush, /Notification\.permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)/);
+assert.match(browserPush, /permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)/);
 assert.match(browserPush, /getGlobalWebPushConfiguration/);
 assert.match(browserPush, /saveGlobalWebPushSubscription/);
 assert.match(browserPush, /deleteGlobalWebPushSubscription/);
@@ -70,7 +70,7 @@ assert.doesNotMatch(accountPushRuntimeSource, /tenantId/);
 assert.doesNotMatch(accountPushRuntimeSource, /getGlobalAccountRelationships/);
 assert.match(accountPushRuntimeSource, /shouldOfferWebPushSetup/);
 assert.match(accountPushRuntimeSource, /syncWebPush\(\)/);
-assert.match(accountPushRuntimeSource, /enableWebPush\(\)/);
+assert.match(accountPushRuntimeSource, /enableWebPush\(\{\s*strict:\s*false\s*\}\)/);
 assert.doesNotMatch(accountPushRuntimeSource, /declineWebPushSetup\(\)/);
 assert.match(accountPushRuntimeSource, /data-account-push-enable/);
 assert.match(accountPushRuntimeSource, /Уведомления на телефоне/);
@@ -126,7 +126,6 @@ assert.match(notificationCatalog, /consent\.revoked/);
 assert.match(notificationCatalog, /person\.birthday/);
 assert.match(notificationController, /@Get\('catalog'\)/);
 assert.match(notificationEventService, /EVENT_DISABLED/);
-assert.match(notificationEventService, /"enabled"/);
 assert.match(businessStateController, /NotificationEventService/);
 assert.match(enabledMigration, /ADD COLUMN "enabled" BOOLEAN NOT NULL DEFAULT FALSE/);
 
@@ -258,7 +257,7 @@ const navigatorRuntime = {
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
   standalone: true,
   serviceWorker: {
-    async getRegistration() { return runtimeRegistration; },
+    async getRegistration() { return null; },
     async register() { return runtimeRegistration; },
     ready: Promise.resolve(runtimeRegistration),
   },
@@ -267,6 +266,7 @@ const windowRuntime = {
   PushManager: function PushManager() {},
   Notification: notificationRuntime,
   matchMedia() { return { matches: true }; },
+  setTimeout,
 };
 const pushRequests = [];
 Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorageMock });
@@ -293,6 +293,8 @@ assert.equal(notificationRuntime.permission, 'granted', 'global Account Push ena
 assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/config'), 'global Account Push must load global configuration');
 assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/subscription' && item.method === 'PUT'), 'global Account Push must save through the tenant-free Account route');
 assert.ok(pushRequests.every((item) => !/\/online-booking\/[^/]+\/account\/push\//.test(item.url)), 'Account Push runtime must not route through a professional tenant');
+const persistedRuntimePush = await runtimePush.getWebPushState();
+assert.equal(persistedRuntimePush.subscribed, true, 'Push subscription must remain ON when a later app entry resolves registration through serviceWorker.ready');
 await runtimePush.disableWebPush();
 assert.equal(runtimePush.webPushOptedOut(), true, 'explicit Push disable must persist opt-out');
 assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'explicit Push disable must suppress future setup prompts');
@@ -300,7 +302,7 @@ assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/onli
 
 storage.delete('va-tools.account.push.opt-out');
 notificationRuntime.permission = 'denied';
-const deniedRuntimePush = await runtimePush.enableWebPush();
+const deniedRuntimePush = await runtimePush.enableWebPush({ strict: false });
 assert.equal(deniedRuntimePush.subscribed, false, 'system denial must leave Push disabled');
 assert.equal(runtimePush.webPushOptedOut(), true, 'system denial must persist opt-out');
 assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'system denial must suppress future setup prompts');

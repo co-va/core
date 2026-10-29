@@ -36,7 +36,7 @@ const accountSetupRuntime = accountRuntime.slice(
 );
 assert.doesNotMatch(accountSetupRuntime, /getGlobalAccountRelationships/);
 assert.doesNotMatch(accountSetupRuntime, /tenantId/);
-assert.match(accountSetupRuntime, /enableWebPush\(\)/);
+assert.match(accountSetupRuntime, /enableWebPush\(\{\s*strict:\s*false\s*\}\)/);
 assert.match(accountSetupRuntime, /Не сейчас/);
 assert.doesNotMatch(accountSetupRuntime, /declineWebPushSetup|setWebPushOptOut/);
 
@@ -77,9 +77,18 @@ assert.match(globalControls, /checked:\s*pushSubscribed/);
 assert.match(accountSetupRuntime, /synchronized = true;[\s\S]*?layer\.remove\(\)/);
 assert.match(platformNotices, /button\('Не сейчас'/);
 
+// Device state must survive a new app entry. iOS may expose the active registration through
+// ServiceWorkerContainer.ready even when getRegistration('/') does not return it immediately.
+assert.match(accountPush, /async function resolveWebPushRegistration/);
+assert.match(accountPush, /navigator\.serviceWorker\.getRegistration\('\/'\)/);
+assert.match(accountPush, /navigator\.serviceWorker\.ready/);
+assert.match(accountPush, /export async function enableWebPush\(\{ strict = true \} = \{\}\)/);
+assert.match(accountPush, /strict && !state\?\.subscribed/);
+assert.match(accountPush, /syncWebPush\(permission\)/);
+
 // Explicit OS denial or manual Profile disable is sticky in both application roles;
 // automatic startup must not undo it.
-assert.match(accountPush, /Notification\.permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('denied'\)/);
+assert.match(accountPush, /permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('denied'\)/);
 assert.match(accountPush, /export async function disableWebPush\(\)[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('manual'\)/);
 assert.match(platformNotices, /Notification\.permission !== 'granted'[\s\S]*setPlatformPushOptOut\(true\)/);
 assert.match(platformNotices, /export async function disablePlatformPush\(\)[\s\S]*setPlatformPushOptOut\(true\)/);
