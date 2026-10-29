@@ -39,6 +39,8 @@ assert.doesNotMatch(accountSetupRuntime, /tenantId/);
 assert.match(accountSetupRuntime, /enableWebPush\(\{\s*strict:\s*false\s*\}\)/);
 assert.match(accountSetupRuntime, /Не сейчас/);
 assert.doesNotMatch(accountSetupRuntime, /declineWebPushSetup|setWebPushOptOut/);
+assert.match(accountSetupRuntime, /Notification\.permission === 'granted'[\s\S]*getWebPushState\(\)/);
+assert.match(accountSetupRuntime, /if \(current\?\.subscribed\)[\s\S]*syncWebPush\(\)/);
 
 // A specific chat/contact owns Telegram and consents only; it must not own device Push.
 const chatSettings = accountShell.slice(
