@@ -1,3 +1,4 @@
+import '../chat/unread-runtime.js';
 import { apiRequest } from '../auth.js';
 
 async function jsonResponse(response, fallbackMessage) {

@@ -19,6 +19,8 @@ type PushDeliveryRow = {
   auth: string;
 };
 
+const SERVICE_UNSEEN_ROLLOUT_AT = new Date('2026-10-29T17:20:31.000Z');
+
 function text(value: unknown) {
   return String(value ?? '').trim();
 }
@@ -145,20 +147,42 @@ export class WebPushService {
 
   private async globalUnreadCount(accountId: string) {
     const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number | string }>>`
-      SELECT COUNT(*)::int AS "count"
-      FROM "CommunicationMessage" m
-      INNER JOIN "AccountTenantLink" l
-        ON l."accountId" = ${accountId}
-       AND l."tenantId" = m."tenantId"
-      INNER JOIN "AccountContact" c
-        ON c."accountId" = ${accountId}
-       AND c."type" = 'PHONE'
-       AND c."value" = m."personPhone"
-      WHERE m."direction" = 'outbound'
-        AND m."purpose" = 'DIRECT'
-        AND m."readAt" IS NULL
-        AND m."failedAt" IS NULL
-        AND m."status" <> 'failed'
+      SELECT (
+        (
+          SELECT COUNT(*)
+          FROM "CommunicationMessage" m
+          INNER JOIN "AccountTenantLink" l
+            ON l."accountId" = ${accountId}
+           AND l."tenantId" = m."tenantId"
+          INNER JOIN "AccountContact" c
+            ON c."accountId" = ${accountId}
+           AND c."type" = 'PHONE'
+           AND c."value" = m."personPhone"
+          WHERE m."direction" = 'outbound'
+            AND m."purpose" = 'DIRECT'
+            AND m."readAt" IS NULL
+            AND m."failedAt" IS NULL
+            AND m."status" <> 'failed'
+        ) + (
+          SELECT COUNT(*)
+          FROM "Notification" n
+          INNER JOIN "NotificationDelivery" d
+            ON d."notificationId" = n."id"
+           AND d."tenantId" = n."tenantId"
+           AND d."channel" = 'IN_APP'
+          INNER JOIN "AccountTenantLink" l
+            ON l."accountId" = ${accountId}
+           AND l."tenantId" = n."tenantId"
+          INNER JOIN "AccountContact" c
+            ON c."accountId" = ${accountId}
+           AND c."type" = 'PHONE'
+           AND c."value" = d."recipientKey"
+          WHERE n."purpose" = 'SERVICE'
+            AND n."entityType" = 'record'
+            AND n."createdAt" >= ${SERVICE_UNSEEN_ROLLOUT_AT}
+            AND d."readAt" IS NULL
+        )
+      )::int AS "count"
     `;
     const count = Number(rows[0]?.count || 0);
     return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;

@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma.service';
 
+const SERVICE_UNSEEN_ROLLOUT_AT = new Date('2026-10-29T17:20:31.000Z');
+
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }
@@ -103,17 +105,29 @@ export class PlatformNoticeService {
 
   private async unreadCount(platformAccountId: string, tenantId: string) {
     const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number | string }>>`
-      SELECT COUNT(*)::int AS "count"
-      FROM "CommunicationMessage" m
-      INNER JOIN "Membership" membership
-        ON membership."tenantId" = m."tenantId"
-       AND membership."platformAccountId" = ${platformAccountId}
-      WHERE (${tenantId} = '' OR m."tenantId" = ${tenantId})
-        AND m."direction" = 'inbound'
-        AND m."purpose" = 'DIRECT'
-        AND m."readAt" IS NULL
-        AND m."failedAt" IS NULL
-        AND m."status" <> 'failed'
+      SELECT (
+        (
+          SELECT COUNT(*)
+          FROM "CommunicationMessage" m
+          INNER JOIN "Membership" membership
+            ON membership."tenantId" = m."tenantId"
+           AND membership."platformAccountId" = ${platformAccountId}
+          WHERE (${tenantId} = '' OR m."tenantId" = ${tenantId})
+            AND m."direction" = 'inbound'
+            AND m."purpose" = 'DIRECT'
+            AND m."readAt" IS NULL
+            AND m."failedAt" IS NULL
+            AND m."status" <> 'failed'
+        ) + (
+          SELECT COUNT(*)
+          FROM "PlatformNotice" n
+          WHERE n."platformAccountId" = ${platformAccountId}
+            AND (${tenantId} = '' OR n."tenantId" = ${tenantId})
+            AND n."type" = 'BOOKING_CREATED'
+            AND n."createdAt" >= ${SERVICE_UNSEEN_ROLLOUT_AT}
+            AND n."readAt" IS NULL
+        )
+      )::int AS "count"
     `;
     const count = Number(rows[0]?.count || 0);
     return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;

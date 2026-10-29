@@ -146,6 +146,10 @@ async function listNotices() {
   return jsonResponse(await apiRequest('/platform-notices'), 'Не удалось получить системные уведомления');
 }
 
+export async function getPlatformNotices() {
+  return listNotices();
+}
+
 export async function getUnreadPlatformNoticeCount() {
   const rows = await listNotices();
   return (Array.isArray(rows) ? rows : []).filter((item) => !item?.readAt).length;
@@ -156,8 +160,16 @@ async function markRead(id) {
     method: 'POST',
     body: JSON.stringify({}),
   }), 'Не удалось отметить уведомление');
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('va-tools:chat-unread-refresh'));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('va-tools:service-unseen-refresh'));
   return result;
+}
+
+export async function markPlatformNoticeSeen(id) {
+  return markRead(id);
+}
+
+function recordServiceNotice(item) {
+  return String(item?.type || '').trim().toUpperCase() === 'BOOKING_CREATED';
 }
 
 function noticeModal(item) {
@@ -269,7 +281,7 @@ export function startPlatformNotices({
     try {
       const rows = await listNotices();
       const unread = (Array.isArray(rows) ? rows : [])
-        .filter((item) => !item.readAt && !shown.has(item.id))
+        .filter((item) => !item.readAt && !shown.has(item.id) && !recordServiceNotice(item))
         .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
       const item = unread[0];
       if (!item) return;

@@ -1,4 +1,5 @@
 import { getAccountToken } from '../account/index.js';
+import './service-unseen.js';
 import {
   deleteGlobalWebPushSubscription,
   getGlobalWebPushConfiguration,
@@ -37,8 +38,6 @@ function scopedWebPushStorageKey(baseKey) {
 function clearUnscopedWebPushOptOut() {
   if (typeof localStorage === 'undefined') return;
   try {
-    // Older builds stored one refusal for the whole browser. It cannot be safely
-    // attributed to an Account, so it must not suppress another Account on the device.
     localStorage.removeItem(WEB_PUSH_OPT_OUT_KEY);
     localStorage.removeItem(WEB_PUSH_OPT_OUT_SOURCE_KEY);
   } catch {
@@ -90,8 +89,6 @@ export function webPushOptedOut() {
     const source = String(localStorage.getItem(sourceKey) || '').trim();
     if (source === 'manual' || source === 'denied') return true;
 
-    // Earlier scoped builds may have stored bare `1` without a reliable refusal
-    // source. Clear it instead of suppressing Push forever.
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
       setWebPushOptOutSource('denied');
       return true;

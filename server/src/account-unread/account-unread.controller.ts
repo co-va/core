@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { AccountGuard } from '../online-booking/account.guard';
 import { AccountUnreadService } from './account-unread.service';
@@ -13,5 +13,18 @@ export class AccountUnreadController {
   @Get('unread-summary')
   summary(@Req() request: AccountRequest) {
     return this.unread.summary(request.accountAuth!.accountId);
+  }
+
+  @Get('service-unseen')
+  serviceUnseen(@Req() request: AccountRequest) {
+    return this.unread.serviceUnseen(request.accountAuth!.accountId);
+  }
+
+  @Post('service-unseen/seen')
+  markServiceSeen(
+    @Req() request: AccountRequest,
+    @Body() body: { recordIds?: unknown },
+  ) {
+    return this.unread.markServiceRecordsSeen(request.accountAuth!.accountId, body?.recordIds);
   }
 }
