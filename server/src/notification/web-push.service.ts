@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma.service';
 
 type WebPushSubscriptionRow = {
   id: string;
-  tenantId: string;
+  tenantId: string | null;
   accountId: string;
   endpoint: string;
   p256dh: string;
@@ -82,7 +82,7 @@ export class WebPushService {
   }
 
   async saveSubscription(
-    tenantId: string,
+    tenantId: string | null,
     accountId: string,
     input: unknown,
     userAgent = '',
@@ -98,9 +98,8 @@ export class WebPushService {
     const auth = text(keys.auth);
     if (!validEndpoint(endpoint) || !p256dh || !auth) throw new BadRequestException('Некорректная Push-подписка');
 
-    // A browser Push endpoint belongs to the global Account/device, not to one
-    // professional relationship. tenantId records the registration context while
-    // routing is resolved by accountId.
+    // A browser Push endpoint belongs to the global Account/device. tenantId is
+    // optional legacy registration context only; delivery routing uses accountId.
     await this.prisma.$executeRaw`
       INSERT INTO "WebPushSubscription" (
         "id", "tenantId", "accountId", "endpoint", "p256dh", "auth", "userAgent", "createdAt", "updatedAt"
@@ -118,7 +117,7 @@ export class WebPushService {
     return { subscribed: true, endpoint };
   }
 
-  async deleteSubscription(_tenantId: string, accountId: string, endpointValue: unknown) {
+  async deleteSubscription(_tenantId: string | null, accountId: string, endpointValue: unknown) {
     const endpoint = text(endpointValue);
     if (!endpoint) return { subscribed: false };
     await this.prisma.$executeRaw`
@@ -128,7 +127,7 @@ export class WebPushService {
     return { subscribed: false };
   }
 
-  async listAccountEndpoints(_tenantId: string, accountId: string) {
+  async listAccountEndpoints(_tenantId: string | null, accountId: string) {
     if (!this.vapid().enabled) return [];
     const rows = await this.prisma.$queryRaw<Array<{ endpoint: string }>>`
       SELECT "endpoint"
