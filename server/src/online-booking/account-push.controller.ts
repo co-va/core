@@ -24,7 +24,6 @@ export class AccountPushController {
       ? request.headers['user-agent'][0] || ''
       : request.headers['user-agent'] || '';
     return this.webPush.saveSubscription(
-      null,
       request.accountAuth!.accountId,
       body?.subscription,
       userAgent,
@@ -36,6 +35,6 @@ export class AccountPushController {
     @Req() request: AccountRequest,
     @Body() body: { endpoint?: unknown },
   ) {
-    return this.webPush.deleteSubscription(null, request.accountAuth!.accountId, body?.endpoint);
+    return this.webPush.deleteSubscription(request.accountAuth!.accountId, body?.endpoint);
   }
 }
