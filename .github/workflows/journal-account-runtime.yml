@@ -8,6 +8,11 @@ on:
       - 'tests/journal-account-runtime-browser.html'
       - 'tests/journal-account-day-range-runtime-browser.html'
       - 'tests/journal-account-action-x-runtime-browser.html'
+      - 'tests/account-push-runtime-browser.html'
+      - 'online-booking/account-runtime.js'
+      - 'online-booking/account-shell.js'
+      - 'core/notifications/web-push.js'
+      - 'core/notifications/account-push-api.js'
       - 'journal/**'
       - 'core/day/**'
       - 'core/time/**'
@@ -26,6 +31,11 @@ on:
       - 'tests/journal-account-runtime-browser.html'
       - 'tests/journal-account-day-range-runtime-browser.html'
       - 'tests/journal-account-action-x-runtime-browser.html'
+      - 'tests/account-push-runtime-browser.html'
+      - 'online-booking/account-runtime.js'
+      - 'online-booking/account-shell.js'
+      - 'core/notifications/web-push.js'
+      - 'core/notifications/account-push-api.js'
       - 'journal/**'
       - 'core/day/**'
       - 'core/time/**'
@@ -120,4 +130,5 @@ jobs:
           run_browser_case "tests/journal-account-runtime-browser.html" 'data-journal-account-runtime="pass"' 'data-journal-account-runtime-stage' /tmp/journal-account-runtime-dom.html
           run_browser_case "tests/journal-account-day-range-runtime-browser.html" 'data-journal-account-day-range-runtime="pass"' 'data-journal-account-day-range-runtime-stage' /tmp/journal-account-day-range-runtime-dom.html
           run_browser_case "tests/journal-account-action-x-runtime-browser.html" 'data-journal-account-action-x-runtime="pass"' 'data-journal-account-action-x-runtime-stage' /tmp/journal-account-action-x-runtime-dom.html
+          run_browser_case "tests/account-push-runtime-browser.html" 'data-account-push-runtime="pass"' 'data-account-push-runtime-stage' /tmp/account-push-runtime-dom.html
           echo "Journal account runtime: PASS"
