@@ -62,7 +62,7 @@ assert.doesNotMatch(browserPush, /saveWebPushSubscription/);
 assert.doesNotMatch(browserPush, /deleteWebPushSubscription/);
 assert.match(accountRuntime, /startGlobalAccountPushRuntime/);
 const accountPushRuntimeSource = accountRuntime.slice(
-  accountRuntime.indexOf('export function startGlobalAccountPushRuntime'),
+  accountRuntime.indexOf('function pushSetupModal'),
   accountRuntime.indexOf('let disposeRootTelegramRuntime'),
 );
 assert.doesNotMatch(accountPushRuntimeSource, /tenantId/);
