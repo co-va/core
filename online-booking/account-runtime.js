@@ -5,12 +5,22 @@ import {
   resolveAccountTelegramEntry,
 } from '../core/account/index.js';
 
-function removeTelegramEntryFromUrl() {
+function removeTelegramEntryFromUrl({ removeBooking = false } = {}) {
   const url = new URL(location.href);
-  if (!url.searchParams.has('tg_entry') && !url.searchParams.has('tg_tenant')) return;
+  if (!url.searchParams.has('tg_entry') && (!removeBooking || !url.searchParams.has('booking'))) return;
   url.searchParams.delete('tg_entry');
-  url.searchParams.delete('tg_tenant');
+  if (removeBooking) url.searchParams.delete('booking');
   history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function continueTelegramEntryToBooking(tenantId) {
+  const tenant = String(tenantId || '').trim();
+  if (!tenant) return;
+  const url = new URL(location.href);
+  url.searchParams.delete('tg_entry');
+  url.searchParams.set('booking', tenant);
+  url.searchParams.set('entry', 'account-booking');
+  location.replace(`${url.pathname}${url.search}${url.hash}`);
 }
 
 function rootTelegramEntryRoute() {
@@ -18,7 +28,7 @@ function rootTelegramEntryRoute() {
   const path = String(location.pathname || '/').replace(/\/+$/, '') || '/';
   if (path !== '/') return null;
   const params = new URLSearchParams(location.search);
-  const tenantId = String(params.get('tg_tenant') || '').trim();
+  const tenantId = String(params.get('booking') || '').trim();
   const telegramEntry = String(params.get('tg_entry') || '').trim();
   return tenantId && telegramEntry ? { tenantId, telegramEntry } : null;
 }
@@ -91,13 +101,14 @@ export async function startAccountRuntime({
 let disposeRootTelegramRuntime = () => {};
 const rootTelegramRoute = rootTelegramEntryRoute();
 if (rootTelegramRoute) {
-  // A Telegram identity link is an ordinary browser account-entry route.
+  // Telegram entry at user.va-tools.ru root is a real account-entry route.
   // Drop any unrelated browser Account before the async ticket is resolved.
   clearAccount(rootTelegramRoute.tenantId);
   void startAccountRuntime({
     ...rootTelegramRoute,
     onTelegramEntryCompleted: () => {
       disposeRootTelegramRuntime();
+      continueTelegramEntryToBooking(rootTelegramRoute.tenantId);
     },
   }).then((dispose) => {
     disposeRootTelegramRuntime = typeof dispose === 'function' ? dispose : () => {};
