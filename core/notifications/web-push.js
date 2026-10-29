@@ -12,15 +12,40 @@ function decodeBase64Url(value) {
   return Uint8Array.from(raw, (character) => character.charCodeAt(0));
 }
 
-function supported() {
+export function webPushSupported() {
   return typeof navigator !== 'undefined'
+    && typeof window !== 'undefined'
     && 'serviceWorker' in navigator
     && 'PushManager' in window
     && 'Notification' in window;
 }
 
+function installedAppMode() {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
+  const displayStandalone = typeof window.matchMedia === 'function'
+    && window.matchMedia('(display-mode: standalone)').matches;
+  return displayStandalone || navigator.standalone === true;
+}
+
+export function shouldOfferWebPushSetup() {
+  if (installedAppMode()) return webPushSupported();
+  if (!webPushSupported()) return false;
+  const mobileApple = /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
+  const coarsePointer = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  return mobileApple && coarsePointer;
+}
+
+export function webPushFailureMessage(state = {}) {
+  if (!state?.supported) return 'Системные уведомления недоступны на этом устройстве.';
+  if (state?.permission === 'denied') return 'Уведомления запрещены в настройках устройства.';
+  if (!state?.enabled) return 'Push не настроен на сервере приложения.';
+  if (!state?.subscribed) return 'Разрешение получено, но Push-подписка не создана.';
+  return '';
+}
+
 export async function getWebPushState(tenantId) {
-  if (!supported()) return { supported: false, enabled: false, permission: 'unsupported', subscribed: false };
+  if (!webPushSupported()) return { supported: false, enabled: false, permission: 'unsupported', subscribed: false };
   if (!getAccountToken(tenantId)) return { supported: true, enabled: false, permission: Notification.permission, subscribed: false };
   const configuration = await getWebPushConfiguration(tenantId);
   const registration = await navigator.serviceWorker.getRegistration('/');
@@ -34,7 +59,7 @@ export async function getWebPushState(tenantId) {
 }
 
 export async function syncWebPush(tenantId) {
-  if (!supported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
+  if (!webPushSupported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
 
   const configuration = await getWebPushConfiguration(tenantId);
   if (!configuration?.enabled || !configuration?.publicKey) {
@@ -66,6 +91,8 @@ export async function syncWebPush(tenantId) {
     });
   }
 
+  // The server stores the browser endpoint for the global Account. The tenant
+  // route is only the current relationship context used to authenticate this call.
   await saveWebPushSubscription(tenantId, subscription.toJSON());
   return {
     supported: true,
@@ -76,13 +103,13 @@ export async function syncWebPush(tenantId) {
 }
 
 export async function enableWebPush(tenantId) {
-  if (!supported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
+  if (!webPushSupported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
   if (Notification.permission === 'default') await Notification.requestPermission();
   return syncWebPush(tenantId);
 }
 
 export async function disableWebPush(tenantId) {
-  if (!supported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
+  if (!webPushSupported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
   if (subscription) {
