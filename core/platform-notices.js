@@ -31,6 +31,15 @@ function installedAppMode() {
   return displayStandalone || navigator.standalone === true;
 }
 
+function shouldOfferPushSetup() {
+  if (installedAppMode()) return true;
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
+  const mobileApple = /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
+  const coarsePointer = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  return mobileApple && coarsePointer && platformPushSupported();
+}
+
 function platformPushUnavailableMessage() {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') {
     return 'Push недоступен в этом запуске приложения.';
@@ -122,9 +131,6 @@ function noticeModal(item) {
   return `<div class="modal-title">
     <h2>${escapeHtml(item.title || 'Системное уведомление')}</h2>
     <p>${escapeHtml(item.body || '')}</p>
-  </div>
-  <div class="modal-actions">
-    ${button('Понятно', { data: 'data-platform-notice-close' })}
   </div>`;
 }
 
@@ -166,7 +172,7 @@ export function startPlatformNotices({
   }
 
   const offerPush = async () => {
-    if (disposed || pushPromptShown || !installedAppMode()) return;
+    if (disposed || pushPromptShown || !shouldOfferPushSetup()) return;
     if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
       window.setTimeout(() => void offerPush(), 1_500);
       return;
@@ -236,15 +242,17 @@ export function startPlatformNotices({
       shown.add(item.id);
       const layer = mountModal(document.body, modal(noticeModal(item), {
         title: item.title || 'Системное уведомление',
-        variant: 'x',
-        xRole: 'action',
+        variant: 's',
         surface: 'app',
       }));
       if (!layer) return;
       layer.dataset.platformNoticeModal = item.id;
 
-      layer.querySelector('[data-platform-notice-close]')?.addEventListener('click', async () => {
-        layer.remove();
+      let settled = false;
+      const settleNotice = async () => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
         try {
           await markRead(item.id);
         } catch {
@@ -255,7 +263,13 @@ export function startPlatformNotices({
         }
         window.setTimeout(() => void showNext(), 60);
         window.setTimeout(() => void offerPush(), 500);
+      };
+
+      const observer = new MutationObserver(() => {
+        if (!layer.isConnected) void settleNotice();
       });
+      observer.observe(document.body, { childList:true, subtree:true });
+      if (!layer.isConnected) void settleNotice();
     } catch {
       // Системное уведомление не должно блокировать рабочий интерфейс.
     } finally {

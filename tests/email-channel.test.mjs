@@ -76,8 +76,12 @@ assert.match(telegramBot, /\[telegram-api\]/);
 assert.match(telegramBot, /\[telegram-health\]/);
 assert.match(telegramBot, /\[telegram-webhook\]/);
 assert.match(telegramBot, /const isStart =/);
-assert.match(telegramBot, /web_app: \{ url: url\.toString\(\) \}/);
-assert.match(telegramBot, /Открыть приложение/);
+assert.doesNotMatch(telegramBot, /web_app:/);
+assert.doesNotMatch(telegramBot, /Открыть приложение/);
+assert.match(telegramBot, /text: 'Поделиться номером'/);
+assert.match(telegramBot, /request_contact: true/);
+assert.match(telegramBot, /text: 'Записаться'/);
+assert.match(telegramBot, /url: bookingUrl/);
 assert.doesNotMatch(telegramBot, /Открыть Book|Откройте Book/);
 
 assert.match(notification, /ACTIVE_EXTERNAL_CHANNELS = new Set\(\['TELEGRAM', 'EMAIL'\]\)/);
