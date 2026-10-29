@@ -2,7 +2,7 @@ import { API_BASE, USER_ORIGIN } from '../environment.js';
 import { getAccountToken } from '../account/index.js';
 import { getPlatformNotices, markPlatformNoticeSeen } from '../platform-notices.js';
 import { escapeHtml, modal, mountModal } from '../../ui/ui.js';
-import { getServiceUnseenState, publishServiceUnseen } from './app-badge.js';
+import { getServiceUnseenState, publishServiceUnseen, syncApplicationBadge } from './app-badge.js';
 
 const USER_HOST = new URL(USER_ORIGIN).hostname;
 const SERVICE_UNSEEN_ROLLOUT_AT = Date.parse('2026-10-29T17:20:31.000Z');
@@ -90,14 +90,6 @@ async function loadItems() {
   return normalizeProfessionalItems(await getPlatformNotices());
 }
 
-function recordsForItem(item) {
-  return new Set(recordIds(item?.recordIds));
-}
-
-function itemMatchesRecord(item, recordId) {
-  return recordsForItem(item).has(text(recordId));
-}
-
 function unseenRecordIds() {
   return new Set(getServiceUnseenState().items.flatMap((item) => recordIds(item?.recordIds)));
 }
@@ -134,13 +126,20 @@ function syncMarkers() {
   });
 }
 
+function actuallyVisible(node) {
+  if (!node?.isConnected || node.getClientRects().length === 0) return false;
+  const rect = node.getBoundingClientRect();
+  const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
+  const viewportWidth = window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 0;
+  return rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth;
+}
+
 function visibleDayRecordIds() {
   const unseen = unseenRecordIds();
   const ids = [];
   document.querySelectorAll('[data-time-usage]').forEach((usage) => {
     const id = text(usage.dataset.timeUsage);
-    if (!id || !unseen.has(id)) return;
-    if (!usage.isConnected || usage.getClientRects().length === 0) return;
+    if (!id || !unseen.has(id) || !actuallyVisible(usage)) return;
     ids.push(id);
   });
   return [...new Set(ids)];
@@ -198,13 +197,14 @@ function maybeShowSummary() {
   const state = getServiceUnseenState();
   if (state.total <= 0 || !document.querySelector('[data-v2-app]')) return;
   if (document.querySelector('[data-service-summary-modal],[data-platform-notice-modal],[data-account-push-setup-modal],[data-platform-push-setup-modal]')) return;
-  summaryShown = true;
   const layer = mountModal(document.body, modal(`<div class="modal-title"><h2>Уведомления</h2><p>${escapeHtml(summaryText(state.total))}</p></div>`, {
     title: 'Уведомления',
     variant: 's',
     surface: 'app',
   }));
-  if (layer) layer.dataset.serviceSummaryModal = 'true';
+  if (!layer) return;
+  summaryShown = true;
+  layer.dataset.serviceSummaryModal = 'true';
 }
 
 function publish(items) {
@@ -249,6 +249,7 @@ export function startServiceUnseenRuntime() {
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   const onRefresh = () => void refreshServiceUnseen();
+  const onAccountUnread = () => syncApplicationBadge();
   const onFocus = () => {
     if (!document.hidden) void refreshServiceUnseen();
   };
@@ -258,6 +259,7 @@ export function startServiceUnseenRuntime() {
     if (id && unseenRecordIds().has(id)) void markRecordsSeen([id]);
   };
   window.addEventListener('va-tools:service-unseen-refresh', onRefresh);
+  window.addEventListener('va-tools:account-unread', onAccountUnread);
   window.addEventListener('focus', onFocus);
   document.addEventListener('visibilitychange', onFocus);
   document.addEventListener('click', onClick, true);
@@ -275,6 +277,7 @@ export function startServiceUnseenRuntime() {
     if (summaryTimer) window.clearTimeout(summaryTimer);
     window.clearInterval(interval);
     window.removeEventListener('va-tools:service-unseen-refresh', onRefresh);
+    window.removeEventListener('va-tools:account-unread', onAccountUnread);
     window.removeEventListener('focus', onFocus);
     document.removeEventListener('visibilitychange', onFocus);
     document.removeEventListener('click', onClick, true);
