@@ -6,6 +6,7 @@ import {
 } from './account-push-api.js';
 
 const WEB_PUSH_OPT_OUT_KEY = 'va-tools.account.push.opt-out';
+const WEB_PUSH_OPT_OUT_SOURCE_KEY = 'va-tools.account.push.opt-out-source';
 
 function decodeBase64Url(value) {
   const padding = '='.repeat((4 - (String(value || '').length % 4)) % 4);
@@ -18,7 +19,21 @@ function setWebPushOptOut(value) {
   if (typeof localStorage === 'undefined') return;
   try {
     if (value) localStorage.setItem(WEB_PUSH_OPT_OUT_KEY, '1');
-    else localStorage.removeItem(WEB_PUSH_OPT_OUT_KEY);
+    else {
+      localStorage.removeItem(WEB_PUSH_OPT_OUT_KEY);
+      localStorage.removeItem(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+    }
+  } catch {
+    // A storage failure must not block the Account application.
+  }
+}
+
+function setWebPushOptOutSource(source = '') {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const normalized = String(source || '').trim();
+    if (normalized) localStorage.setItem(WEB_PUSH_OPT_OUT_SOURCE_KEY, normalized);
+    else localStorage.removeItem(WEB_PUSH_OPT_OUT_SOURCE_KEY);
   } catch {
     // A storage failure must not block the Account application.
   }
@@ -27,7 +42,21 @@ function setWebPushOptOut(value) {
 export function webPushOptedOut() {
   if (typeof localStorage === 'undefined') return false;
   try {
-    return localStorage.getItem(WEB_PUSH_OPT_OUT_KEY) === '1';
+    const optedOut = localStorage.getItem(WEB_PUSH_OPT_OUT_KEY) === '1';
+    if (!optedOut) return false;
+
+    const source = String(localStorage.getItem(WEB_PUSH_OPT_OUT_SOURCE_KEY) || '').trim();
+    if (source === 'manual' || source === 'denied') return true;
+
+    // Earlier builds stored bare `1` even for deferred setup. That value has no
+    // reliable refusal meaning, so migrate it instead of suppressing Push forever.
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+      setWebPushOptOutSource('denied');
+      return true;
+    }
+
+    setWebPushOptOut(false);
+    return false;
   } catch {
     return false;
   }
@@ -128,6 +157,7 @@ export async function enableWebPush() {
   if (Notification.permission === 'default') await Notification.requestPermission();
   if (Notification.permission !== 'granted') {
     setWebPushOptOut(true);
+    setWebPushOptOutSource('denied');
     return getWebPushState();
   }
   return syncWebPush();
@@ -135,6 +165,7 @@ export async function enableWebPush() {
 
 export async function disableWebPush() {
   setWebPushOptOut(true);
+  setWebPushOptOutSource('manual');
   if (!webPushSupported() || !getAccountToken()) return getWebPushState();
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
