@@ -45,6 +45,18 @@ assert.match(browserPush, /serviceWorker\.register\('\/service-worker\.js'/);
 assert.match(browserPush, /PushManager/);
 assert.match(browserPush, /enableWebPush/);
 assert.match(browserPush, /disableWebPush/);
+assert.match(browserPush, /shouldOfferWebPushSetup/);
+assert.match(browserPush, /webPushFailureMessage/);
+assert.match(accountRuntime, /startGlobalAccountPushRuntime/);
+assert.match(accountRuntime, /getGlobalAccountRelationships/);
+assert.match(accountRuntime, /shouldOfferWebPushSetup/);
+assert.match(accountRuntime, /syncWebPush\(tenantId\)/);
+assert.match(accountRuntime, /enableWebPush\(tenantId\)/);
+assert.match(accountRuntime, /data-account-push-enable/);
+assert.match(accountRuntime, /Уведомления на телефоне/);
+assert.match(accountRuntime, /variant: 'x'/);
+assert.match(accountRuntime, /xRole: 'action'/);
+assert.match(accountRuntime, /Notification\.permission === 'granted'/);
 assert.match(serviceWorker, /addEventListener\('push'/);
 assert.match(serviceWorker, /addEventListener\('notificationclick'/);
 
@@ -104,6 +116,10 @@ assert.doesNotMatch(onlineBookingSettingsUi, /saveNotificationRouting/);
 
 assert.match(pushService, /webpush\.sendNotification/);
 assert.match(pushService, /WEB_PUSH_VAPID_PUBLIC_KEY/);
+assert.match(pushService, /WHERE "accountId" = \$\{accountId\}/);
+assert.match(pushService, /ON s\."endpoint" = d\."recipientKey"/);
+assert.doesNotMatch(pushService, /ON s\."tenantId" = d\."tenantId" AND s\."endpoint" = d\."recipientKey"/);
+assert.match(pushService, /DELETE FROM "WebPushSubscription"[\s\S]*?WHERE "accountId" = \$\{accountId\} AND "endpoint" = \$\{endpoint\}/);
 assert.match(migration, /CREATE TABLE "WebPushSubscription"/);
 assert.match(migration, /UNIQUE INDEX "WebPushSubscription_endpoint_key"/);
 assert.match(templateMigration, /titleTemplate/);
@@ -129,12 +145,23 @@ assert.match(platformNoticesUi, /Уведомления на телефоне/);
 assert.match(platformNoticesUi, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
 assert.match(platformNoticesUi, /Notification\.permission === 'granted'/);
 assert.match(platformNoticesUi, /void enablePlatformPush\(\)\.catch\(\(\) => undefined\)/);
+assert.match(platformNoticesUi, /variant: 's'/);
+assert.doesNotMatch(platformNoticesUi, /data-platform-notice-ack/);
+assert.match(platformNoticesUi, /\.sort\(\(a, b\) => Date\.parse\(b\.createdAt \|\| 0\) - Date\.parse\(a\.createdAt \|\| 0\)\)/);
+assert.match(platformNoticesUi, /const stale = unread\.slice\(1\)/);
+assert.match(platformNoticesUi, /Promise\.allSettled\(stale\.map\(\(oldItem\) => markRead\(oldItem\.id\)\)\)/);
+assert.doesNotMatch(platformNoticesUi, /window\.setTimeout\(\(\) => void showNext\(\), 60\)/);
 assert.doesNotMatch(platformNoticesUi, /pushPromptAttempts/);
 const enablePushSource = platformNoticesUi.slice(
   platformNoticesUi.indexOf('export async function enablePlatformPush'),
   platformNoticesUi.indexOf('export async function disablePlatformPush'),
 );
 assert.ok(enablePushSource.indexOf('Notification.requestPermission()') < enablePushSource.indexOf('platformPushConfiguration()'), 'Push permission must be requested from the direct user gesture before async configuration work');
+const enableAccountPushSource = browserPush.slice(
+  browserPush.indexOf('export async function enableWebPush'),
+  browserPush.indexOf('export async function disableWebPush'),
+);
+assert.ok(enableAccountPushSource.indexOf('Notification.requestPermission()') >= 0, 'Account Push permission must be requested from the direct user gesture');
 assert.match(onlineBookingModule, /PlatformNoticeModule/);
 assert.match(onlineBookingModule, /NotificationModule/);
 assert.match(bookingFlowController, /PlatformNoticeService/);

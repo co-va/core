@@ -72,7 +72,7 @@ export class WebPushService {
     return config;
   }
 
-  private async ensureAccount(tenantId: string, accountId: string) {
+  private async ensureAccount(accountId: string) {
     const account = await this.prisma.account.findUnique({
       where: { id: accountId },
       select: { id: true },
@@ -88,7 +88,7 @@ export class WebPushService {
     userAgent = '',
   ) {
     this.configureSender();
-    await this.ensureAccount(tenantId, accountId);
+    await this.ensureAccount(accountId);
     const source = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, any> : {};
     const endpoint = text(source.endpoint);
     const keys = source.keys && typeof source.keys === 'object' && !Array.isArray(source.keys)
@@ -98,6 +98,9 @@ export class WebPushService {
     const auth = text(keys.auth);
     if (!validEndpoint(endpoint) || !p256dh || !auth) throw new BadRequestException('Некорректная Push-подписка');
 
+    // A browser Push endpoint belongs to the global Account/device, not to one
+    // professional relationship. tenantId records the registration context while
+    // routing is resolved by accountId.
     await this.prisma.$executeRaw`
       INSERT INTO "WebPushSubscription" (
         "id", "tenantId", "accountId", "endpoint", "p256dh", "auth", "userAgent", "createdAt", "updatedAt"
@@ -115,22 +118,22 @@ export class WebPushService {
     return { subscribed: true, endpoint };
   }
 
-  async deleteSubscription(tenantId: string, accountId: string, endpointValue: unknown) {
+  async deleteSubscription(_tenantId: string, accountId: string, endpointValue: unknown) {
     const endpoint = text(endpointValue);
     if (!endpoint) return { subscribed: false };
     await this.prisma.$executeRaw`
       DELETE FROM "WebPushSubscription"
-      WHERE "tenantId" = ${tenantId} AND "accountId" = ${accountId} AND "endpoint" = ${endpoint}
+      WHERE "accountId" = ${accountId} AND "endpoint" = ${endpoint}
     `;
     return { subscribed: false };
   }
 
-  async listAccountEndpoints(tenantId: string, accountId: string) {
+  async listAccountEndpoints(_tenantId: string, accountId: string) {
     if (!this.vapid().enabled) return [];
     const rows = await this.prisma.$queryRaw<Array<{ endpoint: string }>>`
       SELECT "endpoint"
       FROM "WebPushSubscription"
-      WHERE "tenantId" = ${tenantId} AND "accountId" = ${accountId}
+      WHERE "accountId" = ${accountId}
       ORDER BY "updatedAt" DESC
     `;
     return rows.map((row) => text(row.endpoint)).filter(Boolean);
@@ -194,7 +197,7 @@ export class WebPushService {
       INNER JOIN "Notification" n
         ON n."id" = d."notificationId" AND n."tenantId" = d."tenantId"
       INNER JOIN "WebPushSubscription" s
-        ON s."tenantId" = d."tenantId" AND s."endpoint" = d."recipientKey"
+        ON s."endpoint" = d."recipientKey"
       WHERE d."tenantId" = ${tenantId}
         AND d."notificationId" = ${notificationId}
         AND d."channel" = 'PUSH'

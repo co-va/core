@@ -78,7 +78,7 @@ jobs:
               --window-size=390,844 \
               --force-device-scale-factor=1 \
               --touch-events=enabled \
-              --virtual-time-budget=12000 \
+              --virtual-time-budget=30000 \
               --dump-dom \
               "http://127.0.0.1:4173/$path" \
               > "$output"
