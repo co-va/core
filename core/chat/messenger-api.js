@@ -45,6 +45,12 @@ export async function getProfessionalMessengerMessages(conversationId, limit = 5
   );
 }
 
+export async function markProfessionalMessengerConversationRead(conversationId) {
+  return jsonResponse(await apiRequest(`/communications/messenger/conversations/${encodeURIComponent(String(conversationId || ''))}/read`, {
+    method: 'POST',
+  }), 'Не удалось отметить переписку прочитанной');
+}
+
 export async function sendProfessionalMessengerMessage(conversationId, { body = '', attachments = [], replyToId = '' } = {}) {
   return jsonResponse(await apiRequest(`/communications/messenger/conversations/${encodeURIComponent(String(conversationId || ''))}/messages`, {
     method: 'POST',
@@ -122,6 +128,12 @@ export async function getEndUserMessengerMessages(tenantId, conversationId, limi
     await accountRequest(tenantId, `/conversations/${encodeURIComponent(String(conversationId || ''))}/messages?${query}`),
     'Не удалось загрузить переписку',
   );
+}
+
+export async function markEndUserMessengerConversationRead(tenantId, conversationId) {
+  return jsonResponse(await accountRequest(tenantId, `/conversations/${encodeURIComponent(String(conversationId || ''))}/read`, {
+    method: 'POST',
+  }), 'Не удалось отметить переписку прочитанной');
 }
 
 export async function sendEndUserMessengerMessage(tenantId, conversationId, { body = '', attachments = [], replyToId = '' } = {}) {
