@@ -49,6 +49,7 @@ export function mountChatChannelHeader(root, { channelOptions = [], channel = 'C
 
 export function normalizeChatMessages(messages = []) {
   return (Array.isArray(messages) ? messages : [])
+    .filter((message) => !(message?.notificationId && String(message?.kind || '').toLowerCase() === 'system'))
     .slice()
     .sort((a, b) => new Date(a?.createdAt || 0).getTime() - new Date(b?.createdAt || 0).getTime())
     .map((message) => ({ ...message, time: message?.time || chatTime(message?.createdAt) }));
