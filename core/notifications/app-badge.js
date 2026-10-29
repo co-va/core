@@ -1,4 +1,5 @@
 const CHAT_UNREAD_KEY = '__VA_TOOLS_CHAT_UNREAD__';
+const ACCOUNT_UNREAD_KEY = '__VA_TOOLS_ACCOUNT_UNREAD__';
 const SERVICE_UNSEEN_KEY = '__VA_TOOLS_SERVICE_UNSEEN__';
 
 function count(value) {
@@ -11,7 +12,8 @@ function stateTotal(key) {
 }
 
 export function getApplicationBadgeCount() {
-  return stateTotal(CHAT_UNREAD_KEY) + stateTotal(SERVICE_UNSEEN_KEY);
+  const chat = Math.max(stateTotal(CHAT_UNREAD_KEY), stateTotal(ACCOUNT_UNREAD_KEY));
+  return chat + stateTotal(SERVICE_UNSEEN_KEY);
 }
 
 export function syncApplicationBadge() {
