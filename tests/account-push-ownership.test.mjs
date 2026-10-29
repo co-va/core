@@ -95,7 +95,7 @@ assert.match(accountPush, /export async function disableWebPush\(\)[\s\S]*setWeb
 assert.match(accountPush, /function accountPushStorageScope\(\)/);
 assert.match(accountPush, /payload\?\.sub/);
 assert.match(accountPush, /scopedWebPushStorageKey/);
-assert.match(accountPush, /clearLegacyWebPushOptOut/);
+assert.match(accountPush, /clearUnscopedWebPushOptOut/);
 assert.match(platformNotices, /Notification\.permission !== 'granted'[\s\S]*setPlatformPushOptOut\(true\)/);
 assert.match(platformNotices, /export async function disablePlatformPush\(\)[\s\S]*setPlatformPushOptOut\(true\)/);
 assert.match(platformNotices, /Notification\.permission === 'granted' && !platformPushOptedOut\(\)/);
@@ -117,7 +117,7 @@ const pushRuntime = await import('../core/notifications/web-push.js?account-push
 localStorage.setItem('book.account.token', tokenFor('account-a'));
 await pushRuntime.disableWebPush();
 assert.equal(pushRuntime.webPushOptedOut(), true, 'manual OFF must stay sticky for the same Account');
-assert.equal(localStorage.getItem('va-tools.account.push.opt-out'), null, 'legacy device-global opt-out must not remain');
+assert.equal(localStorage.getItem('va-tools.account.push.opt-out'), null, 'old device-global opt-out must not remain');
 
 localStorage.setItem('book.account.token', tokenFor('account-b'));
 assert.equal(pushRuntime.webPushOptedOut(), false, 'Account A manual OFF must not suppress Account B');
