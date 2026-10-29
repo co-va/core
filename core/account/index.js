@@ -559,34 +559,3 @@ export async function sendAccountChatMessage(tenantId, body, attachments = []) {
     'Не удалось отправить сообщение',
   );
 }
-
-export async function getWebPushConfiguration(tenantId) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/config`, { tenantId, auth: true }),
-    'Не удалось проверить Push',
-  );
-}
-
-export async function saveWebPushSubscription(tenantId, subscription) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/subscription`, {
-      tenantId,
-      auth: true,
-      method: 'PUT',
-      body: JSON.stringify({ subscription }),
-    }),
-    'Не удалось подключить Push',
-  );
-}
-
-export async function deleteWebPushSubscription(tenantId, endpoint) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/push/subscription`, {
-      tenantId,
-      auth: true,
-      method: 'DELETE',
-      body: JSON.stringify({ endpoint: String(endpoint || '') }),
-    }),
-    'Не удалось отключить Push',
-  );
-}

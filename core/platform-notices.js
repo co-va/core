@@ -1,6 +1,7 @@
 import { apiRequest } from './auth.js';
 import { button, escapeHtml, modal, mountModal } from '../ui/ui.js';
 
+const PLATFORM_PUSH_OPT_OUT_KEY = 'va-tools.platform.push.opt-out';
 let platformPushConfigurationCache = null;
 
 async function jsonResponse(response, fallback) {
@@ -14,6 +15,25 @@ function decodeBase64Url(value) {
   const base64 = `${String(value || '').replaceAll('-', '+').replaceAll('_', '/')}${padding}`;
   const raw = atob(base64);
   return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+function setPlatformPushOptOut(value) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (value) localStorage.setItem(PLATFORM_PUSH_OPT_OUT_KEY, '1');
+    else localStorage.removeItem(PLATFORM_PUSH_OPT_OUT_KEY);
+  } catch {
+    // Push preference storage must not block the application.
+  }
+}
+
+function platformPushOptedOut() {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(PLATFORM_PUSH_OPT_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 function platformPushSupported() {
@@ -32,12 +52,13 @@ function installedAppMode() {
 }
 
 function shouldOfferPushSetup() {
+  if (!platformPushSupported()) return false;
+  if (Notification.permission === 'denied' || platformPushOptedOut()) return false;
   if (installedAppMode()) return true;
-  if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
   const mobileApple = /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
   const coarsePointer = typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse)').matches;
-  return mobileApple && coarsePointer && platformPushSupported();
+  return mobileApple && coarsePointer;
 }
 
 function platformPushUnavailableMessage() {
@@ -79,9 +100,13 @@ export async function getPlatformPushState() {
 }
 
 export async function enablePlatformPush() {
+  setPlatformPushOptOut(false);
   if (!platformPushSupported()) return getPlatformPushState();
   if (Notification.permission === 'default') await Notification.requestPermission();
-  if (Notification.permission !== 'granted') return getPlatformPushState();
+  if (Notification.permission !== 'granted') {
+    setPlatformPushOptOut(true);
+    return getPlatformPushState();
+  }
 
   const configuration = await platformPushConfiguration();
   if (!configuration?.enabled || !configuration?.publicKey) return getPlatformPushState();
@@ -103,6 +128,7 @@ export async function enablePlatformPush() {
 }
 
 export async function disablePlatformPush() {
+  setPlatformPushOptOut(true);
   if (!platformPushSupported()) return getPlatformPushState();
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
@@ -166,7 +192,7 @@ export function startPlatformNotices({
 
   if (platformPushSupported()) {
     void navigator.serviceWorker.register('/service-worker.js', { scope:'/' }).catch(() => undefined);
-    if (Notification.permission === 'granted') {
+    if (Notification.permission === 'granted' && !platformPushOptedOut()) {
       void enablePlatformPush().catch(() => undefined);
     }
   }
@@ -184,10 +210,6 @@ export function startPlatformNotices({
         const state = await enablePlatformPush();
         if (state?.subscribed) return;
         initialStatus = pushFailureMessage(state);
-      } else if (!platformPushSupported()) {
-        initialStatus = platformPushUnavailableMessage();
-      } else if (Notification.permission === 'denied') {
-        initialStatus = 'Уведомления запрещены в настройках устройства.';
       }
     } catch (error) {
       initialStatus = error instanceof Error ? error.message : 'Не удалось проверить Push.';
@@ -209,13 +231,19 @@ export function startPlatformNotices({
     const enable = layer.querySelector('[data-platform-push-enable]');
     const later = layer.querySelector('[data-platform-push-later]');
     const status = layer.querySelector('[data-platform-push-status]');
-    later?.addEventListener('click', () => layer.remove());
+    later?.addEventListener('click', () => {
+      layer.remove();
+    });
     enable?.addEventListener('click', async () => {
       enable.disabled = true;
       if (status) status.textContent = 'Включаем…';
       try {
         const next = await enablePlatformPush();
         if (next?.subscribed) {
+          layer.remove();
+          return;
+        }
+        if (next?.permission === 'denied') {
           layer.remove();
           return;
         }

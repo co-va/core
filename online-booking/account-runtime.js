@@ -2,7 +2,6 @@ import {
   bindAccountTelegramEntry,
   clearAccount,
   getAccountToken,
-  getGlobalAccountRelationships,
   resolveAccountTelegramEntry,
 } from '../core/account/index.js';
 import {
@@ -145,23 +144,15 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
     if (!shouldOfferWebPushSetup()) return;
     busy = true;
     try {
-      const relationships = await getGlobalAccountRelationships();
-      const tenantId = String((Array.isArray(relationships) ? relationships : [])
-        .find((relationship) => String(relationship?.tenantId || '').trim())?.tenantId || '').trim();
-      if (!tenantId) return;
-
       if (Notification.permission === 'granted') {
-        const state = await syncWebPush(tenantId);
+        const state = await syncWebPush();
         synchronized = Boolean(state?.subscribed);
         return;
       }
       if (promptShown || document.querySelector('[data-account-push-setup-modal]')) return;
 
       promptShown = true;
-      const initialStatus = Notification.permission === 'denied'
-        ? 'Уведомления запрещены в настройках устройства.'
-        : '';
-      const layer = mountModal(document.body, modal(pushSetupModal(initialStatus), {
+      const layer = mountModal(document.body, modal(pushSetupModal(), {
         title: 'Уведомления на телефоне',
         variant: 'x',
         xRole: 'action',
@@ -175,13 +166,21 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
       const enable = layer.querySelector('[data-account-push-enable]');
       const later = layer.querySelector('[data-account-push-later]');
       const status = layer.querySelector('[data-account-push-status]');
-      later?.addEventListener('click', () => layer.remove());
+      later?.addEventListener('click', () => {
+        synchronized = true;
+        layer.remove();
+      });
       enable?.addEventListener('click', async () => {
         enable.disabled = true;
         if (status) status.textContent = 'Включаем…';
         try {
-          const next = await enableWebPush(tenantId);
+          const next = await enableWebPush();
           if (next?.subscribed) {
+            synchronized = true;
+            layer.remove();
+            return;
+          }
+          if (next?.permission === 'denied') {
             synchronized = true;
             layer.remove();
             return;

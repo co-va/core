@@ -3,18 +3,6 @@ import { randomUUID } from 'node:crypto';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma.service';
 
-type WebPushSubscriptionRow = {
-  id: string;
-  tenantId: string;
-  accountId: string;
-  endpoint: string;
-  p256dh: string;
-  auth: string;
-  userAgent: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
 type PushDeliveryRow = {
   deliveryId: string;
   notificationId: string;
@@ -82,7 +70,6 @@ export class WebPushService {
   }
 
   async saveSubscription(
-    tenantId: string,
     accountId: string,
     input: unknown,
     userAgent = '',
@@ -98,18 +85,14 @@ export class WebPushService {
     const auth = text(keys.auth);
     if (!validEndpoint(endpoint) || !p256dh || !auth) throw new BadRequestException('Некорректная Push-подписка');
 
-    // A browser Push endpoint belongs to the global Account/device, not to one
-    // professional relationship. tenantId records the registration context while
-    // routing is resolved by accountId.
     await this.prisma.$executeRaw`
       INSERT INTO "WebPushSubscription" (
-        "id", "tenantId", "accountId", "endpoint", "p256dh", "auth", "userAgent", "createdAt", "updatedAt"
+        "id", "accountId", "endpoint", "p256dh", "auth", "userAgent", "createdAt", "updatedAt"
       ) VALUES (
-        ${randomUUID()}, ${tenantId}, ${accountId}, ${endpoint}, ${p256dh}, ${auth}, ${text(userAgent).slice(0, 1000)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ${randomUUID()}, ${accountId}, ${endpoint}, ${p256dh}, ${auth}, ${text(userAgent).slice(0, 1000)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       ON CONFLICT ("endpoint") DO UPDATE
-      SET "tenantId" = EXCLUDED."tenantId",
-          "accountId" = EXCLUDED."accountId",
+      SET "accountId" = EXCLUDED."accountId",
           "p256dh" = EXCLUDED."p256dh",
           "auth" = EXCLUDED."auth",
           "userAgent" = EXCLUDED."userAgent",
@@ -118,7 +101,7 @@ export class WebPushService {
     return { subscribed: true, endpoint };
   }
 
-  async deleteSubscription(_tenantId: string, accountId: string, endpointValue: unknown) {
+  async deleteSubscription(accountId: string, endpointValue: unknown) {
     const endpoint = text(endpointValue);
     if (!endpoint) return { subscribed: false };
     await this.prisma.$executeRaw`
@@ -128,7 +111,7 @@ export class WebPushService {
     return { subscribed: false };
   }
 
-  async listAccountEndpoints(_tenantId: string, accountId: string) {
+  async listAccountEndpoints(accountId: string) {
     if (!this.vapid().enabled) return [];
     const rows = await this.prisma.$queryRaw<Array<{ endpoint: string }>>`
       SELECT "endpoint"

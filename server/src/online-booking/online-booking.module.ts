@@ -26,6 +26,7 @@ import { AccountEventController } from './account-event.controller';
 import { AccountNoteController } from './account-note.controller';
 import { AccountMessengerController } from './account-messenger.controller';
 import { AccountPersonalAccountController } from './account-personal-account.controller';
+import { AccountPushController } from './account-push.controller';
 import { AccountSettingsController } from './account-settings.controller';
 import { BookingConsentController } from './booking-consent.controller';
 import { BookingPdnConsentGuard } from './booking-pdn-consent.guard';
@@ -38,7 +39,7 @@ import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
   imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, PlatformNoticeModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
-  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController],
+  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
   providers: [OnlineBookingService, BookingFlowService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })
 export class OnlineBookingModule {}
