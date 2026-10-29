@@ -103,7 +103,7 @@ jobs:
           run_browser_case "tests/account-shell-runtime-browser.html" 'data-account-runtime="pass"' 'data-account-runtime-stage' /tmp/account-runtime-dom.html
           run_browser_case "tests/professional-core-runtime-browser.html" 'data-professional-runtime="pass"' 'data-professional-runtime-stage' /tmp/professional-runtime-dom.html
           run_browser_case "tests/documents-runtime-browser.html" 'data-documents-runtime="pass"' 'data-documents-runtime-stage' /tmp/documents-runtime-dom.html
-          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-transfer-runtime="pass"' 'data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
+          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-data-transfer-runtime="pass"' 'data-data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
       - name: Validate staging compose
         run: docker compose -f docker-compose.staging.yml config >/dev/null
       - name: Install server dependencies
@@ -1125,7 +1125,7 @@ jobs:
 
           push_config=$(curl -fsS \
             -H "Authorization: Bearer $booking_token" \
-            "http://localhost:8080/api/online-booking/$tenant_id/account/push/config")
+            "http://localhost:8080/api/online-booking/account/push/config")
           node -e "const p=JSON.parse(process.argv[1]); if(!p.enabled || !p.publicKey) process.exit(1)" "$push_config"
 
           curl -fsS \
@@ -1133,7 +1133,7 @@ jobs:
             -H "Authorization: Bearer $booking_token" \
             -H 'Content-Type: application/json' \
             -d '{"subscription":{"endpoint":"https://push.example.invalid/book-smoke","keys":{"p256dh":"staging-p256dh","auth":"staging-auth"}}}' \
-            "http://localhost:8080/api/online-booking/$tenant_id/account/push/subscription" >/dev/null
+            "http://localhost:8080/api/online-booking/account/push/subscription" >/dev/null
       - name: Stop isolated staging
         if: always()
         run: docker compose -f docker-compose.staging.yml down -v
