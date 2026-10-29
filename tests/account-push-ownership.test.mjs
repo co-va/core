@@ -37,7 +37,8 @@ const accountSetupRuntime = accountRuntime.slice(
 assert.doesNotMatch(accountSetupRuntime, /getGlobalAccountRelationships/);
 assert.doesNotMatch(accountSetupRuntime, /tenantId/);
 assert.match(accountSetupRuntime, /enableWebPush\(\)/);
-assert.match(accountSetupRuntime, /declineWebPushSetup\(\)/);
+assert.match(accountSetupRuntime, /Не сейчас/);
+assert.doesNotMatch(accountSetupRuntime, /declineWebPushSetup|setWebPushOptOut/);
 
 // A specific chat/contact owns Telegram and consents only; it must not own device Push.
 const chatSettings = accountShell.slice(
@@ -66,19 +67,21 @@ assert.match(contactSettings, /label: 'Согласия'/);
 assert.doesNotMatch(contactSettings, /Согласия \/ Уведомления|openGlobalAccountControls/);
 
 // "Not subscribed yet" is only the current device state. It must not be treated as an explicit refusal.
-// Existing Accounts that were never asked have no opt-out key and remain eligible for the one-time prompt.
+// "Не сейчас" defers only this app entry and leaves the next entry eligible for the prompt.
 assert.match(accountPush, /localStorage\.getItem\(WEB_PUSH_OPT_OUT_KEY\) === '1'/);
 assert.match(platformNotices, /localStorage\.getItem\(PLATFORM_PUSH_OPT_OUT_KEY\) === '1'/);
 assert.match(globalControls, /checked:\s*pushSubscribed/);
+assert.match(accountSetupRuntime, /synchronized = true;[\s\S]*?layer\.remove\(\)/);
+assert.match(platformNotices, /button\('Не сейчас'/);
 
-// Explicit refusal/disable is sticky in both application roles; automatic startup must not undo it.
-assert.match(accountPush, /WEB_PUSH_OPT_OUT_KEY/);
-assert.match(accountPush, /Notification\.permission === 'denied' \|\| webPushOptedOut\(\)/);
-assert.match(accountPush, /setWebPushOptOut\(true\)/);
-assert.match(platformNotices, /PLATFORM_PUSH_OPT_OUT_KEY/);
-assert.match(platformNotices, /Notification\.permission === 'denied' \|\| platformPushOptedOut\(\)/);
+// Explicit OS denial or manual Profile disable is sticky in both application roles;
+// automatic startup must not undo it.
+assert.match(accountPush, /Notification\.permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)/);
+assert.match(accountPush, /export async function disableWebPush\(\)[\s\S]*setWebPushOptOut\(true\)/);
+assert.match(platformNotices, /Notification\.permission !== 'granted'[\s\S]*setPlatformPushOptOut\(true\)/);
+assert.match(platformNotices, /export async function disablePlatformPush\(\)[\s\S]*setPlatformPushOptOut\(true\)/);
 assert.match(platformNotices, /Notification\.permission === 'granted' && !platformPushOptedOut\(\)/);
-assert.match(platformNotices, /declinePlatformPushSetup\(\)/);
-assert.match(platformNotices, /Не включать/);
+assert.doesNotMatch(accountPush, /declineWebPushSetup/);
+assert.doesNotMatch(platformNotices, /declinePlatformPushSetup/);
 
 console.log('Account Push ownership boundaries passed');
