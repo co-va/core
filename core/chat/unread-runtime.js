@@ -1,5 +1,6 @@
 import { getGlobalAccountUnreadSummary } from '../account/index.js';
 import { USER_ORIGIN } from '../environment.js';
+import { getUnreadPlatformNoticeCount } from '../platform-notices.js';
 import { getProfessionalMessengerConversations } from './messenger-api.js';
 
 const USER_HOST = new URL(USER_ORIGIN).hostname;
@@ -56,7 +57,7 @@ function syncThreadUnreadRows() {
   if (typeof document === 'undefined') return;
   document.querySelectorAll('[data-chat-thread]').forEach((row) => {
     const indicator = row.querySelector('.list-entry__right small');
-    const unread = /\b(?:новое|новых|нов)\b/i.test(String(indicator?.textContent || ''));
+    const unread = /\d+\s+нов/i.test(String(indicator?.textContent || ''));
     if (row.classList.contains('chat-thread--unread') !== unread) {
       row.classList.toggle('chat-thread--unread', unread);
     }
@@ -77,8 +78,11 @@ async function loadTotal() {
     const summary = await getGlobalAccountUnreadSummary();
     return normalizedCount(summary?.total);
   }
-  const conversations = await getProfessionalMessengerConversations();
-  return professionalUnread(conversations);
+  const [conversations, serviceUnread] = await Promise.all([
+    getProfessionalMessengerConversations(),
+    getUnreadPlatformNoticeCount(),
+  ]);
+  return professionalUnread(conversations) + normalizedCount(serviceUnread);
 }
 
 export async function refreshChatUnread() {
@@ -107,7 +111,7 @@ function clearPendingReadRow() {
   }
   pendingReadRow.classList.remove('chat-thread--unread');
   const indicator = pendingReadRow.querySelector('.list-entry__right small');
-  if (/\b(?:новое|новых|нов)\b/i.test(String(indicator?.textContent || ''))) indicator.remove();
+  if (/\d+\s+нов/i.test(String(indicator?.textContent || ''))) indicator.remove();
   if (!pendingReadRow.querySelector('.list-entry__right > *')) pendingReadRow.querySelector('.list-entry__right')?.remove();
   pendingReadRow = null;
 }
