@@ -103,11 +103,43 @@ export function webPushFailureMessage(state = {}) {
   return '';
 }
 
+async function readyRegistration(timeoutMs = 1200) {
+  if (!navigator?.serviceWorker?.ready) return null;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((resolve) => window.setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+async function resolveWebPushRegistration({ register = false } = {}) {
+  if (!webPushSupported()) return null;
+
+  if (register) {
+    const registered = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+    const ready = await readyRegistration();
+    if (ready?.pushManager) return ready;
+    return registered?.pushManager ? registered : null;
+  }
+
+  let direct = null;
+  if (typeof navigator.serviceWorker.getRegistration === 'function') {
+    direct = await navigator.serviceWorker.getRegistration('/').catch(() => null);
+  }
+  if (direct?.pushManager) return direct;
+
+  const ready = await readyRegistration();
+  return ready?.pushManager ? ready : null;
+}
+
 export async function getWebPushState() {
   if (!webPushSupported()) return { supported: false, enabled: false, permission: 'unsupported', subscribed: false };
   if (!getAccountToken()) return { supported: true, enabled: false, permission: Notification.permission, subscribed: false };
   const configuration = await getGlobalWebPushConfiguration();
-  const registration = await navigator.serviceWorker.getRegistration('/');
+  const registration = await resolveWebPushRegistration();
   const subscription = await registration?.pushManager.getSubscription();
   return {
     supported: true,
@@ -117,7 +149,7 @@ export async function getWebPushState() {
   };
 }
 
-export async function syncWebPush() {
+export async function syncWebPush(permissionOverride = '') {
   if (!webPushSupported() || !getAccountToken() || webPushOptedOut()) return getWebPushState();
 
   const configuration = await getGlobalWebPushConfiguration();
@@ -125,11 +157,15 @@ export async function syncWebPush() {
     return { supported: true, enabled: false, permission: Notification.permission, subscribed: false };
   }
 
-  const registration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
-  await navigator.serviceWorker.ready;
+  const registration = await resolveWebPushRegistration({ register: true });
+  const permission = String(permissionOverride || Notification.permission || 'default');
+  if (!registration?.pushManager) {
+    return { supported: true, enabled: true, permission, subscribed: false };
+  }
+
   let subscription = await registration.pushManager.getSubscription();
 
-  if (Notification.permission !== 'granted') {
+  if (permission !== 'granted') {
     if (subscription) {
       await deleteGlobalWebPushSubscription(subscription.endpoint).catch(() => null);
       await subscription.unsubscribe().catch(() => false);
@@ -138,7 +174,7 @@ export async function syncWebPush() {
     return {
       supported: true,
       enabled: true,
-      permission: Notification.permission,
+      permission,
       subscribed: false,
     };
   }
@@ -154,28 +190,39 @@ export async function syncWebPush() {
   return {
     supported: true,
     enabled: true,
-    permission: Notification.permission,
+    permission,
     subscribed: true,
   };
 }
 
-export async function enableWebPush() {
+export async function enableWebPush({ strict = true } = {}) {
   setWebPushOptOut(false);
-  if (!webPushSupported() || !getAccountToken()) return getWebPushState();
-  if (Notification.permission === 'default') await Notification.requestPermission();
-  if (Notification.permission !== 'granted') {
+  if (!webPushSupported() || !getAccountToken()) {
+    const state = await getWebPushState();
+    if (strict && !state?.subscribed) throw new Error(webPushFailureMessage(state) || 'Не удалось включить уведомления.');
+    return state;
+  }
+
+  let permission = Notification.permission;
+  if (permission === 'default') permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
     setWebPushOptOut(true);
     setWebPushOptOutSource('denied');
-    return getWebPushState();
+    const state = { ...(await getWebPushState()), permission, subscribed: false };
+    if (strict) throw new Error(webPushFailureMessage(state) || 'Не удалось включить уведомления.');
+    return state;
   }
-  return syncWebPush();
+
+  const state = await syncWebPush(permission);
+  if (strict && !state?.subscribed) throw new Error(webPushFailureMessage(state) || 'Не удалось включить уведомления.');
+  return state;
 }
 
 export async function disableWebPush() {
   setWebPushOptOut(true);
   setWebPushOptOutSource('manual');
   if (!webPushSupported() || !getAccountToken()) return getWebPushState();
-  const registration = await navigator.serviceWorker.getRegistration('/');
+  const registration = await resolveWebPushRegistration();
   const subscription = await registration?.pushManager.getSubscription();
   if (subscription) {
     await deleteGlobalWebPushSubscription(subscription.endpoint).catch(() => null);
