@@ -41,8 +41,18 @@ Object.defineProperty(window, 'Notification', {
   configurable:true,
   value:{ permission:'default', requestPermission:async () => 'granted' },
 });
+class RuntimeServiceWorkerRegistration {}
+Object.defineProperty(RuntimeServiceWorkerRegistration.prototype, 'pushManager', {
+  configurable:true,
+  get(){ return {}; },
+});
+Object.defineProperty(window, 'ServiceWorkerRegistration', {
+  configurable:true,
+  value:RuntimeServiceWorkerRegistration,
+});
 Reflect.deleteProperty(window, 'PushManager');
 ok(!('PushManager' in window), 'fixture must model original iOS Web Push without a global PushManager constructor');
+ok('pushManager' in ServiceWorkerRegistration.prototype, 'fixture must expose Push through ServiceWorkerRegistration');
 ok('serviceWorker' in navigator, 'fixture must retain Service Worker capability');
 ok(navigator.standalone === true, 'fixture must be Home Screen standalone');
 
