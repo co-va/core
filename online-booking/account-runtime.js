@@ -5,7 +5,6 @@ import {
   resolveAccountTelegramEntry,
 } from '../core/account/index.js';
 import {
-  declineWebPushSetup,
   enableWebPush,
   shouldOfferWebPushSetup,
   syncWebPush,
@@ -126,7 +125,7 @@ function pushSetupModal(initialStatus = '') {
   </div>
   <div class="modal-actions">
     ${button('Включить', { data: 'data-account-push-enable' })}
-    ${button('Не включать', { data: 'data-account-push-later' })}
+    ${button('Не сейчас', { data: 'data-account-push-later' })}
   </div>
   <div class="muted" data-account-push-status aria-live="polite">${escapeHtml(initialStatus)}</div>`;
 }
@@ -168,7 +167,6 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
       const later = layer.querySelector('[data-account-push-later]');
       const status = layer.querySelector('[data-account-push-status]');
       later?.addEventListener('click', () => {
-        declineWebPushSetup();
         synchronized = true;
         layer.remove();
       });
@@ -178,6 +176,11 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
         try {
           const next = await enableWebPush();
           if (next?.subscribed) {
+            synchronized = true;
+            layer.remove();
+            return;
+          }
+          if (next?.permission === 'denied') {
             synchronized = true;
             layer.remove();
             return;
