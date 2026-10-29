@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { WebPushService } from '../notification/web-push.service';
 import { AccountGuard } from './account.guard';
@@ -13,6 +13,11 @@ export class AccountPushController {
   @Get('config')
   configuration() {
     return this.webPush.configuration();
+  }
+
+  @Get('subscription')
+  subscriptionState(@Req() request: AccountRequest, @Query('endpoint') endpoint: string) {
+    return this.webPush.subscriptionState(request.accountAuth!.accountId, endpoint);
   }
 
   @Put('subscription')
