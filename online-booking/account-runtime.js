@@ -160,7 +160,7 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
         enable.disabled = true;
         if (status) status.textContent = 'Включаем…';
         try {
-          const next = await enableWebPush();
+          const next = await enableWebPush({ strict: false });
           if (next?.subscribed) {
             synchronized = true;
             layer.remove();
