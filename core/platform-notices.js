@@ -36,10 +36,6 @@ function platformPushOptedOut() {
   }
 }
 
-function declinePlatformPushSetup() {
-  setPlatformPushOptOut(true);
-}
-
 function platformPushSupported() {
   return typeof navigator !== 'undefined'
     && typeof window !== 'undefined'
@@ -107,7 +103,10 @@ export async function enablePlatformPush() {
   setPlatformPushOptOut(false);
   if (!platformPushSupported()) return getPlatformPushState();
   if (Notification.permission === 'default') await Notification.requestPermission();
-  if (Notification.permission !== 'granted') return getPlatformPushState();
+  if (Notification.permission !== 'granted') {
+    setPlatformPushOptOut(true);
+    return getPlatformPushState();
+  }
 
   const configuration = await platformPushConfiguration();
   if (!configuration?.enabled || !configuration?.publicKey) return getPlatformPushState();
@@ -168,7 +167,7 @@ function pushSetupModal(initialStatus = '') {
   </div>
   <div class="modal-actions">
     ${button('Включить', { data: 'data-platform-push-enable' })}
-    ${button('Не включать', { data: 'data-platform-push-later' })}
+    ${button('Не сейчас', { data: 'data-platform-push-later' })}
   </div>
   <div class="muted" data-platform-push-status aria-live="polite">${escapeHtml(initialStatus)}</div>`;
 }
@@ -233,7 +232,6 @@ export function startPlatformNotices({
     const later = layer.querySelector('[data-platform-push-later]');
     const status = layer.querySelector('[data-platform-push-status]');
     later?.addEventListener('click', () => {
-      declinePlatformPushSetup();
       layer.remove();
     });
     enable?.addEventListener('click', async () => {
@@ -242,6 +240,10 @@ export function startPlatformNotices({
       try {
         const next = await enablePlatformPush();
         if (next?.subscribed) {
+          layer.remove();
+          return;
+        }
+        if (next?.permission === 'denied') {
           layer.remove();
           return;
         }
