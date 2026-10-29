@@ -103,7 +103,7 @@ jobs:
           run_browser_case "tests/account-shell-runtime-browser.html" 'data-account-runtime="pass"' 'data-account-runtime-stage' /tmp/account-runtime-dom.html
           run_browser_case "tests/professional-core-runtime-browser.html" 'data-professional-runtime="pass"' 'data-professional-runtime-stage' /tmp/professional-runtime-dom.html
           run_browser_case "tests/documents-runtime-browser.html" 'data-documents-runtime="pass"' 'data-documents-runtime-stage' /tmp/documents-runtime-dom.html
-          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-data-transfer-runtime="pass"' 'data-data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
+          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-transfer-runtime="pass"' 'data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
       - name: Validate staging compose
         run: docker compose -f docker-compose.staging.yml config >/dev/null
       - name: Install server dependencies
@@ -843,7 +843,7 @@ jobs:
               WHERE tgname = 'PlatformConsentEvent_append_only'
                 AND NOT tgisinternal
             ) THEN
-              RAISE EXCEPTION 'PlatformConsentEvent append-only trigger was lost';
+              RAISE EXCEPTION 'PlatformConsentEvent append-only protection is missing';
             END IF;
 
             IF NOT EXISTS (
@@ -851,7 +851,7 @@ jobs:
               WHERE tgname = 'PlatformActivityEvent_append_only'
                 AND NOT tgisinternal
             ) THEN
-              RAISE EXCEPTION 'PlatformActivityEvent append-only trigger was lost';
+              RAISE EXCEPTION 'PlatformActivityEvent append-only protection is missing';
             END IF;
 
             IF NOT EXISTS (
