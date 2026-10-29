@@ -65,6 +65,12 @@ const contactSettings = accountShell.slice(
 assert.match(contactSettings, /label: 'Согласия'/);
 assert.doesNotMatch(contactSettings, /Согласия \/ Уведомления|openGlobalAccountControls/);
 
+// "Not subscribed yet" is only the current device state. It must not be treated as an explicit refusal.
+// Existing Accounts that were never asked have no opt-out key and remain eligible for the one-time prompt.
+assert.match(accountPush, /localStorage\.getItem\(WEB_PUSH_OPT_OUT_KEY\) === '1'/);
+assert.match(platformNotices, /localStorage\.getItem\(PLATFORM_PUSH_OPT_OUT_KEY\) === '1'/);
+assert.match(globalControls, /checked:\s*pushSubscribed/);
+
 // Explicit refusal/disable is sticky in both application roles; automatic startup must not undo it.
 assert.match(accountPush, /WEB_PUSH_OPT_OUT_KEY/);
 assert.match(accountPush, /Notification\.permission === 'denied' \|\| webPushOptedOut\(\)/);
