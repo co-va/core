@@ -31,6 +31,15 @@ function installedAppMode() {
   return displayStandalone || navigator.standalone === true;
 }
 
+function shouldOfferPushSetup() {
+  if (installedAppMode()) return true;
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
+  const mobileApple = /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
+  const coarsePointer = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  return mobileApple && coarsePointer && platformPushSupported();
+}
+
 function platformPushUnavailableMessage() {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') {
     return 'Push недоступен в этом запуске приложения.';
@@ -163,7 +172,7 @@ export function startPlatformNotices({
   }
 
   const offerPush = async () => {
-    if (disposed || pushPromptShown || !installedAppMode()) return;
+    if (disposed || pushPromptShown || !shouldOfferPushSetup()) return;
     if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
       window.setTimeout(() => void offerPush(), 1_500);
       return;
