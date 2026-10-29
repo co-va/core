@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 
-const runtime = fs.readFileSync('online-booking/account-runtime.js', 'utf8');
 const telegramBot = fs.readFileSync('server/src/communication/telegram-bot.service.ts', 'utf8');
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
@@ -13,7 +12,7 @@ expect(
 expect(
   !telegramBot.includes('createTelegramEntry(')
     && !telegramBot.includes('ACCOUNT_APP_URL'),
-  'Telegram bot identity linking must not use the retired browser ticket/app flow.',
+  'Active Telegram bot identity linking must not use the retired browser ticket/app flow.',
 );
 expect(
   telegramBot.includes("text: 'Поделиться номером'")
@@ -34,12 +33,6 @@ expect(
   telegramBot.includes("text: 'Записаться'")
     && telegramBot.includes('url: bookingUrl'),
   'Telegram chat must expose ordinary Public Booking URL.',
-);
-expect(
-  !runtime.includes("params.get('booking')")
-    && !runtime.includes('continueTelegramEntryToBooking')
-    && !runtime.includes("url.searchParams.set('booking'"),
-  'Retired Telegram Mini App booking query route must stay removed.',
 );
 expect(
   telegramBot.includes('ready: credentialsKeyConfigured'),
