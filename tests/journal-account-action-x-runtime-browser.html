@@ -17,6 +17,7 @@
 <script type="module">
 import { v2Shell } from '/ui/v2/shell.js';
 import { renderJournalDay } from '/journal/день.js';
+import { renderGlobalAccount } from '/online-booking/account-shell.js';
 
 const host = document.querySelector('#host');
 const result = document.querySelector('#result');
@@ -166,6 +167,50 @@ ok(!root.querySelector('[data-account-day-booking]'), 'X-действия ост
 
 dispose();
 window.fetch = originalFetch;
+
+mark('push-runtime-ios-home-screen');
+host.innerHTML = '';
+Object.defineProperty(navigator, 'standalone', { configurable:true, value:true });
+Object.defineProperty(navigator, 'serviceWorker', { configurable:true, value:{} });
+Object.defineProperty(window, 'Notification', {
+  configurable:true,
+  value:{ permission:'default', requestPermission:async () => 'granted' },
+});
+class RuntimeServiceWorkerRegistration {}
+Object.defineProperty(RuntimeServiceWorkerRegistration.prototype, 'pushManager', {
+  configurable:true,
+  get(){ return {}; },
+});
+Object.defineProperty(window, 'ServiceWorkerRegistration', {
+  configurable:true,
+  value:RuntimeServiceWorkerRegistration,
+});
+Reflect.deleteProperty(window, 'PushManager');
+localStorage.setItem('book.account.token', 'journal-account-push-runtime-token');
+localStorage.setItem('va-tools.account.push.opt-out', '1');
+localStorage.removeItem('va-tools.account.push.opt-out-source');
+const pushState = {
+  account:{ id:'journal-account-push-runtime', name:'Иван', surname:'Push', phone:'+79990000000', profileData:{} },
+  accountRecords:[],
+  relationships:[],
+  accountDeckOpen:false,
+  accountZEnter:false,
+  accountChatOpen:false,
+};
+await renderGlobalAccount(host, pushState, {});
+await wait(120);
+ok(pushState.accountTab === 'journal', 'Push Account did not start on Journal');
+ok(Boolean(host.querySelector('[data-account-journal-root]')), 'Push Account Journal did not render');
+ok(Boolean(host.querySelector('[data-v2-app] [data-account-deck-item]')), 'Push Account shell is not ready');
+ok(!('PushManager' in window), 'fixture must not expose a global PushManager constructor');
+ok('pushManager' in ServiceWorkerRegistration.prototype, 'fixture must expose registration Push capability');
+await import('/online-booking/account-runtime.js');
+await wait(240);
+const pushModal = document.querySelector('[data-account-push-setup-modal="true"]');
+ok(Boolean(pushModal), 'eligible iPhone Home Screen Account did not show Push setup X');
+ok(pushModal?.dataset.v2XRole === 'action', 'Push setup did not use action X');
+ok(Boolean(pushModal?.querySelector('[data-account-push-enable]')), 'Push setup has no Enable action');
+ok(localStorage.getItem('va-tools.account.push.opt-out') !== '1', 'legacy ambiguous Push opt-out was not migrated');
 
 if (failures.length) {
   result.textContent = failures.join('\n');

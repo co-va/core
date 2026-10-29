@@ -62,12 +62,20 @@ export function webPushOptedOut() {
   }
 }
 
+function registrationPushSupported() {
+  if (typeof window === 'undefined') return false;
+  const Registration = window.ServiceWorkerRegistration;
+  return typeof Registration === 'function'
+    && Boolean(Registration.prototype)
+    && 'pushManager' in Registration.prototype;
+}
+
 export function webPushSupported() {
   return typeof navigator !== 'undefined'
     && typeof window !== 'undefined'
     && 'serviceWorker' in navigator
-    && 'PushManager' in window
-    && 'Notification' in window;
+    && 'Notification' in window
+    && (registrationPushSupported() || 'pushManager' in window || 'PushManager' in window);
 }
 
 function installedAppMode() {
