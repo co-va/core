@@ -61,18 +61,22 @@ assert.doesNotMatch(browserPush, /getWebPushConfiguration/);
 assert.doesNotMatch(browserPush, /saveWebPushSubscription/);
 assert.doesNotMatch(browserPush, /deleteWebPushSubscription/);
 assert.match(accountRuntime, /startGlobalAccountPushRuntime/);
-assert.doesNotMatch(accountRuntime, /getGlobalAccountRelationships/);
-assert.match(accountRuntime, /shouldOfferWebPushSetup/);
-assert.match(accountRuntime, /syncWebPush\(\)/);
-assert.match(accountRuntime, /enableWebPush\(\)/);
-assert.match(accountRuntime, /declineWebPushSetup\(\)/);
-assert.match(accountRuntime, /data-account-push-enable/);
-assert.match(accountRuntime, /Уведомления на телефоне/);
-assert.match(accountRuntime, /Не включать/);
-assert.match(accountRuntime, /variant: 'x'/);
-assert.match(accountRuntime, /xRole: 'action'/);
-assert.match(accountRuntime, /Notification\.permission === 'granted'/);
-assert.doesNotMatch(accountRuntime, /const tenantId =/);
+const accountPushRuntimeSource = accountRuntime.slice(
+  accountRuntime.indexOf('export function startGlobalAccountPushRuntime'),
+  accountRuntime.indexOf('let disposeRootTelegramRuntime'),
+);
+assert.doesNotMatch(accountPushRuntimeSource, /tenantId/);
+assert.doesNotMatch(accountPushRuntimeSource, /getGlobalAccountRelationships/);
+assert.match(accountPushRuntimeSource, /shouldOfferWebPushSetup/);
+assert.match(accountPushRuntimeSource, /syncWebPush\(\)/);
+assert.match(accountPushRuntimeSource, /enableWebPush\(\)/);
+assert.match(accountPushRuntimeSource, /declineWebPushSetup\(\)/);
+assert.match(accountPushRuntimeSource, /data-account-push-enable/);
+assert.match(accountPushRuntimeSource, /Уведомления на телефоне/);
+assert.match(accountPushRuntimeSource, /Не включать/);
+assert.match(accountPushRuntimeSource, /variant: 'x'/);
+assert.match(accountPushRuntimeSource, /xRole: 'action'/);
+assert.match(accountPushRuntimeSource, /Notification\.permission === 'granted'/);
 assert.match(serviceWorker, /addEventListener\('push'/);
 assert.match(serviceWorker, /addEventListener\('notificationclick'/);
 
