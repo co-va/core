@@ -30,7 +30,7 @@ const result = document.querySelector('#result');
 const failures = [];
 let stage = 'boot';
 const mark = (value) => { stage = value; result.textContent = `running: ${value}`; document.documentElement.dataset.publicBookingVariantsRuntimeStage = value; };
-const ok = (condition, message) => { if (!condition) failures.push(`${stage}: ${message}`); };
+const ok = (condition, message) => { if (!condition) failures.push(`${stage}: ${message} [title=${currentTitle()}]`); };
 const wait = (ms = 70) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitUntil(predicate, { attempts = 40, interval = 25 } = {}) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
