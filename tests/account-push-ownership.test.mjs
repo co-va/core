@@ -86,14 +86,43 @@ assert.match(accountPush, /export async function enableWebPush\(\{ strict = true
 assert.match(accountPush, /strict && !state\?\.subscribed/);
 assert.match(accountPush, /syncWebPush\(permission\)/);
 
-// Explicit OS denial or manual Profile disable is sticky in both application roles;
-// automatic startup must not undo it.
+// Explicit OS denial or manual Profile disable is sticky for that Account only;
+// automatic startup must not undo it and another Account on the same device must stay eligible.
 assert.match(accountPush, /permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('denied'\)/);
 assert.match(accountPush, /export async function disableWebPush\(\)[\s\S]*setWebPushOptOut\(true\)[\s\S]*setWebPushOptOutSource\('manual'\)/);
+assert.match(accountPush, /function accountPushStorageScope\(\)/);
+assert.match(accountPush, /payload\?\.sub/);
+assert.match(accountPush, /scopedWebPushStorageKey/);
+assert.match(accountPush, /clearLegacyWebPushOptOut/);
 assert.match(platformNotices, /Notification\.permission !== 'granted'[\s\S]*setPlatformPushOptOut\(true\)/);
 assert.match(platformNotices, /export async function disablePlatformPush\(\)[\s\S]*setPlatformPushOptOut\(true\)/);
 assert.match(platformNotices, /Notification\.permission === 'granted' && !platformPushOptedOut\(\)/);
 assert.doesNotMatch(accountPush, /declineWebPushSetup/);
 assert.doesNotMatch(platformNotices, /declinePlatformPushSetup/);
+
+const storage = new Map();
+globalThis.localStorage = {
+  getItem(key) { return storage.has(String(key)) ? storage.get(String(key)) : null; },
+  setItem(key, value) { storage.set(String(key), String(value)); },
+  removeItem(key) { storage.delete(String(key)); },
+};
+const tokenFor = (accountId) => {
+  const payload = Buffer.from(JSON.stringify({ sub: accountId, kind: 'account' }), 'utf8').toString('base64url');
+  return `e30.${payload}.signature`;
+};
+const pushRuntime = await import('../core/notifications/web-push.js?account-push-ownership-regression=1');
+
+localStorage.setItem('book.account.token', tokenFor('account-a'));
+await pushRuntime.disableWebPush();
+assert.equal(pushRuntime.webPushOptedOut(), true, 'manual OFF must stay sticky for the same Account');
+assert.equal(localStorage.getItem('va-tools.account.push.opt-out'), null, 'legacy device-global opt-out must not remain');
+
+localStorage.setItem('book.account.token', tokenFor('account-b'));
+assert.equal(pushRuntime.webPushOptedOut(), false, 'Account A manual OFF must not suppress Account B');
+
+localStorage.setItem('book.account.token', tokenFor('account-a'));
+assert.equal(pushRuntime.webPushOptedOut(), true, 'Account A opt-out must survive switching away and back');
+
+delete globalThis.localStorage;
 
 console.log('Account Push ownership boundaries passed');
