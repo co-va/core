@@ -6,6 +6,11 @@ type UnreadRow = {
   unreadCount: number | bigint | string;
 };
 
+function countValue(value: number | bigint | string | undefined) {
+  const count = Number(value || 0);
+  return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+}
+
 @Injectable()
 export class AccountUnreadService {
   constructor(private readonly prisma: PrismaService) {}
@@ -29,7 +34,7 @@ export class AccountUnreadService {
         AND m."deliveredAt" IS NULL
     `;
 
-    const rows = await this.prisma.$queryRaw<UnreadRow[]>`
+    const chatRows = await this.prisma.$queryRaw<UnreadRow[]>`
       SELECT m."tenantId", COUNT(*)::int AS "unreadCount"
       FROM "CommunicationMessage" m
       INNER JOIN "AccountTenantLink" l
@@ -45,13 +50,33 @@ export class AccountUnreadService {
         AND m."failedAt" IS NULL
         AND m."status" <> 'failed'
       GROUP BY m."tenantId"
-      ORDER BY m."tenantId" ASC
     `;
 
-    const byTenant = rows.map((row) => ({
-      tenantId: String(row.tenantId || ''),
-      unreadCount: Math.max(0, Number(row.unreadCount || 0)),
-    })).filter((row) => row.tenantId && Number.isFinite(row.unreadCount));
+    const serviceRows = await this.prisma.$queryRaw<UnreadRow[]>`
+      SELECT d."tenantId", COUNT(*)::int AS "unreadCount"
+      FROM "NotificationDelivery" d
+      INNER JOIN "AccountTenantLink" l
+        ON l."accountId" = ${accountId}
+       AND l."tenantId" = d."tenantId"
+      INNER JOIN "AccountContact" c
+        ON c."accountId" = ${accountId}
+       AND c."type" = 'PHONE'
+       AND c."value" = d."recipientKey"
+      WHERE d."channel" = 'IN_APP'
+        AND d."readAt" IS NULL
+      GROUP BY d."tenantId"
+    `;
+
+    const counts = new Map<string, number>();
+    for (const row of [...chatRows, ...serviceRows]) {
+      const tenantId = String(row.tenantId || '').trim();
+      if (!tenantId) continue;
+      counts.set(tenantId, (counts.get(tenantId) || 0) + countValue(row.unreadCount));
+    }
+
+    const byTenant = [...counts.entries()]
+      .map(([tenantId, unreadCount]) => ({ tenantId, unreadCount }))
+      .sort((left, right) => left.tenantId.localeCompare(right.tenantId));
 
     return {
       total: byTenant.reduce((sum, row) => sum + row.unreadCount, 0),
