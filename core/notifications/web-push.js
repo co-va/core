@@ -1,15 +1,40 @@
+import { getAccountToken } from '../account/index.js';
 import {
-  deleteWebPushSubscription,
-  getAccountToken,
-  getWebPushConfiguration,
-  saveWebPushSubscription,
-} from '../account/index.js';
+  deleteGlobalWebPushSubscription,
+  getGlobalWebPushConfiguration,
+  saveGlobalWebPushSubscription,
+} from './account-push-api.js';
+
+const WEB_PUSH_OPT_OUT_KEY = 'va-tools.account.push.opt-out';
 
 function decodeBase64Url(value) {
   const padding = '='.repeat((4 - (String(value || '').length % 4)) % 4);
   const base64 = `${String(value || '').replaceAll('-', '+').replaceAll('_', '/')}${padding}`;
   const raw = atob(base64);
   return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+}
+
+function setWebPushOptOut(value) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (value) localStorage.setItem(WEB_PUSH_OPT_OUT_KEY, '1');
+    else localStorage.removeItem(WEB_PUSH_OPT_OUT_KEY);
+  } catch {
+    // A storage failure must not block the Account application.
+  }
+}
+
+export function webPushOptedOut() {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(WEB_PUSH_OPT_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function declineWebPushSetup() {
+  setWebPushOptOut(true);
 }
 
 export function webPushSupported() {
@@ -28,8 +53,9 @@ function installedAppMode() {
 }
 
 export function shouldOfferWebPushSetup() {
-  if (installedAppMode()) return webPushSupported();
   if (!webPushSupported()) return false;
+  if (Notification.permission === 'denied' || webPushOptedOut()) return false;
+  if (installedAppMode()) return true;
   const mobileApple = /iPhone|iPad|iPod/i.test(String(navigator.userAgent || ''));
   const coarsePointer = typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse)').matches;
@@ -44,10 +70,10 @@ export function webPushFailureMessage(state = {}) {
   return '';
 }
 
-export async function getWebPushState(tenantId) {
+export async function getWebPushState() {
   if (!webPushSupported()) return { supported: false, enabled: false, permission: 'unsupported', subscribed: false };
-  if (!getAccountToken(tenantId)) return { supported: true, enabled: false, permission: Notification.permission, subscribed: false };
-  const configuration = await getWebPushConfiguration(tenantId);
+  if (!getAccountToken()) return { supported: true, enabled: false, permission: Notification.permission, subscribed: false };
+  const configuration = await getGlobalWebPushConfiguration();
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
   return {
@@ -58,10 +84,10 @@ export async function getWebPushState(tenantId) {
   };
 }
 
-export async function syncWebPush(tenantId) {
-  if (!webPushSupported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
+export async function syncWebPush() {
+  if (!webPushSupported() || !getAccountToken() || webPushOptedOut()) return getWebPushState();
 
-  const configuration = await getWebPushConfiguration(tenantId);
+  const configuration = await getGlobalWebPushConfiguration();
   if (!configuration?.enabled || !configuration?.publicKey) {
     return { supported: true, enabled: false, permission: Notification.permission, subscribed: false };
   }
@@ -72,7 +98,7 @@ export async function syncWebPush(tenantId) {
 
   if (Notification.permission !== 'granted') {
     if (subscription) {
-      await deleteWebPushSubscription(tenantId, subscription.endpoint).catch(() => null);
+      await deleteGlobalWebPushSubscription(subscription.endpoint).catch(() => null);
       await subscription.unsubscribe().catch(() => false);
       subscription = null;
     }
@@ -91,9 +117,7 @@ export async function syncWebPush(tenantId) {
     });
   }
 
-  // The server stores the browser endpoint for the global Account. The tenant
-  // route is only the current relationship context used to authenticate this call.
-  await saveWebPushSubscription(tenantId, subscription.toJSON());
+  await saveGlobalWebPushSubscription(subscription.toJSON());
   return {
     supported: true,
     enabled: true,
@@ -102,19 +126,21 @@ export async function syncWebPush(tenantId) {
   };
 }
 
-export async function enableWebPush(tenantId) {
-  if (!webPushSupported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
+export async function enableWebPush() {
+  setWebPushOptOut(false);
+  if (!webPushSupported() || !getAccountToken()) return getWebPushState();
   if (Notification.permission === 'default') await Notification.requestPermission();
-  return syncWebPush(tenantId);
+  return syncWebPush();
 }
 
-export async function disableWebPush(tenantId) {
-  if (!webPushSupported() || !getAccountToken(tenantId)) return getWebPushState(tenantId);
+export async function disableWebPush() {
+  setWebPushOptOut(true);
+  if (!webPushSupported() || !getAccountToken()) return getWebPushState();
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
   if (subscription) {
-    await deleteWebPushSubscription(tenantId, subscription.endpoint).catch(() => null);
+    await deleteGlobalWebPushSubscription(subscription.endpoint).catch(() => null);
     await subscription.unsubscribe().catch(() => false);
   }
-  return getWebPushState(tenantId);
+  return getWebPushState();
 }
