@@ -1,6 +1,5 @@
 import { getGlobalAccountUnreadSummary } from '../account/index.js';
 import { USER_ORIGIN } from '../environment.js';
-import { getUnreadPlatformNoticeCount } from '../platform-notices.js';
 import { getProfessionalMessengerConversations } from './messenger-api.js';
 
 const USER_HOST = new URL(USER_ORIGIN).hostname;
@@ -82,11 +81,8 @@ async function loadTotal() {
     const summary = await getGlobalAccountUnreadSummary();
     return normalizedCount(summary?.total);
   }
-  const [conversations, serviceUnread] = await Promise.all([
-    getProfessionalMessengerConversations(),
-    getUnreadPlatformNoticeCount(),
-  ]);
-  return professionalUnread(conversations) + normalizedCount(serviceUnread);
+  const conversations = await getProfessionalMessengerConversations();
+  return professionalUnread(conversations);
 }
 
 export async function refreshChatUnread() {

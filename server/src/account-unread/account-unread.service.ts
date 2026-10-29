@@ -52,30 +52,12 @@ export class AccountUnreadService {
       GROUP BY m."tenantId"
     `;
 
-    const serviceRows = await this.prisma.$queryRaw<UnreadRow[]>`
-      SELECT d."tenantId", COUNT(*)::int AS "unreadCount"
-      FROM "NotificationDelivery" d
-      INNER JOIN "AccountTenantLink" l
-        ON l."accountId" = ${accountId}
-       AND l."tenantId" = d."tenantId"
-      INNER JOIN "AccountContact" c
-        ON c."accountId" = ${accountId}
-       AND c."type" = 'PHONE'
-       AND c."value" = d."recipientKey"
-      WHERE d."channel" = 'IN_APP'
-        AND d."readAt" IS NULL
-      GROUP BY d."tenantId"
-    `;
-
-    const counts = new Map<string, number>();
-    for (const row of [...chatRows, ...serviceRows]) {
-      const tenantId = String(row.tenantId || '').trim();
-      if (!tenantId) continue;
-      counts.set(tenantId, (counts.get(tenantId) || 0) + countValue(row.unreadCount));
-    }
-
-    const byTenant = [...counts.entries()]
-      .map(([tenantId, unreadCount]) => ({ tenantId, unreadCount }))
+    const byTenant = chatRows
+      .map((row) => ({
+        tenantId: String(row.tenantId || '').trim(),
+        unreadCount: countValue(row.unreadCount),
+      }))
+      .filter((row) => Boolean(row.tenantId))
       .sort((left, right) => left.tenantId.localeCompare(right.tenantId));
 
     return {
