@@ -6,6 +6,7 @@ import {
 } from '../core/account/index.js';
 import {
   enableWebPush,
+  getWebPushState,
   shouldOfferWebPushSetup,
   syncWebPush,
   webPushFailureMessage,
@@ -131,9 +132,12 @@ export function startGlobalAccountPushRuntime({ intervalMs = 1500 } = {}) {
     busy = true;
     try {
       if (Notification.permission === 'granted') {
-        const state = await syncWebPush();
-        synchronized = Boolean(state?.subscribed);
-        return;
+        const current = await getWebPushState();
+        if (current?.subscribed) {
+          const state = await syncWebPush();
+          synchronized = Boolean(state?.subscribed);
+          return;
+        }
       }
       if (promptShown || document.querySelector('[data-account-push-setup-modal]')) return;
 
