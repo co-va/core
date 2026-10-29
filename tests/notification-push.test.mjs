@@ -208,4 +208,83 @@ assert.match(adminUi, /data-enable-admin-push/);
 assert.match(adminUi, /Включить PUSH/);
 assert.doesNotMatch(adminUi, /data-live-request-count/);
 
+const storage = new Map([['book.account.token', 'runtime-account-token']]);
+const localStorageMock = {
+  getItem(key) { return storage.get(String(key)) ?? null; },
+  setItem(key, value) { storage.set(String(key), String(value)); },
+  removeItem(key) { storage.delete(String(key)); },
+};
+let activeSubscription = null;
+const runtimeSubscription = {
+  endpoint: 'https://push.example.test/account-endpoint',
+  toJSON() {
+    return { endpoint: this.endpoint, keys: { p256dh: 'runtime-p256dh', auth: 'runtime-auth' } };
+  },
+  async unsubscribe() {
+    activeSubscription = null;
+    return true;
+  },
+};
+const runtimeRegistration = {
+  pushManager: {
+    async getSubscription() { return activeSubscription; },
+    async subscribe() {
+      activeSubscription = runtimeSubscription;
+      return activeSubscription;
+    },
+  },
+};
+const notificationRuntime = {
+  permission: 'default',
+  async requestPermission() {
+    this.permission = 'granted';
+    return this.permission;
+  },
+};
+const navigatorRuntime = {
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+  standalone: true,
+  serviceWorker: {
+    async getRegistration() { return runtimeRegistration; },
+    async register() { return runtimeRegistration; },
+    ready: Promise.resolve(runtimeRegistration),
+  },
+};
+const windowRuntime = {
+  PushManager: function PushManager() {},
+  Notification: notificationRuntime,
+  matchMedia() { return { matches: true }; },
+};
+const pushRequests = [];
+Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorageMock });
+Object.defineProperty(globalThis, 'location', { configurable: true, value: { hostname: 'user.va-tools.ru' } });
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: navigatorRuntime });
+Object.defineProperty(globalThis, 'window', { configurable: true, value: windowRuntime });
+Object.defineProperty(globalThis, 'Notification', { configurable: true, value: notificationRuntime });
+Object.defineProperty(globalThis, 'fetch', {
+  configurable: true,
+  value: async (url, options = {}) => {
+    pushRequests.push({ url: String(url), method: String(options.method || 'GET') });
+    const body = String(url).endsWith('/config')
+      ? { enabled: true, publicKey: 'AQ' }
+      : { subscribed: String(options.method || 'GET').toUpperCase() !== 'DELETE' };
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  },
+});
+
+const runtimePush = await import('../core/notifications/web-push.js?notification-push-runtime');
+assert.equal(runtimePush.shouldOfferWebPushSetup(), true, 'fresh Account must be offered Push without professional relationships');
+const enabledRuntimePush = await runtimePush.enableWebPush();
+assert.equal(enabledRuntimePush.subscribed, true, 'global Account Push enable must create a browser subscription');
+assert.equal(notificationRuntime.permission, 'granted', 'global Account Push enable must request browser permission');
+assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/config'), 'global Account Push must load global configuration');
+assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/subscription' && item.method === 'PUT'), 'global Account Push must save through the tenant-free Account route');
+assert.ok(pushRequests.every((item) => !/\/online-booking\/[^/]+\/account\/push\//.test(item.url)), 'Account Push runtime must not route through a professional tenant');
+await runtimePush.disableWebPush();
+assert.equal(runtimePush.webPushOptedOut(), true, 'explicit Push disable must persist opt-out');
+assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'explicit Push disable must suppress future setup prompts');
+assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/subscription' && item.method === 'DELETE'), 'global Account Push disable must remove the global subscription');
+runtimePush.declineWebPushSetup();
+assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'explicit setup refusal must remain suppressed');
+
 console.log('account and platform notification Web Push tests passed');
