@@ -16,13 +16,47 @@ function decodeBase64Url(value) {
   return Uint8Array.from(raw, (character) => character.charCodeAt(0));
 }
 
+function accountPushStorageScope() {
+  const token = String(getAccountToken() || '').trim();
+  const encodedPayload = token.split('.')[1] || '';
+  if (!encodedPayload) return '';
+  try {
+    const padding = '='.repeat((4 - (encodedPayload.length % 4)) % 4);
+    const payload = JSON.parse(atob(`${encodedPayload.replaceAll('-', '+').replaceAll('_', '/')}${padding}`));
+    return String(payload?.sub || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function scopedWebPushStorageKey(baseKey) {
+  const scope = accountPushStorageScope();
+  return scope ? `${baseKey}:${encodeURIComponent(scope)}` : '';
+}
+
+function clearUnscopedWebPushOptOut() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    // Older builds stored one refusal for the whole browser. It cannot be safely
+    // attributed to an Account, so it must not suppress another Account on the device.
+    localStorage.removeItem(WEB_PUSH_OPT_OUT_KEY);
+    localStorage.removeItem(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+  } catch {
+    // A storage failure must not block the Account application.
+  }
+}
+
 function setWebPushOptOut(value) {
   if (typeof localStorage === 'undefined') return;
   try {
-    if (value) localStorage.setItem(WEB_PUSH_OPT_OUT_KEY, '1');
+    clearUnscopedWebPushOptOut();
+    const optOutKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_KEY);
+    const sourceKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+    if (!optOutKey || !sourceKey) return;
+    if (value) localStorage.setItem(optOutKey, '1');
     else {
-      localStorage.removeItem(WEB_PUSH_OPT_OUT_KEY);
-      localStorage.removeItem(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+      localStorage.removeItem(optOutKey);
+      localStorage.removeItem(sourceKey);
     }
   } catch {
     // A storage failure must not block the Account application.
@@ -32,9 +66,12 @@ function setWebPushOptOut(value) {
 function setWebPushOptOutSource(source = '') {
   if (typeof localStorage === 'undefined') return;
   try {
+    clearUnscopedWebPushOptOut();
+    const sourceKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+    if (!sourceKey) return;
     const normalized = String(source || '').trim();
-    if (normalized) localStorage.setItem(WEB_PUSH_OPT_OUT_SOURCE_KEY, normalized);
-    else localStorage.removeItem(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+    if (normalized) localStorage.setItem(sourceKey, normalized);
+    else localStorage.removeItem(sourceKey);
   } catch {
     // A storage failure must not block the Account application.
   }
@@ -43,14 +80,18 @@ function setWebPushOptOutSource(source = '') {
 export function webPushOptedOut() {
   if (typeof localStorage === 'undefined') return false;
   try {
-    const optedOut = localStorage.getItem(WEB_PUSH_OPT_OUT_KEY) === '1';
+    clearUnscopedWebPushOptOut();
+    const optOutKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_KEY);
+    const sourceKey = scopedWebPushStorageKey(WEB_PUSH_OPT_OUT_SOURCE_KEY);
+    if (!optOutKey || !sourceKey) return false;
+    const optedOut = localStorage.getItem(optOutKey) === '1';
     if (!optedOut) return false;
 
-    const source = String(localStorage.getItem(WEB_PUSH_OPT_OUT_SOURCE_KEY) || '').trim();
+    const source = String(localStorage.getItem(sourceKey) || '').trim();
     if (source === 'manual' || source === 'denied') return true;
 
-    // Earlier builds stored bare `1` even for deferred setup. That value has no
-    // reliable refusal meaning, so migrate it instead of suppressing Push forever.
+    // Earlier scoped builds may have stored bare `1` without a reliable refusal
+    // source. Clear it instead of suppressing Push forever.
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
       setWebPushOptOutSource('denied');
       return true;
