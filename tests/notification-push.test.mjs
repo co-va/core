@@ -89,10 +89,10 @@ assert.match(accountPushController, /@Controller\('online-booking\/account\/push
 assert.match(accountPushController, /@Get\('config'\)/);
 assert.match(accountPushController, /@Put\('subscription'\)/);
 assert.match(accountPushController, /@Delete\('subscription'\)/);
-assert.match(accountPushController, /saveSubscription\(\s*null,/);
-assert.match(accountPushController, /deleteSubscription\(null,/);
+assert.match(accountPushController, /saveSubscription\(\s*request\.accountAuth!\.accountId,/);
+assert.match(accountPushController, /deleteSubscription\(request\.accountAuth!\.accountId,/);
 assert.match(onlineBookingModule, /AccountPushController/);
-assert.match(globalPushMigration, /ALTER COLUMN "tenantId" DROP NOT NULL/);
+assert.match(globalPushMigration, /DROP COLUMN IF EXISTS "tenantId"/);
 assert.match(globalPushMigration, /WebPushSubscription_accountId_idx/);
 
 assert.match(notificationService, /DELIVERY_POLICY_TYPE = '__delivery__'/);
@@ -151,7 +151,11 @@ assert.doesNotMatch(onlineBookingSettingsUi, /saveNotificationRouting/);
 
 assert.match(pushService, /webpush\.sendNotification/);
 assert.match(pushService, /WEB_PUSH_VAPID_PUBLIC_KEY/);
-assert.match(pushService, /tenantId: string \| null/);
+const pushSubscriptionSaveSource = pushService.slice(
+  pushService.indexOf('async saveSubscription'),
+  pushService.indexOf('async deleteSubscription'),
+);
+assert.doesNotMatch(pushSubscriptionSaveSource, /tenantId/);
 assert.match(pushService, /WHERE "accountId" = \$\{accountId\}/);
 assert.match(pushService, /ON s\."endpoint" = d\."recipientKey"/);
 assert.doesNotMatch(pushService, /ON s\."tenantId" = d\."tenantId" AND s\."endpoint" = d\."recipientKey"/);
