@@ -4,7 +4,6 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CommunicationService } from '../communication/communication.service';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { NotificationService } from '../notification/notification.service';
-import { WebPushService } from '../notification/web-push.service';
 import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { AccountGuard } from './account.guard';
 import { BookingFlowService } from './booking-flow.service';
@@ -24,7 +23,6 @@ export class OnlineBookingController {
     private readonly notifications: NotificationService,
     private readonly platformNotices: PlatformNoticeService,
     private readonly communications: CommunicationService,
-    private readonly webPush: WebPushService,
     private readonly personIdentity: PersonIdentityService,
   ) {}
 
@@ -259,40 +257,6 @@ export class OnlineBookingController {
   @Get(':tenantId/account/chat/settings')
   chatSettings(@Param('tenantId') tenantId: string, @Req() request: AccountRequest) {
     return this.accountTelegramSettings(tenantId, request.accountAuth!.accountId);
-  }
-
-  @UseGuards(AccountGuard)
-  @Get(':tenantId/account/push/config')
-  pushConfiguration() {
-    return this.webPush.configuration();
-  }
-
-  @UseGuards(AccountGuard)
-  @Put(':tenantId/account/push/subscription')
-  savePushSubscription(
-    @Param('tenantId') tenantId: string,
-    @Req() request: AccountRequest,
-    @Body() body: { subscription?: unknown },
-  ) {
-    const userAgent = Array.isArray(request.headers['user-agent'])
-      ? request.headers['user-agent'][0] || ''
-      : request.headers['user-agent'] || '';
-    return this.webPush.saveSubscription(
-      tenantId,
-      request.accountAuth!.accountId,
-      body?.subscription,
-      userAgent,
-    );
-  }
-
-  @UseGuards(AccountGuard)
-  @Delete(':tenantId/account/push/subscription')
-  deletePushSubscription(
-    @Param('tenantId') tenantId: string,
-    @Req() request: AccountRequest,
-    @Body() body: { endpoint?: unknown },
-  ) {
-    return this.webPush.deleteSubscription(tenantId, request.accountAuth!.accountId, body?.endpoint);
   }
 
   @UseGuards(AccountGuard)
