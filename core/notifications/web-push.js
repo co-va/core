@@ -33,10 +33,6 @@ export function webPushOptedOut() {
   }
 }
 
-export function declineWebPushSetup() {
-  setWebPushOptOut(true);
-}
-
 export function webPushSupported() {
   return typeof navigator !== 'undefined'
     && typeof window !== 'undefined'
@@ -130,6 +126,10 @@ export async function enableWebPush() {
   setWebPushOptOut(false);
   if (!webPushSupported() || !getAccountToken()) return getWebPushState();
   if (Notification.permission === 'default') await Notification.requestPermission();
+  if (Notification.permission !== 'granted') {
+    setWebPushOptOut(true);
+    return getWebPushState();
+  }
   return syncWebPush();
 }
 
