@@ -131,7 +131,14 @@ function setPhone(form, name, value) {
   if (visible) visible.value = value.replace(/^\+7/, '');
   if (host) host.dataset.phoneComplete = 'true';
 }
-function chooseDate(value) { click(document.querySelector(`[data-calendar-date="${value}"]`)); }
+function chooseDate(value) {
+  let node = document.querySelector(`[data-calendar-date="${value}"]`);
+  for (let attempt = 0; !node && attempt < 12; attempt += 1) {
+    click(document.querySelector('[data-calendar-next]'));
+    node = document.querySelector(`[data-calendar-date="${value}"]`);
+  }
+  click(node);
+}
 function chooseFirstTime() { click(document.querySelector('[data-booking-time]:not(:disabled)')); }
 function selectProcedure(id) { click(document.querySelector(`[data-booking-procedure="${id}"]`)); }
 async function cleanup(dispose) {
