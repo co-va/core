@@ -305,34 +305,17 @@ function bindWorkspaceInteraction(root, state, handlers, { bindZ = true, onZRigh
 }
 
 async function openChatSettings(state) {
-  const [pushState, chatSettings] = await Promise.all([
-    getWebPushState(state.tenantId).catch(() => ({ supported: false, enabled: false, subscribed: false, permission: 'unsupported' })),
-    getAccountChatSettings(state.tenantId).catch(() => ({ telegram: { linked: false, enabled: false, username: '' } })),
-  ]);
-  let push = pushState;
+  const chatSettings = await getAccountChatSettings(state.tenantId)
+    .catch(() => ({ telegram: { linked: false, enabled: false, username: '' } }));
   const telegram = chatSettings?.telegram || { linked: false, enabled: false, username: '' };
-  const render = () => settingsPanel([
-    { type: 'toggle', label: 'Push', checked: Boolean(push.subscribed), data: 'data-chat-push', disabled: !push.supported || !push.enabled || push.permission === 'denied' },
+  const layer = mountModal(document.body, modal(settingsPanel([
     { label: telegram.linked ? `Telegram: ${telegram.username || 'подключён'}` : 'Telegram не подключён' },
     { label: 'Согласия', data: 'data-chat-consents' },
-  ]);
-  const layer = mountModal(document.body, modal(render(), { variant: 'q', title: 'Настройки чата' }));
-  const redraw = () => {
-    const panel = layer?.querySelector('.app-settings-panel');
-    if (panel) panel.outerHTML = render();
-    bind();
-  };
-  const bind = () => {
-    layer?.querySelector('[data-chat-push]')?.addEventListener('click', async () => {
-      push = push.subscribed ? await disableWebPush(state.tenantId) : await enableWebPush(state.tenantId);
-      redraw();
-    });
-    layer?.querySelector('[data-chat-consents]')?.addEventListener('click', () => {
-      layer.remove();
-      void openAccountConsentSettings(state);
-    });
-  };
-  bind();
+  ]), { variant: 'q', title: 'Настройки чата' }));
+  layer?.querySelector('[data-chat-consents]')?.addEventListener('click', () => {
+    layer.remove();
+    void openAccountConsentSettings(state);
+  });
 }
 
 function relationshipTitle(relationship = {}) {
@@ -464,19 +447,13 @@ function openAccountPhotoSettings(state, handlers) {
 async function loadGlobalNotificationState(state, relationships = state.relationships) {
   const scopedRelationships = Array.isArray(relationships) ? relationships : [];
   const tenantIds = scopedRelationships.map((item) => String(item?.tenantId || '')).filter(Boolean);
-  const [pushStates, chatStates] = await Promise.all([
-    Promise.all(tenantIds.map((tenantId) => getWebPushState(tenantId).catch(() => ({
-      tenantId,
-      supported: false,
-      enabled: false,
-      subscribed: false,
-      permission: 'unsupported',
-    })))),
+  const [pushState, chatStates] = await Promise.all([
+    getWebPushState().catch(() => ({ supported: false, enabled: false, subscribed: false, permission: 'unsupported' })),
     Promise.all(tenantIds.map((tenantId) => getAccountChatSettings(tenantId).catch(() => ({
       telegram: { linked: false, enabled: false, username: '' },
     })))),
   ]);
-  return { tenantIds, pushStates, chatStates };
+  return { tenantIds, pushState, chatStates };
 }
 
 async function openGlobalAccountControls(root, state, handlers, relationships = state.relationships) {
@@ -485,8 +462,8 @@ async function openGlobalAccountControls(root, state, handlers, relationships = 
 
   const scopedRelationships = Array.isArray(relationships) ? relationships : [];
   const notificationState = await loadGlobalNotificationState(state, scopedRelationships);
-  const pushSupported = notificationState.pushStates.some((item) => item?.supported && item?.enabled);
-  const pushSubscribed = notificationState.pushStates.some((item) => item?.subscribed);
+  const pushSupported = Boolean(notificationState.pushState?.supported && notificationState.pushState?.enabled);
+  const pushSubscribed = Boolean(notificationState.pushState?.subscribed);
   const telegram = notificationState.chatStates.find((item) => item?.telegram?.linked)?.telegram || null;
 
   const representatives = scopedRelationships.length
@@ -545,11 +522,8 @@ async function openGlobalAccountControls(root, state, handlers, relationships = 
     const status = layer.querySelector('[data-notification-status]');
     if (status) status.textContent = 'Сохраняем…';
     try {
-      if (control.checked) {
-        for (const tenantId of notificationState.tenantIds) await enableWebPush(tenantId);
-      } else {
-        for (const tenantId of notificationState.tenantIds) await disableWebPush(tenantId);
-      }
+      if (control.checked) await enableWebPush();
+      else await disableWebPush();
       if (status) status.textContent = 'Сохранено.';
     } catch (error) {
       control.checked = !control.checked;
@@ -592,7 +566,7 @@ function confirmDeleteAccount(state, handlers) {
         title: 'Профиль не удалён',
         message: accountErrorMessage(error, 'Не удалось удалить профиль'),
         action: 'Закрыть',
-        variant: 'technical',
+        variant:'technical',
       });
     }
   });
@@ -1121,9 +1095,9 @@ function openGlobalContactSettings(state, handlers, relationship) {
     title: 'Настройки',
     actions: [
       {
-        id: 'controls',
-        label: 'Согласия / Уведомления',
-        onSelect: () => void openGlobalAccountControls(document.body, state, handlers, [relationship]),
+        id: 'consents',
+        label: 'Согласия',
+        onSelect: () => void openAccountConsentSettings(state, { tenantId, onChanged: () => {} }),
       },
       {
         id: 'delete',
