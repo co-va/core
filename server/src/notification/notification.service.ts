@@ -376,7 +376,7 @@ export class NotificationService {
   ): Promise<RoutedDelivery[]> {
     if (channel === 'PUSH') {
       if (!(await this.externalAllowed(tenantId, identity, channel, purpose))) return [];
-      const endpoints = await this.webPush.listAccountEndpoints(tenantId, identity.accountId);
+      const endpoints = await this.webPush.listAccountEndpoints(identity.accountId);
       const routed: RoutedDelivery[] = [];
       for (const endpoint of endpoints) {
         if (await this.queueDelivery(tenantId, notificationId, 'PUSH', endpoint)) {
