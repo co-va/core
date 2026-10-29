@@ -41,7 +41,6 @@
 .message-composer .ui-button.message-composer__send{border-radius:50%;font-size:18px}
 .message-composer__attachments{grid-column:1/-1;display:flex;gap:6px;min-width:0;overflow-x:auto}
 .message-composer__attachment-chip{flex:0 0 auto;max-width:150px;border:1px solid var(--border);border-radius:10px;padding:5px 8px;background:var(--white);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chat-thread--unread .list-entry__right small{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 6px;border-radius:999px;background:var(--v2-danger,#ff1111);color:#fff;font-size:10px;font-weight:850;line-height:1}
 
 @media(max-width:360px){.message-bubble{max-width:88%}}
 
