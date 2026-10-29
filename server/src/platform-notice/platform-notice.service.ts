@@ -101,9 +101,37 @@ export class PlatformNoticeService {
     return { subscribed: false };
   }
 
+  private async unreadCount(platformAccountId: string, tenantId: string) {
+    const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number | string }>>`
+      SELECT (
+        (
+          SELECT COUNT(*)
+          FROM "PlatformNotice" n
+          WHERE n."platformAccountId" = ${platformAccountId}
+            AND (${tenantId} = '' OR n."tenantId" = ${tenantId})
+            AND n."readAt" IS NULL
+        ) + (
+          SELECT COUNT(*)
+          FROM "CommunicationMessage" m
+          INNER JOIN "Membership" membership
+            ON membership."tenantId" = m."tenantId"
+           AND membership."platformAccountId" = ${platformAccountId}
+          WHERE (${tenantId} = '' OR m."tenantId" = ${tenantId})
+            AND m."direction" = 'inbound'
+            AND m."purpose" = 'DIRECT'
+            AND m."readAt" IS NULL
+            AND m."failedAt" IS NULL
+            AND m."status" <> 'failed'
+        )
+      )::int AS "count"
+    `;
+    const count = Number(rows[0]?.count || 0);
+    return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  }
+
   private async dispatchPush(
     platformAccountId: string,
-    notice: { id: string; title: string; body: string; type: string; metadata: unknown },
+    notice: { id: string; tenantId?: string; title: string; body: string; type: string; metadata: unknown },
   ) {
     const config = this.pushConfig();
     if (!config.enabled) return { sent: 0, failed: 0 };
@@ -118,15 +146,17 @@ export class PlatformNoticeService {
     const metadata = notice.metadata && typeof notice.metadata === 'object' && !Array.isArray(notice.metadata)
       ? notice.metadata as Record<string, any>
       : {};
-    const tenantId = text(metadata.tenantId);
+    const tenantId = text(notice.tenantId || metadata.tenantId);
     const explicitUrl = text(metadata.url);
     const url = explicitUrl || (tenantId ? `/admin/?liveRequest=${encodeURIComponent(tenantId)}` : '/admin/');
+    const badgeCount = await this.unreadCount(platformAccountId, tenantId);
     const payload = JSON.stringify({
       notificationId: notice.id,
       title: notice.title,
       body: notice.body,
       type: notice.type,
       tag: notice.id,
+      badgeCount,
       url,
     });
 
@@ -221,6 +251,7 @@ export class PlatformNoticeService {
     if (!membership) return { sent: 0, failed: 0 };
     return this.dispatchPush(membership.platformAccountId, {
       id: randomUUID(),
+      tenantId,
       title: input.title,
       body: input.body || '',
       type: input.type,
