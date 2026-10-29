@@ -112,7 +112,7 @@ const tokenFor = (accountId) => {
   const payload = Buffer.from(JSON.stringify({ sub: accountId, kind: 'account' }), 'utf8').toString('base64url');
   return `e30.${payload}.signature`;
 };
-const pushRuntime = await import('../core/notifications/web-push.js?account-push-ownership-regression=1');
+const pushRuntime = await import('../core/notifications/web-push.js');
 
 localStorage.setItem('book.account.token', tokenFor('account-a'));
 await pushRuntime.disableWebPush();
