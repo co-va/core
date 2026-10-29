@@ -2,6 +2,7 @@ import { getAccountToken } from '../account/index.js';
 import {
   deleteGlobalWebPushSubscription,
   getGlobalWebPushConfiguration,
+  getGlobalWebPushSubscriptionState,
   saveGlobalWebPushSubscription,
 } from './account-push-api.js';
 
@@ -141,11 +142,16 @@ export async function getWebPushState() {
   const configuration = await getGlobalWebPushConfiguration();
   const registration = await resolveWebPushRegistration();
   const subscription = await registration?.pushManager.getSubscription();
+  let subscribed = false;
+  if (subscription?.endpoint) {
+    const serverState = await getGlobalWebPushSubscriptionState(subscription.endpoint);
+    subscribed = Boolean(serverState?.subscribed);
+  }
   return {
     supported: true,
     enabled: Boolean(configuration?.enabled && configuration?.publicKey),
     permission: Notification.permission,
-    subscribed: Boolean(subscription),
+    subscribed,
   };
 }
 
