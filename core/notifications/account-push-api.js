@@ -19,6 +19,11 @@ export function getGlobalWebPushConfiguration() {
   return pushRequest('/config');
 }
 
+export function getGlobalWebPushSubscriptionState(endpoint) {
+  const value = String(endpoint || '').trim();
+  return pushRequest(`/subscription?endpoint=${encodeURIComponent(value)}`);
+}
+
 export function saveGlobalWebPushSubscription(subscription) {
   return pushRequest('/subscription', {
     method: 'PUT',

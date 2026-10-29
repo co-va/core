@@ -220,7 +220,8 @@ assert.match(adminUi, /data-enable-admin-push/);
 assert.match(adminUi, /Включить PUSH/);
 assert.doesNotMatch(adminUi, /data-live-request-count/);
 
-const storage = new Map([['book.account.token', 'runtime-account-token']]);
+const runtimeAccountPayload = Buffer.from(JSON.stringify({ sub: 'runtime-account', kind: 'account' }), 'utf8').toString('base64url');
+const storage = new Map([['book.account.token', `e30.${runtimeAccountPayload}.signature`]]);
 const localStorageMock = {
   getItem(key) { return storage.get(String(key)) ?? null; },
   setItem(key, value) { storage.set(String(key), String(value)); },
@@ -300,7 +301,6 @@ assert.equal(runtimePush.webPushOptedOut(), true, 'explicit Push disable must pe
 assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'explicit Push disable must suppress future setup prompts');
 assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/subscription' && item.method === 'DELETE'), 'global Account Push disable must remove the global subscription');
 
-storage.delete('va-tools.account.push.opt-out');
 notificationRuntime.permission = 'denied';
 const deniedRuntimePush = await runtimePush.enableWebPush({ strict: false });
 assert.equal(deniedRuntimePush.subscribed, false, 'system denial must leave Push disabled');

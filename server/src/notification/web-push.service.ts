@@ -69,6 +69,19 @@ export class WebPushService {
     return account;
   }
 
+  async subscriptionState(accountId: string, endpointValue: unknown) {
+    const endpoint = text(endpointValue);
+    if (!endpoint) return { subscribed: false, enabled: this.vapid().enabled };
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id"
+      FROM "WebPushSubscription"
+      WHERE "accountId" = ${accountId}
+        AND "endpoint" = ${endpoint}
+      LIMIT 1
+    `;
+    return { subscribed: Boolean(rows[0]), enabled: this.vapid().enabled };
+  }
+
   async saveSubscription(
     accountId: string,
     input: unknown,
