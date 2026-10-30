@@ -131,6 +131,8 @@ export class NotificationEventService {
   ) {
     const type = text(input?.type);
     if (!type) return { notification: null, routed: [], blocked: 'EVENT_TYPE_MISSING' };
+    const policy = await this.getPolicy(tenantId, type);
+    if (!(policy as any)?.enabled) return { notification: null, routed: [], blocked: 'EVENT_DISABLED' };
     return this.notifications.createEventForPerson(tenantId, personValue, input);
   }
 
