@@ -40,11 +40,11 @@ export async function apiRequest(path, options = {}) {
   return fetch(`${API_BASE}${path}`, { ...options, headers });
 }
 
-export async function login(email, password) {
+export async function login(identifier, password) {
   const response = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -56,10 +56,10 @@ export async function login(email, password) {
   return payload;
 }
 
-export async function requestPasswordReset(email) {
+export async function requestPasswordReset(identifier) {
   const response = await apiRequest('/auth/password-reset/request', {
     method: 'POST',
-    body: JSON.stringify({ email, surface: 'app' }),
+    body: JSON.stringify({ identifier, email: identifier, surface: 'app' }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.message || 'Не удалось отправить ссылку восстановления');

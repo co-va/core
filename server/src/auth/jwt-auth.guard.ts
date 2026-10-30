@@ -16,7 +16,10 @@ function canonicalPhone(value: unknown) {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService, private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request & { auth?: { platformAccountId: string; tenantId: string; role: string } }>();

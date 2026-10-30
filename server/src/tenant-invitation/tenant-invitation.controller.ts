@@ -1,9 +1,13 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { TenantInvitationService } from './tenant-invitation.service';
 
 @Controller('tenant-invitations')
 export class TenantInvitationController {
-  constructor(private readonly invitations: TenantInvitationService) {}
+  constructor(
+    private readonly invitations: TenantInvitationService,
+    private readonly emailVerification: EmailVerificationService,
+  ) {}
 
   @Post('public')
   startPublicRegistration(@Body() body: { email?: unknown }) {
@@ -16,7 +20,7 @@ export class TenantInvitationController {
   }
 
   @Post('accept')
-  accept(@Body() body: {
+  async accept(@Body() body: {
     token?: unknown;
     password?: unknown;
     email?: unknown;
@@ -25,6 +29,9 @@ export class TenantInvitationController {
     phone?: unknown;
     documents?: unknown;
   }) {
-    return this.invitations.accept(body || {});
+    const result = await this.invitations.accept(body || {});
+    const accountId = String((result as any)?.account?.id || '').trim();
+    if (accountId) void this.emailVerification.requestPlatform(accountId).catch(() => undefined);
+    return result;
   }
 }

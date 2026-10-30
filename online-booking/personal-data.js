@@ -1,4 +1,5 @@
 import { accountErrorMessage, updateAccount, updateGlobalAccount } from '../core/account/index.js';
+import { changeAccountEmail, getAccountEmailVerification, requestAccountEmailVerification } from '../core/account/email.js';
 import {
   actionBlock,
   button,
@@ -39,7 +40,9 @@ function editorMarkup(account = {}) {
     ${field({ label: 'Фамилия', name: 'surname', value: account.surname || '', autocomplete: 'family-name' })}
     ${phoneField({ label: 'Телефон', name: 'phone', value: account.phone || '', required: true })}
     ${repeatedField({ label: 'Дополнительные телефоны', name: 'additionalPhone', values: profile.phones || [], type: 'tel', addLabel: '+ Телефон', showEmptyRow: false })}
-    ${field({ label: 'Email', name: 'email', value: account.email || '', type: 'email', readonly: true })}
+    ${field({ label: 'Email', name: 'email', value: account.email || '', type: 'email', required: true, autocomplete: 'email' })}
+    <div class="muted" data-account-email-status>Проверяем подтверждение email…</div>
+    ${button('Отправить письмо подтверждения', { type: 'button', variant: 'outline', data: 'data-account-email-verify' })}
     ${repeatedField({ label: 'Дополнительные email', name: 'additionalEmail', values: profile.emails || [], type: 'email', placeholder: 'name@example.com', addLabel: '+ Email', showEmptyRow: false })}
     ${field({ label: 'Telegram', name: 'telegram', value: profile.telegram || '', placeholder: '@username', maxlength: 100 })}
     ${select({
@@ -66,6 +69,19 @@ function formSignature(form) {
   return JSON.stringify([...new FormData(form).entries()].map(([key, value]) => [key, String(value)]));
 }
 
+async function syncEmailStatus(layer) {
+  const status = layer?.querySelector('[data-account-email-status]');
+  const verify = layer?.querySelector('[data-account-email-verify]');
+  if (!status || !verify) return;
+  try {
+    const state = await getAccountEmailVerification();
+    status.textContent = state?.verified ? 'Email подтверждён.' : 'Email не подтверждён.';
+    verify.hidden = Boolean(state?.verified);
+  } catch {
+    status.textContent = 'Статус email сейчас недоступен.';
+  }
+}
+
 export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, onClosed } = {}) {
   const layer = mountV2ZLayer(root, v2ZLayer(editorMarkup(state.account || {}), { className: 'account-personal-data-z' }), {
     stack: true,
@@ -78,6 +94,7 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
   initRepeatedFields(layer);
   initLinks(layer);
   initDatePickers(layer);
+  void syncEmailStatus(layer);
 
   const form = layer.querySelector('[data-account-personal-form]');
   const errorNode = layer.querySelector('[data-account-personal-error]');
@@ -91,6 +108,20 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
   };
   form?.addEventListener('input', syncDirty);
   form?.addEventListener('change', syncDirty);
+
+  layer.querySelector('[data-account-email-verify]')?.addEventListener('click', async (event) => {
+    const control = event.currentTarget;
+    control.disabled = true;
+    try {
+      await requestAccountEmailVerification();
+      openNotice({ title: 'Подтверждение email', message: 'Письмо отправлено на текущий email.', action: 'Закрыть' });
+    } catch (error) {
+      openNotice({ title: 'Письмо не отправлено', message: error instanceof Error ? error.message : 'Не удалось отправить письмо', action: 'Закрыть', variant: 'technical' });
+    } finally {
+      control.disabled = false;
+    }
+  });
+
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const validationError = formValidationMessage(form);
@@ -103,6 +134,8 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
     if (saveButton) saveButton.disabled = true;
     try {
       const currentProfile = profileData(state.account || {});
+      const requestedEmail = String(data.get('email') || '').trim().toLowerCase();
+      const currentEmail = String(state.account?.email || '').trim().toLowerCase();
       const payload = {
         name: data.get('name'),
         surname: data.get('surname'),
@@ -121,6 +154,16 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
         ? await updateGlobalAccount(payload)
         : await updateAccount(state.tenantId, payload);
       state.account = account;
+
+      if (requestedEmail && requestedEmail !== currentEmail) {
+        await changeAccountEmail(requestedEmail);
+        openNotice({
+          title: 'Подтвердите новый email',
+          message: `Письмо отправлено на ${requestedEmail}. Email изменится после подтверждения по ссылке.`,
+          action: 'Закрыть',
+        });
+      }
+
       onDirtyChange?.(false);
       layer.v2Close?.();
       await onSaved?.(account);
@@ -128,7 +171,7 @@ export function openAccountPersonalDataZ(root, state, { onSaved, onDirtyChange, 
       if (saveButton) saveButton.disabled = false;
       openNotice({
         title: 'Данные не сохранены',
-        message: accountErrorMessage(error, 'Не удалось сохранить данные'),
+        message: accountErrorMessage(error, error instanceof Error ? error.message : 'Не удалось сохранить данные'),
         action: 'Закрыть',
         variant: 'technical',
       });

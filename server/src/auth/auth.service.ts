@@ -3,6 +3,15 @@ import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { PrismaService } from '../prisma.service';
 
+type PlatformPhoneRow = { platformAccountId: string };
+
+function canonicalPhone(value: unknown) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (digits.length === 10) return `7${digits}`;
+  if (digits.length === 11 && digits.startsWith('8')) return `7${digits.slice(1)}`;
+  return digits;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -10,14 +19,47 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  async login(email: string, password: string) {
-    const normalizedEmail = String(email || '').trim().toLowerCase();
-    const account = await this.prisma.platformAccount.findUnique({
-      where: { email: normalizedEmail },
+  private async accountByIdentifier(value: string) {
+    const raw = String(value || '').trim();
+    const normalizedEmail = raw.toLowerCase();
+    if (normalizedEmail.includes('@')) {
+      const admin = await this.prisma.platformAccount.findUnique({
+        where: { email: normalizedEmail },
+        include: { memberships: { include: { tenant: true } }, platformAdmin: true },
+      });
+      return admin?.platformAdmin ? admin : null;
+    }
+
+    const normalizedPhone = canonicalPhone(raw);
+    if (normalizedPhone.length < 10 || normalizedPhone.length > 15) return null;
+
+    const rows = await this.prisma.$queryRaw<PlatformPhoneRow[]>`
+      SELECT DISTINCT "platformAccountId"
+      FROM "Profile"
+      WHERE (
+        CASE
+          WHEN LENGTH(REGEXP_REPLACE("phone", '[^0-9]', '', 'g')) = 10
+            THEN '7' || REGEXP_REPLACE("phone", '[^0-9]', '', 'g')
+          WHEN LENGTH(REGEXP_REPLACE("phone", '[^0-9]', '', 'g')) = 11
+            AND LEFT(REGEXP_REPLACE("phone", '[^0-9]', '', 'g'), 1) = '8'
+            THEN '7' || SUBSTRING(REGEXP_REPLACE("phone", '[^0-9]', '', 'g') FROM 2)
+          ELSE REGEXP_REPLACE("phone", '[^0-9]', '', 'g')
+        END
+      ) = ${normalizedPhone}
+      LIMIT 2
+    `;
+    if (rows.length !== 1) return null;
+
+    return this.prisma.platformAccount.findUnique({
+      where: { id: rows[0].platformAccountId },
       include: { memberships: { include: { tenant: true } } },
     });
+  }
+
+  async login(identifier: string, password: string) {
+    const account = await this.accountByIdentifier(identifier);
     if (!account || !(await compare(String(password || ''), account.passwordHash))) {
-      throw new UnauthorizedException('Неверный email или пароль');
+      throw new UnauthorizedException('Неверный телефон или пароль');
     }
 
     const membership = account.memberships[0];

@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
-type LoginBody = { email?: string; password?: string };
+type LoginBody = { identifier?: string; email?: string; password?: string };
 type AuthRequest = Request & { auth?: { platformAccountId: string; tenantId: string; role: string } };
 
 @Controller('auth')
@@ -12,7 +12,7 @@ export class AuthController {
 
   @Post('login')
   login(@Body() body: LoginBody) {
-    return this.auth.login(body?.email || '', body?.password || '');
+    return this.auth.login(body?.identifier || body?.email || '', body?.password || '');
   }
 
   @UseGuards(JwtAuthGuard)

@@ -12,6 +12,8 @@ type ResetTicketRow = {
   expiresAt: Date;
   usedAt: Date | null;
 };
+type RecoveryRow = { id: string; email: string; emailVerifiedAt: Date | null };
+type IdRow = { id: string };
 
 const RESET_TTL_MS = 30 * 60 * 1000;
 const GENERIC_ACCEPTED = { accepted: true } as const;
@@ -102,16 +104,83 @@ export class PasswordResetService {
     });
   }
 
-  async requestPlatform(rawEmail: unknown, rawSurface: unknown = '') {
-    const normalized = email(rawEmail);
-    if (!normalized) return GENERIC_ACCEPTED;
+  private async platformByIdentifier(rawIdentifier: unknown): Promise<RecoveryRow | null> {
+    const raw = text(rawIdentifier);
+    const emailIdentifier = email(raw);
+    if (emailIdentifier) {
+      const rows = await this.prisma.$queryRawUnsafe<RecoveryRow[]>(
+        'SELECT "id","email","emailVerifiedAt" FROM "PlatformAccount" WHERE LOWER("email")=LOWER($1) LIMIT 1',
+        emailIdentifier,
+      );
+      return rows[0] || null;
+    }
 
-    const account = await this.prisma.platformAccount.findUnique({ where: { email: normalized }, select: { id: true, email: true } });
-    if (!account) return GENERIC_ACCEPTED;
+    const phone = canonicalPhone(raw);
+    if (phone.length < 10) return null;
+    const ids = await this.prisma.$queryRawUnsafe<IdRow[]>(
+      `SELECT DISTINCT p."platformAccountId" AS "id"
+       FROM "Profile" p
+       WHERE CASE
+         WHEN LENGTH(REGEXP_REPLACE(p."phone", '[^0-9]', '', 'g')) = 10
+           THEN '7' || REGEXP_REPLACE(p."phone", '[^0-9]', '', 'g')
+         WHEN LENGTH(REGEXP_REPLACE(p."phone", '[^0-9]', '', 'g')) = 11
+           AND LEFT(REGEXP_REPLACE(p."phone", '[^0-9]', '', 'g'), 1) = '8'
+           THEN '7' || SUBSTRING(REGEXP_REPLACE(p."phone", '[^0-9]', '', 'g') FROM 2)
+         ELSE REGEXP_REPLACE(p."phone", '[^0-9]', '', 'g')
+       END = $1
+       LIMIT 2`,
+      phone,
+    );
+    if (ids.length !== 1) return null;
+    const rows = await this.prisma.$queryRawUnsafe<RecoveryRow[]>(
+      'SELECT "id","email","emailVerifiedAt" FROM "PlatformAccount" WHERE "id"=$1 LIMIT 1',
+      ids[0].id,
+    );
+    return rows[0] || null;
+  }
+
+  private async accountByIdentifier(rawIdentifier: unknown): Promise<RecoveryRow | null> {
+    const raw = text(rawIdentifier);
+    const emailIdentifier = email(raw);
+    const phoneIdentifier = canonicalPhone(raw);
+    let ids: IdRow[] = [];
+
+    if (emailIdentifier) {
+      ids = await this.prisma.$queryRawUnsafe<IdRow[]>(
+        `SELECT DISTINCT "accountId" AS "id" FROM "AccountContact"
+         WHERE "type"='EMAIL' AND LOWER("value")=LOWER($1) LIMIT 2`,
+        emailIdentifier,
+      );
+    } else if (phoneIdentifier.length >= 10) {
+      ids = await this.prisma.$queryRawUnsafe<IdRow[]>(
+        `SELECT DISTINCT "accountId" AS "id" FROM "AccountContact"
+         WHERE "type"='PHONE' AND CASE
+           WHEN LENGTH(REGEXP_REPLACE("value", '[^0-9]', '', 'g')) = 10
+             THEN '7' || REGEXP_REPLACE("value", '[^0-9]', '', 'g')
+           WHEN LENGTH(REGEXP_REPLACE("value", '[^0-9]', '', 'g')) = 11
+             AND LEFT(REGEXP_REPLACE("value", '[^0-9]', '', 'g'), 1) = '8'
+             THEN '7' || SUBSTRING(REGEXP_REPLACE("value", '[^0-9]', '', 'g') FROM 2)
+           ELSE REGEXP_REPLACE("value", '[^0-9]', '', 'g')
+         END = $1 LIMIT 2`,
+        phoneIdentifier,
+      );
+    }
+    if (ids.length !== 1) return null;
+    const rows = await this.prisma.$queryRawUnsafe<RecoveryRow[]>(
+      'SELECT "id","email","emailVerifiedAt" FROM "Account" WHERE "id"=$1 LIMIT 1',
+      ids[0].id,
+    );
+    return rows[0] || null;
+  }
+
+  async requestPlatform(rawIdentifier: unknown, rawSurface: unknown = '') {
+    const account = await this.platformByIdentifier(rawIdentifier);
+    const deliveryEmail = email(account?.email);
+    if (!account || !account.emailVerifiedAt || !deliveryEmail) return GENERIC_ACCEPTED;
 
     try {
       const ticket = await this.issueTicket('PLATFORM', account.id);
-      await this.sendResetEmail(account.email, this.resetUrl('PLATFORM', ticket.token, text(rawSurface)));
+      await this.sendResetEmail(deliveryEmail, this.resetUrl('PLATFORM', ticket.token, text(rawSurface)));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || '');
       this.logger.error(`Platform password reset delivery failed: ${message}`);
@@ -120,20 +189,9 @@ export class PasswordResetService {
   }
 
   async requestAccount(rawIdentifier: unknown) {
-    const raw = text(rawIdentifier);
-    const emailIdentifier = email(raw);
-    const phoneIdentifier = canonicalPhone(raw);
-    if (!emailIdentifier && !phoneIdentifier) return GENERIC_ACCEPTED;
-
-    const contact = await this.prisma.accountContact.findUnique({
-      where: emailIdentifier
-        ? { type_value: { type: 'EMAIL', value: emailIdentifier } }
-        : { type_value: { type: 'PHONE', value: phoneIdentifier } },
-      include: { account: true },
-    });
-    const account = contact?.account || null;
+    const account = await this.accountByIdentifier(rawIdentifier);
     const deliveryEmail = email(account?.email);
-    if (!account || !deliveryEmail) return GENERIC_ACCEPTED;
+    if (!account || !account.emailVerifiedAt || !deliveryEmail) return GENERIC_ACCEPTED;
 
     try {
       const ticket = await this.issueTicket('ACCOUNT', account.id);

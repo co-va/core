@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { BusinessStateModule } from '../business-state/business-state.module';
 import { CommunicationModule } from '../communication/communication.module';
 import { DocumentRegistryModule } from '../document-registry/document-registry.module';
+import { EmailVerificationModule } from '../email-verification/email-verification.module';
 import { EventModule } from '../event/event.module';
 import { NoteModule } from '../note/note.module';
 import { TenantDocumentArchiveModule } from '../tenant-document-archive/tenant-document-archive.module';
@@ -22,6 +23,7 @@ import { AccountCalendarGoogleAdapter } from './account-calendar-google.adapter'
 import { AccountCalendarService } from './account-calendar.service';
 import { AccountCalendarYandexAdapter } from './account-calendar-yandex.adapter';
 import { AccountDepositController } from './account-deposit.controller';
+import { AccountEmailVerificationController } from './account-email-verification.controller';
 import { AccountEventController } from './account-event.controller';
 import { AccountNoteController } from './account-note.controller';
 import { AccountMessengerController } from './account-messenger.controller';
@@ -38,8 +40,8 @@ import { OnlineBookingService } from './online-booking.service';
 import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
-  imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, PlatformNoticeModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
-  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
+  imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EmailVerificationModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, PlatformNoticeModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
+  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEmailVerificationController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
   providers: [OnlineBookingService, BookingFlowService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })
 export class OnlineBookingModule {}

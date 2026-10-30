@@ -12,25 +12,35 @@ function isAccountSurface(target) {
   return Boolean(target?.matches?.('[data-booking-forgot],[data-global-account-forgot]'));
 }
 
+function isAdminSurface(target) {
+  return Boolean(target?.matches?.('[data-admin-forgot]'));
+}
+
 function identifierFrom(target) {
   const form = target?.closest?.('form');
   if (!form) return '';
   const data = new FormData(form);
-  return String(data.get('identifier') || data.get('email') || '').trim();
+  return String(data.get('identifier') || data.get('phone') || data.get('email') || '').trim();
 }
 
 function focusIdentifier(target) {
   const form = target?.closest?.('form');
-  form?.querySelector?.('[name="identifier"],[name="email"]')?.focus?.();
+  form?.querySelector?.('[name="identifier"],[name="phone"],[name="email"]')?.focus?.();
+}
+
+function phoneLike(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return !String(value || '').includes('@') && digits.length >= 10 && digits.length <= 15;
 }
 
 async function requestReset(target) {
   const identifier = identifierFrom(target);
-  if (!identifier) {
+  const adminSurface = isAdminSurface(target);
+  if ((!adminSurface && !phoneLike(identifier)) || (adminSurface && !identifier)) {
     focusIdentifier(target);
     openNotice({
       title: 'Восстановление пароля',
-      message: 'Сначала укажите email или телефон.',
+      message: adminSurface ? 'Укажите email администратора.' : 'Укажите номер телефона.',
       action: 'Закрыть',
     });
     return;
@@ -43,7 +53,7 @@ async function requestReset(target) {
   const body = accountSurface
     ? { identifier }
     : {
-        email: identifier,
+        identifier,
         surface: String(location.hostname || '').toLowerCase() === 'admin.va-tools.ru' ? 'admin' : 'app',
       };
 
@@ -57,7 +67,7 @@ async function requestReset(target) {
     if (!response.ok) throw new Error('request failed');
     openNotice({
       title: 'Восстановление пароля',
-      message: 'Если аккаунт найден и к нему привязан email, ссылка для смены пароля отправлена. Она действует 30 минут.',
+      message: 'Если аккаунт найден и его email подтверждён, ссылка для смены пароля отправлена. Она действует 30 минут.',
       action: 'Закрыть',
     });
   } catch {
@@ -73,7 +83,7 @@ async function requestReset(target) {
 }
 
 function ensureAdminForgotButton() {
-  const form = document.querySelector('[data-login-form]');
+  const form = document.querySelector('#admin-app [data-login-form]');
   if (!form || form.querySelector('[data-admin-forgot]')) return;
   const button = document.createElement('button');
   button.type = 'button';
@@ -81,6 +91,24 @@ function ensureAdminForgotButton() {
   button.dataset.adminForgot = '';
   button.textContent = 'Забыли пароль?';
   form.append(button);
+}
+
+function normalizeIdentifierField(form) {
+  if (!form || form.closest('#admin-app')) return;
+  const input = form.querySelector('[name="identifier"],[name="phone"],[name="email"]');
+  if (!input) return;
+  input.type = 'tel';
+  input.inputMode = 'tel';
+  input.autocomplete = 'tel';
+  input.setAttribute('aria-label', 'Телефон');
+  const host = input.closest('.field');
+  const label = host?.querySelector(':scope > span');
+  if (label) label.textContent = input.required ? 'Телефон *' : 'Телефон';
+}
+
+function normalizeLoginFields() {
+  document.querySelectorAll('#auth-form, [data-login-form]').forEach(normalizeIdentifierField);
+  document.querySelectorAll(FORGOT_SELECTOR).forEach((button) => normalizeIdentifierField(button.closest('form')));
 }
 
 document.addEventListener('click', (event) => {
@@ -92,5 +120,9 @@ document.addEventListener('click', (event) => {
 }, true);
 
 ensureAdminForgotButton();
-const observer = new MutationObserver(() => ensureAdminForgotButton());
+normalizeLoginFields();
+const observer = new MutationObserver(() => {
+  ensureAdminForgotButton();
+  normalizeLoginFields();
+});
 observer.observe(document.documentElement, { childList: true, subtree: true });
