@@ -33,12 +33,7 @@ export class NotificationEventService {
     ]);
     const byType = new Map((Array.isArray(policies) ? policies : []).map((policy: any) => [text(policy?.eventType), policy]));
     const enabledByType = new Map(enabledRows.map((row) => [row.eventType, Boolean(row.enabled)]));
-    const known = new Set<string>(NOTIFICATION_EVENT_TYPES);
-    const types = [
-      ...NOTIFICATION_EVENT_TYPES,
-      ...(Array.isArray(policies) ? policies : []).map((policy: any) => text(policy?.eventType)).filter((type) => type && !known.has(type)),
-    ];
-    return types.map((eventType) => ({
+    return NOTIFICATION_EVENT_TYPES.map((eventType) => ({
       ...(byType.get(eventType) || { eventType }),
       enabled: enabledByType.get(eventType) === true,
     }));
