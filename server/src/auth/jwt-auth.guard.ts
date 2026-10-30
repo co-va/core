@@ -1,7 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
-import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { PrismaService } from '../prisma.service';
 
 function text(value: unknown) {
@@ -20,7 +19,6 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
-    private readonly emailVerification: EmailVerificationService,
   ) {}
 
   async canActivate(context: ExecutionContext) {
@@ -33,7 +31,6 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwt.verifyAsync<{ sub: string; tenantId: string; role: string }>(token);
       if (!payload.sub || !payload.tenantId) throw new UnauthorizedException();
       request.auth = { platformAccountId: payload.sub, tenantId: payload.tenantId, role: payload.role || '' };
-      void this.emailVerification.requestPlatform(payload.sub).catch(() => undefined);
 
       const requestPath = String((request as any).path || request.url || '').split('?')[0];
       const chatThread = request.method === 'GET' && /\/communications\/chat\/thread\/?$/.test(requestPath);
