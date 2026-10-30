@@ -62,43 +62,29 @@ function emailMiniCard(state = {}, { interactive = false } = {}) {
   });
 }
 
-function telegramTechnicalDiagnostics(state = {}) {
-  const config = state?.configuration || {};
-  const yesNo = (value) => value === true ? 'да' : value === false ? 'нет' : 'неизвестно';
-  const configured = (value) => value === true ? 'OK' : value === false ? 'НЕТ' : 'неизвестно';
-  return [
-    'Техническая диагностика — временно',
-    `API интеграции: ${state?.error ? `ОШИБКА — ${String(state.error)}` : 'OK'}`,
-    `Подключение сохранено: ${yesNo(Boolean(state?.connected))}`,
-    `Приём сообщений: ${yesNo(state?.inboundActive)}`,
-    `TELEGRAM_CREDENTIALS_KEY: ${configured(config?.credentialsKeyConfigured)}`,
-  ].join('\n');
-}
-
 function telegramInfoDocument(state = {}) {
-  const diagnostics = telegramTechnicalDiagnostics(state);
   if (state?.error) {
     return {
       title: 'Связь недоступна',
-      content: `Сейчас приложение не может проверить состояние подключения. Повторно вводить токен не нужно.\n\nПопробуйте открыть интеграцию позже.\n\n${diagnostics}`,
+      content: 'Сейчас приложение не может проверить состояние подключения. Повторно вводить токен не нужно.\n\nПопробуйте открыть интеграцию позже.',
     };
   }
 
   if (!state?.connected) {
-    return { title: 'Как подключить Telegram', content: `${TELEGRAM_SETUP_GUIDE}\n\n${diagnostics}` };
+    return { title: 'Как подключить Telegram', content: TELEGRAM_SETUP_GUIDE };
   }
 
   const bot = String(state?.botUsername || '').trim();
   if (state?.inboundActive) {
     return {
       title: 'Подключено',
-      content: `${bot ? `Бот ${bot} подключён.` : 'Бот подключён.'}\n\nБот принимает и отправляет сообщения через Telegram.\n\nЧтобы подключить другого бота, сначала отключите текущего.\n\n${diagnostics}`,
+      content: `${bot ? `Бот ${bot} подключён.` : 'Бот подключён.'}\n\nБот принимает и отправляет сообщения через Telegram.\n\nЧтобы подключить другого бота, сначала отключите текущего.`,
     };
   }
 
   return {
     title: 'Связь недоступна',
-    content: `${bot ? `Бот ${bot} подключён, но сейчас не удаётся подтвердить связь.` : 'Бот подключён, но сейчас не удаётся подтвердить связь.'}\n\nПовторно вводить токен не нужно.\n\nЕсли связь долго не восстановится, отключите бота и подключите его заново.\n\n${diagnostics}`,
+    content: `${bot ? `Бот ${bot} подключён, но сейчас не удаётся подтвердить связь.` : 'Бот подключён, но сейчас не удаётся подтвердить связь.'}\n\nПовторно вводить токен не нужно.\n\nЕсли связь долго не восстановится, отключите бота и подключите его заново.`,
   };
 }
 
