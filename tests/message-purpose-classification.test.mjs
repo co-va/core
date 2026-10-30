@@ -46,7 +46,7 @@ assert.doesNotMatch(notification, /purpose: definition\?\.purpose \|\| 'SERVICE'
 assert.doesNotMatch(notification, /SYSTEM_EVENT_TYPES/);
 assert.doesNotMatch(notification, /const DEFAULT_TEMPLATES/);
 
-// SYSTEM remains reserved for platform-generated internal messages.
+// SYSTEM remains reserved for transport-generated bot messages; DIRECT is the human chat purpose.
 assert.match(telegram, /const purpose: MessagePurpose = 'SYSTEM'/);
 assert.match(telegram, /purpose: 'DIRECT'/);
 assert.match(telegram, /normalizeMessagePurpose\(input\?\.purpose\)/);
@@ -56,7 +56,7 @@ assert.match(notification, /purpose: MessagePurpose/);
 assert.match(notification, /normalizeMessagePurpose\(input\.purpose\)/);
 assert.match(notification, /"type", "purpose", "title"/);
 
-// Marketing consent is purpose-specific. It must not gate SYSTEM, SERVICE or DIRECT.
+// Marketing consent is purpose-specific and owned by routing/broadcast layers, not the Telegram transport.
 assert.doesNotMatch(consentPolicy, /async canSendMessages\(/);
 assert.match(consentPolicy, /async canSendMarketing\(/);
 assert.match(consentPolicy, /MARKETING_CONSENT_DOCUMENT_ID = 'messages-consent'/);
@@ -64,9 +64,7 @@ assert.match(consentPolicy, /MARKETING_CONSENT_DOCUMENT_ID = 'messages-consent'/
 assert.doesNotMatch(notification, /canSendMessages\(/);
 assert.match(notification, /purpose !== 'MARKETING'/);
 assert.match(notification, /canSendMarketing\(tenantId, channel, recipient\)/);
-
-assert.doesNotMatch(telegram, /consentPolicy\.canSendMessages/);
-assert.match(telegram, /purpose === 'MARKETING'[\s\S]*consentPolicy\.canSendMarketing/);
+assert.doesNotMatch(telegram, /ConsentPolicyService|consentPolicy|canSendMarketing|canSendMessages/);
 assert.match(broadcast, /documents\.canSendMarketing/);
 
 assert.doesNotMatch(bookingAccount, /messages-consent/);
