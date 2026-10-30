@@ -7,6 +7,9 @@ import { NOTIFICATION_EVENT_CATALOG, NOTIFICATION_EVENT_TYPES, notificationEvent
 type JsonObject = Record<string, any>;
 type EnabledRow = { eventType: string; enabled: boolean };
 
+const DELIVERY_POLICY_TYPE = '__delivery__';
+const SERVICE_POLICY_TYPE = '__service__';
+
 function text(value: unknown) {
   return String(value ?? '').trim();
 }
@@ -24,7 +27,8 @@ export class NotificationEventService {
       this.prisma.$queryRaw<EnabledRow[]>`
         SELECT "eventType", "enabled"
         FROM "NotificationRoutingPolicy"
-        WHERE "tenantId" = ${tenantId} AND "eventType" <> '__delivery__'
+        WHERE "tenantId" = ${tenantId}
+          AND "eventType" NOT IN (${DELIVERY_POLICY_TYPE}, ${SERVICE_POLICY_TYPE})
       `,
     ]);
     const byType = new Map((Array.isArray(policies) ? policies : []).map((policy: any) => [text(policy?.eventType), policy]));
@@ -42,7 +46,23 @@ export class NotificationEventService {
 
   async getPolicy(tenantId: string, eventType: string) {
     const type = text(eventType);
-    if (type === '__delivery__') return this.notifications.getRoutingPolicy(tenantId, type);
+    if (type === DELIVERY_POLICY_TYPE) return this.notifications.getRoutingPolicy(tenantId, type);
+    if (type === SERVICE_POLICY_TYPE) {
+      const rows = await this.prisma.$queryRaw<EnabledRow[]>`
+        SELECT "eventType", "enabled"
+        FROM "NotificationRoutingPolicy"
+        WHERE "tenantId" = ${tenantId} AND "eventType" = ${type}
+        LIMIT 1
+      `;
+      return {
+        eventType: SERVICE_POLICY_TYPE,
+        enabled: rows[0]?.enabled !== false,
+        mode: 'always',
+        channels: [],
+        titleTemplate: '',
+        bodyTemplate: '',
+      };
+    }
     const [policy, rows] = await Promise.all([
       this.notifications.getRoutingPolicy(tenantId, type),
       this.prisma.$queryRaw<EnabledRow[]>`
@@ -61,7 +81,24 @@ export class NotificationEventService {
     input: { enabled?: unknown; mode?: unknown; channels?: unknown; titleTemplate?: unknown; bodyTemplate?: unknown },
   ) {
     const type = text(eventType);
-    if (type === '__delivery__') return this.notifications.saveRoutingPolicy(tenantId, type, input);
+    if (type === DELIVERY_POLICY_TYPE) return this.notifications.saveRoutingPolicy(tenantId, type, input);
+
+    if (type === SERVICE_POLICY_TYPE) {
+      if (input.enabled !== undefined) {
+        const id = randomUUID();
+        const enabled = Boolean(input.enabled);
+        await this.prisma.$executeRaw`
+          INSERT INTO "NotificationRoutingPolicy" (
+            "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
+          ) VALUES (
+            ${id}, ${tenantId}, ${type}, 'always', '[]'::jsonb, '', '', ${enabled}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )
+          ON CONFLICT ("tenantId", "eventType") DO UPDATE
+          SET "enabled" = EXCLUDED."enabled", "updatedAt" = CURRENT_TIMESTAMP
+        `;
+      }
+      return this.getPolicy(tenantId, type);
+    }
 
     const hasTemplateOrRoutingChange = input.mode !== undefined
       || input.channels !== undefined
@@ -99,8 +136,6 @@ export class NotificationEventService {
   ) {
     const type = text(input?.type);
     if (!type) return { notification: null, routed: [], blocked: 'EVENT_TYPE_MISSING' };
-    const policy = await this.getPolicy(tenantId, type);
-    if (!(policy as any)?.enabled) return { notification: null, routed: [], blocked: 'EVENT_DISABLED' };
     return this.notifications.createEventForPerson(tenantId, personValue, input);
   }
 
