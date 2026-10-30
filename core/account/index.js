@@ -491,29 +491,6 @@ export async function revokeAccountConsent(tenantId, documentId) {
   );
 }
 
-export async function resolveAccountTelegramEntry(tenantId, token) {
-  const payload = await jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/telegram-entry/resolve`, {
-      method: 'POST',
-      body: JSON.stringify({ token: String(token || '').trim() }),
-    }),
-    'Не удалось проверить Telegram-вход',
-  );
-  return payload?.accessToken ? storeSession(tenantId, payload) : payload;
-}
-
-export async function bindAccountTelegramEntry(tenantId, token) {
-  return jsonResponse(
-    await request(`/online-booking/${encodeURIComponent(tenantId)}/account/telegram-entry`, {
-      tenantId,
-      auth: true,
-      method: 'POST',
-      body: JSON.stringify({ token: String(token || '').trim() }),
-    }),
-    'Не удалось привязать Telegram',
-  );
-}
-
 export async function getAccountNotifications(tenantId) {
   return jsonResponse(
     await request(`/online-booking/${encodeURIComponent(tenantId)}/account/notifications`, { tenantId, auth: true }),
