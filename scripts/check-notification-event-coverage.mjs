@@ -10,6 +10,11 @@ const CONTROLLER_PATH = path.join(SERVER_ROOT, 'notification', 'notification.con
 const SETTINGS_PATH = path.join(ROOT, 'settings', 'notifications', 'notifications.js');
 const ROUTING_UI_PATH = path.join(ROOT, 'core', 'notifications', 'routing.js');
 const PLATFORM_NOTICE_PATH = 'server/src/platform-notice/platform-notice.service.ts';
+const GATEWAYS = Object.freeze({
+  createEventForPerson: 2,
+  createEventForPersonKey: 2,
+  createEventForTenantOwner: 1,
+});
 
 let failed = false;
 
@@ -40,15 +45,238 @@ function catalogTypes(source) {
   return [...source.matchAll(/serviceEvent\(\{[\s\S]*?\btype:\s*'([^']+)'/g)].map((match) => match[1]);
 }
 
-function literalGatewayTypes(source) {
-  const types = [];
-  const gateway = /(?:createEventForPerson|createEventForTenantOwner|createEventForPersonKey)\s*\([\s\S]{0,1800}?\btype:\s*'([^']+)'/g;
-  for (const match of source.matchAll(gateway)) types.push(match[1]);
-  return types;
-}
-
 function escaped(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function balanced(source, openIndex, openChar = '(', closeChar = ')') {
+  let depth = 0;
+  let quote = '';
+  let escapedChar = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1] || '';
+    if (lineComment) {
+      if (char === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escapedChar) {
+        escapedChar = false;
+        continue;
+      }
+      if (char === '\\') {
+        escapedChar = true;
+        continue;
+      }
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === openChar) depth += 1;
+    if (char === closeChar) {
+      depth -= 1;
+      if (depth === 0) return { content: source.slice(openIndex + 1, index), end: index };
+    }
+  }
+  return null;
+}
+
+function splitTopLevel(source) {
+  const result = [];
+  let start = 0;
+  let paren = 0;
+  let brace = 0;
+  let bracket = 0;
+  let quote = '';
+  let escapedChar = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (escapedChar) escapedChar = false;
+      else if (char === '\\') escapedChar = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '(') paren += 1;
+    else if (char === ')') paren -= 1;
+    else if (char === '{') brace += 1;
+    else if (char === '}') brace -= 1;
+    else if (char === '[') bracket += 1;
+    else if (char === ']') bracket -= 1;
+    else if (char === ',' && paren === 0 && brace === 0 && bracket === 0) {
+      result.push(source.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  result.push(source.slice(start).trim());
+  return result;
+}
+
+function scanCalls(source, methodName) {
+  const calls = [];
+  const needle = `.${methodName}`;
+  let cursor = 0;
+  while (cursor < source.length) {
+    const found = source.indexOf(needle, cursor);
+    if (found < 0) break;
+    const open = source.indexOf('(', found + needle.length);
+    if (open < 0 || source.slice(found + needle.length, open).trim()) {
+      cursor = found + needle.length;
+      continue;
+    }
+    const parsed = balanced(source, open);
+    if (!parsed) break;
+    calls.push({ index: found, args: splitTopLevel(parsed.content), end: parsed.end });
+    cursor = parsed.end + 1;
+  }
+  return calls;
+}
+
+function typeExpressionFromObject(source) {
+  const match = /\btype\s*:\s*/g.exec(source);
+  if (!match) return '';
+  const start = match.index + match[0].length;
+  let paren = 0;
+  let brace = 0;
+  let bracket = 0;
+  let quote = '';
+  let escapedChar = false;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (escapedChar) escapedChar = false;
+      else if (char === '\\') escapedChar = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '(') paren += 1;
+    else if (char === ')') paren -= 1;
+    else if (char === '{') brace += 1;
+    else if (char === '}') {
+      if (brace === 0 && paren === 0 && bracket === 0) return source.slice(start, index).trim();
+      brace -= 1;
+    } else if (char === '[') bracket += 1;
+    else if (char === ']') bracket -= 1;
+    else if (char === ',' && paren === 0 && brace === 0 && bracket === 0) return source.slice(start, index).trim();
+  }
+  return source.slice(start).trim();
+}
+
+function eventStringLiterals(source) {
+  const result = [];
+  const stringPattern = /(['"])([^'"\\]*(?:\\.[^'"\\]*)*)\1/g;
+  for (const match of source.matchAll(stringPattern)) {
+    const value = match[2].replace(/\\(['"\\])/g, '$1');
+    if (value.includes('.')) result.push(value);
+  }
+  return result;
+}
+
+function methodDefinitions(source) {
+  const result = [];
+  const pattern = /(?:^|\n)\s*(?:private\s+|protected\s+|public\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/g;
+  for (const match of source.matchAll(pattern)) {
+    const name = match[1];
+    const open = source.indexOf('(', match.index + match[0].lastIndexOf('('));
+    const params = balanced(source, open);
+    if (!params) continue;
+    let bodyOpen = params.end + 1;
+    while (bodyOpen < source.length && /\s/.test(source[bodyOpen])) bodyOpen += 1;
+    if (source[bodyOpen] !== '{') continue;
+    const body = balanced(source, bodyOpen, '{', '}');
+    if (!body) continue;
+    const parameterNames = splitTopLevel(params.content).map((parameter) => {
+      const parameterMatch = parameter.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)/);
+      return parameterMatch?.[1] || '';
+    });
+    result.push({ name, parameterNames, body: body.content, start: match.index, end: body.end });
+  }
+  return result;
+}
+
+function helperTypeParameters(source) {
+  const helpers = new Map();
+  for (const method of methodDefinitions(source)) {
+    for (const [gateway, objectArgIndex] of Object.entries(GATEWAYS)) {
+      for (const call of scanCalls(method.body, gateway)) {
+        const objectArg = call.args[objectArgIndex] || '';
+        const expression = typeExpressionFromObject(objectArg);
+        const identifier = expression.match(/^([A-Za-z_$][\w$]*)$/)?.[1] || '';
+        const parameterIndex = method.parameterNames.indexOf(identifier);
+        if (parameterIndex >= 0) helpers.set(method.name, parameterIndex);
+      }
+    }
+  }
+  return helpers;
+}
+
+function assignedEventTypes(source, identifier) {
+  const types = new Set();
+  const name = escaped(identifier);
+  const declarations = new RegExp(`\\b(?:const|let|var)\\s+${name}\\b(?:\\s*:[^=;]+)?\\s*=\\s*([\\s\\S]*?);`, 'g');
+  for (const match of source.matchAll(declarations)) {
+    for (const value of eventStringLiterals(match[1])) types.add(value);
+  }
+  const assignments = new RegExp(`\\b${name}\\s*=\\s*([\\s\\S]*?);`, 'g');
+  for (const match of source.matchAll(assignments)) {
+    for (const value of eventStringLiterals(match[1])) types.add(value);
+  }
+  return [...types];
+}
+
+function resolveTypeExpression(expression, source) {
+  const direct = eventStringLiterals(expression);
+  if (direct.length) return direct;
+  const identifier = expression.trim().match(/^([A-Za-z_$][\w$]*)$/)?.[1] || '';
+  return identifier ? assignedEventTypes(source, identifier) : [];
+}
+
+function runtimeEventTypes(source) {
+  const types = new Set();
+  for (const [gateway, objectArgIndex] of Object.entries(GATEWAYS)) {
+    for (const call of scanCalls(source, gateway)) {
+      const expression = typeExpressionFromObject(call.args[objectArgIndex] || '');
+      for (const value of resolveTypeExpression(expression, source)) types.add(value);
+    }
+  }
+  for (const [helper, typeArgIndex] of helperTypeParameters(source)) {
+    for (const call of scanCalls(source, helper)) {
+      const expression = call.args[typeArgIndex] || '';
+      for (const value of resolveTypeExpression(expression, source)) types.add(value);
+    }
+  }
+  return [...types];
 }
 
 for (const file of [CATALOG_PATH, EVENT_SERVICE_PATH, DELIVERY_SERVICE_PATH, CONTROLLER_PATH, SETTINGS_PATH, ROUTING_UI_PATH]) {
@@ -69,7 +297,7 @@ for (const file of tsFiles) {
   const source = read(file);
   const fileName = rel(file);
 
-  for (const eventType of literalGatewayTypes(source)) {
+  for (const eventType of runtimeEventTypes(source)) {
     if (!catalogSet.has(eventType)) {
       fail(`SERVICE event '${eventType}' is emitted by ${fileName} but is absent from the canonical catalog`);
       continue;
@@ -102,9 +330,7 @@ const routingUiSource = read(ROUTING_UI_PATH);
 const canonicalSources = [eventServiceSource, deliveryServiceSource, controllerSource, settingsSource, routingUiSource].join('\n');
 
 for (const legacy of ['__service__', 'SERVICE_POLICY_TYPE', 'getNotificationServiceRouting', 'setNotificationServiceEnabled']) {
-  if (canonicalSources.includes(legacy)) {
-    fail(`legacy duplicate SERVICE master state is still present: ${legacy}`);
-  }
+  if (canonicalSources.includes(legacy)) fail(`legacy duplicate SERVICE master state is still present: ${legacy}`);
 }
 
 if (/serviceEventEnabled\s*\(/.test(deliveryServiceSource)) {
@@ -124,10 +350,8 @@ if (!/setAllNotificationsEnabled\s*\(/.test(settingsSource) || !/setNotification
 }
 for (const eventType of catalog) {
   const literal = new RegExp(`['\"]${escaped(eventType)}['\"]`);
-  if (literal.test(settingsSource)) {
-    fail(`Settings hard-codes SERVICE event '${eventType}'; rows must come only from the canonical catalog`);
-  }
+  if (literal.test(settingsSource)) fail(`Settings hard-codes SERVICE event '${eventType}'; rows must come only from the canonical catalog`);
 }
 
 if (failed) process.exit(1);
-console.log(`notification-event-coverage: PASS (${catalog.length} canonical SERVICE events; settings, triggers, gateway and duplicate-send invariants verified)`);
+console.log(`notification-event-coverage: PASS (${catalog.length} canonical SERVICE events; real runtime triggers, settings, gateway and duplicate-send invariants verified)`);
