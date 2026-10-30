@@ -1,6 +1,7 @@
 import { apiRequest } from '../auth.js';
 
 export const NOTIFICATION_DELIVERY_POLICY_TYPE = '__delivery__';
+export const NOTIFICATION_SERVICE_POLICY_TYPE = '__service__';
 
 async function payload(response) {
   const value = await response.json().catch(() => ({}));
@@ -18,6 +19,10 @@ export async function getNotificationRouting() {
 
 export async function getNotificationDeliveryRouting() {
   return payload(await apiRequest(`/notifications/routing/${encodeURIComponent(NOTIFICATION_DELIVERY_POLICY_TYPE)}`));
+}
+
+export async function getNotificationServiceRouting() {
+  return payload(await apiRequest(`/notifications/routing/${encodeURIComponent(NOTIFICATION_SERVICE_POLICY_TYPE)}`));
 }
 
 export async function saveNotificationRouting(eventType, input = {}) {
@@ -40,6 +45,10 @@ export async function saveNotificationRouting(eventType, input = {}) {
 
 export async function setNotificationEnabled(eventType, enabled) {
   return saveNotificationRouting(eventType, { enabled });
+}
+
+export async function setNotificationServiceEnabled(enabled) {
+  return saveNotificationRouting(NOTIFICATION_SERVICE_POLICY_TYPE, { enabled });
 }
 
 export async function saveNotificationDeliveryRouting(input = {}) {

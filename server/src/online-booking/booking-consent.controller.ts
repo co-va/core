@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { CommunicationService } from '../communication/communication.service';
+import { NotificationEventService } from '../notification/notification-event.service';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 import { PrismaService } from '../prisma.service';
 import { AccountGuard } from './account.guard';
@@ -11,12 +12,20 @@ function acceptedMessages(value: unknown) {
   return (Array.isArray(value) ? value : []).some((item: any) => String(item?.documentId || '').trim() === 'messages-consent' && Boolean(item?.accepted));
 }
 
+function acceptedDocumentIds(value: unknown) {
+  return (Array.isArray(value) ? value : [])
+    .filter((item: any) => Boolean(item?.accepted))
+    .map((item: any) => String(item?.documentId || '').trim())
+    .filter(Boolean);
+}
+
 @Controller('online-booking')
 export class BookingConsentController {
   constructor(
     private readonly consentPolicy: ConsentPolicyService,
     private readonly communications: CommunicationService,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationEventService,
   ) {}
 
   private async currentContactPoints(request: AccountRequest) {
@@ -60,6 +69,19 @@ export class BookingConsentController {
         await this.consentPolicy.acceptContactPointConsent(auth.tenantId, contact.type, contact.value, 'messages-consent', 'online-booking-account');
       }
     }
+    const documents = acceptedDocumentIds(body?.consents);
+    if (documents.length) {
+      await this.notifications.createEventForTenantOwner(auth.tenantId, {
+        type: 'consent.accepted',
+        entityType: 'account',
+        entityId: auth.accountId,
+        context: {
+          document: documents.join(', '),
+          date: new Date().toISOString().slice(0, 10),
+        },
+        metadata: { accountId: auth.accountId, documents },
+      }).catch(() => null);
+    }
     return consentState;
   }
 
@@ -77,6 +99,17 @@ export class BookingConsentController {
         await this.consentPolicy.revokeContactPointConsent(auth.tenantId, contact.type, contact.value, documentId, 'online-booking');
       }
     }
-    return this.consentPolicy.accountConsentState(auth.tenantId, auth.accountId);
+    const result = await this.consentPolicy.accountConsentState(auth.tenantId, auth.accountId);
+    await this.notifications.createEventForTenantOwner(auth.tenantId, {
+      type: 'consent.revoked',
+      entityType: 'account',
+      entityId: auth.accountId,
+      context: {
+        document: documentId,
+        date: new Date().toISOString().slice(0, 10),
+      },
+      metadata: { accountId: auth.accountId, documentId },
+    }).catch(() => null);
+    return result;
   }
 }

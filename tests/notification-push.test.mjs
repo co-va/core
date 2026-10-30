@@ -13,9 +13,15 @@ const onlineBookingSettingsUi = fs.readFileSync('settings/online-booking/online-
 const serviceWorker = fs.readFileSync('service-worker.js', 'utf8');
 const notificationService = fs.readFileSync('server/src/notification/notification.service.ts', 'utf8');
 const notificationEventService = fs.readFileSync('server/src/notification/notification-event.service.ts', 'utf8');
+const notificationReminderService = fs.readFileSync('server/src/notification/notification-reminder.service.ts', 'utf8');
 const notificationCatalog = fs.readFileSync('server/src/notification/notification-events.ts', 'utf8');
 const notificationController = fs.readFileSync('server/src/notification/notification.controller.ts', 'utf8');
 const businessStateController = fs.readFileSync('server/src/business-state/business-state.controller.ts', 'utf8');
+const financeController = fs.readFileSync('server/src/finance/finance.controller.ts', 'utf8');
+const loyaltyController = fs.readFileSync('server/src/loyalty/loyalty.controller.ts', 'utf8');
+const auxiliaryStateController = fs.readFileSync('server/src/auxiliary-state/auxiliary-state.controller.ts', 'utf8');
+const bookingConsentController = fs.readFileSync('server/src/online-booking/booking-consent.controller.ts', 'utf8');
+const onlineBookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const pushService = fs.readFileSync('server/src/notification/web-push.service.ts', 'utf8');
 const migration = fs.readFileSync('server/prisma/migrations/20260913070000_web_push_subscription/migration.sql', 'utf8');
 const globalPushMigration = fs.readFileSync('server/prisma/migrations/20261029070000_global_account_push_subscription/migration.sql', 'utf8');
@@ -116,17 +122,48 @@ assert.match(routingUi, /\['PUSH', 'TELEGRAM', 'EMAIL'\]\.includes\(value\)/);
 assert.match(routingUi, /titleTemplate/);
 assert.match(routingUi, /bodyTemplate/);
 
-assert.match(notificationCatalog, /booking\.created/);
-assert.match(notificationCatalog, /booking\.rescheduled/);
-assert.match(notificationCatalog, /booking\.cancelled/);
-assert.match(notificationCatalog, /finance\.payment/);
-assert.match(notificationCatalog, /loan\.received/);
-assert.match(notificationCatalog, /investment\.received/);
-assert.match(notificationCatalog, /consent\.revoked/);
-assert.match(notificationCatalog, /person\.birthday/);
+const canonicalServiceEvents = [
+  'booking.created',
+  'booking.rescheduled',
+  'booking.cancelled',
+  'booking.deleted',
+  'booking.confirmed',
+  'booking.no-show',
+  'booking.reminder',
+  'finance.payment',
+  'finance.refund',
+  'loyalty.changed',
+  'personal-account.changed',
+  'investment.participation',
+  'consent.accepted',
+  'consent.revoked',
+];
+for (const eventType of canonicalServiceEvents) {
+  assert.match(notificationCatalog, new RegExp(eventType.replace('.', '\\.')));
+}
+for (const legacyType of ['loan.received', 'loan.repaid', 'investment.received', 'investment.returned', 'investment.income', 'document.assigned', 'person.birthday']) {
+  assert.doesNotMatch(notificationCatalog, new RegExp(legacyType.replace('.', '\\.')));
+}
 assert.match(notificationController, /@Get\('catalog'\)/);
 assert.match(notificationEventService, /EVENT_DISABLED/);
-assert.match(businessStateController, /NotificationEventService/);
+assert.match(notificationEventService, /createEventForTenantOwner/);
+assert.match(notificationEventService, /createEventForPersonKey/);
+assert.match(businessStateController, /booking\.created/);
+assert.match(businessStateController, /booking\.rescheduled/);
+assert.match(businessStateController, /booking\.cancelled/);
+assert.match(businessStateController, /booking\.deleted/);
+assert.match(businessStateController, /booking\.confirmed/);
+assert.match(businessStateController, /booking\.no-show/);
+assert.match(notificationReminderService, /booking\.reminder/);
+assert.match(notificationReminderService, /Notification/);
+assert.match(financeController, /finance\.payment/);
+assert.match(financeController, /finance\.refund/);
+assert.match(loyaltyController, /loyalty\.changed/);
+assert.match(loyaltyController, /personal-account\.changed/);
+assert.match(auxiliaryStateController, /investment\.participation/);
+assert.match(onlineBookingController, /investment\.participation/);
+assert.match(bookingConsentController, /consent\.accepted/);
+assert.match(bookingConsentController, /consent\.revoked/);
 assert.match(enabledMigration, /ADD COLUMN "enabled" BOOLEAN NOT NULL DEFAULT FALSE/);
 
 assert.match(notificationSettingsUi, /getNotificationCatalog/);
@@ -208,12 +245,13 @@ const enableAccountPushSource = browserPush.slice(
 assert.ok(enableAccountPushSource.indexOf('Notification.requestPermission()') >= 0, 'Account Push permission must be requested from the direct user gesture');
 assert.match(onlineBookingModule, /PlatformNoticeModule/);
 assert.match(onlineBookingModule, /NotificationModule/);
-assert.match(bookingFlowController, /PlatformNoticeService/);
-assert.match(bookingFlowController, /NotificationService/);
-assert.match(bookingFlowController, /createForTenantOwner\(tenantId/);
-assert.match(bookingFlowController, /type: 'BOOKING_CREATED'/);
+assert.match(bookingFlowController, /NotificationEventService/);
+assert.doesNotMatch(bookingFlowController, /PlatformNoticeService/);
+assert.doesNotMatch(bookingFlowController, /type: 'BOOKING_CREATED'/);
+assert.match(bookingFlowController, /createEventForTenantOwner\(tenantId/);
+assert.match(bookingFlowController, /type: 'booking\.created'/);
 assert.match(bookingFlowController, /source: 'online-booking'/);
-assert.match(bookingFlowController, /void Promise\.allSettled\(\[[\s\S]*?createForTenantOwner\(tenantId[\s\S]*?createEventForPerson\(tenantId[\s\S]*?\]\);/);
+assert.match(bookingFlowController, /void Promise\.allSettled\(\[[\s\S]*?createEventForTenantOwner\(tenantId[\s\S]*?createEventForPerson\(tenantId[\s\S]*?\]\);/);
 assert.match(adminUi, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
 assert.match(adminUi, /Notification\.requestPermission/);
 assert.match(adminUi, /data-enable-admin-push/);

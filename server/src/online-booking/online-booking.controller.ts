@@ -3,8 +3,8 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CommunicationService } from '../communication/communication.service';
 import { AccountDocumentService } from '../document-registry/account-document.service';
+import { NotificationEventService } from '../notification/notification-event.service';
 import { NotificationService } from '../notification/notification.service';
-import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { AccountGuard } from './account.guard';
 import { BookingFlowService } from './booking-flow.service';
 import { BookingPdnConsentGuard } from './booking-pdn-consent.guard';
@@ -21,7 +21,7 @@ export class OnlineBookingController {
     private readonly bookingFlow: BookingFlowService,
     private readonly accountDocuments: AccountDocumentService,
     private readonly notifications: NotificationService,
-    private readonly platformNotices: PlatformNoticeService,
+    private readonly notificationEvents: NotificationEventService,
     private readonly communications: CommunicationService,
     private readonly personIdentity: PersonIdentityService,
   ) {}
@@ -151,18 +151,30 @@ export class OnlineBookingController {
 
   @UseGuards(AccountGuard)
   @Post('account/investments/:tenantId/:investmentId/decision')
-  decideGlobalAccountInvestment(
+  async decideGlobalAccountInvestment(
     @Param('tenantId') tenantId: string,
     @Param('investmentId') investmentId: string,
     @Req() request: AccountRequest,
     @Body() body: { decision?: unknown },
   ) {
-    return this.booking.decideGlobalAccountInvestment(
+    const result = await this.booking.decideGlobalAccountInvestment(
       request.accountAuth!.accountId,
       tenantId,
       investmentId,
       body?.decision,
     );
+    await this.notificationEvents.createEventForTenantOwner(tenantId, {
+      type: 'investment.participation',
+      entityType: 'investment',
+      entityId: investmentId,
+      context: {
+        investment: investmentId,
+        status: String((result as any)?.status || ''),
+        date: new Date().toISOString().slice(0, 10),
+      },
+      metadata: { accountId: request.accountAuth!.accountId },
+    }).catch(() => null);
+    return result;
   }
 
   @UseGuards(AccountGuard)
@@ -354,10 +366,11 @@ export class OnlineBookingController {
     const workplaceKey = String(created?.workplaceKey || '');
 
     void Promise.allSettled([
-      this.platformNotices.createForTenantOwner(tenantId, {
-        type: 'BOOKING_CREATED',
-        title: 'Новая запись',
-        body: `Запись на ${date} в ${time}.`,
+      this.notificationEvents.createEventForTenantOwner(tenantId, {
+        type: 'booking.created',
+        entityType: 'record',
+        entityId: recordId,
+        context: { date, time, workplace: workplaceKey },
         metadata: {
           recordId,
           recordIds,
@@ -367,7 +380,7 @@ export class OnlineBookingController {
           source: 'account-journal',
         },
       }),
-      this.notifications.createEventForPerson(tenantId, { accountId }, {
+      this.notificationEvents.createEventForPerson(tenantId, { accountId }, {
         type: 'booking.created',
         entityType: 'record',
         entityId: recordId,

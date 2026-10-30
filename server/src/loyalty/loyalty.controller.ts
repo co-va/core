@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { NotificationEventService } from '../notification/notification-event.service';
 import { DepositService } from './deposit.service';
 import { PersonalAccountService } from './personal-account.service';
 
@@ -8,13 +9,55 @@ type AuthenticatedRequest = Request & {
   auth?: { platformAccountId: string; tenantId: string; role: string };
 };
 
+type JsonObject = Record<string, any>;
+
+function objectValue(value: unknown): JsonObject {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
+}
+
+function text(value: unknown) {
+  return String(value ?? '').trim();
+}
+
 @Controller('loyalty')
 @UseGuards(JwtAuthGuard)
 export class LoyaltyController {
   constructor(
     private readonly deposits: DepositService,
     private readonly personalAccounts: PersonalAccountService,
+    private readonly notifications: NotificationEventService,
   ) {}
+
+  private async notifyLoyalty(tenantId: string, resultValue: unknown) {
+    const result = objectValue(resultValue);
+    const person = objectValue(result.person);
+    if (!text(person.key) && !text(person.phone) && !text(person.accountId) && !Array.isArray(person.accounts)) return;
+    await this.notifications.createEventForPerson(tenantId, person, {
+      type: 'loyalty.changed',
+      entityType: 'loyalty',
+      entityId: text(result.depositId || result.programId),
+      context: {
+        program: text(result.programName),
+        date: new Date().toISOString().slice(0, 10),
+      },
+    }).catch(() => null);
+  }
+
+  private async notifyPersonalAccount(tenantId: string, personKeyValue: unknown, resultValue: unknown = null) {
+    const result = objectValue(resultValue);
+    const account = objectValue(result.account || result);
+    const personKey = text(personKeyValue || account.personKey || objectValue(account.person).key);
+    if (!personKey) return;
+    await this.notifications.createEventForPersonKey(tenantId, personKey, {
+      type: 'personal-account.changed',
+      entityType: 'personal-account',
+      entityId: personKey,
+      context: {
+        amount: account.balance ?? result.amount ?? '',
+        date: new Date().toISOString().slice(0, 10),
+      },
+    }).catch(() => null);
+  }
 
   @Get('deposits')
   listDeposits(@Req() request: AuthenticatedRequest) {
@@ -30,8 +73,11 @@ export class LoyaltyController {
   }
 
   @Post('deposits/fund')
-  fundDeposit(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    return this.deposits.fund(request.auth!.tenantId, body);
+  async fundDeposit(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const tenantId = request.auth!.tenantId;
+    const result = await this.deposits.fund(tenantId, body);
+    await this.notifyLoyalty(tenantId, result);
+    return result;
   }
 
   @Post('deposits/:depositId/fund')
@@ -63,12 +109,15 @@ export class LoyaltyController {
   }
 
   @Put('deposits/:depositId/settings')
-  updateDepositSettings(
+  async updateDepositSettings(
     @Req() request: AuthenticatedRequest,
     @Param('depositId') depositId: string,
     @Body() body: unknown,
   ) {
-    return this.deposits.updateSettings(request.auth!.tenantId, depositId, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.deposits.updateSettings(tenantId, depositId, body);
+    await this.notifyLoyalty(tenantId, result);
+    return result;
   }
 
   @Post('deposits/:depositId/withdraw')
@@ -110,65 +159,86 @@ export class LoyaltyController {
   }
 
   @Put('personal-accounts/person/:personKey')
-  updatePersonalAccountSettings(
+  async updatePersonalAccountSettings(
     @Req() request: AuthenticatedRequest,
     @Param('personKey') personKey: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.updateSettings(request.auth!.tenantId, personKey, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.updateSettings(tenantId, personKey, body);
+    await this.notifyPersonalAccount(tenantId, personKey, result);
+    return result;
   }
 
   @Post('personal-accounts/person/:personKey/fund')
-  fundPersonalAccount(
+  async fundPersonalAccount(
     @Req() request: AuthenticatedRequest,
     @Param('personKey') personKey: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.fund(request.auth!.tenantId, personKey, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.fund(tenantId, personKey, body);
+    await this.notifyPersonalAccount(tenantId, personKey, result);
+    return result;
   }
 
   @Post('personal-accounts/person/:personKey/withdraw')
-  withdrawPersonalAccount(
+  async withdrawPersonalAccount(
     @Req() request: AuthenticatedRequest,
     @Param('personKey') personKey: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.withdraw(request.auth!.tenantId, personKey, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.withdraw(tenantId, personKey, body);
+    await this.notifyPersonalAccount(tenantId, personKey, result);
+    return result;
   }
 
   @Post('personal-accounts/person/:personKey/pay')
-  payFromPersonalAccount(
+  async payFromPersonalAccount(
     @Req() request: AuthenticatedRequest,
     @Param('personKey') personKey: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.pay(request.auth!.tenantId, personKey, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.pay(tenantId, personKey, body);
+    await this.notifyPersonalAccount(tenantId, personKey, result);
+    return result;
   }
 
   @Post('personal-accounts/person/:personKey/finalize-debt')
-  finalizePersonalAccountDebt(
+  async finalizePersonalAccountDebt(
     @Req() request: AuthenticatedRequest,
     @Param('personKey') personKey: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.finalizeDebt(request.auth!.tenantId, personKey, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.finalizeDebt(tenantId, personKey, body);
+    await this.notifyPersonalAccount(tenantId, personKey, result);
+    return result;
   }
 
   @Post('personal-accounts/payment/:operationId/refund')
-  refundPersonalAccountPayment(
+  async refundPersonalAccountPayment(
     @Req() request: AuthenticatedRequest,
     @Param('operationId') operationId: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.refundPayment(request.auth!.tenantId, operationId, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.refundPayment(tenantId, operationId, body);
+    await this.notifyPersonalAccount(tenantId, '', result);
+    return result;
   }
 
   @Post('personal-accounts/debts/:debtId/settle')
-  settlePersonalAccountDebt(
+  async settlePersonalAccountDebt(
     @Req() request: AuthenticatedRequest,
     @Param('debtId') debtId: string,
     @Body() body: unknown,
   ) {
-    return this.personalAccounts.settleDebt(request.auth!.tenantId, debtId, body);
+    const tenantId = request.auth!.tenantId;
+    const result = await this.personalAccounts.settleDebt(tenantId, debtId, body);
+    await this.notifyPersonalAccount(tenantId, '', result);
+    return result;
   }
 }

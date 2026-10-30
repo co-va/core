@@ -2,9 +2,11 @@ import {
   getNotificationCatalog,
   getNotificationDeliveryRouting,
   getNotificationRouting,
+  getNotificationServiceRouting,
   saveNotificationDeliveryRouting,
   saveNotificationRouting,
   setNotificationEnabled,
+  setNotificationServiceEnabled,
 } from '../../core/notifications/routing.js';
 import {
   button,
@@ -252,6 +254,18 @@ function eventRow(event, policy) {
   </div>`;
 }
 
+function serviceControlMarkup(policy) {
+  return v2Section('Сервисные уведомления', `<div class="app-notification-list">
+    <div class="app-notification-row">
+      <input type="checkbox" data-notification-service-enabled aria-label="Все сервисные уведомления" ${policy?.enabled !== false ? 'checked' : ''}>
+      <span>
+        <strong>Все сервисные уведомления</strong>
+        <small>Общее включение и выключение SERVICE</small>
+      </span>
+    </div>
+  </div>`);
+}
+
 function catalogMarkup(catalog, routing) {
   return [...groupedEvents(catalog).entries()].map(([group, events]) => v2Section(
     group,
@@ -259,9 +273,34 @@ function catalogMarkup(catalog, routing) {
   )).join('');
 }
 
-function bindCatalog(root, host, catalog, routing) {
+function bindCatalog(root, host, catalog, routing, servicePolicy) {
   const byType = new Map(catalog.map((event) => [event.type, event]));
-  host.querySelectorAll('[data-notification-enabled]').forEach((checkbox) => {
+  const serviceToggle = host.querySelector('[data-notification-service-enabled]');
+  const eventToggles = [...host.querySelectorAll('[data-notification-enabled]')];
+
+  const syncServiceState = () => {
+    const enabled = serviceToggle?.checked !== false;
+    eventToggles.forEach((checkbox) => {
+      checkbox.disabled = !enabled;
+    });
+  };
+
+  serviceToggle?.addEventListener('change', async () => {
+    const previous = !serviceToggle.checked;
+    serviceToggle.disabled = true;
+    try {
+      const saved = await setNotificationServiceEnabled(serviceToggle.checked);
+      servicePolicy.enabled = saved?.enabled !== false;
+      serviceToggle.checked = servicePolicy.enabled;
+    } catch {
+      serviceToggle.checked = previous;
+    } finally {
+      serviceToggle.disabled = false;
+      syncServiceState();
+    }
+  });
+
+  eventToggles.forEach((checkbox) => {
     checkbox.addEventListener('click', (event) => event.stopPropagation());
     checkbox.addEventListener('change', async () => {
       const type = checkbox.dataset.notificationEnabled || '';
@@ -275,7 +314,7 @@ function bindCatalog(root, host, catalog, routing) {
       } catch {
         checkbox.checked = previous;
       } finally {
-        checkbox.disabled = false;
+        checkbox.disabled = serviceToggle?.checked === false;
       }
     });
   });
@@ -292,6 +331,8 @@ function bindCatalog(root, host, catalog, routing) {
       open(node);
     });
   });
+
+  syncServiceState();
 }
 
 export async function render(root) {
@@ -311,13 +352,14 @@ export async function render(root) {
   if (host) host.innerHTML = emptyState('Загрузка', 'Загружаем уведомления.');
 
   try {
-    const [catalog, routing] = await Promise.all([
+    const [catalog, routing, servicePolicy] = await Promise.all([
       getNotificationCatalog(),
       getNotificationRouting(),
+      getNotificationServiceRouting(),
     ]);
     if (!host) return;
-    host.innerHTML = catalogMarkup(catalog, routing);
-    bindCatalog(root, host, catalog, routing);
+    host.innerHTML = `${serviceControlMarkup(servicePolicy)}${catalogMarkup(catalog, routing)}`;
+    bindCatalog(root, host, catalog, routing, servicePolicy);
   } catch (error) {
     if (host) host.innerHTML = emptyState('Настройки недоступны', error instanceof Error ? error.message : 'Не удалось загрузить уведомления.');
   }
