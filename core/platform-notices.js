@@ -288,10 +288,15 @@ export function startPlatformNotices({
       const unread = (Array.isArray(rows) ? rows : [])
         .filter((item) => !item.readAt && !shown.has(item.id) && !recordServiceNotice(item))
         .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
-      const item = unread.find((notice) => deletedBookingNotice(notice)) || unread[0];
+      const deleted = unread.filter((item) => deletedBookingNotice(item));
+      if (deleted.length) {
+        const nextDeleted = deleted[0];
+        unread.splice(0, unread.length, nextDeleted, ...unread.filter((item) => !deletedBookingNotice(item)));
+      }
+      const item = unread[0];
       if (!item) return;
 
-      const stale = unread.filter((oldItem) => oldItem.id !== item.id && !deletedBookingNotice(oldItem));
+      const stale = unread.slice(1);
       stale.forEach((oldItem) => shown.add(oldItem.id));
       if (stale.length) {
         void Promise.allSettled(stale.map((oldItem) => markRead(oldItem.id)));
