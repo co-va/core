@@ -335,7 +335,7 @@ const routingUiSource = read(ROUTING_UI_PATH);
 const canonicalSources = [eventServiceSource, deliveryServiceSource, controllerSource, settingsSource, routingUiSource].join('\n');
 
 for (const retiredToken of ['__service__', 'SERVICE_POLICY_TYPE', 'getNotificationServiceRouting', 'setNotificationServiceEnabled']) {
-  if (canonicalSources.includes(retiredToken)) fail(`retired duplicate SERVICE master state is still present: ${retiredToken}`);
+  if (canonicalSources.includes(retiredToken)) fail(`retired duplicate SERVICE aggregate state is still present: ${retiredToken}`);
 }
 
 if (/serviceEventEnabled\s*\(/.test(deliveryServiceSource)) {
