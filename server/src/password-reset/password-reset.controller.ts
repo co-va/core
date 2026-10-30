@@ -6,8 +6,8 @@ export class PasswordResetController {
   constructor(private readonly resets: PasswordResetService) {}
 
   @Post('auth/password-reset/request')
-  requestPlatform(@Body() body: { email?: unknown; surface?: unknown }) {
-    return this.resets.requestPlatform(body?.email, body?.surface);
+  requestPlatform(@Body() body: { identifier?: unknown; email?: unknown; surface?: unknown }) {
+    return this.resets.requestPlatform(body?.identifier ?? body?.email, body?.surface);
   }
 
   @Post('auth/password-reset/confirm')
