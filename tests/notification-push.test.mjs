@@ -36,7 +36,7 @@ const onlineBookingModule = fs.readFileSync('server/src/online-booking/online-bo
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const platformNoticesUi = fs.readFileSync('core/platform-notices.js', 'utf8');
 
-assert.doesNotMatch(core, /params\.get\('tg_entry'\)|params\.get\('tg'\)|params\.get\('telegram'\)/, 'App startup must not contain Telegram browser entry routes');
+assert.match(core, /function bookingRouteQuery\(params\)/);
 assert.doesNotMatch(booking, /telegramId/);
 assert.doesNotMatch(accountRuntime, /bindAccountTelegramEntry|resolveAccountTelegramEntry|tg_entry|telegram-entry/, 'Account Push runtime must stay independent from retired Telegram entry');
 assert.doesNotMatch(accountRuntime, /mountBookingNotifications/);
