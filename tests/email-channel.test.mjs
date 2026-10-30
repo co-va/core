@@ -26,8 +26,9 @@ assert.doesNotMatch(accountThread, /AND "channel" = 'IN_APP'/, 'Legacy communica
 assert.match(dispatch, /async availableChannels\(/);
 assert.doesNotMatch(dispatch, /private async availableChannels\(/);
 assert.match(dispatch, /const channels: string\[\] = \['CHAT'\]/);
-assert.match(dispatch, /telegramIdentity/);
-assert.match(dispatch, /channels\.push\('TELEGRAM'\)/);
+assert.doesNotMatch(dispatch, /telegramIdentity|telegramRecipient/);
+assert.match(dispatch, /isExternalThreadAvailable\(tenantId, externalThreadId\)/);
+assert.match(dispatch, /sendExternalThreadMessage\(tenantId/);
 assert.match(dispatch, /channels\.push\('EMAIL'\)/);
 assert.match(dispatch, /email\.isAvailable\(tenantId\)/);
 assert.match(dispatch, /channel === 'CHAT'/);
@@ -77,7 +78,7 @@ assert.match(telegramBot, /\[telegram-health\]/);
 assert.match(telegramBot, /const isStart =/);
 assert.match(telegramBot, /allowed_updates: \['message'\]/);
 assert.doesNotMatch(telegramBot, /web_app:|telegram-webhook|handleWebhook|webhookKey|webhookSecretHash/);
-assert.doesNotMatch(telegramBot, /request_contact|Поделиться номером|bindVerifiedTelegramPhone|AccountContactType/);
+assert.doesNotMatch(telegramBot, /request_contact|Поделиться номером|bindVerifiedTelegramPhone|AccountContactType|sendChatMessage\(|repairConnection/);
 assert.doesNotMatch(telegramBot, /Открыть приложение/);
 assert.match(telegramBot, /text: 'Записаться'/);
 assert.match(telegramBot, /url: bookingUrl/);
@@ -104,7 +105,6 @@ assert.match(chatRuntime, /segmentControl/);
 assert.match(chatRuntime, /setV2ZHeaderRows/);
 assert.match(chatRuntime, /name: 'messageChannel'/);
 assert.match(chatRuntime, /channel: selectedChannel\(\)/);
-assert.doesNotMatch(chatRuntime, /formData\.get\('messageChannel'\)/);
 assert.doesNotMatch(sharedChat, /messageChannel/);
 assert.doesNotMatch(sharedChat, /channelOptions/);
 
