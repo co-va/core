@@ -1,1 +1,7 @@
-.auth-form{display:grid;gap:12px}.auth-error{min-height:18px;margin:0;color:var(--danger);font-size:13px}.auth-form .ui-button[disabled]{opacity:.6}
+.auth-form,.shared-login-form{display:grid;gap:12px}.auth-error{min-height:18px;margin:0;color:var(--danger);font-size:13px}.auth-error:empty{display:none}.auth-form .ui-button[disabled],.shared-login-form .ui-button[disabled]{opacity:.6}
+body:has(.shared-login-screen){background:var(--surface-dark)}
+.app-shell:has(.shared-login-screen){width:100%;max-width:none;min-height:100dvh;margin:0;padding-top:0;background:var(--surface-dark);box-shadow:none}
+.shared-login-screen{width:min(100%,var(--app-max-width));min-height:100dvh;background:var(--surface-dark)}
+.shared-login-screen .v2-sticker{border-radius:0}
+.shared-login-form .field input,.shared-login-form .password-field__control input{border-radius:0!important}
+.shared-login-form .v2-sticker-link{border-radius:0}

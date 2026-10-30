@@ -7,6 +7,16 @@ const FORGOT_SELECTOR = [
   '[data-global-account-forgot]',
   '[data-admin-forgot]',
 ].join(',');
+const REGISTER_SELECTOR = [
+  '[data-specialist-register]',
+  '[data-booking-register]',
+  '[data-global-account-register]',
+].join(',');
+const LOGIN_FORM_SELECTOR = [
+  '#auth-form',
+  '[data-booking-entry-form]',
+  '[data-global-account-entry]',
+].join(',');
 
 function isAccountSurface(target) {
   return Boolean(target?.matches?.('[data-booking-forgot],[data-global-account-forgot]'));
@@ -93,6 +103,18 @@ function ensureAdminForgotButton() {
   form.append(button);
 }
 
+function ensureProfessionalRegisterButton(form) {
+  if (!form?.matches?.('#auth-form') || form.querySelector(REGISTER_SELECTOR)) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'v2-sticker-link';
+  button.dataset.specialistRegister = '';
+  button.textContent = 'Зарегистрироваться';
+  const forgot = form.querySelector(FORGOT_SELECTOR);
+  if (forgot) forgot.insertAdjacentElement('afterend', button);
+  else form.append(button);
+}
+
 function normalizeIdentifierField(form) {
   if (!form || form.closest('#admin-app')) return;
   const input = form.querySelector('[name="identifier"],[name="phone"],[name="email"]');
@@ -106,13 +128,36 @@ function normalizeIdentifierField(form) {
   if (label) label.textContent = input.required ? 'Телефон *' : 'Телефон';
 }
 
+function normalizeLoginForm(form) {
+  if (!form || form.closest('#admin-app')) return;
+  normalizeIdentifierField(form);
+  ensureProfessionalRegisterButton(form);
+  form.classList.add('shared-login-form');
+  const screen = form.closest('.v2-sticker-screen');
+  screen?.classList.add('v2-sticker-screen--auth', 'shared-login-screen');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#2F3338');
+}
+
 function normalizeLoginFields() {
-  document.querySelectorAll('#auth-form, [data-login-form]').forEach(normalizeIdentifierField);
-  document.querySelectorAll(FORGOT_SELECTOR).forEach((button) => normalizeIdentifierField(button.closest('form')));
+  document.querySelectorAll(LOGIN_FORM_SELECTOR).forEach(normalizeLoginForm);
+  document.querySelectorAll(FORGOT_SELECTOR).forEach((button) => {
+    const form = button.closest('form');
+    if (form?.matches?.(LOGIN_FORM_SELECTOR)) normalizeLoginForm(form);
+    else normalizeIdentifierField(form);
+  });
 }
 
 document.addEventListener('click', (event) => {
-  const target = event.target instanceof Element ? event.target.closest(FORGOT_SELECTOR) : null;
+  const element = event.target instanceof Element ? event.target : null;
+  const register = element?.closest?.('[data-specialist-register]');
+  if (register) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    location.assign('/invite/');
+    return;
+  }
+
+  const target = element?.closest?.(FORGOT_SELECTOR);
   if (!target) return;
   event.preventDefault();
   event.stopImmediatePropagation();
