@@ -9,7 +9,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
-import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma.service';
 import { CommunicationService } from './communication.service';
@@ -50,7 +49,6 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly communications: CommunicationService,
     private readonly notifications: NotificationService,
-    private readonly consentPolicy: ConsentPolicyService,
   ) {}
 
   onModuleInit() {
@@ -242,16 +240,6 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     return this.getConnection(tenantId);
   }
 
-  async repairConnection(tenantId: string) {
-    if (!this.configurationStatus().credentialsKeyConfigured) throw new ServiceUnavailableException('Не настроен ключ шифрования Telegram');
-    const row = await this.rowForTenant(tenantId);
-    if (!row) throw new NotFoundException('Telegram-бот не подключён');
-    this.pollingActivated.delete(tenantId);
-    await this.activatePolling(row);
-    this.pollTenantInBackground(tenantId);
-    return this.getConnection(tenantId);
-  }
-
   async disconnect(tenantId: string) {
     const row = await this.rowForTenant(tenantId);
     if (!row) return { connected: false };
@@ -316,47 +304,6 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
         channel: 'TELEGRAM',
         body,
         externalThreadId,
-        status: 'failed',
-        error: errorMessage(error),
-      });
-      throw error;
-    }
-  }
-
-  async sendChatMessage(tenantId: string, input: { phone?: unknown; uei?: unknown; body?: unknown; purpose?: unknown }) {
-    const body = text(input?.body);
-    if (!body) throw new BadRequestException('Пустое сообщение');
-    const purpose = normalizeMessagePurpose(input?.purpose);
-    if (!purpose) throw new BadRequestException('Не указан purpose сообщения');
-    const identity = await this.communications.telegramIdentity(tenantId, input || {});
-    if (!identity) throw new NotFoundException('Telegram у человека не подключён');
-    if (purpose === 'MARKETING' && !(await this.consentPolicy.canSendMarketing(tenantId, 'TELEGRAM', identity.externalUserId))) {
-      throw new BadRequestException('Нет действующего рекламного согласия для Telegram');
-    }
-    try {
-      const result = await this.sendMessage(tenantId, identity.externalUserId, body);
-      return this.communications.recordMessage(tenantId, {
-        phone: identity.personPhone,
-        uei: identity.uei,
-        direction: 'outbound',
-        kind: 'message',
-        purpose,
-        channel: 'TELEGRAM',
-        body,
-        externalMessageId: String(result?.message_id || ''),
-        externalThreadId: String(result?.chat?.id || identity.externalUserId),
-        status: 'sent',
-      });
-    } catch (error) {
-      await this.communications.recordMessage(tenantId, {
-        phone: identity.personPhone,
-        uei: identity.uei,
-        direction: 'outbound',
-        kind: 'message',
-        purpose,
-        channel: 'TELEGRAM',
-        body,
-        externalThreadId: identity.externalUserId,
         status: 'failed',
         error: errorMessage(error),
       });
