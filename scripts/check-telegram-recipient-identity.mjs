@@ -24,8 +24,9 @@ expect(
   !communicationService.includes('AccountContactType')
     && !communicationService.includes('TelegramEntryTicket')
     && !communicationService.includes('bookingIdentityForAccount')
-    && !communicationService.includes('accountContact.'),
-  'Communication Telegram routing must not depend on Account/Person binding.',
+    && !communicationService.includes('accountContact.')
+    && !communicationService.includes('async telegramIdentity('),
+  'Communication Telegram routing must not depend on Account/Person lookup.',
 );
 expect(
   !telegramBot.includes('AccountContactType')
@@ -33,8 +34,16 @@ expect(
     && !telegramBot.includes('request_contact')
     && !telegramBot.includes('this.prisma.account')
     && !telegramBot.includes('this.prisma.person')
-    && !telegramBot.includes('this.prisma.ueiState'),
-  'Telegram bot must not own business identity resolution.',
+    && !telegramBot.includes('this.prisma.ueiState')
+    && !telegramBot.includes('sendChatMessage(')
+    && !telegramBot.includes('repairConnection('),
+  'Telegram bot must own only plain bot transport and external-thread messaging.',
+);
+expect(
+  !communicationDispatch.includes('telegramRecipient(')
+    && !communicationDispatch.includes('telegramIdentity(')
+    && !communicationDispatch.includes('sendChatMessage('),
+  'Common dispatch must not restore person-based Telegram routing.',
 );
 expect(
   communicationService.includes('async telegramThreadIdentity(')
