@@ -201,8 +201,12 @@ export class BusinessStateController {
   }
 
   @Delete('records/:recordId')
-  deleteRecord(@Req() request: AuthenticatedRequest, @Param('recordId') recordId: string) {
-    return this.businessState.deleteRecord(request.auth!.tenantId, recordId);
+  async deleteRecord(@Req() request: AuthenticatedRequest, @Param('recordId') recordId: string) {
+    const tenantId = request.auth!.tenantId;
+    const existing = await this.prisma.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId } } });
+    const result = await this.businessState.deleteRecord(tenantId, recordId);
+    if (existing) await this.notifyRecordEvent(tenantId, 'booking.deleted', existing.data).catch(() => null);
+    return result;
   }
 
   @Delete('records/:recordId/events')
