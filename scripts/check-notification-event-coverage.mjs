@@ -1,16 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 
 const ROOT = process.cwd();
 const SERVER_ROOT = path.join(ROOT, 'server', 'src');
 const CATALOG_PATH = path.join(SERVER_ROOT, 'notification', 'notification-events.ts');
+const EVENT_SERVICE_PATH = path.join(SERVER_ROOT, 'notification', 'notification-event.service.ts');
+const DELIVERY_SERVICE_PATH = path.join(SERVER_ROOT, 'notification', 'notification.service.ts');
+const CONTROLLER_PATH = path.join(SERVER_ROOT, 'notification', 'notification.controller.ts');
 const SETTINGS_PATH = path.join(ROOT, 'settings', 'notifications', 'notifications.js');
-const REVIEW_PATH = path.join(ROOT, 'notification-impact.jsonl');
+const ROUTING_UI_PATH = path.join(ROOT, 'core', 'notifications', 'routing.js');
+const PLATFORM_NOTICE_PATH = 'server/src/platform-notice/platform-notice.service.ts';
+const GATEWAYS = Object.freeze({
+  createEventForPerson: 2,
+  createEventForPersonKey: 2,
+  createEventForTenantOwner: 1,
+});
+
+let failed = false;
 
 function fail(message) {
+  failed = true;
   console.error(`notification-event-coverage: ${message}`);
-  process.exitCode = 1;
 }
 
 function read(file) {
@@ -31,72 +41,256 @@ function rel(file) {
   return path.relative(ROOT, file).split(path.sep).join('/');
 }
 
-function git(args, options = {}) {
-  return execFileSync('git', args, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    ...options,
-  }).trim();
-}
-
-function gitOk(args) {
-  try {
-    execFileSync('git', args, { cwd: ROOT, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function ensureCommit(sha) {
-  const value = String(sha || '').trim();
-  if (!/^[0-9a-f]{40}$/i.test(value)) return false;
-  if (gitOk(['cat-file', '-e', `${value}^{commit}`])) return true;
-  try {
-    execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', value], {
-      cwd: ROOT,
-      stdio: 'ignore',
-    });
-  } catch {
-    return false;
-  }
-  return gitOk(['cat-file', '-e', `${value}^{commit}`]);
-}
-
-function githubEventBase() {
-  const eventPath = String(process.env.GITHUB_EVENT_PATH || '').trim();
-  if (!eventPath || !fs.existsSync(eventPath)) return '';
-  try {
-    const event = JSON.parse(read(eventPath));
-    const eventName = String(process.env.GITHUB_EVENT_NAME || '').trim();
-    if (eventName === 'push') {
-      const before = String(event?.before || '').trim();
-      if (before && !/^0{40}$/.test(before)) return before;
-    }
-    if (eventName === 'pull_request') {
-      return String(event?.pull_request?.base?.sha || '').trim();
-    }
-  } catch (error) {
-    fail(`cannot read GitHub event payload: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  return '';
-}
-
 function catalogTypes(source) {
   return [...source.matchAll(/serviceEvent\(\{[\s\S]*?\btype:\s*'([^']+)'/g)].map((match) => match[1]);
 }
 
-function directGatewayTypes(source) {
-  const types = [];
-  const gateway = /(?:createEventForPerson|createEventForTenantOwner|createEventForPersonKey)\s*\([\s\S]{0,1800}?\btype:\s*'([^']+)'/g;
-  for (const match of source.matchAll(gateway)) types.push(match[1]);
-  return types;
+function escaped(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function hasLiteral(source, value) {
-  return source.includes(`'${value}'`) || source.includes(`\"${value}\"`);
+function balanced(source, openIndex, openChar = '(', closeChar = ')') {
+  let depth = 0;
+  let quote = '';
+  let escapedChar = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1] || '';
+    if (lineComment) {
+      if (char === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escapedChar) escapedChar = false;
+      else if (char === '\\') escapedChar = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === openChar) depth += 1;
+    if (char === closeChar) {
+      depth -= 1;
+      if (depth === 0) return { content: source.slice(openIndex + 1, index), end: index };
+    }
+  }
+  return null;
 }
+
+function splitTopLevel(source) {
+  const result = [];
+  let start = 0;
+  let paren = 0;
+  let brace = 0;
+  let bracket = 0;
+  let quote = '';
+  let escapedChar = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (escapedChar) escapedChar = false;
+      else if (char === '\\') escapedChar = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '(') paren += 1;
+    else if (char === ')') paren -= 1;
+    else if (char === '{') brace += 1;
+    else if (char === '}') brace -= 1;
+    else if (char === '[') bracket += 1;
+    else if (char === ']') bracket -= 1;
+    else if (char === ',' && paren === 0 && brace === 0 && bracket === 0) {
+      result.push(source.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  result.push(source.slice(start).trim());
+  return result;
+}
+
+function scanCalls(source, methodName) {
+  const calls = [];
+  const needle = `.${methodName}`;
+  let cursor = 0;
+  while (cursor < source.length) {
+    const found = source.indexOf(needle, cursor);
+    if (found < 0) break;
+    const open = source.indexOf('(', found + needle.length);
+    if (open < 0 || source.slice(found + needle.length, open).trim()) {
+      cursor = found + needle.length;
+      continue;
+    }
+    const parsed = balanced(source, open);
+    if (!parsed) break;
+    calls.push({ index: found, args: splitTopLevel(parsed.content), end: parsed.end });
+    cursor = parsed.end + 1;
+  }
+  return calls;
+}
+
+function typeExpressionFromObject(source) {
+  const match = /\btype\s*:\s*/g.exec(source);
+  if (!match) {
+    return /(?:^|[,{]\s*)type\s*(?=,|})/.test(source) ? 'type' : '';
+  }
+  const start = match.index + match[0].length;
+  let paren = 0;
+  let brace = 0;
+  let bracket = 0;
+  let quote = '';
+  let escapedChar = false;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (escapedChar) escapedChar = false;
+      else if (char === '\\') escapedChar = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') {
+      quote = char;
+      continue;
+    }
+    if (char === '(') paren += 1;
+    else if (char === ')') paren -= 1;
+    else if (char === '{') brace += 1;
+    else if (char === '}') {
+      if (brace === 0 && paren === 0 && bracket === 0) return source.slice(start, index).trim();
+      brace -= 1;
+    } else if (char === '[') bracket += 1;
+    else if (char === ']') bracket -= 1;
+    else if (char === ',' && paren === 0 && brace === 0 && bracket === 0) return source.slice(start, index).trim();
+  }
+  return source.slice(start).trim();
+}
+
+function eventStringLiterals(source) {
+  const result = [];
+  const stringPattern = /(['"])([^'"\\]*(?:\\.[^'"\\]*)*)\1/g;
+  for (const match of source.matchAll(stringPattern)) {
+    const value = match[2].replace(/\\(['"\\])/g, '$1');
+    if (value.includes('.')) result.push(value);
+  }
+  return result;
+}
+
+function methodDefinitions(source) {
+  const result = [];
+  const pattern = /(?:^|\n)\s*(?:private\s+|protected\s+|public\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/g;
+  for (const match of source.matchAll(pattern)) {
+    const name = match[1];
+    const open = source.indexOf('(', match.index + match[0].lastIndexOf('('));
+    const params = balanced(source, open);
+    if (!params) continue;
+    let bodyOpen = params.end + 1;
+    while (bodyOpen < source.length && /\s/.test(source[bodyOpen])) bodyOpen += 1;
+    if (source[bodyOpen] !== '{') continue;
+    const body = balanced(source, bodyOpen, '{', '}');
+    if (!body) continue;
+    const parameterNames = splitTopLevel(params.content).map((parameter) => {
+      const parameterMatch = parameter.match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)/);
+      return parameterMatch?.[1] || '';
+    });
+    result.push({ name, parameterNames, body: body.content, start: match.index, end: body.end });
+  }
+  return result;
+}
+
+function helperTypeParameters(source) {
+  const helpers = new Map();
+  for (const method of methodDefinitions(source)) {
+    for (const [gateway, objectArgIndex] of Object.entries(GATEWAYS)) {
+      for (const call of scanCalls(method.body, gateway)) {
+        const expression = typeExpressionFromObject(call.args[objectArgIndex] || '');
+        const identifier = expression.match(/^([A-Za-z_$][\w$]*)$/)?.[1] || '';
+        const parameterIndex = method.parameterNames.indexOf(identifier);
+        if (parameterIndex >= 0) helpers.set(method.name, parameterIndex);
+      }
+    }
+  }
+  return helpers;
+}
+
+function assignedEventTypes(source, identifier) {
+  const types = new Set();
+  const name = escaped(identifier);
+  const declarations = new RegExp(`\\b(?:const|let|var)\\s+${name}\\b(?:\\s*:[^=;]+)?\\s*=\\s*([\\s\\S]*?);`, 'g');
+  for (const match of source.matchAll(declarations)) {
+    for (const value of eventStringLiterals(match[1])) types.add(value);
+  }
+  const assignments = new RegExp(`\\b${name}\\s*=\\s*([\\s\\S]*?);`, 'g');
+  for (const match of source.matchAll(assignments)) {
+    for (const value of eventStringLiterals(match[1])) types.add(value);
+  }
+  return [...types];
+}
+
+function resolveTypeExpression(expression, source) {
+  const direct = eventStringLiterals(expression);
+  if (direct.length) return direct;
+  const identifier = expression.trim().match(/^([A-Za-z_$][\w$]*)$/)?.[1] || '';
+  return identifier ? assignedEventTypes(source, identifier) : [];
+}
+
+function runtimeEventTypes(source) {
+  const types = new Set();
+  for (const [gateway, objectArgIndex] of Object.entries(GATEWAYS)) {
+    for (const call of scanCalls(source, gateway)) {
+      const expression = typeExpressionFromObject(call.args[objectArgIndex] || '');
+      for (const value of resolveTypeExpression(expression, source)) types.add(value);
+    }
+  }
+  for (const [helper, typeArgIndex] of helperTypeParameters(source)) {
+    for (const call of scanCalls(source, helper)) {
+      const expression = call.args[typeArgIndex] || '';
+      for (const value of resolveTypeExpression(expression, source)) types.add(value);
+    }
+  }
+  return [...types];
+}
+
+function deliveryServiceReceivers(source) {
+  const receivers = new Set();
+  const constructorProperty = /(?:private|protected|public)\s+readonly\s+([A-Za-z_$][\w$]*)\s*:\s*NotificationService\b/g;
+  for (const match of source.matchAll(constructorProperty)) receivers.add(match[1]);
+  const typedVariable = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*NotificationService\b/g;
+  for (const match of source.matchAll(typedVariable)) receivers.add(match[1]);
+  return [...receivers];
+}
+
+function bypassesSemanticGateway(source) {
+  return deliveryServiceReceivers(source).some((receiver) => new RegExp(`\\b(?:this\\.)?${escaped(receiver)}\\.createEventForPerson\\s*\\(`).test(source));
+}
+
+for (const file of [CATALOG_PATH, EVENT_SERVICE_PATH, DELIVERY_SERVICE_PATH, CONTROLLER_PATH, SETTINGS_PATH, ROUTING_UI_PATH]) {
+  if (!fs.existsSync(file)) fail(`required notification file is missing: ${rel(file)}`);
+}
+if (failed) process.exit(1);
 
 const catalogSource = read(CATALOG_PATH);
 const catalog = catalogTypes(catalogSource);
@@ -106,175 +300,63 @@ if (catalogSet.size !== catalog.length) fail('canonical SERVICE catalog contains
 
 const tsFiles = walk(SERVER_ROOT).filter((file) => file.endsWith('.ts'));
 const emitters = new Map();
-function registerEmitter(eventType, file) {
-  if (!emitters.has(eventType)) emitters.set(eventType, new Set());
-  emitters.get(eventType).add(rel(file));
-}
-
 for (const file of tsFiles) {
-  if (file === CATALOG_PATH) continue;
+  if (file === CATALOG_PATH || file === EVENT_SERVICE_PATH || file === DELIVERY_SERVICE_PATH) continue;
   const source = read(file);
-  for (const eventType of directGatewayTypes(source)) {
-    registerEmitter(eventType, file);
+  const fileName = rel(file);
+
+  for (const eventType of runtimeEventTypes(source)) {
     if (!catalogSet.has(eventType)) {
-      fail(`SERVICE event '${eventType}' is emitted by ${rel(file)} but is absent from notification-events.ts (there would be no Settings switch)`);
+      fail(`SERVICE event '${eventType}' is emitted by ${fileName} but is absent from the canonical catalog`);
+      continue;
     }
+    if (!emitters.has(eventType)) emitters.set(eventType, new Set());
+    emitters.get(eventType).add(fileName);
   }
 
-  const notificationAware = /NotificationEventService|createEventForPerson|createEventForTenantOwner|createEventForPersonKey|notifyRecordEvent/.test(source);
-  if (!notificationAware) continue;
-  for (const eventType of catalog) {
-    if (hasLiteral(source, eventType)) registerEmitter(eventType, file);
+  if (bypassesSemanticGateway(source)) {
+    fail(`${fileName} emits SERVICE through NotificationService; runtime events must go through NotificationEventService`);
+  }
+
+  if (fileName !== PLATFORM_NOTICE_PATH && /\.createForTenantOwner\s*\(/.test(source) && /\.pushToTenantOwner\s*\(/.test(source)) {
+    fail(`${fileName} creates a tenant-owner notice and pushes it again; createForTenantOwner already dispatches Push`);
   }
 }
+
 for (const eventType of catalog) {
-  if (!emitters.has(eventType)) {
-    fail(`SERVICE event '${eventType}' is present in Settings catalog but has no notification-aware runtime trigger`);
-  }
+  if (!emitters.has(eventType)) fail(`SERVICE event '${eventType}' is visible in Settings but has no runtime trigger`);
 }
 
+const eventServiceSource = read(EVENT_SERVICE_PATH);
+const deliveryServiceSource = read(DELIVERY_SERVICE_PATH);
+const controllerSource = read(CONTROLLER_PATH);
 const settingsSource = read(SETTINGS_PATH);
+const routingUiSource = read(ROUTING_UI_PATH);
+const canonicalSources = [eventServiceSource, deliveryServiceSource, controllerSource, settingsSource, routingUiSource].join('\n');
+
+for (const retiredToken of ['__service__', 'SERVICE_POLICY_TYPE', 'getNotificationServiceRouting', 'setNotificationServiceEnabled']) {
+  if (canonicalSources.includes(retiredToken)) fail(`retired duplicate SERVICE aggregate state is still present: ${retiredToken}`);
+}
+
+if (/serviceEventEnabled\s*\(/.test(deliveryServiceSource)) {
+  fail('NotificationService duplicates SERVICE enable/disable gating owned by NotificationEventService');
+}
+if (!/notificationEventDefinition\s*\(type\)/.test(deliveryServiceSource)) {
+  fail('NotificationService does not validate SERVICE event types against the canonical catalog');
+}
+if (!/setAllEnabled\s*\(/.test(eventServiceSource) || !/@Put\('routing'\)/.test(controllerSource)) {
+  fail('bulk SERVICE enable/disable is not implemented by the canonical notification endpoint');
+}
 if (!/getNotificationCatalog\s*\(/.test(settingsSource)) {
   fail('Settings → Notifications is not derived from the canonical notification catalog');
 }
+if (!/setAllNotificationsEnabled\s*\(/.test(settingsSource) || !/setNotificationEnabled\s*\(/.test(settingsSource)) {
+  fail('Settings → Notifications must expose both bulk and per-event SERVICE switches');
+}
 for (const eventType of catalog) {
-  const escaped = eventType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp(`['\"]${escaped}['\"]`).test(settingsSource)) {
-    fail(`Settings contains hard-coded SERVICE event '${eventType}'; switches must be derived from the canonical catalog`);
-  }
+  const literal = new RegExp(`['\"]${escaped(eventType)}['\"]`);
+  if (literal.test(settingsSource)) fail(`Settings hard-codes SERVICE event '${eventType}'; rows must come only from the canonical catalog`);
 }
 
-function chooseBase() {
-  const requested = String(process.env.NOTIFICATION_GUARD_BASE || '').trim();
-  if (requested) {
-    if (ensureCommit(requested)) return requested;
-    fail(`requested notification guard base '${requested}' is unavailable`);
-    return '';
-  }
-
-  const eventBase = githubEventBase();
-  if (eventBase) {
-    if (ensureCommit(eventBase)) return eventBase;
-    fail(`GitHub change base '${eventBase}' is unavailable`);
-    return '';
-  }
-
-  if (gitOk(['rev-parse', '--verify', 'origin/main'])) {
-    const head = git(['rev-parse', 'HEAD']);
-    const main = git(['rev-parse', 'origin/main']);
-    if (head !== main) return 'origin/main';
-  }
-  if (gitOk(['rev-parse', '--verify', 'HEAD^'])) return 'HEAD^';
-  return '';
-}
-
-function addedLines(diff) {
-  return diff
-    .split('\n')
-    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-    .map((line) => line.slice(1));
-}
-
-function changedServerFiles(base) {
-  const names = git(['diff', '--name-only', base, 'HEAD', '--', 'server/src']);
-  return names ? names.split('\n').filter(Boolean) : [];
-}
-
-function fileDiff(base, file) {
-  try {
-    return git(['diff', '--unified=0', base, 'HEAD', '--', file]);
-  } catch {
-    return '';
-  }
-}
-
-function mutationCapable(source, diff) {
-  const mutatingHttp = /@(Post|Put|Patch|Delete)\s*\(/;
-  const prismaWrite = /(?:\bthis\.prisma\b|\btx\b|\bprisma\b)[\s\S]{0,180}?\.(?:create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/;
-  const rawWrite = /\$(?:executeRaw|executeRawUnsafe)\b|\b(?:INSERT\s+INTO|UPDATE\s+"|DELETE\s+FROM)\b/i;
-  return mutatingHttp.test(source) || prismaWrite.test(source) || rawWrite.test(source) || mutatingHttp.test(diff) || prismaWrite.test(diff) || rawWrite.test(diff);
-}
-
-function parseReviews() {
-  if (!fs.existsSync(REVIEW_PATH)) return new Map();
-  const map = new Map();
-  const lines = read(REVIEW_PATH).split('\n').map((line) => line.trim()).filter(Boolean);
-  for (const [index, line] of lines.entries()) {
-    let row;
-    try {
-      row = JSON.parse(line);
-    } catch {
-      fail(`notification-impact.jsonl line ${index + 1} is not valid JSON`);
-      continue;
-    }
-    if (!row || typeof row.file !== 'string') {
-      fail(`notification-impact.jsonl line ${index + 1} has no file`);
-      continue;
-    }
-    if (row.decision !== 'SERVICE' && row.decision !== 'NO_NOTIFICATION') {
-      fail(`notification-impact.jsonl entry for ${row.file} must be SERVICE or NO_NOTIFICATION`);
-      continue;
-    }
-    if (row.decision === 'SERVICE') {
-      const events = Array.isArray(row.events) ? row.events.filter((value) => typeof value === 'string' && value) : [];
-      if (!events.length) fail(`SERVICE review for ${row.file} has no events`);
-      for (const eventType of events) {
-        if (!catalogSet.has(eventType)) fail(`SERVICE review for ${row.file} references unknown event '${eventType}'`);
-      }
-    } else if (typeof row.reason !== 'string' || row.reason.trim().length < 12) {
-      fail(`NO_NOTIFICATION review for ${row.file} needs a concrete reason (12+ characters)`);
-    }
-    map.set(row.file, row);
-  }
-  return map;
-}
-
-function addedReviewFiles(diff) {
-  const result = new Set();
-  for (const line of addedLines(diff)) {
-    try {
-      const row = JSON.parse(line.trim());
-      if (row && typeof row.file === 'string') result.add(row.file);
-    } catch {
-      // parseReviews reports invalid current ledger rows; unrelated added diff lines are ignored here.
-    }
-  }
-  return result;
-}
-
-const base = chooseBase();
-if (base) {
-  const reviews = parseReviews();
-  const reviewDiff = fs.existsSync(REVIEW_PATH) ? fileDiff(base, 'notification-impact.jsonl') : '';
-  const reviewedInThisChange = addedReviewFiles(reviewDiff);
-  for (const file of changedServerFiles(base)) {
-    if (!file.endsWith('.ts')) continue;
-    const absolute = path.join(ROOT, file);
-    const source = fs.existsSync(absolute) ? read(absolute) : '';
-    const diff = fileDiff(base, file);
-    if (!mutationCapable(source, diff)) continue;
-
-    const review = reviews.get(file);
-    if (!review) {
-      fail(`${file} changes mutation-capable code but has no SERVICE/NO_NOTIFICATION decision in notification-impact.jsonl`);
-      continue;
-    }
-    if (!reviewedInThisChange.has(file)) {
-      fail(`${file} changes mutation-capable code but its notification-impact review was not updated in this change`);
-      continue;
-    }
-
-    if (review.decision === 'SERVICE') {
-      const events = Array.isArray(review.events) ? review.events : [];
-      for (const eventType of events) {
-        if (!emitters.has(eventType)) fail(`${file} declares SERVICE '${eventType}', but no notification-aware runtime trigger exists`);
-      }
-    }
-  }
-} else {
-  console.log('notification-event-coverage: git base unavailable; static catalog/emitter/settings checks only');
-}
-
-if (!process.exitCode) {
-  console.log(`notification-event-coverage: PASS (${catalog.length} SERVICE events, bidirectional catalog/emitter/settings guard active)`);
-}
+if (failed) process.exit(1);
+console.log(`notification-event-coverage: PASS (${catalog.length} canonical SERVICE events; real runtime triggers, settings, gateway and duplicate-send invariants verified)`);

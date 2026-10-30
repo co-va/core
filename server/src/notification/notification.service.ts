@@ -81,7 +81,6 @@ const ROUTING_MODES = new Set(['always', 'fallback']);
 const ROUTING_CHANNELS = new Set(['PUSH', 'TELEGRAM', 'EMAIL']);
 const ACTIVE_EXTERNAL_CHANNELS = new Set(['TELEGRAM', 'EMAIL']);
 const DELIVERY_POLICY_TYPE = '__delivery__';
-const SERVICE_POLICY_TYPE = '__service__';
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -252,6 +251,15 @@ export class NotificationService {
     };
   }
 
+  private requireRoutingType(eventType: unknown) {
+    const type = text(eventType);
+    if (!type) throw new BadRequestException('Не указан тип уведомления');
+    if (type !== DELIVERY_POLICY_TYPE && !notificationEventDefinition(type)) {
+      throw new BadRequestException('Неизвестный тип сервисного уведомления');
+    }
+    return type;
+  }
+
   private async deliveryPolicyRow(tenantId: string) {
     const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
       SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
@@ -267,34 +275,20 @@ export class NotificationService {
     return this.projectDeliveryPolicy(await this.deliveryPolicyRow(tenantId));
   }
 
-  private async serviceEventEnabled(tenantId: string, eventType: string) {
-    const rows = await this.prisma.$queryRaw<EnabledPolicyRow[]>`
-      SELECT "eventType", "enabled"
-      FROM "NotificationRoutingPolicy"
-      WHERE "tenantId" = ${tenantId}
-        AND "eventType" IN (${SERVICE_POLICY_TYPE}, ${eventType})
-    `;
-    const service = rows.find((row) => row.eventType === SERVICE_POLICY_TYPE);
-    if (service?.enabled === false) return false;
-    return rows.find((row) => row.eventType === eventType)?.enabled === true;
-  }
-
   async listRoutingPolicies(tenantId: string) {
     const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
       SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
       FROM "NotificationRoutingPolicy"
       WHERE "tenantId" = ${tenantId}
-        AND "eventType" NOT IN (${DELIVERY_POLICY_TYPE}, ${SERVICE_POLICY_TYPE})
+        AND "eventType" <> ${DELIVERY_POLICY_TYPE}
       ORDER BY "eventType" ASC
     `;
     const byType = new Map(rows.map((row) => [row.eventType, row]));
-    const knownTypes = new Set<string>(NOTIFICATION_EVENT_TYPES);
-    const types = [...NOTIFICATION_EVENT_TYPES, ...rows.map((row) => row.eventType).filter((type) => !knownTypes.has(type))];
-    return types.map((type) => this.projectPolicy(byType.get(type) || null, type));
+    return NOTIFICATION_EVENT_TYPES.map((type) => this.projectPolicy(byType.get(type) || null, type));
   }
 
   async getRoutingPolicy(tenantId: string, eventType: string) {
-    const type = text(eventType) || 'message';
+    const type = this.requireRoutingType(eventType);
     if (type === DELIVERY_POLICY_TYPE) return this.getDeliveryPolicy(tenantId);
     const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
       SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
@@ -311,8 +305,7 @@ export class NotificationService {
     eventType: string,
     input: { mode?: unknown; channels?: unknown; titleTemplate?: unknown; bodyTemplate?: unknown },
   ) {
-    const type = text(eventType);
-    if (!type) throw new BadRequestException('Не указан тип уведомления');
+    const type = this.requireRoutingType(eventType);
     const existing = await this.getRoutingPolicy(tenantId, type);
     const fallback = defaultTemplate(type);
     const mode = normalizeMode(input?.mode ?? existing.mode);
@@ -515,9 +508,9 @@ export class NotificationService {
     const person = objectValue(personValue);
     const type = text(input?.type);
     if (!type) throw new BadRequestException('Не указан тип уведомления');
-    if (!(await this.serviceEventEnabled(tenantId, type))) {
-      return { notification: null, routed: [], blocked: 'EVENT_DISABLED' };
-    }
+    const definition = notificationEventDefinition(type);
+    if (!definition) throw new BadRequestException('Неизвестный тип сервисного уведомления');
+
     let accountId = accountIdsFromPerson(person)[0] || '';
     if (!accountId) {
       const identity = await this.accountIdentityByPhone(tenantId, text(person.phone));
@@ -525,7 +518,6 @@ export class NotificationService {
     }
     if (!accountId) return { notification: null, routed: [], blocked: 'ACCOUNT_REQUIRED' };
 
-    const definition = notificationEventDefinition(type);
     const policy = await this.getRoutingPolicy(tenantId, type);
     const context = {
       ...objectValue(input?.context),
@@ -536,7 +528,7 @@ export class NotificationService {
       },
     };
     return this.createForAccount(tenantId, accountId, {
-      purpose: definition?.purpose || 'SERVICE',
+      purpose: definition.purpose,
       type,
       title: renderTemplate(policy.titleTemplate, context),
       body: renderTemplate(policy.bodyTemplate, context),

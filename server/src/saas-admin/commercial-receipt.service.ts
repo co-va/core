@@ -219,12 +219,6 @@ export class CommercialReceiptService {
       body: 'Оплата подтверждена. Чек отправлен на email.',
       metadata: { orderId, receiptKind: 'FILE', receiptFileName: receipt.fileName },
     }).catch(() => null);
-    await this.notices.pushToTenantOwner(tenantId, {
-      type: 'COMMERCIAL_RECEIPT_READY',
-      title: 'Чек отправлен · LIVE готов',
-      body: 'Оплата подтверждена. Чек отправлен на email.',
-      metadata: { orderId, receiptKind: 'FILE', receiptFileName: receipt.fileName },
-    }).catch(() => ({ sent: 0, failed: 0 }));
 
     const access = await this.activateLive(tenantId, orderId, paidAt, actorAdminId);
     const orders = await this.commercial.orderHistory(tenantId);

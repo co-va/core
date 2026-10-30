@@ -20,6 +20,14 @@ export class NotificationController {
     return this.notifications.listPolicies(request.auth!.tenantId);
   }
 
+  @Put('routing')
+  setAllRouting(
+    @Req() request: OwnerRequest,
+    @Body() body: { enabled?: unknown },
+  ) {
+    return this.notifications.setAllEnabled(request.auth!.tenantId, body?.enabled);
+  }
+
   @Get('routing/:eventType')
   routingPolicy(
     @Req() request: OwnerRequest,

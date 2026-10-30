@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { PrismaService } from '../prisma.service';
@@ -9,7 +9,6 @@ type JsonObject = Record<string, any>;
 type EnabledRow = { eventType: string; enabled: boolean };
 
 const DELIVERY_POLICY_TYPE = '__delivery__';
-const SERVICE_POLICY_TYPE = '__service__';
 
 function text(value: unknown) {
   return String(value ?? '').trim();
@@ -24,6 +23,13 @@ function renderTemplate(template: unknown, context: JsonObject) {
     const value = String(path || '').split('.').reduce<any>((current, key) => objectValue(current)[key], context);
     return text(value);
   });
+}
+
+function requireEventType(eventType: unknown) {
+  const type = text(eventType);
+  if (!type) throw new BadRequestException('Не указан тип уведомления');
+  if (!notificationEventDefinition(type)) throw new BadRequestException('Неизвестный тип сервисного уведомления');
+  return type;
 }
 
 @Injectable()
@@ -41,7 +47,7 @@ export class NotificationEventService {
         SELECT "eventType", "enabled"
         FROM "NotificationRoutingPolicy"
         WHERE "tenantId" = ${tenantId}
-          AND "eventType" NOT IN (${DELIVERY_POLICY_TYPE}, ${SERVICE_POLICY_TYPE})
+          AND "eventType" <> ${DELIVERY_POLICY_TYPE}
       `,
     ]);
     const byType = new Map((Array.isArray(policies) ? policies : []).map((policy: any) => [text(policy?.eventType), policy]));
@@ -53,24 +59,9 @@ export class NotificationEventService {
   }
 
   async getPolicy(tenantId: string, eventType: string) {
-    const type = text(eventType);
-    if (type === DELIVERY_POLICY_TYPE) return this.notifications.getRoutingPolicy(tenantId, type);
-    if (type === SERVICE_POLICY_TYPE) {
-      const rows = await this.prisma.$queryRaw<EnabledRow[]>`
-        SELECT "eventType", "enabled"
-        FROM "NotificationRoutingPolicy"
-        WHERE "tenantId" = ${tenantId} AND "eventType" = ${type}
-        LIMIT 1
-      `;
-      return {
-        eventType: SERVICE_POLICY_TYPE,
-        enabled: rows[0]?.enabled !== false,
-        mode: 'always',
-        channels: [],
-        titleTemplate: '',
-        bodyTemplate: '',
-      };
-    }
+    const rawType = text(eventType);
+    if (rawType === DELIVERY_POLICY_TYPE) return this.notifications.getRoutingPolicy(tenantId, rawType);
+    const type = requireEventType(rawType);
     const [policy, rows] = await Promise.all([
       this.notifications.getRoutingPolicy(tenantId, type),
       this.prisma.$queryRaw<EnabledRow[]>`
@@ -88,25 +79,9 @@ export class NotificationEventService {
     eventType: string,
     input: { enabled?: unknown; mode?: unknown; channels?: unknown; titleTemplate?: unknown; bodyTemplate?: unknown },
   ) {
-    const type = text(eventType);
-    if (type === DELIVERY_POLICY_TYPE) return this.notifications.saveRoutingPolicy(tenantId, type, input);
-
-    if (type === SERVICE_POLICY_TYPE) {
-      if (input.enabled !== undefined) {
-        const id = randomUUID();
-        const enabled = Boolean(input.enabled);
-        await this.prisma.$executeRaw`
-          INSERT INTO "NotificationRoutingPolicy" (
-            "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
-          ) VALUES (
-            ${id}, ${tenantId}, ${type}, 'always', '[]'::jsonb, '', '', ${enabled}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-          )
-          ON CONFLICT ("tenantId", "eventType") DO UPDATE
-          SET "enabled" = EXCLUDED."enabled", "updatedAt" = CURRENT_TIMESTAMP
-        `;
-      }
-      return this.getPolicy(tenantId, type);
-    }
+    const rawType = text(eventType);
+    if (rawType === DELIVERY_POLICY_TYPE) return this.notifications.saveRoutingPolicy(tenantId, rawType, input);
+    const type = requireEventType(rawType);
 
     const hasTemplateOrRoutingChange = input.mode !== undefined
       || input.channels !== undefined
@@ -116,11 +91,11 @@ export class NotificationEventService {
 
     if (input.enabled !== undefined) {
       const existing = await this.notifications.getRoutingPolicy(tenantId, type);
-      const definition = notificationEventDefinition(type);
+      const definition = notificationEventDefinition(type)!;
       const id = randomUUID();
       const channelsJson = JSON.stringify(Array.isArray((existing as any)?.channels) ? (existing as any).channels : ['PUSH']);
-      const titleTemplate = definition?.defaultTitle || text((existing as any)?.titleTemplate) || 'Уведомление';
-      const bodyTemplate = definition?.defaultBody || text((existing as any)?.bodyTemplate) || '';
+      const titleTemplate = text((existing as any)?.titleTemplate) || definition.defaultTitle;
+      const bodyTemplate = text((existing as any)?.bodyTemplate) || definition.defaultBody;
       const mode = text((existing as any)?.mode) || 'always';
       const enabled = Boolean(input.enabled);
       await this.prisma.$executeRaw`
@@ -135,6 +110,25 @@ export class NotificationEventService {
     }
 
     return this.getPolicy(tenantId, type);
+  }
+
+  async setAllEnabled(tenantId: string, enabledValue: unknown) {
+    const enabled = Boolean(enabledValue);
+    for (const definition of NOTIFICATION_EVENT_CATALOG) {
+      const id = randomUUID();
+      const channelsJson = JSON.stringify(['PUSH']);
+      await this.prisma.$executeRaw`
+        INSERT INTO "NotificationRoutingPolicy" (
+          "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
+        ) VALUES (
+          ${id}, ${tenantId}, ${definition.type}, 'always', ${channelsJson}::jsonb,
+          ${definition.defaultTitle}, ${definition.defaultBody}, ${enabled}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT ("tenantId", "eventType") DO UPDATE
+        SET "enabled" = EXCLUDED."enabled", "updatedAt" = CURRENT_TIMESTAMP
+      `;
+    }
+    return this.listPolicies(tenantId);
   }
 
   private async eventPolicy(tenantId: string, typeValue: unknown) {

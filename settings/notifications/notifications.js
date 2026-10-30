@@ -2,11 +2,10 @@ import {
   getNotificationCatalog,
   getNotificationDeliveryRouting,
   getNotificationRouting,
-  getNotificationServiceRouting,
   saveNotificationDeliveryRouting,
   saveNotificationRouting,
+  setAllNotificationsEnabled,
   setNotificationEnabled,
-  setNotificationServiceEnabled,
 } from '../../core/notifications/routing.js';
 import {
   button,
@@ -254,13 +253,17 @@ function eventRow(event, policy) {
   </div>`;
 }
 
-function serviceControlMarkup(policy) {
+function allEventsEnabled(catalog, routing) {
+  return catalog.length > 0 && catalog.every((event) => policyFor(routing, event).enabled);
+}
+
+function serviceControlMarkup(catalog, routing) {
   return v2Section('Сервисные уведомления', `<div class="app-notification-list">
     <div class="app-notification-row">
-      <input type="checkbox" data-notification-service-enabled aria-label="Все сервисные уведомления" ${policy?.enabled !== false ? 'checked' : ''}>
+      <input type="checkbox" data-notification-service-enabled aria-label="Все сервисные уведомления" ${allEventsEnabled(catalog, routing) ? 'checked' : ''}>
       <span>
         <strong>Все сервисные уведомления</strong>
-        <small>Общее включение и выключение SERVICE</small>
+        <small>Включить или выключить весь список</small>
       </span>
     </div>
   </div>`);
@@ -273,30 +276,37 @@ function catalogMarkup(catalog, routing) {
   )).join('');
 }
 
-function bindCatalog(root, host, catalog, routing, servicePolicy) {
+function replaceRouting(routing, saved) {
+  routing.splice(0, routing.length, ...(Array.isArray(saved) ? saved : []));
+}
+
+function bindCatalog(root, host, catalog, routing) {
   const byType = new Map(catalog.map((event) => [event.type, event]));
   const serviceToggle = host.querySelector('[data-notification-service-enabled]');
   const eventToggles = [...host.querySelectorAll('[data-notification-enabled]')];
 
   const syncServiceState = () => {
-    const enabled = serviceToggle?.checked !== false;
-    eventToggles.forEach((checkbox) => {
-      checkbox.disabled = !enabled;
-    });
+    if (serviceToggle) serviceToggle.checked = allEventsEnabled(catalog, routing);
   };
 
   serviceToggle?.addEventListener('change', async () => {
-    const previous = !serviceToggle.checked;
+    const requested = serviceToggle.checked;
+    const previous = !requested;
     serviceToggle.disabled = true;
+    eventToggles.forEach((checkbox) => { checkbox.disabled = true; });
     try {
-      const saved = await setNotificationServiceEnabled(serviceToggle.checked);
-      servicePolicy.enabled = saved?.enabled !== false;
-      serviceToggle.checked = servicePolicy.enabled;
+      const saved = await setAllNotificationsEnabled(requested);
+      replaceRouting(routing, saved);
+      eventToggles.forEach((checkbox) => {
+        const type = checkbox.dataset.notificationEnabled || '';
+        checkbox.checked = routing.find((item) => item?.eventType === type)?.enabled === true;
+      });
+      syncServiceState();
     } catch {
       serviceToggle.checked = previous;
     } finally {
       serviceToggle.disabled = false;
-      syncServiceState();
+      eventToggles.forEach((checkbox) => { checkbox.disabled = false; });
     }
   });
 
@@ -308,13 +318,15 @@ function bindCatalog(root, host, catalog, routing, servicePolicy) {
       checkbox.disabled = true;
       try {
         const saved = await setNotificationEnabled(type, checkbox.checked);
-        const policy = routing.find((item) => item?.eventType === type);
-        if (policy) policy.enabled = saved?.enabled === true;
+        const index = routing.findIndex((item) => item?.eventType === type);
+        if (index >= 0) routing[index] = saved;
         else routing.push(saved);
+        checkbox.checked = saved?.enabled === true;
+        syncServiceState();
       } catch {
         checkbox.checked = previous;
       } finally {
-        checkbox.disabled = serviceToggle?.checked === false;
+        checkbox.disabled = false;
       }
     });
   });
@@ -331,8 +343,6 @@ function bindCatalog(root, host, catalog, routing, servicePolicy) {
       open(node);
     });
   });
-
-  syncServiceState();
 }
 
 export async function render(root) {
@@ -352,14 +362,13 @@ export async function render(root) {
   if (host) host.innerHTML = emptyState('Загрузка', 'Загружаем уведомления.');
 
   try {
-    const [catalog, routing, servicePolicy] = await Promise.all([
+    const [catalog, routing] = await Promise.all([
       getNotificationCatalog(),
       getNotificationRouting(),
-      getNotificationServiceRouting(),
     ]);
     if (!host) return;
-    host.innerHTML = `${serviceControlMarkup(servicePolicy)}${catalogMarkup(catalog, routing)}`;
-    bindCatalog(root, host, catalog, routing, servicePolicy);
+    host.innerHTML = `${serviceControlMarkup(catalog, routing)}${catalogMarkup(catalog, routing)}`;
+    bindCatalog(root, host, catalog, routing);
   } catch (error) {
     if (host) host.innerHTML = emptyState('Настройки недоступны', error instanceof Error ? error.message : 'Не удалось загрузить уведомления.');
   }
