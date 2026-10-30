@@ -45,7 +45,7 @@ assert.doesNotMatch(integrations, /openEmail\(baseRoot, next\)/);
 assert.match(integrations, /modal-title modal-title--action/);
 assert.match(modalCss, /\.modal-title--action\{display:flex;align-items:center;justify-content:space-between/);
 assert.match(integrations, /return 'Не подключён'/);
-assert.match(integrations, /return 'Подключён'/);
+assert.match(integrations, /state\?\.inboundActive \? 'Подключён' : 'Связь недоступна'/);
 assert.match(integrations, /Связь недоступна/);
 
 assert.doesNotMatch(integrations, /Требует внимания|Telegram требует внимания/);
