@@ -1,14 +1,12 @@
 import { Body, Controller, Param, Post } from '@nestjs/common';
-import { NotificationService } from '../notification/notification.service';
-import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
+import { NotificationEventService } from '../notification/notification-event.service';
 import { BookingFlowService } from './booking-flow.service';
 
 @Controller('online-booking')
 export class BookingFlowController {
   constructor(
     private readonly flow: BookingFlowService,
-    private readonly notifications: NotificationService,
-    private readonly platformNotices: PlatformNoticeService,
+    private readonly notifications: NotificationEventService,
   ) {}
 
   @Post(':tenantId/booking-state')
@@ -24,12 +22,14 @@ export class BookingFlowController {
     const workplaceKey = String(result?.workplaceKey || '');
     const records = Array.isArray(result?.records) ? result.records : [];
     const recordIds = records.map((record: any) => String(record?.id || '')).filter(Boolean);
+    const firstRecordId = recordIds[0] || '';
 
     void Promise.allSettled([
-      this.platformNotices.createForTenantOwner(tenantId, {
-        type: 'BOOKING_CREATED',
-        title: 'Новая запись',
-        body: `Запись на ${date} в ${time}.`,
+      this.notifications.createEventForTenantOwner(tenantId, {
+        type: 'booking.created',
+        entityType: 'record',
+        entityId: firstRecordId,
+        context: { date, time, workplace: workplaceKey },
         metadata: {
           bookingSessionId: String(result?.bookingSessionId || ''),
           recordIds,
