@@ -101,6 +101,48 @@ try {
   write(fixture, 'server/src/thing.controller.ts', `
 import { NotificationEventService } from './notification/notification-event.service';
 export class ThingController {
+  private async notify(tenantId, person, type) {
+    return this.notifications.createEventForPerson(tenantId, person, { type, entityType: 'thing' });
+  }
+  async change(tenantId, person, created) {
+    const eventType = created ? 'thing.changed' : '';
+    return this.notify(tenantId, person, eventType);
+  }
+}
+`);
+  result = runGuard(fixture);
+  assert.equal(result.status, 0, `forwarded helper event must count as real wiring:\n${result.output}`);
+
+  baseline(fixture);
+  write(fixture, 'server/src/thing.controller.ts', `
+import { NotificationEventService } from './notification/notification-event.service';
+export class ThingController {
+  async change(tenantId, person, changed) {
+    return this.notifications.createEventForPerson(tenantId, person, {
+      type: changed ? 'thing.changed' : '',
+      entityType: 'thing',
+    });
+  }
+}
+`);
+  result = runGuard(fixture);
+  assert.equal(result.status, 0, `conditional gateway event must count as real wiring:\n${result.output}`);
+
+  baseline(fixture);
+  write(fixture, 'server/src/thing.controller.ts', `
+export class ThingController {
+  async change() {
+    const decorativeText = 'thing.changed';
+    return decorativeText;
+  }
+}
+`);
+  expectFailure(fixture, 'an event word without a gateway must not satisfy coverage', /has no runtime trigger/);
+
+  baseline(fixture);
+  write(fixture, 'server/src/thing.controller.ts', `
+import { NotificationEventService } from './notification/notification-event.service';
+export class ThingController {
   async change(tenantId, person) {
     return this.notifications.createEventForPerson(tenantId, person, { type: 'thing.unknown' });
   }
