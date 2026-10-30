@@ -1,6 +1,6 @@
 import { apiRequest } from '../../core/auth.js';
 import { disablePlatformPush, enablePlatformPush, getPlatformPushState } from '../../core/platform-notices.js';
-import { documentTile, documentTiles, emptyState, escapeHtml, modal, mountModal, openDocumentViewer, v2Section } from '../../ui/ui.js';
+import { button, documentTile, documentTiles, emptyState, escapeHtml, field, modal, mountModal, openDocumentViewer, v2Section } from '../../ui/ui.js';
 import { notificationSettings } from '../../ui/settings/index.js';
 
 async function request(path, options = {}) {
@@ -66,6 +66,15 @@ function serviceMarkup(state, pushState) {
   ]);
 }
 
+function emailMarkup(emailState = {}) {
+  const status = emailState.verified ? 'Email подтверждён.' : 'Email не подтверждён.';
+  return `<div class="form-grid">
+    ${field({ label: 'Email', name: 'platformAccountEmail', value: emailState.email || '', type: 'email', required: true, autocomplete: 'email', data: 'data-platform-account-email' })}
+    <div class="muted" data-platform-account-email-status>${escapeHtml(status)}</div>
+    ${button(emailState.verified ? 'Изменить email' : 'Подтвердить / изменить email', { type: 'button', variant: 'outline', data: 'data-platform-account-email-save' })}
+  </div>`;
+}
+
 function openConsentDocument(item) {
   return openDocumentViewer({
     title:item.title || 'Документ',
@@ -74,13 +83,41 @@ function openConsentDocument(item) {
   });
 }
 
-async function renderPanelState(root,state,pushState=null){
+async function renderPanelState(root,state,pushState=null,emailState={}){
   const consents=Array.isArray(state.consents)?state.consents:[];
   const push=pushState || await getPlatformPushState().catch(()=>({supported:false,enabled:false,subscribed:false}));
   root.innerHTML=`
+    ${v2Section('Email',emailMarkup(emailState))}
     ${v2Section('Уведомления',serviceMarkup(state,push))}
     ${v2Section('Согласия',consentCards(consents))}
   `;
+
+  root.querySelector('[data-platform-account-email-save]')?.addEventListener('click',async(event)=>{
+    const control=event.currentTarget;
+    const input=root.querySelector('[data-platform-account-email]');
+    const status=root.querySelector('[data-platform-account-email-status]');
+    const nextEmail=String(input?.value||'').trim().toLowerCase();
+    if(!nextEmail){ if(status)status.textContent='Укажите email.'; return; }
+    control.disabled=true;
+    if(status)status.textContent='Отправляем письмо…';
+    try{
+      const current=String(emailState.email||'').trim().toLowerCase();
+      if(nextEmail===current){
+        if(emailState.verified){ if(status)status.textContent='Email уже подтверждён.'; return; }
+        await request('/auth/email-verification/request',{method:'POST'});
+      }else{
+        await request('/auth/email-verification/change',{
+          method:'POST',
+          body:JSON.stringify({email:nextEmail}),
+        });
+      }
+      if(status)status.textContent=`Письмо отправлено на ${nextEmail}. Email изменится только после подтверждения.`;
+    }catch(error){
+      if(status)status.textContent=error instanceof Error?error.message:'Не удалось отправить письмо';
+    }finally{
+      control.disabled=false;
+    }
+  });
 
   root.querySelectorAll('[data-account-consent-open]').forEach((control)=>{
     control.addEventListener('click',()=>{
@@ -99,7 +136,7 @@ async function renderPanelState(root,state,pushState=null){
           method:'PUT',
           body:JSON.stringify({active:!active}),
         });
-        await renderPanelState(root,next,push);
+        await renderPanelState(root,next,push,emailState);
       }catch(error){
         control.disabled=false;
         const status=root.querySelector('[data-controls-status]');
@@ -150,16 +187,16 @@ async function renderPanelState(root,state,pushState=null){
 export async function renderAccountControlsPanel(root){
   root.innerHTML=emptyState('Загрузка','Получаем актуальные состояния.');
   try{
-    const [state,push]=await Promise.all([
+    const [state,push,emailState]=await Promise.all([
       request('/profile/account-controls'),
       getPlatformPushState().catch(()=>({supported:false,enabled:false,subscribed:false})),
+      request('/auth/email-verification/status').catch(()=>({email:'',verified:false})),
     ]);
-    await renderPanelState(root,state,push);
+    await renderPanelState(root,state,push,emailState);
   }catch(error){
     root.innerHTML=emptyState('Раздел недоступен',error instanceof Error?error.message:'Не удалось загрузить данные');
   }
 }
-
 
 export function openAccountControlsModal() {
   const layer = mountModal(document.body, modal('<div data-profile-account-controls-panel></div>', {
