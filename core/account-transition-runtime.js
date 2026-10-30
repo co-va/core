@@ -118,19 +118,22 @@ function fastCallbacks(root, state) {
 
 async function revealSignedInHome() {
   if (!isEndUserHost()) return false;
-  const root = accountRoot();
+  const initialRoot = accountRoot();
   const token = getAccountToken('');
-  if (!root || !token) return false;
+  if (!initialRoot || !token) return false;
 
   if (revealPromise && revealToken === token) return revealPromise;
   revealToken = token;
   revealPromise = (async () => {
-    const account = await getGlobalAccount();
+    const [account, platformState] = await Promise.all([
+      getGlobalAccount(),
+      getGlobalAccountPlatformState(),
+    ]);
     if (!account || getAccountToken('') !== token) return false;
-
-    const platformState = await getGlobalAccountPlatformState();
     if (!platformState?.accepted || getAccountToken('') !== token) return false;
 
+    const root = accountRoot();
+    if (!root || isAnonymousFlow(root)) return false;
     const state = fastState(account);
     await renderGlobalAccount(root, state, fastCallbacks(root, state));
     clearTransition(root);
@@ -174,7 +177,7 @@ function recoverLoggedOutScreen() {
 function maybeRevealInitialSession() {
   if (!isEndUserHost() || !getAccountToken('')) return;
   const root = accountRoot();
-  if (!root || !isLoadingSurface(root)) return;
+  if (!root || root.querySelector('[data-v2-app]') || isAnonymousFlow(root)) return;
   void revealSignedInHome();
 }
 
