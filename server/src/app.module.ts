@@ -1,8 +1,9 @@
 import { DataTransferModule } from './data-transfer/data-transfer.module';
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { PrismaService } from './prisma.service';
 import { AuthModule } from './auth/auth.module';
+import { PhoneLoginOnlyMiddleware } from './auth/phone-login-only.middleware';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { ProfileModule } from './profile/profile.module';
 import { OnlineBookingModule } from './online-booking/online-booking.module';
@@ -54,4 +55,14 @@ import { NoteModule } from './note/note.module';
   controllers: [HealthController],
   providers: [PrismaService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(PhoneLoginOnlyMiddleware)
+      .forRoutes(
+        { path: 'auth/login', method: RequestMethod.POST },
+        { path: 'online-booking/account/login', method: RequestMethod.POST },
+        { path: 'online-booking/:tenantId/account/login', method: RequestMethod.POST },
+      );
+  }
+}
