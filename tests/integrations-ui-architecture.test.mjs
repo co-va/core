@@ -49,8 +49,8 @@ assert.match(integrations, /state\?\.inboundActive \? 'Подключён' : 'С
 assert.match(integrations, /Связь недоступна/);
 
 assert.doesNotMatch(integrations, /Требует внимания|Telegram требует внимания/);
-assert.doesNotMatch(integrations, /repairTelegramBotConnection|Восстановить webhook|telegramDiagnostics/);
-assert.doesNotMatch(integrations, /Ключ шифрования:|API для webhook:|Очередь Telegram:|Webhook: не работает|fetch failed/);
+assert.doesNotMatch(integrations, /repairTelegramBotConnection|Восстановить webhook|telegramDiagnostics|telegramTechnicalDiagnostics/);
+assert.doesNotMatch(integrations, /Техническая диагностика|TELEGRAM_CREDENTIALS_KEY|Ключ шифрования:|API для webhook:|Очередь Telegram:|Webhook: не работает|fetch failed/);
 assert.doesNotMatch(integrations, /PUBLIC_API_URL|webhook/i);
 assert.doesNotMatch(integrations, /integration-telegram-layer|integration-email-layer/);
 assert.doesNotMatch(integrations, /SMTP:|Yandex Cloud Postbox|Провайдер:|Отправитель:/);
@@ -59,13 +59,13 @@ assert.doesNotMatch(integrations, /workspaceHeaderContext\(\{ title: 'Telegram'/
 assert.doesNotMatch(integrations, /workspaceHeaderContext\(\{ title: 'Email'/);
 assert.doesNotMatch(integrations, /Заменить токен|Новый токен бота|pageHeader|folderList|actionBlock/);
 
-assert.match(telegramCore, /integrations\/telegram\/repair/);
+assert.doesNotMatch(telegramCore, /integrations\/telegram\/repair|repairTelegramBotConnection/);
 assert.match(emailCore, /integrations\/email\/connect/);
 assert.match(emailCore, /method: 'DELETE'/);
 assert.match(telegramService, /getUpdates/);
 assert.match(telegramService, /deleteWebhook/);
 assert.match(telegramService, /inboundOffset/);
-assert.match(telegramService, /repairConnection/);
+assert.doesNotMatch(telegramService, /repairConnection|sendChatMessage\(/);
 assert.match(telegramService, /configurationStatus/);
 assert.doesNotMatch(telegramService, /PUBLIC_API_URL|ACCOUNT_APP_URL|web_app:|webhookKey|webhookSecretHash/);
 assert.match(telegramService, /pollingActivated = new Set<string>\(\)/);
@@ -73,6 +73,7 @@ assert.match(telegramService, /if \(this\.pollingActivated\.has\(row\.tenantId\)
 assert.match(telegramService, /this\.pollingActivated\.add\(row\.tenantId\)/);
 assert.match(telegramService, /this\.pollingActivated\.delete\(tenantId\)/);
 assert.doesNotMatch(telegramService, /if \(row\.status === 'polling'\) return row/);
+assert.doesNotMatch(communicationController, /integrations\/telegram\/repair|repairTelegram/);
 
 assert.match(professionalEmail, /mail:smtp/);
 assert.match(professionalEmail, /smtp\.yandex\.com/);
