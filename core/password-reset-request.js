@@ -12,6 +12,10 @@ function isAccountSurface(target) {
   return Boolean(target?.matches?.('[data-booking-forgot],[data-global-account-forgot]'));
 }
 
+function isAdminSurface(target) {
+  return Boolean(target?.matches?.('[data-admin-forgot]'));
+}
+
 function identifierFrom(target) {
   const form = target?.closest?.('form');
   if (!form) return '';
@@ -31,11 +35,12 @@ function phoneLike(value) {
 
 async function requestReset(target) {
   const identifier = identifierFrom(target);
-  if (!phoneLike(identifier)) {
+  const adminSurface = isAdminSurface(target);
+  if ((!adminSurface && !phoneLike(identifier)) || (adminSurface && !identifier)) {
     focusIdentifier(target);
     openNotice({
       title: 'Восстановление пароля',
-      message: 'Укажите номер телефона.',
+      message: adminSurface ? 'Укажите email администратора.' : 'Укажите номер телефона.',
       action: 'Закрыть',
     });
     return;
@@ -78,7 +83,7 @@ async function requestReset(target) {
 }
 
 function ensureAdminForgotButton() {
-  const form = document.querySelector('[data-login-form]');
+  const form = document.querySelector('#admin-app [data-login-form]');
   if (!form || form.querySelector('[data-admin-forgot]')) return;
   const button = document.createElement('button');
   button.type = 'button';
@@ -89,7 +94,7 @@ function ensureAdminForgotButton() {
 }
 
 function normalizeIdentifierField(form) {
-  if (!form) return;
+  if (!form || form.closest('#admin-app')) return;
   const input = form.querySelector('[name="identifier"],[name="phone"],[name="email"]');
   if (!input) return;
   input.type = 'tel';
