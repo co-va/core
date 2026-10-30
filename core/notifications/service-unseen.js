@@ -21,6 +21,10 @@ function isEndUserRuntime() {
   return String(globalThis.location?.hostname || '').toLowerCase() === USER_HOST;
 }
 
+function isProfessionalJournalMounted() {
+  return Boolean(document.querySelector('[data-journal-context="professional"]'));
+}
+
 function afterRollout(value) {
   const stamp = Date.parse(String(value || ''));
   return Number.isFinite(stamp) && stamp >= SERVICE_UNSEEN_ROLLOUT_AT;
@@ -101,8 +105,39 @@ function markerNode(label = '🔴 Новая') {
   return marker;
 }
 
+function professionalListButton() {
+  if (isEndUserRuntime() || !isProfessionalJournalMounted()) return null;
+  return document.querySelector('[data-view-navigation] [data-view="list"]');
+}
+
+function syncProfessionalListBadge() {
+  const state = getServiceUnseenState();
+  const button = professionalListButton();
+  const label = ` 🔴 ${state.total}`;
+
+  document.querySelectorAll('[data-service-unseen-marker]:not([data-service-unseen-list-badge])').forEach((marker) => marker.remove());
+  document.querySelectorAll('[data-service-unseen-list-badge]').forEach((marker) => {
+    if (!button || state.total <= 0 || marker.parentElement !== button) marker.remove();
+  });
+
+  if (!button || state.total <= 0) return;
+  const existing = button.querySelector('[data-service-unseen-list-badge]');
+  if (existing) {
+    if (existing.textContent !== label) existing.textContent = label;
+    return;
+  }
+  const marker = markerNode(label);
+  marker.dataset.serviceUnseenListBadge = 'true';
+  button.append(marker);
+}
+
 function syncMarkers() {
   if (typeof document === 'undefined') return;
+  if (!isEndUserRuntime()) {
+    syncProfessionalListBadge();
+    return;
+  }
+
   const unseen = unseenRecordIds();
 
   document.querySelectorAll('[data-service-unseen-marker]').forEach((marker) => {
@@ -177,6 +212,7 @@ async function markRecordsSeen(ids) {
 }
 
 function scheduleVisibleSeen() {
+  if (!isEndUserRuntime()) return;
   if (visibleSeenTimer) window.clearTimeout(visibleSeenTimer);
   visibleSeenTimer = window.setTimeout(() => {
     visibleSeenTimer = null;
@@ -254,6 +290,14 @@ export function startServiceUnseenRuntime() {
     if (!document.hidden) void refreshServiceUnseen();
   };
   const onClick = (event) => {
+    if (!isEndUserRuntime()) {
+      const listButton = event.target.closest?.('[data-view-navigation] [data-view="list"]');
+      if (listButton && isProfessionalJournalMounted()) {
+        const ids = [...unseenRecordIds()];
+        if (ids.length) void markRecordsSeen(ids);
+      }
+      return;
+    }
     const row = event.target.closest?.('[data-journal-list-record]');
     const id = text(row?.dataset?.journalListRecord);
     if (id && unseenRecordIds().has(id)) void markRecordsSeen([id]);
