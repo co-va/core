@@ -171,6 +171,7 @@ export function render() {
   write(fixture, 'server/src/thing.controller.ts', `
 import { NotificationService } from './notification/notification.service';
 export class ThingController {
+  constructor(private readonly notifications: NotificationService) {}
   async change(tenantId, person) {
     return this.notifications.createEventForPerson(tenantId, person, { type: 'thing.changed' });
   }
