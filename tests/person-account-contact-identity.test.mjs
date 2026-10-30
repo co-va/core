@@ -45,8 +45,7 @@ const bindAccountTenantBlock = booking.slice(
 assert.match(bindAccountTenantBlock, /personIdentity\.bindFirstAccess/, 'Tenant Account binding must still delegate to the canonical Person identity owner.');
 assert.match(updateBlock, /personIdentity\.syncLinkedPeople/);
 
-assert.match(controller, /bindTelegramEntry[\s\S]*syncAccountPersonContacts/);
-assert.match(controller, /resolveTelegramEntry[\s\S]*syncAccountPersonContacts/);
+assert.doesNotMatch(controller, /bindTelegramEntry|resolveTelegramEntry|syncAccountPersonContacts/, 'Telegram bot transport must not bind Account identity in Online Booking.');
 
 assert.doesNotMatch(business, /async upsertPersonFromAccount\(/, 'BusinessState must not keep a parallel Account-to-Person mapper');
 assert.match(people, /identityReview:/, 'Browser Person normalization must preserve hidden identity review state');
