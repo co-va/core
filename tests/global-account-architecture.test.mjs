@@ -10,11 +10,14 @@ const booking = fs.readFileSync('server/src/online-booking/online-booking.servic
 const auxiliaryState = fs.readFileSync('server/src/auxiliary-state/auxiliary-state.service.ts', 'utf8');
 const communication = fs.readFileSync('server/src/communication/communication.service.ts', 'utf8');
 const runtime = fs.readFileSync('online-booking/account-runtime.js', 'utf8');
+const transitionRuntime = fs.readFileSync('core/account-transition-runtime.js', 'utf8');
 const bookingUi = fs.readFileSync('online-booking/booking.js', 'utf8');
 const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 const consentController = fs.readFileSync('server/src/online-booking/booking-consent.controller.ts', 'utf8');
 const controller = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const core = fs.readFileSync('core.js', 'utf8');
+const rootHtml = fs.readFileSync('index.html', 'utf8');
+const authCss = fs.readFileSync('ui/auth/auth.css', 'utf8');
 const dockerfile = fs.readFileSync('Dockerfile', 'utf8');
 const reset = fs.readFileSync('server/scripts/reset-test-account-before-global-migration.mjs', 'utf8');
 
@@ -118,5 +121,14 @@ assert.doesNotMatch(bookingHeader, /data-booking-flow-chat|kind:\s*'chat'/, 'Onl
 assert.match(core, /isEndUserAppHost\(\)/);
 assert.match(core, /renderGlobalClientRoot\(\)/);
 assert.match(core, /params\.get\('entry'\)/, 'Global profile must distinguish account entry from an external booking link');
+
+assert.match(rootHtml, /core\/account-transition-runtime\.js/, 'End-user app must load the single session transition runtime before the main application runtime.');
+assert.match(rootHtml, /classList\.toggle\('end-user-app'/, 'End-user host must be marked before styles load so startup never flashes the legacy loading sticker.');
+assert.match(transitionRuntime, /getGlobalAccountPlatformState/, 'Fast account reveal must preserve the platform legal gate.');
+assert.match(transitionRuntime, /renderGlobalAccount\(root, state/, 'Successful login must reveal the existing Shared Account shell before heavy relationship and record loading finishes.');
+assert.match(transitionRuntime, /LOGOUT_ACTION/, 'Logout must have an explicit UI transition guard.');
+assert.match(transitionRuntime, /waitForLoginResult/, 'Login must expose an immediate visible transition instead of leaving the old form frozen.');
+assert.match(authCss, /account-transition-splash/, 'End-user session transitions must use the H-background splash presentation.');
+assert.match(authCss, /app-icon\.svg/, 'The splash must show the existing application mark instead of loading text or a white loading card.');
 
 console.log('global account architecture tests passed');
