@@ -237,26 +237,39 @@ export class EmailVerificationService {
            WHERE "accountId"=$1 AND "type"='EMAIL'`,
           id,
         );
-        const current = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        const target = await tx.$queryRawUnsafe<Array<{ id: string }>>(
           `SELECT "id" FROM "AccountContact"
            WHERE "accountId"=$1 AND "type"='EMAIL' AND LOWER("value")=LOWER($2) LIMIT 1`,
           id,
-          previousEmail || email,
+          email,
         );
-        if (current.length) {
+        if (target.length) {
           await tx.$executeRawUnsafe(
-            'UPDATE "AccountContact" SET "value"=$1,"isPrimary"=true,"updatedAt"=NOW() WHERE "id"=$2',
-            email,
-            current[0].id,
+            'UPDATE "AccountContact" SET "isPrimary"=true,"updatedAt"=NOW() WHERE "id"=$1',
+            target[0].id,
           );
         } else {
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "AccountContact" ("id","accountId","type","value","isPrimary","createdAt","updatedAt")
-             VALUES ($1,$2,'EMAIL',$3,true,NOW(),NOW())`,
-            randomBytes(18).toString('hex'),
+          const current = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+            `SELECT "id" FROM "AccountContact"
+             WHERE "accountId"=$1 AND "type"='EMAIL' AND LOWER("value")=LOWER($2) LIMIT 1`,
             id,
-            email,
+            previousEmail || email,
           );
+          if (current.length) {
+            await tx.$executeRawUnsafe(
+              'UPDATE "AccountContact" SET "value"=$1,"isPrimary"=true,"updatedAt"=NOW() WHERE "id"=$2',
+              email,
+              current[0].id,
+            );
+          } else {
+            await tx.$executeRawUnsafe(
+              `INSERT INTO "AccountContact" ("id","accountId","type","value","isPrimary","createdAt","updatedAt")
+               VALUES ($1,$2,'EMAIL',$3,true,NOW(),NOW())`,
+              randomBytes(18).toString('hex'),
+              id,
+              email,
+            );
+          }
         }
       }
       await tx.$executeRawUnsafe('UPDATE "EmailVerificationTicket" SET "usedAt"=NOW() WHERE "id"=$1', ticket.id);
