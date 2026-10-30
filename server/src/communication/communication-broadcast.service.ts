@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { BusinessStateService } from '../business-state/business-state.service';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 import { PrismaService } from '../prisma.service';
-import { CommunicationService } from './communication.service';
 import { CommunicationDispatchService } from './communication-dispatch.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 
@@ -29,7 +28,6 @@ export class CommunicationBroadcastService {
     private readonly prisma: PrismaService,
     private readonly businessState: BusinessStateService,
     private readonly documents: ConsentPolicyService,
-    private readonly communications: CommunicationService,
     private readonly dispatch: CommunicationDispatchService,
     private readonly access: SaasAccessService,
   ) {}
@@ -215,11 +213,8 @@ export class CommunicationBroadcastService {
     });
   }
 
-  private async channelDestination(tenantId: string, channel: string, person: { phone: string; uei: string; email: string }) {
-    if (channel === 'TELEGRAM') {
-      const identity = await this.communications.telegramIdentity(tenantId, { phone: person.phone, uei: person.uei });
-      return text(identity?.externalUserId);
-    }
+  private async channelDestination(_tenantId: string, channel: string, person: { phone: string; uei: string; email: string }) {
+    if (channel === 'TELEGRAM') return '';
     if (channel === 'EMAIL') return canonicalEmail(person.email);
     return '';
   }
