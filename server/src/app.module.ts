@@ -60,7 +60,6 @@ export class AppModule implements NestModule {
     consumer
       .apply(PhoneLoginOnlyMiddleware)
       .forRoutes(
-        { path: 'auth/login', method: RequestMethod.POST },
         { path: 'online-booking/account/login', method: RequestMethod.POST },
         { path: 'online-booking/:tenantId/account/login', method: RequestMethod.POST },
       );
