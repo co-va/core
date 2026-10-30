@@ -46,6 +46,7 @@ jobs:
           set -euo pipefail
 
           registration_email="onboarding-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+          registration_phone="+79990007777"
           registration_password="Onboarding-${GITHUB_RUN_ID}-Pass!"
 
           start_payload=$(curl -fsS \
@@ -107,7 +108,7 @@ jobs:
 
           accept_payload=$(curl -fsS \
             -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1],password:process.argv[2],name:'Onboarding',surname:'Smoke',phone:'+79990007777',documents:JSON.parse(process.argv[3])}))" "$token" "$registration_password" "$document_facts")" \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1],password:process.argv[2],name:'Onboarding',surname:'Smoke',phone:process.argv[3],documents:JSON.parse(process.argv[4])}))" "$token" "$registration_password" "$registration_phone" "$document_facts")" \
             http://localhost:3000/tenant-invitations/accept)
 
           access_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$accept_payload")
@@ -120,15 +121,25 @@ jobs:
             if(p.tenant?.id!==process.argv[3]) throw new Error('/auth/me tenant mismatch');
           " "$auth_me" "$registration_email" "$tenant_id"
 
-          login_payload=$(curl -fsS \
+          email_login_status=$(curl -sS -o /tmp/email-login.json -w '%{http_code}' \
             -H 'Content-Type: application/json' \
             -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1],password:process.argv[2]}))" "$registration_email" "$registration_password")" \
+            http://localhost:3000/auth/login)
+          if [ "$email_login_status" -lt 400 ]; then
+            echo "Professional account unexpectedly logged in by email"
+            cat /tmp/email-login.json
+            exit 1
+          fi
+
+          login_payload=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({identifier:process.argv[1],password:process.argv[2]}))" "$registration_phone" "$registration_password")" \
             http://localhost:3000/auth/login)
           login_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$login_payload")
           login_me=$(curl -fsS -H "Authorization: Bearer $login_token" http://localhost:3000/auth/me)
           node -e "
             const p=JSON.parse(process.argv[1]);
-            if(p.account?.email!==process.argv[2]) throw new Error('Registered user cannot log in again');
+            if(p.account?.email!==process.argv[2]) throw new Error('Registered user cannot log in again by phone');
             if(p.tenant?.id!==process.argv[3]) throw new Error('Repeated login opened the wrong tenant');
           " "$login_me" "$registration_email" "$tenant_id"
 
@@ -153,12 +164,6 @@ jobs:
             if(Math.abs(days-14)>0.01) throw new Error('DEMO is not exactly 14 days');
           " "$access_after"
 
-          reset_request=$(curl -fsS \
-            -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1],surface:'app'}))" "$registration_email")" \
-            http://localhost:3000/auth/password-reset/request)
-          node -e "const p=JSON.parse(process.argv[1]); if(p.accepted!==true) throw new Error('Password reset request was not accepted')" "$reset_request"
-
           db_count() {
             docker compose -f docker-compose.staging.yml exec -T db \
               psql -U book -d book_staging -Atc "$1" | tr -d '\r\n'
@@ -181,7 +186,28 @@ jobs:
           assert_one "PlatformAccount" "SELECT COUNT(*) FROM \"PlatformAccount\" WHERE \"id\" = '$account_id' AND \"email\" = '$registration_email';"
           assert_one "OWNER Membership" "SELECT COUNT(*) FROM \"Membership\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id' AND \"role\" = 'OWNER';"
           assert_one "Profile" "SELECT COUNT(*) FROM \"Profile\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id';"
-          assert_one "Password reset ticket" "SELECT COUNT(*) FROM \"PasswordResetTicket\" WHERE \"subjectType\" = 'PLATFORM' AND \"subjectId\" = '$account_id' AND \"usedAt\" IS NULL;"
+          assert_one "Unverified registration email" "SELECT COUNT(*) FROM \"PlatformAccount\" WHERE \"id\" = '$account_id' AND \"emailVerifiedAt\" IS NULL;"
+
+          reset_before_verify=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({identifier:process.argv[1],surface:'app'}))" "$registration_phone")" \
+            http://localhost:3000/auth/password-reset/request)
+          node -e "const p=JSON.parse(process.argv[1]); if(p.accepted!==true) throw new Error('Unverified reset request was not generically accepted')" "$reset_before_verify"
+          reset_before_count=$(db_count "SELECT COUNT(*) FROM \"PasswordResetTicket\" WHERE \"subjectType\" = 'PLATFORM' AND \"subjectId\" = '$account_id' AND \"usedAt\" IS NULL;")
+          if [ "$reset_before_count" != "0" ]; then
+            echo "Unverified email unexpectedly received a password reset ticket"
+            exit 1
+          fi
+
+          docker compose -f docker-compose.staging.yml exec -T db \
+            psql -U book -d book_staging -c "UPDATE \"PlatformAccount\" SET \"emailVerifiedAt\" = CURRENT_TIMESTAMP WHERE \"id\" = '$account_id';" >/dev/null
+
+          reset_request=$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -d "$(node -e "process.stdout.write(JSON.stringify({identifier:process.argv[1],surface:'app'}))" "$registration_phone")" \
+            http://localhost:3000/auth/password-reset/request)
+          node -e "const p=JSON.parse(process.argv[1]); if(p.accepted!==true) throw new Error('Verified password reset request was not accepted')" "$reset_request"
+          assert_one "Password reset ticket for verified email" "SELECT COUNT(*) FROM \"PasswordResetTicket\" WHERE \"subjectType\" = 'PLATFORM' AND \"subjectId\" = '$account_id' AND \"usedAt\" IS NULL;"
 
           consent_count=$(db_count "SELECT COUNT(*) FROM \"PlatformConsentEvent\" WHERE \"tenantId\" = '$tenant_id' AND \"platformAccountId\" = '$account_id';")
           if [ "$consent_count" -lt 1 ]; then
