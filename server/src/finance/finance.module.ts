@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationModule } from '../notification/notification.module';
 import { PrismaService } from '../prisma.service';
@@ -9,7 +9,7 @@ import { PaymentSettlementService } from './payment-settlement.service';
 import { PersonalAccountFinanceService } from './personal-account-finance.service';
 
 @Module({
-  imports: [AuthModule, NotificationModule, SaasAccessModule],
+  imports: [AuthModule, forwardRef(() => NotificationModule), SaasAccessModule],
   controllers: [FinanceController],
   providers: [FinanceService, PaymentSettlementService, PersonalAccountFinanceService, PrismaService],
   exports: [FinanceService, PaymentSettlementService, PersonalAccountFinanceService],
