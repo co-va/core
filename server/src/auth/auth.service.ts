@@ -19,18 +19,9 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  private async accountByIdentifier(identifier: string) {
-    const raw = String(identifier || '').trim();
-    const normalizedEmail = raw.toLowerCase();
-    if (normalizedEmail.includes('@')) {
-      return this.prisma.platformAccount.findUnique({
-        where: { email: normalizedEmail },
-        include: { memberships: { include: { tenant: true } } },
-      });
-    }
-
-    const normalizedPhone = canonicalPhone(raw);
-    if (normalizedPhone.length < 10) return null;
+  private async accountByPhone(value: string) {
+    const normalizedPhone = canonicalPhone(value);
+    if (normalizedPhone.length < 10 || normalizedPhone.length > 15) return null;
 
     const rows = await this.prisma.$queryRaw<PlatformPhoneRow[]>`
       SELECT DISTINCT "platformAccountId"
@@ -55,10 +46,10 @@ export class AuthService {
     });
   }
 
-  async login(identifier: string, password: string) {
-    const account = await this.accountByIdentifier(identifier);
+  async login(phone: string, password: string) {
+    const account = await this.accountByPhone(phone);
     if (!account || !(await compare(String(password || ''), account.passwordHash))) {
-      throw new UnauthorizedException('Неверный email, телефон или пароль');
+      throw new UnauthorizedException('Неверный телефон или пароль');
     }
 
     const membership = account.memberships[0];
