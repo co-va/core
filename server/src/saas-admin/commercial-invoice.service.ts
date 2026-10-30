@@ -130,12 +130,6 @@ export class CommercialInvoiceService {
         body: `Счёт на ${amount} ${currency} за 30 дней платного доступа отправлен на email. Платные инструменты включатся после оплаты.`,
         metadata: { orderId, amountMinor: totalMinor, currency, paidAccessPeriodDays: 30 },
       }).catch(() => null);
-      await this.notices.pushToTenantOwner(tenantId, {
-        type: 'COMMERCIAL_INVOICE_SENT',
-        title: 'Счёт отправлен · бесплатный LIVE работает',
-        body: `Счёт на ${amount} ${currency} за 30 дней отправлен на email.`,
-        metadata: { orderId, paidAccessPeriodDays: 30 },
-      }).catch(() => ({ sent: 0, failed: 0 }));
 
       return {
         sent: true,
