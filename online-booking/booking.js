@@ -1311,7 +1311,6 @@ function renderGlobalClientLegal(root, state) {
 
 export async function renderGlobalClient(root, initial = {}) {
   const state = globalAccountState(initial);
-  renderFlowPage(root, state, { title: 'Профиль', subtitle: 'Загрузка…', center: true });
   try {
     const account = await getGlobalAccount();
     if (!account) {
@@ -1360,7 +1359,6 @@ export async function renderOnlineBooking(root, { tenantId = '', workplaceKey = 
     platformOnlyLegal: false,
   };
 
-  renderFlowPage(root, state, { title: 'Онлайн-запись', subtitle: 'Загрузка…', center: true });
   if (!state.tenantId) {
     renderFlowPage(root, state, { title: 'Онлайн-запись', body: emptyState('Ссылка недействительна', 'В ссылке отсутствует идентификатор онлайн-записи.'), center: true });
     return;
