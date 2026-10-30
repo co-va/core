@@ -69,6 +69,7 @@ type RoutingPolicyRow = {
   channels: unknown;
   titleTemplate: string;
   bodyTemplate: string;
+  enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -80,6 +81,7 @@ const ROUTING_MODES = new Set(['always', 'fallback']);
 const ROUTING_CHANNELS = new Set(['PUSH', 'TELEGRAM', 'EMAIL']);
 const ACTIVE_EXTERNAL_CHANNELS = new Set(['TELEGRAM', 'EMAIL']);
 const DELIVERY_POLICY_TYPE = '__delivery__';
+const SERVICE_POLICY_TYPE = '__service__';
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -177,7 +179,6 @@ export class NotificationService {
     const identity = objectValue(identityRow?.data);
     const relations = objectValue(identity.relations);
     const uei = personKey ? text(relations[`person:${personKey}`]) : '';
-
     const telegramRows = await this.prisma.$queryRaw<Array<{ externalUserId: string }>>`
       SELECT "externalUserId"
       FROM "CommunicationIdentity"
@@ -253,11 +254,10 @@ export class NotificationService {
 
   private async deliveryPolicyRow(tenantId: string) {
     const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
-      SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "createdAt", "updatedAt"
+      SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
       FROM "NotificationRoutingPolicy"
       WHERE "tenantId" = ${tenantId}
-        AND "eventType" IN (${DELIVERY_POLICY_TYPE}, 'booking.created')
-      ORDER BY CASE WHEN "eventType" = ${DELIVERY_POLICY_TYPE} THEN 0 ELSE 1 END
+        AND "eventType" = ${DELIVERY_POLICY_TYPE}
       LIMIT 1
     `;
     return rows[0] || null;
@@ -267,12 +267,24 @@ export class NotificationService {
     return this.projectDeliveryPolicy(await this.deliveryPolicyRow(tenantId));
   }
 
-  async listRoutingPolicies(tenantId: string) {
-    const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
-      SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "createdAt", "updatedAt"
+  private async serviceEventEnabled(tenantId: string, eventType: string) {
+    const rows = await this.prisma.$queryRaw<EnabledPolicyRow[]>`
+      SELECT "eventType", "enabled"
       FROM "NotificationRoutingPolicy"
       WHERE "tenantId" = ${tenantId}
-        AND "eventType" <> ${DELIVERY_POLICY_TYPE}
+        AND "eventType" IN (${SERVICE_POLICY_TYPE}, ${eventType})
+    `;
+    const service = rows.find((row) => row.eventType === SERVICE_POLICY_TYPE);
+    if (service?.enabled === false) return false;
+    return rows.find((row) => row.eventType === eventType)?.enabled === true;
+  }
+
+  async listRoutingPolicies(tenantId: string) {
+    const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
+      SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
+      FROM "NotificationRoutingPolicy"
+      WHERE "tenantId" = ${tenantId}
+        AND "eventType" NOT IN (${DELIVERY_POLICY_TYPE}, ${SERVICE_POLICY_TYPE})
       ORDER BY "eventType" ASC
     `;
     const byType = new Map(rows.map((row) => [row.eventType, row]));
@@ -285,7 +297,7 @@ export class NotificationService {
     const type = text(eventType) || 'message';
     if (type === DELIVERY_POLICY_TYPE) return this.getDeliveryPolicy(tenantId);
     const rows = await this.prisma.$queryRaw<RoutingPolicyRow[]>`
-      SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "createdAt", "updatedAt"
+      SELECT "id", "tenantId", "eventType", "mode", "channels", "titleTemplate", "bodyTemplate", "enabled", "createdAt", "updatedAt"
       FROM "NotificationRoutingPolicy"
       WHERE "tenantId" = ${tenantId}
         AND "eventType" = ${type}
@@ -503,6 +515,9 @@ export class NotificationService {
     const person = objectValue(personValue);
     const type = text(input?.type);
     if (!type) throw new BadRequestException('Не указан тип уведомления');
+    if (!(await this.serviceEventEnabled(tenantId, type))) {
+      return { notification: null, routed: [], blocked: 'EVENT_DISABLED' };
+    }
     let accountId = accountIdsFromPerson(person)[0] || '';
     if (!accountId) {
       const identity = await this.accountIdentityByPhone(tenantId, text(person.phone));
