@@ -6,11 +6,3 @@ body:has(.shared-login-screen){background:var(--surface-dark)}
 .shared-login-form .field input,.shared-login-form .password-field__control input{border-radius:0!important}
 .shared-login-form .v2-sticker-link{border-radius:0}
 .shared-login-screen .ui-button:active,[data-shared-profile-action="logout"]:active{transform:translateY(1px);filter:brightness(.9)}
-.end-user-app #app:has([data-startup-loading]){width:100%;max-width:none;min-height:100dvh;padding-top:0;background:var(--surface-dark);box-shadow:none}
-.end-user-app [data-startup-loading]{width:100%;max-width:none;min-height:100dvh;margin:0;padding:0;display:grid;place-items:center;background:var(--surface-dark)}
-.end-user-app [data-startup-loading] .v2-sticker{width:88px;height:88px;max-height:none;padding:0;overflow:visible;display:grid;place-items:center;background:transparent;box-shadow:none}
-.end-user-app [data-startup-loading] .v2-sticker__title{width:88px;height:88px;margin:0;font-size:0;background:url('/app-icon.svg') center/contain no-repeat}
-.end-user-app #app-content.account-transition-splash{position:relative;min-height:100dvh;overflow:hidden;background:var(--surface-dark)}
-.end-user-app #app-content.account-transition-splash>*{visibility:hidden}
-.end-user-app #app-content.account-transition-splash::before{content:"";position:fixed;z-index:9998;inset:0;background:var(--surface-dark);visibility:visible;pointer-events:auto}
-.end-user-app #app-content.account-transition-splash::after{content:"";position:fixed;z-index:9999;left:50%;top:50%;width:88px;height:88px;transform:translate(-50%,-50%);background:url('/app-icon.svg') center/contain no-repeat;visibility:visible;pointer-events:none}
