@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { NotificationEventService } from '../notification/notification-event.service';
+import { PrismaService } from '../prisma.service';
 import { FinanceService } from './finance.service';
 import { PaymentSettlementService } from './payment-settlement.service';
 
@@ -8,13 +10,36 @@ type AuthenticatedRequest = Request & {
   auth?: { platformAccountId: string; tenantId: string; role: string };
 };
 
+type JsonObject = Record<string, any>;
+
+function objectValue(value: unknown): JsonObject {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
+}
+
+function text(value: unknown) {
+  return String(value ?? '').trim();
+}
+
 @Controller('finance')
 @UseGuards(JwtAuthGuard)
 export class FinanceController {
   constructor(
     private readonly finance: FinanceService,
     private readonly payments: PaymentSettlementService,
+    private readonly notifications: NotificationEventService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  private async notifyPerson(tenantId: string, personValue: unknown, type: string, entityId: string, context: JsonObject = {}) {
+    const person = objectValue(personValue);
+    if (!text(person.key) && !text(person.phone) && !text(person.accountId) && !Array.isArray(person.accounts)) return;
+    await this.notifications.createEventForPerson(tenantId, person, {
+      type,
+      entityType: 'finance-operation',
+      entityId,
+      context,
+    }).catch(() => null);
+  }
 
   @Get()
   get(@Req() request: AuthenticatedRequest) {
@@ -28,7 +53,7 @@ export class FinanceController {
     @Param('sourceId') sourceId: string,
     @Body() body: unknown,
   ) {
-    const source = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, any> : {};
+    const source = objectValue(body);
     return this.finance.saveSettlement(request.auth!.tenantId, sourceType, sourceId, source.settlement ?? source);
   }
 
@@ -82,17 +107,50 @@ export class FinanceController {
   }
 
   @Post('operations/payment')
-  payment(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    return this.payments.recordPayment(request.auth!.tenantId, body);
+  async payment(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    const tenantId = request.auth!.tenantId;
+    const input = objectValue(body);
+    const result = await this.payments.recordPayment(tenantId, body);
+    const operation = objectValue(objectValue(result).financePatch?.operation);
+    const data = objectValue(operation.data);
+    const person = objectValue(data.person || input.person);
+    const operationId = text(operation.operationId);
+    await this.notifyPerson(tenantId, person, 'finance.payment', operationId, {
+      amount: data.total ?? input.serviceAmount,
+      date: text(operation.occurredAt).slice(0, 10),
+    });
+    if (Number(data.personalAccountAmount || 0) > 0 || input.finalizeDebt === true) {
+      await this.notifyPerson(tenantId, person, 'personal-account.changed', operationId, {
+        amount: data.personalAccountAmount ?? data.total,
+        date: text(operation.occurredAt).slice(0, 10),
+      });
+    }
+    return result;
   }
 
   @Post('operations/:operationId/refund')
-  refund(
+  async refund(
     @Req() request: AuthenticatedRequest,
     @Param('operationId') operationId: string,
     @Body() body: unknown,
   ) {
-    return this.payments.recordRefund(request.auth!.tenantId, operationId, body);
+    const tenantId = request.auth!.tenantId;
+    const payment = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } });
+    const paymentData = objectValue(payment?.data);
+    const result = await this.payments.recordRefund(tenantId, operationId, body);
+    const input = objectValue(body);
+    const person = objectValue(paymentData.person);
+    await this.notifyPerson(tenantId, person, 'finance.refund', operationId, {
+      amount: input.amount ?? paymentData.total,
+      date: text(input.occurredAt).slice(0, 10),
+    });
+    if (Number(paymentData.personalAccountAmount || 0) > 0 || input.finalizeDebt === true) {
+      await this.notifyPerson(tenantId, person, 'personal-account.changed', operationId, {
+        amount: input.amount ?? paymentData.personalAccountAmount,
+        date: text(input.occurredAt).slice(0, 10),
+      });
+    }
+    return result;
   }
 
   @Put('operations/:operationId')
