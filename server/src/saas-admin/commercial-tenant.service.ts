@@ -438,12 +438,6 @@ export class CommercialTenantService {
         body: 'Оплата подтверждена. Чек из «Мой налог» доступен по ссылке.',
         metadata: { orderId, url: receiptUrl },
       }).catch(() => null);
-      await this.noticeService.pushToTenantOwner(tenantId, {
-        type: 'COMMERCIAL_RECEIPT_READY',
-        title: 'Чек и LIVE готовы',
-        body: 'Оплата подтверждена. Откройте чек.',
-        metadata: { orderId, url: receiptUrl },
-      }).catch(() => ({ sent: 0, failed: 0 }));
     }
 
     await this.applySelectedCapabilities(tenantId);
