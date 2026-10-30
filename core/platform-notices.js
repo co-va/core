@@ -207,7 +207,6 @@ export function startPlatformNotices({
   let busy = false;
   let timer = null;
   let pushPromptShown = false;
-  let pushPromptOpening = false;
   const shown = new Set();
 
   if (platformPushSupported()) {
@@ -218,32 +217,20 @@ export function startPlatformNotices({
   }
 
   const offerPush = async () => {
-    if (disposed || pushPromptShown || pushPromptOpening || !shouldOfferPushSetup()) return;
-    pushPromptOpening = true;
-    if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
-      pushPromptOpening = false;
-      window.setTimeout(() => void offerPush(), 1_500);
-      return;
-    }
+    if (disposed || pushPromptShown || !shouldOfferPushSetup()) return;
+    if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) return;
 
     let initialStatus = '';
     try {
       if (platformPushSupported() && Notification.permission === 'granted') {
         const state = await enablePlatformPush();
-        if (state?.subscribed) {
-          pushPromptOpening = false;
-          return;
-        }
+        if (state?.subscribed) return;
         initialStatus = pushFailureMessage(state);
       }
     } catch (error) {
       initialStatus = error instanceof Error ? error.message : 'Не удалось проверить Push.';
     }
 
-    if (disposed || pushPromptShown || document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
-      pushPromptOpening = false;
-      return;
-    }
     pushPromptShown = true;
     const layer = mountModal(document.body, modal(pushSetupModal(initialStatus), {
       title: 'Уведомления на телефоне',
@@ -253,12 +240,10 @@ export function startPlatformNotices({
     }));
     if (!layer) {
       pushPromptShown = false;
-      pushPromptOpening = false;
       window.setTimeout(() => void offerPush(), 1_500);
       return;
     }
     layer.dataset.platformPushSetupModal = 'true';
-    pushPromptOpening = false;
     const enable = layer.querySelector('[data-platform-push-enable]');
     const later = layer.querySelector('[data-platform-push-later]');
     const status = layer.querySelector('[data-platform-push-status]');
@@ -341,8 +326,9 @@ export function startPlatformNotices({
     }
   };
 
-  void showNext();
-  window.setTimeout(() => void offerPush(), 800);
+  void showNext().then(() => {
+    if (!document.querySelector('[data-platform-notice-modal]')) void offerPush();
+  });
   timer = window.setInterval(() => void showNext(), Math.max(15_000, Number(intervalMs) || 60_000));
 
   return () => {
