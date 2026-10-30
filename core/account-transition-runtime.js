@@ -118,9 +118,9 @@ function fastCallbacks(root, state) {
 
 async function revealSignedInHome() {
   if (!isEndUserHost()) return false;
-  const root = accountRoot();
+  const initialRoot = accountRoot();
   const token = getAccountToken('');
-  if (!root || !token) return false;
+  if (!initialRoot || !token) return false;
 
   if (revealPromise && revealToken === token) return revealPromise;
   revealToken = token;
@@ -132,11 +132,11 @@ async function revealSignedInHome() {
     if (!account || getAccountToken('') !== token) return false;
     if (!platformState?.accepted || getAccountToken('') !== token) return false;
 
-    const currentRoot = accountRoot();
-    if (!currentRoot || isAnonymousFlow(currentRoot)) return false;
+    const root = accountRoot();
+    if (!root || isAnonymousFlow(root)) return false;
     const state = fastState(account);
-    await renderGlobalAccount(currentRoot, state, fastCallbacks(currentRoot, state));
-    clearTransition(currentRoot);
+    await renderGlobalAccount(root, state, fastCallbacks(root, state));
+    clearTransition(root);
     return true;
   })().catch(() => false).finally(() => {
     if (revealToken === token) revealPromise = null;
