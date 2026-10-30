@@ -13,9 +13,6 @@
   <style>
     html,body,#app{margin:0;min-height:100%;background:#2F3338}
     body,#app{min-height:100dvh}
-    .startup-logo{position:fixed;inset:0;display:grid;place-items:center;background:#2F3338}
-    .startup-logo img{width:92px;height:92px;animation:startup-logo-pulse 1.2s ease-in-out infinite}
-    @keyframes startup-logo-pulse{0%,100%{opacity:.35}50%{opacity:1}}
   </style>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
@@ -73,11 +70,7 @@
   <link rel="stylesheet" href="ui/inputs/keyboard.css">
 </head>
 <body>
-  <div id="app" class="app-shell">
-    <div class="startup-logo" aria-label="Загрузка" aria-busy="true">
-      <img src="/app-icon.svg" alt="">
-    </div>
-  </div>
+  <div id="app" class="app-shell"></div>
   <script type="module" src="ui/inputs/keyboard-runtime.js"></script>
   <script type="module" src="core/chat/messenger-mode.js"></script>
   <script type="module" src="core/account-transition-runtime.js"></script>
