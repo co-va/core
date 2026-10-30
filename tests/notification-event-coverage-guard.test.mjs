@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,26 +14,10 @@ function write(root, relative, content) {
   fs.writeFileSync(file, content, 'utf8');
 }
 
-function git(root, args) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-}
-
-function commit(root, message) {
-  git(root, ['add', '.']);
-  git(root, ['commit', '-m', message]);
-  return git(root, ['rev-parse', 'HEAD']);
-}
-
-function runGuard(root, base = '') {
+function runGuard(root) {
   const result = spawnSync(process.execPath, [GUARD], {
     cwd: root,
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      GITHUB_EVENT_PATH: '',
-      GITHUB_EVENT_NAME: '',
-      NOTIFICATION_GUARD_BASE: base,
-    },
   });
   return {
     status: result.status,
@@ -47,16 +31,51 @@ function serviceEvent(value) { return value; }
 export const NOTIFICATION_EVENT_CATALOG = [
   serviceEvent({ type: 'thing.changed', group: 'Fixture' }),
 ];
+export function notificationEventDefinition(type) {
+  return NOTIFICATION_EVENT_CATALOG.find((event) => event.type === type) || null;
+}
+`);
+  write(root, 'server/src/notification/notification-event.service.ts', `
+export class NotificationEventService {
+  async setAllEnabled() { return []; }
+  async createEventForPerson() {}
+}
+`);
+  write(root, 'server/src/notification/notification.service.ts', `
+import { notificationEventDefinition } from './notification-events';
+export class NotificationService {
+  async createEventForPerson(tenantId, person, input) {
+    const type = String(input?.type || '');
+    const definition = notificationEventDefinition(type);
+    if (!definition) throw new Error('unknown');
+    return definition;
+  }
+}
+`);
+  write(root, 'server/src/notification/notification.controller.ts', `
+export class NotificationController {
+  @Put('routing')
+  setAllRouting() {}
+}
+`);
+  write(root, 'core/notifications/routing.js', `
+export async function getNotificationCatalog() { return []; }
+export async function setAllNotificationsEnabled() { return []; }
+export async function setNotificationEnabled() { return {}; }
 `);
   write(root, 'settings/notifications/notifications.js', `
-export function render() { return getNotificationCatalog(); }
-function getNotificationCatalog() { return []; }
+import { getNotificationCatalog, setAllNotificationsEnabled, setNotificationEnabled } from '../../core/notifications/routing.js';
+export async function render() {
+  const catalog = await getNotificationCatalog();
+  await setAllNotificationsEnabled(false);
+  return catalog.map((event) => setNotificationEnabled(event.type, false));
+}
 `);
   write(root, 'server/src/thing.controller.ts', `
-class NotificationEventService {}
+import { NotificationEventService } from './notification/notification-event.service';
 export class ThingController {
   constructor(notifications) { this.notifications = notifications; }
-  async notify(tenantId, person) {
+  async change(tenantId, person) {
     return this.notifications.createEventForPerson(tenantId, person, {
       type: 'thing.changed',
       entityType: 'thing',
@@ -64,87 +83,94 @@ export class ThingController {
   }
 }
 `);
-  write(root, 'notification-impact.jsonl', '\n');
+}
+
+function expectFailure(fixture, message, pattern) {
+  const result = runGuard(fixture);
+  assert.notEqual(result.status, 0, message);
+  assert.match(result.output, pattern);
 }
 
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'notification-coverage-'));
 try {
-  git(fixture, ['init']);
-  git(fixture, ['config', 'user.email', 'guard@example.test']);
-  git(fixture, ['config', 'user.name', 'Notification Guard Test']);
   baseline(fixture);
-  const base = commit(fixture, 'baseline');
-
-  let result = runGuard(fixture, base);
+  let result = runGuard(fixture);
   assert.equal(result.status, 0, `baseline guard must pass:\n${result.output}`);
 
+  baseline(fixture);
   write(fixture, 'server/src/thing.controller.ts', `
-class NotificationEventService {}
+import { NotificationEventService } from './notification/notification-event.service';
 export class ThingController {
-  constructor(notifications) { this.notifications = notifications; }
-  async notify(tenantId, person) {
-    return this.notifications.createEventForPerson(tenantId, person, {
-      type: 'thing.unknown',
-      entityType: 'thing',
-    });
+  async change(tenantId, person) {
+    return this.notifications.createEventForPerson(tenantId, person, { type: 'thing.unknown' });
   }
 }
 `);
-  commit(fixture, 'unknown event');
-  result = runGuard(fixture, base);
-  assert.notEqual(result.status, 0, 'event emitted outside catalog must fail');
-  assert.match(result.output, /absent from notification-events\.ts/);
+  expectFailure(fixture, 'event emitted outside catalog must fail', /absent from the canonical catalog/);
 
-  git(fixture, ['reset', '--hard', base]);
+  baseline(fixture);
   write(fixture, 'server/src/thing.controller.ts', `
-class NotificationEventService {}
-export class ThingController {
-  constructor(notifications) { this.notifications = notifications; }
-}
+export class ThingController {}
 `);
-  commit(fixture, 'dead catalog row');
-  result = runGuard(fixture, base);
-  assert.notEqual(result.status, 0, 'catalog event without runtime trigger must fail');
-  assert.match(result.output, /no notification-aware runtime trigger/);
+  expectFailure(fixture, 'catalog event without runtime trigger must fail', /has no runtime trigger/);
 
-  git(fixture, ['reset', '--hard', base]);
+  baseline(fixture);
   write(fixture, 'settings/notifications/notifications.js', `
-export function render() { return getNotificationCatalog().map(() => 'thing.changed'); }
-function getNotificationCatalog() { return []; }
-`);
-  commit(fixture, 'hardcoded settings');
-  result = runGuard(fixture, base);
-  assert.notEqual(result.status, 0, 'hard-coded Settings event must fail');
-  assert.match(result.output, /Settings contains hard-coded SERVICE event/);
-
-  git(fixture, ['reset', '--hard', base]);
-  write(fixture, 'server/src/new.controller.ts', `
-export class NewController {
-  @Post('items')
-  create() { return true; }
+import { getNotificationCatalog, setAllNotificationsEnabled, setNotificationEnabled } from '../../core/notifications/routing.js';
+export function render() {
+  getNotificationCatalog();
+  setAllNotificationsEnabled(true);
+  setNotificationEnabled('thing.changed', true);
 }
 `);
-  commit(fixture, 'mutation without notification review');
-  result = runGuard(fixture, base);
-  assert.notEqual(result.status, 0, 'new mutation without notification decision must fail');
-  assert.match(result.output, /has no SERVICE\/NO_NOTIFICATION decision/);
+  expectFailure(fixture, 'hard-coded Settings event must fail', /Settings hard-codes SERVICE event/);
 
-  write(fixture, 'notification-impact.jsonl', `{"file":"server/src/new.controller.ts","decision":"SERVICE","events":["thing.changed"]}\n`);
-  commit(fixture, 'declare service impact');
-  result = runGuard(fixture, base);
-  assert.equal(result.status, 0, `SERVICE-reviewed mutation must pass:\n${result.output}`);
-
-  git(fixture, ['reset', '--hard', base]);
-  write(fixture, 'server/src/new.controller.ts', `
-export class NewController {
-  @Delete('cache')
-  clearCache() { return true; }
+  baseline(fixture);
+  write(fixture, 'server/src/thing.controller.ts', `
+import { NotificationService } from './notification/notification.service';
+export class ThingController {
+  async change(tenantId, person) {
+    return this.notifications.createEventForPerson(tenantId, person, { type: 'thing.changed' });
+  }
 }
 `);
-  write(fixture, 'notification-impact.jsonl', `{"file":"server/src/new.controller.ts","decision":"NO_NOTIFICATION","reason":"Technical cache cleanup has no user-facing event"}\n`);
-  commit(fixture, 'explicit no notification');
-  result = runGuard(fixture, base);
-  assert.equal(result.status, 0, `NO_NOTIFICATION-reviewed mutation must pass:\n${result.output}`);
+  expectFailure(fixture, 'direct NotificationService event emission must fail', /must go through NotificationEventService/);
+
+  baseline(fixture);
+  write(fixture, 'server/src/commercial.service.ts', `
+export class CommercialService {
+  async send() {
+    await this.notices.createForTenantOwner('tenant', {});
+    await this.notices.pushToTenantOwner('tenant', {});
+  }
+}
+`);
+  expectFailure(fixture, 'duplicate tenant-owner push must fail', /already dispatches Push/);
+
+  baseline(fixture);
+  write(fixture, 'core/notifications/routing.js', `
+export const SERVICE_POLICY_TYPE = '__service__';
+export async function getNotificationCatalog() { return []; }
+export async function setAllNotificationsEnabled() { return []; }
+export async function setNotificationEnabled() { return {}; }
+`);
+  expectFailure(fixture, 'legacy SERVICE master state must fail', /legacy duplicate SERVICE master state/);
+
+  baseline(fixture);
+  write(fixture, 'server/src/notification/notification-events.ts', `
+function serviceEvent(value) { return value; }
+export const NOTIFICATION_EVENT_CATALOG = [
+  serviceEvent({ type: 'thing.changed', group: 'Fixture' }),
+  serviceEvent({ type: 'thing.changed', group: 'Fixture' }),
+];
+`);
+  expectFailure(fixture, 'duplicate catalog event must fail', /duplicate event types/);
+
+  baseline(fixture);
+  write(fixture, 'server/src/notification/notification.controller.ts', `
+export class NotificationController {}
+`);
+  expectFailure(fixture, 'missing bulk endpoint must fail', /bulk SERVICE enable\/disable/);
 
   console.log('notification event coverage guard tests passed');
 } finally {
