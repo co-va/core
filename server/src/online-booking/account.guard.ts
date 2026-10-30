@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { PrismaService } from '../prisma.service';
 import type { Request } from 'express';
 
@@ -10,7 +11,11 @@ type AccountToken = {
 
 @Injectable()
 export class AccountGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService, private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly emailVerification: EmailVerificationService,
+  ) {}
 
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request & { accountAuth?: { accountId: string; tenantId: string } }>();
@@ -31,6 +36,7 @@ export class AccountGuard implements CanActivate {
       if (!account || String(profileData.deletedAt || '').trim()) throw new Error('inactive account token');
       const tenantId = String(request.params?.tenantId || '').trim();
       request.accountAuth = { accountId: payload.sub, tenantId };
+      void this.emailVerification.requestAccount(payload.sub).catch(() => undefined);
 
       if (tenantId) {
         const requestPath = String((request as any).path || request.url || '').split('?')[0];
