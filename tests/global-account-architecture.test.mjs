@@ -41,7 +41,7 @@ assert.match(migration, /'TELEGRAM'::"AccountContactType"/);
 
 assert.match(accountApi, /const ACCOUNT_TOKEN_KEY = 'book\.account\.token'/);
 assert.doesNotMatch(accountApi, /function tokenKey\(tenantId\)/);
-assert.match(accountApi, /resolveAccountTelegramEntry/);
+assert.doesNotMatch(accountApi, /resolveAccountTelegramEntry|bindAccountTelegramEntry|telegram-entry/, 'Global Account API must not contain Telegram browser entry');
 assert.match(accountApi, /export async function deleteGlobalAccountRelationship\(tenantId\)/, 'Global Account must expose contact removal through the shared account API');
 
 assert.doesNotMatch(guard, /payload\.tenantId/, 'Account token must be global and Tenant context must come from the requested route');
@@ -63,16 +63,12 @@ const issueTokenBlock = booking.slice(
 );
 assert.doesNotMatch(issueTokenBlock, /tenantId:/, 'Global Account token must not encode one Tenant as identity owner');
 
-assert.match(communication, /resolveTelegramEntryAccount/);
-assert.match(communication, /AccountContactType\.TELEGRAM/);
-assert.match(communication, /Этот Telegram уже зарегистрирован в другом аккаунте/);
+assert.doesNotMatch(communication, /resolveTelegramEntryAccount|bindTelegramEntry|TelegramEntryTicket|AccountContactType\.TELEGRAM/, 'Communication must not bind Telegram bot chats to Account identity');
+assert.match(communication, /ensureTelegramThreadIdentity/, 'Telegram may retain only technical external-thread identity');
 
-assert.match(runtime, /resolveAccountTelegramEntry/);
-assert.match(runtime, /clearAccount,/);
-assert.match(runtime, /let telegramReadyForBind = false;/);
-assert.match(runtime, /clearAccount\(tenant\);/, 'Unknown Telegram entry must not inherit whichever Account is already authenticated in the browser');
-assert.match(runtime, /!telegramReadyForBind \|\| !getAccountToken\(tenant\)/, 'Telegram may bind only after the entry has been resolved and the user explicitly authenticates');
-assert.doesNotMatch(runtime, /if \(entry && !getAccountToken\(tenant\)\)/, 'Telegram entry resolution must not be skipped just because a stale Account token exists');
+assert.doesNotMatch(runtime, /resolveAccountTelegramEntry|bindAccountTelegramEntry|tg_entry|telegram-entry/, 'Account runtime must not contain Telegram browser entry or binding');
+assert.match(runtime, /startGlobalAccountPushRuntime/, 'Account runtime must remain limited to the Account Push lifecycle');
+assert.doesNotMatch(controller, /account\/telegram-entry/, 'Online Booking controller must not expose Telegram Account entry endpoints');
 
 assert.match(controller, /@Get\('account\/me'\)/, 'Global client app must expose a tenant-free Account route');
 assert.match(controller, /@Get\('account\/relationships'\)/, 'Global client app must expose Account relationships');
