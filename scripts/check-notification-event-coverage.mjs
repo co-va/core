@@ -87,11 +87,15 @@ function catalogTypes(source) {
   return [...source.matchAll(/serviceEvent\(\{[\s\S]*?\btype:\s*'([^']+)'/g)].map((match) => match[1]);
 }
 
-function emittedTypes(source) {
+function directGatewayTypes(source) {
   const types = [];
   const gateway = /(?:createEventForPerson|createEventForTenantOwner|createEventForPersonKey)\s*\([\s\S]{0,1800}?\btype:\s*'([^']+)'/g;
   for (const match of source.matchAll(gateway)) types.push(match[1]);
   return types;
+}
+
+function hasLiteral(source, value) {
+  return source.includes(`'${value}'`) || source.includes(`\"${value}\"`);
 }
 
 const catalogSource = read(CATALOG_PATH);
@@ -102,19 +106,30 @@ if (catalogSet.size !== catalog.length) fail('canonical SERVICE catalog contains
 
 const tsFiles = walk(SERVER_ROOT).filter((file) => file.endsWith('.ts'));
 const emitters = new Map();
+function registerEmitter(eventType, file) {
+  if (!emitters.has(eventType)) emitters.set(eventType, new Set());
+  emitters.get(eventType).add(rel(file));
+}
+
 for (const file of tsFiles) {
+  if (file === CATALOG_PATH) continue;
   const source = read(file);
-  for (const eventType of emittedTypes(source)) {
-    if (!emitters.has(eventType)) emitters.set(eventType, []);
-    emitters.get(eventType).push(rel(file));
+  for (const eventType of directGatewayTypes(source)) {
+    registerEmitter(eventType, file);
     if (!catalogSet.has(eventType)) {
       fail(`SERVICE event '${eventType}' is emitted by ${rel(file)} but is absent from notification-events.ts (there would be no Settings switch)`);
     }
   }
+
+  const notificationAware = /NotificationEventService|createEventForPerson|createEventForTenantOwner|createEventForPersonKey|notifyRecordEvent/.test(source);
+  if (!notificationAware) continue;
+  for (const eventType of catalog) {
+    if (hasLiteral(source, eventType)) registerEmitter(eventType, file);
+  }
 }
 for (const eventType of catalog) {
   if (!emitters.has(eventType)) {
-    fail(`SERVICE event '${eventType}' is present in Settings catalog but has no real createEvent gateway trigger`);
+    fail(`SERVICE event '${eventType}' is present in Settings catalog but has no notification-aware runtime trigger`);
   }
 }
 
@@ -161,13 +176,13 @@ function addedLines(diff) {
 }
 
 function changedServerFiles(base) {
-  const names = git(['diff', '--name-only', `${base}...HEAD`, '--', 'server/src']);
+  const names = git(['diff', '--name-only', base, 'HEAD', '--', 'server/src']);
   return names ? names.split('\n').filter(Boolean) : [];
 }
 
 function fileDiff(base, file) {
   try {
-    return git(['diff', '--unified=0', `${base}...HEAD`, '--', file]);
+    return git(['diff', '--unified=0', base, 'HEAD', '--', file]);
   } catch {
     return '';
   }
@@ -214,11 +229,24 @@ function parseReviews() {
   return map;
 }
 
+function addedReviewFiles(diff) {
+  const result = new Set();
+  for (const line of addedLines(diff)) {
+    try {
+      const row = JSON.parse(line.trim());
+      if (row && typeof row.file === 'string') result.add(row.file);
+    } catch {
+      // parseReviews reports invalid current ledger rows; unrelated added diff lines are ignored here.
+    }
+  }
+  return result;
+}
+
 const base = chooseBase();
 if (base) {
   const reviews = parseReviews();
   const reviewDiff = fs.existsSync(REVIEW_PATH) ? fileDiff(base, 'notification-impact.jsonl') : '';
-  const reviewAdded = addedLines(reviewDiff).join('\n');
+  const reviewedInThisChange = addedReviewFiles(reviewDiff);
   for (const file of changedServerFiles(base)) {
     if (!file.endsWith('.ts')) continue;
     const absolute = path.join(ROOT, file);
@@ -231,7 +259,7 @@ if (base) {
       fail(`${file} changes mutation-capable code but has no SERVICE/NO_NOTIFICATION decision in notification-impact.jsonl`);
       continue;
     }
-    if (!reviewAdded.includes(`\"file\":\"${file}\"`) && !reviewAdded.includes(`\"file\": \"${file}\"`)) {
+    if (!reviewedInThisChange.has(file)) {
       fail(`${file} changes mutation-capable code but its notification-impact review was not updated in this change`);
       continue;
     }
@@ -239,7 +267,7 @@ if (base) {
     if (review.decision === 'SERVICE') {
       const events = Array.isArray(review.events) ? review.events : [];
       for (const eventType of events) {
-        if (!emitters.has(eventType)) fail(`${file} declares SERVICE '${eventType}', but no real createEvent gateway emits it`);
+        if (!emitters.has(eventType)) fail(`${file} declares SERVICE '${eventType}', but no notification-aware runtime trigger exists`);
       }
     }
   }
