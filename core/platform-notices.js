@@ -218,10 +218,7 @@ export function startPlatformNotices({
 
   const offerPush = async () => {
     if (disposed || pushPromptShown || !shouldOfferPushSetup()) return;
-    if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
-      window.setTimeout(() => void offerPush(), 1_500);
-      return;
-    }
+    if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) return;
 
     let initialStatus = '';
     try {
@@ -329,8 +326,9 @@ export function startPlatformNotices({
     }
   };
 
-  void showNext();
-  window.setTimeout(() => void offerPush(), 800);
+  void showNext().then(() => {
+    if (!document.querySelector('[data-platform-notice-modal]')) void offerPush();
+  });
   timer = window.setInterval(() => void showNext(), Math.max(15_000, Number(intervalMs) || 60_000));
 
   return () => {

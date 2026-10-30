@@ -138,13 +138,7 @@ async function renderGlobalClientRoot(initial = {}) {
   disposeView = () => {};
   setThemeColor('#2F3338');
   app.classList.add('app-shell--booking');
-  app.innerHTML = `<main class="booking-content" id="app-content">
-    <section class="v2-sticker-screen" data-startup-loading aria-live="polite" aria-busy="true">
-      <article class="v2-sticker">
-        <h1 class="v2-sticker__title">Загрузка…</h1>
-      </article>
-    </section>
-  </main>`;
+  app.innerHTML = '<main class="booking-content" id="app-content"></main>';
   await renderGlobalClient(document.querySelector('#app-content'), initial);
   syncViewport();
 }

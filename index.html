@@ -10,6 +10,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Кабинет">
   <title>Рабочее пространство</title>
+  <style>
+    html,body,#app{margin:0;min-height:100%;background:#2F3338}
+    body,#app{min-height:100dvh}
+  </style>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
   <link rel="icon" type="image/svg+xml" href="/app-icon.svg">
@@ -66,13 +70,7 @@
   <link rel="stylesheet" href="ui/inputs/keyboard.css">
 </head>
 <body>
-  <div id="app" class="app-shell">
-    <section class="v2-sticker-screen" data-startup-loading aria-live="polite" aria-busy="true">
-      <article class="v2-sticker">
-        <h1 class="v2-sticker__title">Загрузка…</h1>
-      </article>
-    </section>
-  </div>
+  <div id="app" class="app-shell"></div>
   <script type="module" src="ui/inputs/keyboard-runtime.js"></script>
   <script type="module" src="core/chat/messenger-mode.js"></script>
   <script type="module" src="core/account-transition-runtime.js"></script>
