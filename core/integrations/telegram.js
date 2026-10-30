@@ -16,10 +16,6 @@ export async function connectTelegramBot(token) {
   }), 'Не удалось подключить Telegram-бота');
 }
 
-export async function repairTelegramBotConnection() {
-  return jsonResponse(await apiRequest('/communications/integrations/telegram/repair', { method: 'POST' }), 'Не удалось восстановить Telegram webhook');
-}
-
 export async function disconnectTelegramBot() {
   return jsonResponse(await apiRequest('/communications/integrations/telegram', { method: 'DELETE' }), 'Не удалось отключить Telegram-бота');
 }
