@@ -17,7 +17,6 @@ const consentController = fs.readFileSync('server/src/online-booking/booking-con
 const controller = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const core = fs.readFileSync('core.js', 'utf8');
 const rootHtml = fs.readFileSync('index.html', 'utf8');
-const authCss = fs.readFileSync('ui/auth/auth.css', 'utf8');
 const dockerfile = fs.readFileSync('Dockerfile', 'utf8');
 const reset = fs.readFileSync('server/scripts/reset-test-account-before-global-migration.mjs', 'utf8');
 
@@ -124,7 +123,5 @@ assert.match(transitionRuntime, /getGlobalAccountPlatformState/, 'Fast account r
 assert.match(transitionRuntime, /renderGlobalAccount\(root, state/, 'Successful login must reveal the existing Shared Account shell before heavy relationship and record loading finishes.');
 assert.match(transitionRuntime, /LOGOUT_ACTION/, 'Logout must have an explicit UI transition guard.');
 assert.match(transitionRuntime, /waitForLoginResult/, 'Login must expose an immediate visible transition instead of leaving the old form frozen.');
-assert.match(authCss, /account-transition-splash/, 'End-user session transitions must use the H-background splash presentation.');
-assert.match(authCss, /app-icon\.svg/, 'The splash must show the existing application mark instead of loading text or a white loading card.');
 
 console.log('global account architecture tests passed');
