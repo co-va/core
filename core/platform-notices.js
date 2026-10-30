@@ -168,8 +168,16 @@ export async function markPlatformNoticeSeen(id) {
   return markRead(id);
 }
 
+function normalizedNoticeType(item) {
+  return String(item?.type || '').trim().toLowerCase().replaceAll('_', '.');
+}
+
 function recordServiceNotice(item) {
-  return String(item?.type || '').trim().toUpperCase() === 'BOOKING_CREATED';
+  return normalizedNoticeType(item) === 'booking.created';
+}
+
+function deletedBookingNotice(item) {
+  return normalizedNoticeType(item) === 'booking.deleted';
 }
 
 function noticeModal(item) {
@@ -280,10 +288,10 @@ export function startPlatformNotices({
       const unread = (Array.isArray(rows) ? rows : [])
         .filter((item) => !item.readAt && !shown.has(item.id) && !recordServiceNotice(item))
         .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
-      const item = unread[0];
+      const item = unread.find((notice) => deletedBookingNotice(notice)) || unread[0];
       if (!item) return;
 
-      const stale = unread.slice(1);
+      const stale = unread.filter((oldItem) => oldItem.id !== item.id && !deletedBookingNotice(oldItem));
       stale.forEach((oldItem) => shown.add(oldItem.id));
       if (stale.length) {
         void Promise.allSettled(stale.map((oldItem) => markRead(oldItem.id)));
@@ -298,15 +306,28 @@ export function startPlatformNotices({
       if (!layer) return;
       layer.dataset.platformNoticeModal = item.id;
 
+      let readCommitted = false;
+      if (deletedBookingNotice(item)) {
+        try {
+          await markRead(item.id);
+          readCommitted = true;
+        } catch {
+          shown.delete(item.id);
+        }
+      }
+
       let settled = false;
       const settleNotice = async () => {
         if (settled) return;
         settled = true;
         observer.disconnect();
-        try {
-          await markRead(item.id);
-        } catch {
-          shown.delete(item.id);
+        if (!readCommitted) {
+          try {
+            await markRead(item.id);
+            readCommitted = true;
+          } catch {
+            shown.delete(item.id);
+          }
         }
         if (item.type === 'CAPABILITY_CHANGED' || item.type === 'ACCESS_STATUS_CHANGED') {
           await onAccessChanged(item).catch(() => undefined);
