@@ -230,8 +230,7 @@ function helperTypeParameters(source) {
   for (const method of methodDefinitions(source)) {
     for (const [gateway, objectArgIndex] of Object.entries(GATEWAYS)) {
       for (const call of scanCalls(method.body, gateway)) {
-        const objectArg = call.args[objectArgIndex] || '';
-        const expression = typeExpressionFromObject(objectArg);
+        const expression = typeExpressionFromObject(call.args[objectArgIndex] || '');
         const identifier = expression.match(/^([A-Za-z_$][\w$]*)$/)?.[1] || '';
         const parameterIndex = method.parameterNames.indexOf(identifier);
         if (parameterIndex >= 0) helpers.set(method.name, parameterIndex);
@@ -279,6 +278,19 @@ function runtimeEventTypes(source) {
   return [...types];
 }
 
+function deliveryServiceReceivers(source) {
+  const receivers = new Set();
+  const constructorProperty = /(?:private|protected|public)\s+readonly\s+([A-Za-z_$][\w$]*)\s*:\s*NotificationService\b/g;
+  for (const match of source.matchAll(constructorProperty)) receivers.add(match[1]);
+  const typedVariable = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*:\s*NotificationService\b/g;
+  for (const match of source.matchAll(typedVariable)) receivers.add(match[1]);
+  return [...receivers];
+}
+
+function bypassesSemanticGateway(source) {
+  return deliveryServiceReceivers(source).some((receiver) => new RegExp(`\\b(?:this\\.)?${escaped(receiver)}\\.createEventForPerson\\s*\\(`).test(source));
+}
+
 for (const file of [CATALOG_PATH, EVENT_SERVICE_PATH, DELIVERY_SERVICE_PATH, CONTROLLER_PATH, SETTINGS_PATH, ROUTING_UI_PATH]) {
   if (!fs.existsSync(file)) fail(`required notification file is missing: ${rel(file)}`);
 }
@@ -306,8 +318,7 @@ for (const file of tsFiles) {
     emitters.get(eventType).add(fileName);
   }
 
-  const importsDeliveryService = /import\s*\{[^}]*\bNotificationService\b[^}]*\}\s*from\s*['"][^'"]*notification\.service['"]/.test(source);
-  if (importsDeliveryService && /\.createEventForPerson\s*\(/.test(source)) {
+  if (bypassesSemanticGateway(source)) {
     fail(`${fileName} emits SERVICE through NotificationService; runtime events must go through NotificationEventService`);
   }
 
@@ -317,9 +328,7 @@ for (const file of tsFiles) {
 }
 
 for (const eventType of catalog) {
-  if (!emitters.has(eventType)) {
-    fail(`SERVICE event '${eventType}' is visible in Settings but has no runtime trigger`);
-  }
+  if (!emitters.has(eventType)) fail(`SERVICE event '${eventType}' is visible in Settings but has no runtime trigger`);
 }
 
 const eventServiceSource = read(EVENT_SERVICE_PATH);
