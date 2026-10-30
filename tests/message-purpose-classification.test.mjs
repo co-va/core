@@ -49,7 +49,8 @@ assert.doesNotMatch(notification, /const DEFAULT_TEMPLATES/);
 // SYSTEM remains reserved for platform-generated internal messages.
 assert.match(telegram, /const purpose: MessagePurpose = 'SYSTEM'/);
 assert.match(telegram, /purpose: 'DIRECT'/);
-assert.match(telegram, /purpose, channel: 'TELEGRAM'/);
+assert.match(telegram, /normalizeMessagePurpose\(input\?\.purpose\)/);
+assert.match(telegram, /channel: 'TELEGRAM'/);
 
 assert.match(notification, /purpose: MessagePurpose/);
 assert.match(notification, /normalizeMessagePurpose\(input\.purpose\)/);
