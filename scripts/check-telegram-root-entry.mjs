@@ -7,6 +7,7 @@ const files = {
   accountRuntime: fs.readFileSync('online-booking/account-runtime.js', 'utf8'),
   accountApi: fs.readFileSync('core/account/index.js', 'utf8'),
   bookingController: fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8'),
+  integrationUi: fs.readFileSync('settings/integrations/integrations.js', 'utf8'),
 };
 const activeTelegramRuntime = Object.values(files).join('\n');
 const failures = [];
@@ -38,8 +39,10 @@ expect(
   !files.controller.includes('telegram/webhook')
     && !files.bot.includes('handleWebhook(')
     && !files.bot.includes('webhookKey')
-    && !files.bot.includes('webhookSecretHash'),
-  'Telegram must have one inbound transport only; webhook runtime must not coexist with polling.',
+    && !files.bot.includes('webhookSecretHash')
+    && !files.integrationUi.includes('webhook')
+    && !files.integrationUi.includes('PUBLIC_API_URL'),
+  'Telegram must have one inbound transport only; webhook runtime and diagnostics must not coexist with polling.',
 );
 expect(
   files.bot.includes("text: 'Записаться'")
