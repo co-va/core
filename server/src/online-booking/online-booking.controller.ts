@@ -26,17 +26,8 @@ export class OnlineBookingController {
     private readonly personIdentity: PersonIdentityService,
   ) {}
 
-  private async accountTelegramSettings(tenantId: string, accountId: string) {
-    const context = await this.booking.accountTenantContactContext(tenantId, accountId);
-    const identity = await this.communications.telegramIdentity(tenantId, context);
-    if (!identity) return { telegram: { linked: false, enabled: false, username: '' } };
-    return {
-      telegram: {
-        linked: true,
-        enabled: true,
-        username: identity.display || '',
-      },
-    };
+  private accountTelegramSettings() {
+    return { telegram: { linked: false, enabled: false, username: '' } };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -246,8 +237,8 @@ export class OnlineBookingController {
 
   @UseGuards(AccountGuard)
   @Get(':tenantId/account/chat/settings')
-  chatSettings(@Param('tenantId') tenantId: string, @Req() request: AccountRequest) {
-    return this.accountTelegramSettings(tenantId, request.accountAuth!.accountId);
+  chatSettings() {
+    return this.accountTelegramSettings();
   }
 
   @UseGuards(AccountGuard)
