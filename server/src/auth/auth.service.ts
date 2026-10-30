@@ -19,8 +19,18 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  private async accountByPhone(value: string) {
-    const normalizedPhone = canonicalPhone(value);
+  private async accountByIdentifier(value: string) {
+    const raw = String(value || '').trim();
+    const normalizedEmail = raw.toLowerCase();
+    if (normalizedEmail.includes('@')) {
+      const admin = await this.prisma.platformAccount.findUnique({
+        where: { email: normalizedEmail },
+        include: { memberships: { include: { tenant: true } }, platformAdmin: true },
+      });
+      return admin?.platformAdmin ? admin : null;
+    }
+
+    const normalizedPhone = canonicalPhone(raw);
     if (normalizedPhone.length < 10 || normalizedPhone.length > 15) return null;
 
     const rows = await this.prisma.$queryRaw<PlatformPhoneRow[]>`
@@ -46,8 +56,8 @@ export class AuthService {
     });
   }
 
-  async login(phone: string, password: string) {
-    const account = await this.accountByPhone(phone);
+  async login(identifier: string, password: string) {
+    const account = await this.accountByIdentifier(identifier);
     if (!account || !(await compare(String(password || ''), account.passwordHash))) {
       throw new UnauthorizedException('Неверный телефон или пароль');
     }
