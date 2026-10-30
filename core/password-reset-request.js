@@ -16,21 +16,26 @@ function identifierFrom(target) {
   const form = target?.closest?.('form');
   if (!form) return '';
   const data = new FormData(form);
-  return String(data.get('identifier') || data.get('email') || '').trim();
+  return String(data.get('identifier') || data.get('phone') || data.get('email') || '').trim();
 }
 
 function focusIdentifier(target) {
   const form = target?.closest?.('form');
-  form?.querySelector?.('[name="identifier"],[name="email"]')?.focus?.();
+  form?.querySelector?.('[name="identifier"],[name="phone"],[name="email"]')?.focus?.();
+}
+
+function phoneLike(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return !String(value || '').includes('@') && digits.length >= 10 && digits.length <= 15;
 }
 
 async function requestReset(target) {
   const identifier = identifierFrom(target);
-  if (!identifier) {
+  if (!phoneLike(identifier)) {
     focusIdentifier(target);
     openNotice({
       title: 'Восстановление пароля',
-      message: 'Сначала укажите телефон или email.',
+      message: 'Укажите номер телефона.',
       action: 'Закрыть',
     });
     return;
@@ -85,16 +90,15 @@ function ensureAdminForgotButton() {
 
 function normalizeIdentifierField(form) {
   if (!form) return;
-  const input = form.querySelector('[name="identifier"],[name="email"]');
+  const input = form.querySelector('[name="identifier"],[name="phone"],[name="email"]');
   if (!input) return;
-  input.type = 'text';
-  input.autocomplete = 'username';
-  input.setAttribute('aria-label', 'Телефон или email');
+  input.type = 'tel';
+  input.inputMode = 'tel';
+  input.autocomplete = 'tel';
+  input.setAttribute('aria-label', 'Телефон');
   const host = input.closest('.field');
   const label = host?.querySelector(':scope > span');
-  if (label && /^email(?:\s*\*)?$/i.test(String(label.textContent || '').trim())) {
-    label.textContent = input.required ? 'Телефон или email *' : 'Телефон или email';
-  }
+  if (label) label.textContent = input.required ? 'Телефон *' : 'Телефон';
 }
 
 function normalizeLoginFields() {
