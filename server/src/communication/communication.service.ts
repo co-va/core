@@ -1,19 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { AccountContactType } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { BusinessStateService } from '../business-state/business-state.service';
 import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { PrismaService } from '../prisma.service';
 import { normalizeMessagePurpose, type MessagePurpose } from './message-purpose';
-
-type TelegramEntryRow = {
-  id: string;
-  tenantId: string;
-  telegramUserId: string;
-  username: string;
-  expiresAt: Date;
-  usedAt: Date | null;
-};
 
 type TelegramIdentityRow = {
   id: string;
@@ -75,10 +65,6 @@ function telegramUsername(value: unknown) {
   return clean ? `@${clean}` : '';
 }
 
-function tokenHash(value: string) {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 function normalizeAttachments(value: unknown) {
   const source = Array.isArray(value) ? value.slice(0, 3) : [];
   let totalEncoded = 0;
@@ -106,224 +92,36 @@ export class CommunicationService {
     private readonly platformNotices: PlatformNoticeService,
   ) {}
 
-  async createTelegramEntry(tenantId: string, input: { telegramUserId?: unknown; username?: unknown }) {
-    const telegramUserId = text(input?.telegramUserId);
-    if (!/^\d+$/.test(telegramUserId)) throw new BadRequestException('Некорректный Telegram ID');
-    const username = telegramUsername(input?.username);
-    const token = randomBytes(32).toString('base64url');
-    const hash = tokenHash(token);
-    const id = randomUUID();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    await this.prisma.$executeRaw`
-      INSERT INTO "TelegramEntryTicket" ("id", "tenantId", "tokenHash", "telegramUserId", "username", "createdAt", "expiresAt")
-      VALUES (${id}, ${tenantId}, ${hash}, ${telegramUserId}, ${username}, CURRENT_TIMESTAMP, ${expiresAt})
-    `;
-    return { token, expiresAt, username };
-  }
-
-  private async telegramEntry(tenantId: string, entryToken: unknown) {
-    const token = text(entryToken);
-    if (!token) throw new BadRequestException('Не указан Telegram-вход');
-    const hash = tokenHash(token);
-    const rows = await this.prisma.$queryRaw<TelegramEntryRow[]>`
-      SELECT "id", "tenantId", "telegramUserId", "username", "expiresAt", "usedAt"
-      FROM "TelegramEntryTicket"
-      WHERE "tenantId" = ${tenantId} AND "tokenHash" = ${hash}
-      LIMIT 1
-    `;
-    const ticket = rows[0];
-    if (!ticket) throw new NotFoundException('Telegram-вход не найден');
-    if (ticket.usedAt) throw new ConflictException('Telegram-вход уже использован');
-    if (ticket.expiresAt.getTime() <= Date.now()) throw new ConflictException('Telegram-вход истёк');
-    return ticket;
-  }
-
-  async resolveTelegramEntryAccount(tenantId: string, entryToken: unknown) {
-    const ticket = await this.telegramEntry(tenantId, entryToken);
-    const contact = await this.prisma.accountContact.findFirst({
-      where: {
-        type: AccountContactType.TELEGRAM,
-        value: ticket.telegramUserId,
-        isPrimary: true,
-      },
-      select: { accountId: true },
-    });
-    return contact
-      ? { exists: true, accountId: contact.accountId }
-      : { exists: false, accountId: '' };
-  }
-
-  async ensureTelegramInboundIdentity(tenantId: string, input: { telegramUserId?: unknown; username?: unknown }) {
+  async ensureTelegramThreadIdentity(tenantId: string, input: { telegramUserId?: unknown; username?: unknown }) {
     const externalUserId = text(input?.telegramUserId);
-    if (!/^\d+$/.test(externalUserId)) throw new BadRequestException('Некорректный Telegram ID');
+    if (!/^-?\d+$/.test(externalUserId)) throw new BadRequestException('Некорректный Telegram ID');
     const display = telegramUsername(input?.username);
-
-    const contact = await this.prisma.accountContact.findUnique({
-      where: { type_value: { type: AccountContactType.TELEGRAM, value: externalUserId } },
-      select: { accountId: true },
-    });
-    const account = contact
-      ? await this.prisma.account.findUnique({ where: { id: contact.accountId }, select: { id: true, phone: true } })
-      : await this.prisma.account.findFirst({ where: { telegramId: externalUserId }, select: { id: true, phone: true } });
-
-    let personPhone = '';
-    let uei = '';
-    if (account) {
-      const identity = await this.businessState.bookingIdentityForAccount(tenantId, account.id).catch(() => null);
-      const personKey = text(identity?.person?.key || identity?.matchedPerson?.key);
-      if (personKey) {
-        personPhone = canonicalPhone(account.phone);
-        uei = text(identity?.uei);
-      }
-    }
-    const verifiedAt = personPhone || uei ? new Date() : null;
-
     const rows = await this.prisma.$queryRaw<TelegramIdentityRow[]>`
       INSERT INTO "CommunicationIdentity" (
         "id", "tenantId", "personPhone", "uei", "channel", "externalUserId", "display", "verifiedAt", "createdAt", "updatedAt"
       ) VALUES (
-        ${randomUUID()}, ${tenantId}, ${personPhone}, ${uei}, 'TELEGRAM', ${externalUserId}, ${display}, ${verifiedAt}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ${randomUUID()}, ${tenantId}, '', '', 'TELEGRAM', ${externalUserId}, ${display}, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       ON CONFLICT ("tenantId", "channel", "externalUserId") DO UPDATE
-      SET "personPhone" = CASE WHEN EXCLUDED."personPhone" <> '' THEN EXCLUDED."personPhone" ELSE "CommunicationIdentity"."personPhone" END,
-          "uei" = CASE WHEN EXCLUDED."uei" <> '' THEN EXCLUDED."uei" ELSE "CommunicationIdentity"."uei" END,
-          "display" = CASE WHEN EXCLUDED."display" <> '' THEN EXCLUDED."display" ELSE "CommunicationIdentity"."display" END,
-          "verifiedAt" = COALESCE(EXCLUDED."verifiedAt", "CommunicationIdentity"."verifiedAt"),
+      SET "display" = CASE WHEN EXCLUDED."display" <> '' THEN EXCLUDED."display" ELSE "CommunicationIdentity"."display" END,
           "updatedAt" = CURRENT_TIMESTAMP
       RETURNING "id", "personPhone", "uei", "externalUserId", "display"
     `;
-    const resolved = rows[0] || null;
-    const resolvedPhone = canonicalPhone(resolved?.personPhone);
-    const resolvedUei = text(resolved?.uei);
-    if (resolved && (resolvedPhone || resolvedUei)) {
-      await this.prisma.$executeRaw`
-        UPDATE "CommunicationMessage"
-        SET "personPhone" = ${resolvedPhone}, "uei" = ${resolvedUei}
-        WHERE "tenantId" = ${tenantId}
-          AND "channel" = 'TELEGRAM'
-          AND "externalThreadId" = ${externalUserId}
-          AND "personPhone" = ''
-          AND "uei" = ''
-      `;
-    }
-    return resolved;
+    return rows[0] || null;
   }
 
-  async bindTelegramEntry(tenantId: string, accountId: string, entryToken: unknown) {
-    const ticket = await this.telegramEntry(tenantId, entryToken);
-    const account = await this.prisma.account.findUnique({ where: { id: accountId }, select: { phone: true, telegramId: true } });
-    if (!account) throw new NotFoundException('Аккаунт не найден');
-
-    const globalTelegram = await this.prisma.accountContact.findUnique({
-      where: { type_value: { type: AccountContactType.TELEGRAM, value: ticket.telegramUserId } },
-      select: { accountId: true },
-    });
-    if (globalTelegram && globalTelegram.accountId !== accountId) {
-      throw new ConflictException('Этот Telegram уже зарегистрирован в другом аккаунте');
-    }
-    const personPhone = canonicalPhone(account.phone);
-    if (!personPhone) throw new BadRequestException('У человека не определён телефон');
-
-    const telegramRows = await this.prisma.$queryRaw<TelegramIdentityRow[]>`
+  async telegramThreadIdentity(tenantId: string, externalThreadId: unknown) {
+    const externalUserId = text(externalThreadId);
+    if (!/^-?\d+$/.test(externalUserId)) return null;
+    const rows = await this.prisma.$queryRaw<TelegramIdentityRow[]>`
       SELECT "id", "personPhone", "uei", "externalUserId", "display"
       FROM "CommunicationIdentity"
-      WHERE "tenantId" = ${tenantId} AND "channel" = 'TELEGRAM' AND "externalUserId" = ${ticket.telegramUserId}
+      WHERE "tenantId" = ${tenantId}
+        AND "channel" = 'TELEGRAM'
+        AND "externalUserId" = ${externalUserId}
       LIMIT 1
     `;
-    const existingTelegram = telegramRows[0] || null;
-    const provisionalTelegram = Boolean(existingTelegram && !canonicalPhone(existingTelegram.personPhone) && !text(existingTelegram.uei));
-    const samePhone = Boolean(existingTelegram && canonicalPhone(existingTelegram.personPhone) === personPhone);
-
-    const business = await this.businessState.get(tenantId);
-    const phoneMatch = (Array.isArray(business.people) ? business.people : [])
-      .map((value) => objectValue(value)).find((person) => personHasPhone(person, personPhone)) || null;
-    const match = samePhone ? 'phone+telegram' : phoneMatch ? 'phone' : 'new';
-
-    const identity = await this.businessState.bookingIdentityForAccount(tenantId, accountId);
-    const personKey = text(identity?.person?.key || identity?.matchedPerson?.key);
-    if (!personKey) throw new NotFoundException('Человекская карта не найдена');
-    const uei = text(identity?.uei);
-    const display = telegramUsername(ticket.username);
-
-    if (existingTelegram && !provisionalTelegram) {
-      if (!samePhone) throw new ConflictException('Этот Telegram уже связан с другой Person');
-      if (existingTelegram.uei && uei && existingTelegram.uei !== uei) {
-        throw new ConflictException('Этот Telegram уже связан с другим UEI');
-      }
-    }
-    const resolvedUei = uei || (provisionalTelegram ? '' : text(existingTelegram?.uei));
-
-    await this.prisma.$transaction(async (tx) => {
-      const used = await tx.$executeRaw`
-        UPDATE "TelegramEntryTicket"
-        SET "usedAt" = CURRENT_TIMESTAMP
-        WHERE "id" = ${ticket.id}
-          AND "usedAt" IS NULL
-          AND "expiresAt" > CURRENT_TIMESTAMP
-      `;
-      if (!used) throw new ConflictException('Telegram-вход уже использован или истёк');
-
-      // One Account has one canonical Telegram destination. Rebinding is a
-      // replacement, not an additional route, so stale recipients cannot win.
-      await tx.accountContact.deleteMany({
-        where: {
-          accountId,
-          type: AccountContactType.TELEGRAM,
-          value: { not: ticket.telegramUserId },
-        },
-      });
-      await tx.accountContact.upsert({
-        where: { type_value: { type: AccountContactType.TELEGRAM, value: ticket.telegramUserId } },
-        create: {
-          accountId,
-          type: AccountContactType.TELEGRAM,
-          value: ticket.telegramUserId,
-          isPrimary: true,
-        },
-        update: { isPrimary: true },
-      });
-      await tx.account.update({
-        where: { id: accountId },
-        data: { telegramId: ticket.telegramUserId },
-      });
-
-      await tx.$executeRaw`
-        DELETE FROM "CommunicationIdentity"
-        WHERE "tenantId" = ${tenantId}
-          AND "channel" = 'TELEGRAM'
-          AND "externalUserId" <> ${ticket.telegramUserId}
-          AND (
-            (${personPhone} <> '' AND "personPhone" = ${personPhone})
-            OR (${resolvedUei} <> '' AND "uei" = ${resolvedUei})
-          )
-      `;
-
-      await tx.$executeRaw`
-        INSERT INTO "CommunicationIdentity" (
-          "id", "tenantId", "personPhone", "uei", "channel", "externalUserId", "display", "verifiedAt", "createdAt", "updatedAt"
-        ) VALUES (
-          ${randomUUID()}, ${tenantId}, ${personPhone}, ${resolvedUei}, 'TELEGRAM', ${ticket.telegramUserId}, ${display}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        )
-        ON CONFLICT ("tenantId", "channel", "externalUserId") DO UPDATE
-        SET "personPhone" = EXCLUDED."personPhone",
-            "uei" = EXCLUDED."uei",
-            "display" = EXCLUDED."display",
-            "verifiedAt" = CURRENT_TIMESTAMP,
-            "updatedAt" = CURRENT_TIMESTAMP
-      `;
-
-      await tx.$executeRaw`
-        UPDATE "CommunicationMessage"
-        SET "personPhone" = ${personPhone}, "uei" = ${resolvedUei}
-        WHERE "tenantId" = ${tenantId}
-          AND "channel" = 'TELEGRAM'
-          AND "externalThreadId" = ${ticket.telegramUserId}
-          AND "personPhone" = ''
-          AND "uei" = ''
-      `;
-    });
-
-    return { linked: true, channel: 'TELEGRAM', username: display, match };
+    return rows[0] || null;
   }
 
   async emailIdentity(tenantId: string, input: { phone?: unknown; uei?: unknown }) {
@@ -366,15 +164,7 @@ export class CommunicationService {
       FROM "CommunicationIdentity"
       WHERE "tenantId" = ${tenantId} AND "channel" = 'TELEGRAM'
         AND ((${personPhone} <> '' AND "personPhone" = ${personPhone}) OR (${uei} <> '' AND "uei" = ${uei}))
-      ORDER BY EXISTS (
-        SELECT 1
-        FROM "AccountContact" AS "primaryTelegram"
-        WHERE "primaryTelegram"."type" = 'TELEGRAM'
-          AND "primaryTelegram"."value" = "CommunicationIdentity"."externalUserId"
-          AND "primaryTelegram"."isPrimary" = TRUE
-      ) DESC,
-      "verifiedAt" DESC NULLS LAST,
-      "updatedAt" DESC
+      ORDER BY "verifiedAt" DESC NULLS LAST, "updatedAt" DESC
       LIMIT 1
     `;
     return rows[0] || null;
