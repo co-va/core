@@ -220,66 +220,71 @@ export function startPlatformNotices({
   const offerPush = async () => {
     if (disposed || pushPromptShown || pushPromptOpening || !shouldOfferPushSetup()) return;
     pushPromptOpening = true;
-    try {
-      if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
-        window.setTimeout(() => void offerPush(), 1_500);
-        return;
-      }
-
-      let initialStatus = '';
-      try {
-        if (platformPushSupported() && Notification.permission === 'granted') {
-          const state = await enablePlatformPush();
-          if (state?.subscribed) return;
-          initialStatus = pushFailureMessage(state);
-        }
-      } catch (error) {
-        initialStatus = error instanceof Error ? error.message : 'Не удалось проверить Push.';
-      }
-
-      if (disposed || pushPromptShown || document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) return;
-      pushPromptShown = true;
-      const layer = mountModal(document.body, modal(pushSetupModal(initialStatus), {
-        title: 'Уведомления на телефоне',
-        variant: 'x',
-        xRole: 'action',
-        surface: 'app',
-      }));
-      if (!layer) {
-        pushPromptShown = false;
-        window.setTimeout(() => void offerPush(), 1_500);
-        return;
-      }
-      layer.dataset.platformPushSetupModal = 'true';
-      const enable = layer.querySelector('[data-platform-push-enable]');
-      const later = layer.querySelector('[data-platform-push-later]');
-      const status = layer.querySelector('[data-platform-push-status]');
-      later?.addEventListener('click', () => {
-        layer.remove();
-      });
-      enable?.addEventListener('click', async () => {
-        enable.disabled = true;
-        if (status) status.textContent = 'Включаем…';
-        try {
-          const next = await enablePlatformPush();
-          if (next?.subscribed) {
-            layer.remove();
-            return;
-          }
-          if (next?.permission === 'denied') {
-            layer.remove();
-            return;
-          }
-          if (status) status.textContent = pushFailureMessage(next) || 'Не удалось включить уведомления.';
-        } catch (error) {
-          if (status) status.textContent = error instanceof Error ? error.message : 'Не удалось включить уведомления.';
-        } finally {
-          if (enable.isConnected) enable.disabled = false;
-        }
-      });
-    } finally {
+    if (document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
       pushPromptOpening = false;
+      window.setTimeout(() => void offerPush(), 1_500);
+      return;
     }
+
+    let initialStatus = '';
+    try {
+      if (platformPushSupported() && Notification.permission === 'granted') {
+        const state = await enablePlatformPush();
+        if (state?.subscribed) {
+          pushPromptOpening = false;
+          return;
+        }
+        initialStatus = pushFailureMessage(state);
+      }
+    } catch (error) {
+      initialStatus = error instanceof Error ? error.message : 'Не удалось проверить Push.';
+    }
+
+    if (disposed || pushPromptShown || document.querySelector('[data-platform-notice-modal], [data-platform-push-setup-modal]')) {
+      pushPromptOpening = false;
+      return;
+    }
+    pushPromptShown = true;
+    const layer = mountModal(document.body, modal(pushSetupModal(initialStatus), {
+      title: 'Уведомления на телефоне',
+      variant: 'x',
+      xRole: 'action',
+      surface: 'app',
+    }));
+    if (!layer) {
+      pushPromptShown = false;
+      pushPromptOpening = false;
+      window.setTimeout(() => void offerPush(), 1_500);
+      return;
+    }
+    layer.dataset.platformPushSetupModal = 'true';
+    pushPromptOpening = false;
+    const enable = layer.querySelector('[data-platform-push-enable]');
+    const later = layer.querySelector('[data-platform-push-later]');
+    const status = layer.querySelector('[data-platform-push-status]');
+    later?.addEventListener('click', () => {
+      layer.remove();
+    });
+    enable?.addEventListener('click', async () => {
+      enable.disabled = true;
+      if (status) status.textContent = 'Включаем…';
+      try {
+        const next = await enablePlatformPush();
+        if (next?.subscribed) {
+          layer.remove();
+          return;
+        }
+        if (next?.permission === 'denied') {
+          layer.remove();
+          return;
+        }
+        if (status) status.textContent = pushFailureMessage(next) || 'Не удалось включить уведомления.';
+      } catch (error) {
+        if (status) status.textContent = error instanceof Error ? error.message : 'Не удалось включить уведомления.';
+      } finally {
+        if (enable.isConnected) enable.disabled = false;
+      }
+    });
   };
 
   const showNext = async () => {
