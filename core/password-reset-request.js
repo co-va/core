@@ -30,7 +30,7 @@ async function requestReset(target) {
     focusIdentifier(target);
     openNotice({
       title: 'Восстановление пароля',
-      message: 'Сначала укажите email или телефон.',
+      message: 'Сначала укажите телефон или email.',
       action: 'Закрыть',
     });
     return;
@@ -43,7 +43,7 @@ async function requestReset(target) {
   const body = accountSurface
     ? { identifier }
     : {
-        email: identifier,
+        identifier,
         surface: String(location.hostname || '').toLowerCase() === 'admin.va-tools.ru' ? 'admin' : 'app',
       };
 
@@ -57,7 +57,7 @@ async function requestReset(target) {
     if (!response.ok) throw new Error('request failed');
     openNotice({
       title: 'Восстановление пароля',
-      message: 'Если аккаунт найден и к нему привязан email, ссылка для смены пароля отправлена. Она действует 30 минут.',
+      message: 'Если аккаунт найден и его email подтверждён, ссылка для смены пароля отправлена. Она действует 30 минут.',
       action: 'Закрыть',
     });
   } catch {
@@ -83,6 +83,25 @@ function ensureAdminForgotButton() {
   form.append(button);
 }
 
+function normalizeIdentifierField(form) {
+  if (!form) return;
+  const input = form.querySelector('[name="identifier"],[name="email"]');
+  if (!input) return;
+  input.type = 'text';
+  input.autocomplete = 'username';
+  input.setAttribute('aria-label', 'Телефон или email');
+  const host = input.closest('.field');
+  const label = host?.querySelector(':scope > span');
+  if (label && /^email(?:\s*\*)?$/i.test(String(label.textContent || '').trim())) {
+    label.textContent = input.required ? 'Телефон или email *' : 'Телефон или email';
+  }
+}
+
+function normalizeLoginFields() {
+  document.querySelectorAll('#auth-form, [data-login-form]').forEach(normalizeIdentifierField);
+  document.querySelectorAll(FORGOT_SELECTOR).forEach((button) => normalizeIdentifierField(button.closest('form')));
+}
+
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target.closest(FORGOT_SELECTOR) : null;
   if (!target) return;
@@ -92,5 +111,9 @@ document.addEventListener('click', (event) => {
 }, true);
 
 ensureAdminForgotButton();
-const observer = new MutationObserver(() => ensureAdminForgotButton());
+normalizeLoginFields();
+const observer = new MutationObserver(() => {
+  ensureAdminForgotButton();
+  normalizeLoginFields();
+});
 observer.observe(document.documentElement, { childList: true, subtree: true });
