@@ -49,6 +49,40 @@ function gitOk(args) {
   }
 }
 
+function ensureCommit(sha) {
+  const value = String(sha || '').trim();
+  if (!/^[0-9a-f]{40}$/i.test(value)) return false;
+  if (gitOk(['cat-file', '-e', `${value}^{commit}`])) return true;
+  try {
+    execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', value], {
+      cwd: ROOT,
+      stdio: 'ignore',
+    });
+  } catch {
+    return false;
+  }
+  return gitOk(['cat-file', '-e', `${value}^{commit}`]);
+}
+
+function githubEventBase() {
+  const eventPath = String(process.env.GITHUB_EVENT_PATH || '').trim();
+  if (!eventPath || !fs.existsSync(eventPath)) return '';
+  try {
+    const event = JSON.parse(read(eventPath));
+    const eventName = String(process.env.GITHUB_EVENT_NAME || '').trim();
+    if (eventName === 'push') {
+      const before = String(event?.before || '').trim();
+      if (before && !/^0{40}$/.test(before)) return before;
+    }
+    if (eventName === 'pull_request') {
+      return String(event?.pull_request?.base?.sha || '').trim();
+    }
+  } catch (error) {
+    fail(`cannot read GitHub event payload: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return '';
+}
+
 function catalogTypes(source) {
   return [...source.matchAll(/serviceEvent\(\{[\s\S]*?\btype:\s*'([^']+)'/g)].map((match) => match[1]);
 }
@@ -97,7 +131,19 @@ for (const eventType of catalog) {
 
 function chooseBase() {
   const requested = String(process.env.NOTIFICATION_GUARD_BASE || '').trim();
-  if (requested && gitOk(['rev-parse', '--verify', requested])) return requested;
+  if (requested) {
+    if (ensureCommit(requested)) return requested;
+    fail(`requested notification guard base '${requested}' is unavailable`);
+    return '';
+  }
+
+  const eventBase = githubEventBase();
+  if (eventBase) {
+    if (ensureCommit(eventBase)) return eventBase;
+    fail(`GitHub change base '${eventBase}' is unavailable`);
+    return '';
+  }
+
   if (gitOk(['rev-parse', '--verify', 'origin/main'])) {
     const head = git(['rev-parse', 'HEAD']);
     const main = git(['rev-parse', 'origin/main']);
