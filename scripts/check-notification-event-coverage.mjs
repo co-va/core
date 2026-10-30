@@ -70,15 +70,9 @@ function balanced(source, openIndex, openChar = '(', closeChar = ')') {
       continue;
     }
     if (quote) {
-      if (escapedChar) {
-        escapedChar = false;
-        continue;
-      }
-      if (char === '\\') {
-        escapedChar = true;
-        continue;
-      }
-      if (char === quote) quote = '';
+      if (escapedChar) escapedChar = false;
+      else if (char === '\\') escapedChar = true;
+      else if (char === quote) quote = '';
       continue;
     }
     if (char === '/' && next === '/') {
@@ -161,7 +155,9 @@ function scanCalls(source, methodName) {
 
 function typeExpressionFromObject(source) {
   const match = /\btype\s*:\s*/g.exec(source);
-  if (!match) return '';
+  if (!match) {
+    return /(?:^|[,{]\s*)type\s*(?=,|})/.test(source) ? 'type' : '';
+  }
   const start = match.index + match[0].length;
   let paren = 0;
   let brace = 0;
