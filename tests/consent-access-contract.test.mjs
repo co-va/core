@@ -53,13 +53,12 @@ assert.match(bookingFlow, /if \(!state\.pdnActive\)[\s\S]*!fact\?\.accepted[\s\S
 assert.match(bookingFlow, /!state\.marketingActive && facts\.get\(MARKETING_CONSENT_DOCUMENT_ID\)\?\.accepted/, 'advertising consent must remain optional and separate');
 
 // Delivery contract: DIRECT / SERVICE / SYSTEM are operational messages and must not be gated by PDN consent.
-// Only MARKETING delivery checks the separate advertising/messages consent.
+// Only MARKETING delivery checks the separate advertising/messages consent before transport dispatch.
 assert.doesNotMatch(notification, /hasActivePdnConsent\(tenantId, identity\.accountId\)/);
 assert.match(notification, /purpose !== 'MARKETING'\) return true/);
 assert.match(notification, /canSendMarketing\(tenantId, channel, recipient\)/);
 
-assert.doesNotMatch(telegram, /hasActivePdnConsentForContact\(tenantId, 'TELEGRAM', identity\.externalUserId\)/);
-assert.match(telegram, /purpose === 'MARKETING'[\s\S]*canSendMarketing/);
+assert.doesNotMatch(telegram, /ConsentPolicyService|hasActivePdnConsentForContact|canSendMarketing|purpose === 'MARKETING'/);
 
 assert.doesNotMatch(email, /hasActivePdnConsentForContact\(tenantId, 'EMAIL', identity\.externalUserId\)/);
 assert.match(email, /purpose === 'MARKETING'[\s\S]*canSendMarketing/);
