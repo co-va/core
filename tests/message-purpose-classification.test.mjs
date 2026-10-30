@@ -40,7 +40,9 @@ assert.match(notificationEvents, /function serviceEvent\(/);
 assert.match(notificationEvents, /purpose: 'SERVICE' as const/);
 assert.match(notification, /NOTIFICATION_EVENT_TYPES, notificationEventDefinition/);
 assert.match(notification, /const definition = notificationEventDefinition\(type\)/);
-assert.match(notification, /purpose: definition\?\.purpose \|\| 'SERVICE'/);
+assert.match(notification, /if \(!definition\) throw new BadRequestException\('Неизвестный тип сервисного уведомления'\)/);
+assert.match(notification, /purpose: definition\.purpose/);
+assert.doesNotMatch(notification, /purpose: definition\?\.purpose \|\| 'SERVICE'/);
 assert.doesNotMatch(notification, /SYSTEM_EVENT_TYPES/);
 assert.doesNotMatch(notification, /const DEFAULT_TEMPLATES/);
 
