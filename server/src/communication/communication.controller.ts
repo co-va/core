@@ -182,10 +182,6 @@ export class CommunicationController {
   connectTelegram(@Req() request: OwnerRequest, @Body() body: { token?: unknown }) { return this.telegramBots.connect(request.auth!.tenantId, body?.token); }
 
   @UseGuards(JwtAuthGuard)
-  @Post('integrations/telegram/repair')
-  repairTelegram(@Req() request: OwnerRequest) { return this.telegramBots.repairConnection(request.auth!.tenantId); }
-
-  @UseGuards(JwtAuthGuard)
   @Delete('integrations/telegram')
   disconnectTelegram(@Req() request: OwnerRequest) { return this.telegramBots.disconnect(request.auth!.tenantId); }
 
