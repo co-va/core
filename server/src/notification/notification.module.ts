@@ -5,13 +5,14 @@ import { TenantDocumentArchiveModule } from '../tenant-document-archive/tenant-d
 import { PrismaService } from '../prisma.service';
 import { NotificationController } from './notification.controller';
 import { NotificationEventService } from './notification-event.service';
+import { NotificationReminderService } from './notification-reminder.service';
 import { NotificationService } from './notification.service';
 import { WebPushService } from './web-push.service';
 
 @Module({
   imports: [AuthModule, PlatformNoticeModule, TenantDocumentArchiveModule],
   controllers: [NotificationController],
-  providers: [NotificationService, NotificationEventService, WebPushService, PrismaService],
+  providers: [NotificationService, NotificationEventService, NotificationReminderService, WebPushService, PrismaService],
   exports: [NotificationService, NotificationEventService, WebPushService],
 })
 export class NotificationModule {}
