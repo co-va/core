@@ -29,6 +29,7 @@ assert.match(integrations, /openDocumentViewer\(\{ title: info\.title, content: 
 assert.match(integrations, /@BotFather/);
 assert.match(integrations, /\/newbot/);
 assert.match(integrations, /Токен Telegram-бота/);
+assert.match(integrations, /Бот принимает и отправляет сообщения через Telegram/);
 assert.match(integrations, /Рабочая почта/);
 assert.match(integrations, /1\. Вставьте рабочую почту/);
 assert.match(integrations, /2\. Нажмите «Подключить»/);
@@ -44,12 +45,13 @@ assert.doesNotMatch(integrations, /openEmail\(baseRoot, next\)/);
 assert.match(integrations, /modal-title modal-title--action/);
 assert.match(modalCss, /\.modal-title--action\{display:flex;align-items:center;justify-content:space-between/);
 assert.match(integrations, /return 'Не подключён'/);
-assert.match(integrations, /return 'Подключён'/);
+assert.match(integrations, /state\?\.inboundActive \? 'Подключён' : 'Связь недоступна'/);
 assert.match(integrations, /Связь недоступна/);
 
 assert.doesNotMatch(integrations, /Требует внимания|Telegram требует внимания/);
-assert.doesNotMatch(integrations, /repairTelegramBotConnection|Восстановить webhook|telegramDiagnostics/);
-assert.doesNotMatch(integrations, /Ключ шифрования:|API для webhook:|Очередь Telegram:|Webhook: не работает|fetch failed/);
+assert.doesNotMatch(integrations, /repairTelegramBotConnection|Восстановить webhook|telegramDiagnostics|telegramTechnicalDiagnostics/);
+assert.doesNotMatch(integrations, /Техническая диагностика|TELEGRAM_CREDENTIALS_KEY|Ключ шифрования:|API для webhook:|Очередь Telegram:|Webhook: не работает|fetch failed/);
+assert.doesNotMatch(integrations, /PUBLIC_API_URL|webhook/i);
 assert.doesNotMatch(integrations, /integration-telegram-layer|integration-email-layer/);
 assert.doesNotMatch(integrations, /SMTP:|Yandex Cloud Postbox|Провайдер:|Отправитель:/);
 assert.doesNotMatch(integrations, /mountV2ZLayer|v2ZLayer/);
@@ -57,23 +59,21 @@ assert.doesNotMatch(integrations, /workspaceHeaderContext\(\{ title: 'Telegram'/
 assert.doesNotMatch(integrations, /workspaceHeaderContext\(\{ title: 'Email'/);
 assert.doesNotMatch(integrations, /Заменить токен|Новый токен бота|pageHeader|folderList|actionBlock/);
 
-assert.match(telegramCore, /integrations\/telegram\/repair/);
+assert.doesNotMatch(telegramCore, /integrations\/telegram\/repair|repairTelegramBotConnection/);
 assert.match(emailCore, /integrations\/email\/connect/);
 assert.match(emailCore, /method: 'DELETE'/);
 assert.match(telegramService, /getUpdates/);
 assert.match(telegramService, /deleteWebhook/);
 assert.match(telegramService, /inboundOffset/);
-assert.match(telegramService, /repairConnection/);
+assert.doesNotMatch(telegramService, /repairConnection|sendChatMessage\(/);
 assert.match(telegramService, /configurationStatus/);
-assert.match(telegramService, /PUBLIC_API_URL/);
-assert.doesNotMatch(telegramService, /ACCOUNT_APP_URL/);
-assert.doesNotMatch(telegramService, /web_app:/);
+assert.doesNotMatch(telegramService, /PUBLIC_API_URL|ACCOUNT_APP_URL|web_app:|webhookKey|webhookSecretHash/);
 assert.match(telegramService, /pollingActivated = new Set<string>\(\)/);
 assert.match(telegramService, /if \(this\.pollingActivated\.has\(row\.tenantId\)\) return row/);
-assert.match(telegramService, /ensuring polling transport storedStatus=\$\{row\.status\}/);
 assert.match(telegramService, /this\.pollingActivated\.add\(row\.tenantId\)/);
 assert.match(telegramService, /this\.pollingActivated\.delete\(tenantId\)/);
 assert.doesNotMatch(telegramService, /if \(row\.status === 'polling'\) return row/);
+assert.doesNotMatch(communicationController, /integrations\/telegram\/repair|repairTelegram/);
 
 assert.match(professionalEmail, /mail:smtp/);
 assert.match(professionalEmail, /smtp\.yandex\.com/);

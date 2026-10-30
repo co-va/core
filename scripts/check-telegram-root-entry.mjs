@@ -1,42 +1,66 @@
 import fs from 'node:fs';
 
-const telegramBot = fs.readFileSync('server/src/communication/telegram-bot.service.ts', 'utf8');
+const files = {
+  bot: fs.readFileSync('server/src/communication/telegram-bot.service.ts', 'utf8'),
+  communication: fs.readFileSync('server/src/communication/communication.service.ts', 'utf8'),
+  controller: fs.readFileSync('server/src/communication/communication.controller.ts', 'utf8'),
+  accountRuntime: fs.readFileSync('online-booking/account-runtime.js', 'utf8'),
+  accountApi: fs.readFileSync('core/account/index.js', 'utf8'),
+  bookingController: fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8'),
+  integrationUi: fs.readFileSync('settings/integrations/integrations.js', 'utf8'),
+};
+const activeTelegramRuntime = Object.values(files).join('\n');
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 
 expect(
-  !telegramBot.includes('web_app:')
-    && !telegramBot.includes("text: 'Открыть приложение'"),
-  'Telegram must remain a plain BotFather bot and must not restore Telegram Mini App launch buttons.',
+  !activeTelegramRuntime.includes('web_app:')
+    && !activeTelegramRuntime.includes('Mini App')
+    && !activeTelegramRuntime.includes('tg_entry'),
+  'Telegram must not restore Mini App or browser-entry runtime.',
 );
 expect(
-  !telegramBot.includes('createTelegramEntry(')
-    && !telegramBot.includes('ACCOUNT_APP_URL'),
-  'Active Telegram bot identity linking must not use the retired browser ticket/app flow.',
+  !activeTelegramRuntime.includes('TelegramEntryTicket')
+    && !activeTelegramRuntime.includes('telegram-entry')
+    && !activeTelegramRuntime.includes('resolveAccountTelegramEntry')
+    && !activeTelegramRuntime.includes('bindAccountTelegramEntry'),
+  'Telegram must not own Account entry or Account binding.',
 );
 expect(
-  telegramBot.includes("text: 'Поделиться номером'")
-    && telegramBot.includes('request_contact: true'),
-  'Unlinked Telegram users must be identified by Telegram native phone sharing.',
+  !files.bot.includes('request_contact')
+    && !files.bot.includes('bindVerifiedTelegramPhone')
+    && !files.bot.includes('AccountContactType')
+    && !files.bot.includes('this.prisma.account')
+    && !files.bot.includes('this.prisma.person')
+    && !files.bot.includes('this.prisma.ueiState'),
+  'Telegram bot must remain a transport and must not identify users through Account/Person/UEI.',
 );
 expect(
-  telegramBot.includes("String(message.contact.user_id || '') === telegramUserId"),
-  'Telegram phone linking must only accept the sender own shared contact.',
+  !files.controller.includes('telegram/webhook')
+    && !files.bot.includes('handleWebhook(')
+    && !files.bot.includes('webhookKey')
+    && !files.bot.includes('webhookSecretHash')
+    && !files.integrationUi.includes('webhook')
+    && !files.integrationUi.includes('PUBLIC_API_URL'),
+  'Telegram must have one inbound transport only; webhook runtime and diagnostics must not coexist with polling.',
 );
 expect(
-  telegramBot.includes('bindVerifiedTelegramPhone')
-    && telegramBot.includes('this.prisma.person.findMany')
-    && telegramBot.includes('this.prisma.account.findMany'),
-  'Telegram phone linking must resolve existing Person/Account before adding Telegram identity.',
+  files.bot.includes("text: 'Записаться'")
+    && files.bot.includes('url: bookingUrl')
+    && files.bot.includes('publicBookingUrl'),
+  'Telegram bot must expose the existing Public Booking URL.',
 );
 expect(
-  telegramBot.includes("text: 'Записаться'")
-    && telegramBot.includes('url: bookingUrl'),
-  'Telegram chat must expose ordinary Public Booking URL.',
+  files.bot.includes("allowed_updates: ['message']")
+    && files.bot.includes("WHERE \"status\" = 'polling'")
+    && files.bot.includes('ready: credentialsKeyConfigured'),
+  'Each professional bot must use the canonical token + polling channel.',
 );
 expect(
-  telegramBot.includes('ready: credentialsKeyConfigured'),
-  'BotFather token connection must depend only on Telegram credentials configuration.',
+  files.communication.includes('async ensureTelegramThreadIdentity(')
+    && files.communication.includes("'', '', 'TELEGRAM'")
+    && files.communication.includes('externalUserId'),
+  'Telegram conversations must be represented only by technical channel identity, without forced business identity.',
 );
 
 if (failures.length) {

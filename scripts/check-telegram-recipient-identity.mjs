@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 
-const accountRuntime = fs.readFileSync('online-booking/account-runtime.js', 'utf8');
 const communicationService = fs.readFileSync('server/src/communication/communication.service.ts', 'utf8');
 const communicationDispatch = fs.readFileSync('server/src/communication/communication-dispatch.service.ts', 'utf8');
 const communicationController = fs.readFileSync('server/src/communication/communication.controller.ts', 'utf8');
@@ -15,143 +14,86 @@ const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 
 expect(
-  accountRuntime.includes('clearAccount,')
-    && accountRuntime.includes('let telegramReadyForBind = false;')
-    && accountRuntime.includes('clearAccount(tenant);')
-    && accountRuntime.includes('!telegramReadyForBind || !getAccountToken(tenant)'),
-  'Unknown Telegram entry must clear a stale browser Account and bind only after explicit authentication.',
+  communicationService.includes('async ensureTelegramThreadIdentity(')
+    && communicationService.includes("'', '', 'TELEGRAM'")
+    && communicationService.includes('ON CONFLICT ("tenantId", "channel", "externalUserId") DO UPDATE')
+    && communicationService.includes('"display" = CASE WHEN EXCLUDED."display" <>'),
+  'Telegram sender identity must be technical channel metadata only and must not create a Person/Account binding.',
 );
 expect(
-  accountRuntime.includes('await resolveTelegramEntry();')
-    && accountRuntime.includes('void resolveTelegramEntry();')
-    && accountRuntime.includes('void bindTelegramWhenAuthenticated();'),
-  'Telegram entry resolution must retry safely without falling back to an arbitrary existing browser session.',
+  !communicationService.includes('AccountContactType')
+    && !communicationService.includes('TelegramEntryTicket')
+    && !communicationService.includes('bookingIdentityForAccount')
+    && !communicationService.includes('accountContact.')
+    && !communicationService.includes('async telegramIdentity('),
+  'Communication Telegram routing must not depend on Account/Person lookup.',
 );
 expect(
-  communicationService.includes('accountContact.findFirst({')
-    && communicationService.includes('isPrimary: true,'),
-  'Telegram auto-login must resolve only the canonical primary Telegram contact.',
+  !telegramBot.includes('AccountContactType')
+    && !telegramBot.includes('bindVerifiedTelegramPhone')
+    && !telegramBot.includes('request_contact')
+    && !telegramBot.includes('this.prisma.account')
+    && !telegramBot.includes('this.prisma.person')
+    && !telegramBot.includes('this.prisma.ueiState')
+    && !telegramBot.includes('sendChatMessage(')
+    && !telegramBot.includes('repairConnection('),
+  'Telegram bot must own only plain bot transport and external-thread messaging.',
 );
 expect(
-  communicationService.includes('accountContact.deleteMany({')
-    && communicationService.includes('value: { not: ticket.telegramUserId }')
-    && communicationService.includes('data: { telegramId: ticket.telegramUserId }'),
-  'Telegram rebinding must replace the Account destination instead of accumulating extra recipients.',
+  !communicationDispatch.includes('telegramRecipient(')
+    && !communicationDispatch.includes('telegramIdentity(')
+    && !communicationDispatch.includes('sendChatMessage('),
+  'Common dispatch must not restore person-based Telegram routing.',
 );
 expect(
-  communicationService.includes('DELETE FROM "CommunicationIdentity"')
-    && communicationService.includes('"externalUserId" <> ${ticket.telegramUserId}'),
-  'Telegram rebinding must remove stale tenant recipient identities for the same person.',
-);
-expect(
-  communicationService.includes('ORDER BY EXISTS (')
-    && communicationService.includes('"primaryTelegram"."isPrimary" = TRUE'),
-  'Outbound Telegram routing must prefer the canonical primary Telegram destination over a newer stale identity.',
-);
-expect(
-  communicationDispatch.includes('function telegramRecipient(')
-    && communicationDispatch.includes("? { phone, uei: '' }")
-    && communicationDispatch.includes('telegramIdentity(tenantId, telegramRecipient(input || {}))')
-    && communicationDispatch.includes('const recipient = telegramRecipient(input || {});')
-    && communicationDispatch.includes('this.telegram.sendChatMessage(tenantId, { ...recipient, body, purpose: input.purpose })'),
-  'Professional D Telegram routing must use the selected person phone as the recipient boundary and never fall through to another Person via UEI.',
-);
-expect(
-  telegramBot.includes("chat_id: telegramUserId")
-    && telegramBot.includes('identity.externalUserId')
-    && telegramBot.includes("direction: 'outbound'")
-    && telegramBot.includes("channel: 'TELEGRAM'"),
-  'A linked D-chat Telegram send must target the selected person Telegram id and persist as outbound Telegram history.',
+  communicationService.includes('async telegramThreadIdentity(')
+    && telegramBot.includes('async isExternalThreadAvailable(')
+    && telegramBot.includes('async sendExternalThreadMessage(')
+    && communicationDispatch.includes('sendExternalThreadMessage(tenantId')
+    && communicationDispatch.includes("return await this.telegram.isExternalThreadAvailable(tenantId, externalThreadId) ? ['TELEGRAM'] : []"),
+  'A professional must reply from D to the same Telegram external thread through the common dispatch layer.',
 );
 expect(
   telegramBot.includes("direction: 'inbound'")
     && telegramBot.includes("channel: 'TELEGRAM'")
-    && telegramBot.includes('externalUserId')
-    && telegramBot.includes('processUpdate'),
-  'A linked Telegram reply must be mapped back to the linked person and persisted as inbound Telegram history.',
+    && telegramBot.includes('externalThreadId: chatId')
+    && telegramBot.includes('ensureTelegramThreadIdentity'),
+  'Incoming private Telegram text must persist as the same external Telegram conversation.',
 );
 expect(
-  communicationService.includes('async ensureTelegramInboundIdentity(')
-    && communicationService.includes('type_value: { type: AccountContactType.TELEGRAM, value: externalUserId }')
-    && communicationService.includes('where: { telegramId: externalUserId }')
-    && communicationService.includes('bookingIdentityForAccount(tenantId, account.id)')
-    && communicationService.includes('const verifiedAt = personPhone || uei ? new Date() : null;'),
-  'Inbound Telegram identity recovery must reuse only an existing Account Telegram mapping and keep unknown senders provisional.',
+  telegramBot.includes("direction: 'outbound'")
+    && telegramBot.includes("channel: 'TELEGRAM'")
+    && telegramBot.includes('externalThreadId,'),
+  'Professional Telegram replies must persist as outbound Telegram history.',
 );
 expect(
-  communicationService.includes('"personPhone" = CASE WHEN EXCLUDED."personPhone" <> \'\'')
-    && communicationService.includes('"uei" = CASE WHEN EXCLUDED."uei" <> \'\'')
-    && communicationService.includes('"verifiedAt" = COALESCE(EXCLUDED."verifiedAt"')
-    && communicationService.includes('"externalThreadId" = ${externalUserId}'),
-  'Recovered Telegram identity must heal the provisional identity and prior Telegram messages without erasing known identity data.',
-);
-expect(
-  telegramBot.includes('const identityLinked = Boolean(identity')
-    && telegramBot.includes("message.chat.type === 'private' && (!identity || !identityLinked)")
-    && telegramBot.includes('ensureTelegramInboundIdentity(connection.tenantId')
-    && telegramBot.includes('const linkedIdentity = Boolean(identity')
-    && telegramBot.includes('messageBody && !isStart')
-    && telegramBot.includes('inbound-recorded linked=${linkedIdentity}'),
-  'Ordinary private Telegram text must retry a provisional identity link before persisting the DIRECT inbound message.',
-);
-expect(
-  communicationService.includes('const telegramExternalThread = channel === \'TELEGRAM\'')
-    && communicationService.includes('!personPhone && !uei && !telegramExternalThread')
-    && communicationService.includes('externalThreadId,'),
-  'Provisional Telegram messages may exist without fake Person identity only when they have a real Telegram external thread id.',
-);
-expect(
-  communicationService.includes('const provisionalTelegram = Boolean(')
-    && communicationService.includes('SET "personPhone" = EXCLUDED."personPhone"')
-    && communicationService.includes('UPDATE "CommunicationMessage"')
-    && communicationService.includes('"externalThreadId" = ${ticket.telegramUserId}'),
-  'When the Telegram sender later links an Account, the provisional identity and prior conversation must merge into the real Person thread.',
+  communicationService.includes("const telegramExternalThread = channel === 'TELEGRAM'")
+    && communicationService.includes('!personPhone && !uei && !telegramExternalThread'),
+  'Telegram external-thread messages may exist without fake Person identity.',
 );
 expect(
   communicationHistory.includes('externalThreadId?: unknown')
     && communicationHistory.includes("'telegram:' || \"externalThreadId\"")
     && communicationHistory.includes('AS "display"'),
-  'Professional D history must expose Telegram-only provisional conversations as real threads without creating a Person.',
-);
-expect(
-  telegramBot.includes('async isExternalThreadAvailable(')
-    && telegramBot.includes('async sendExternalThreadMessage(')
-    && communicationDispatch.includes('sendExternalThreadMessage(tenantId')
-    && communicationDispatch.includes("return await this.telegram.isExternalThreadAvailable(tenantId, externalThreadId) ? ['TELEGRAM'] : []"),
-  'A professional must be able to reply from D to the same provisional Telegram conversation, and that thread must expose Telegram only.',
+  'Professional D history must expose Telegram-only conversations without creating a Person.',
 );
 expect(
   communicationController.includes("@Query('externalThreadId') externalThreadId = ''")
     && chatApi.includes("externalThreadId: String(externalThreadId || '')")
     && chatApi.includes('externalThreadId, body, attachments'),
-  'The professional chat API must carry the provisional Telegram external thread id through load, channel resolution and reply.',
+  'Professional chat API must carry the Telegram external thread id through load, channel resolution and reply.',
 );
 expect(
   chatUi.includes('function threadTitle(thread = {})')
-    && chatUi.includes('const externalThreadId = String(thread?.externalThreadId || \'\').trim();')
+    && chatUi.includes("const externalThreadId = String(thread?.externalThreadId || '').trim();")
     && chatUi.includes('getCommunicationThread({ phone, uei, externalThreadId })')
-    && chatUi.includes('sendCommunicationMessage({ channel: selectedChannel, phone, uei, externalThreadId, body, attachments })')
-    && chatUi.includes('threadTitle: (thread) => threadTitle(thread)'),
-  'Professional D UI must render and open provisional Telegram conversations and reply through their external thread id.',
-);
-expect(
-  chatUi.includes('function directChannelOptions(channels = [], { defaultPush = true } = {})')
-    && chatUi.includes('directChannelOptions(channelState?.channels, { defaultPush: !externalThreadId })'),
-  'A provisional Telegram-only D thread must not silently expose Push as a fallback channel.',
+    && chatUi.includes('sendCommunicationMessage({ channel: selectedChannel, phone, uei, externalThreadId, body, attachments })'),
+  'Professional D UI must open Telegram external threads and reply through their external thread id.',
 );
 expect(
   communicationHistory.includes('FROM "CommunicationMessage" m')
     && !communicationHistory.match(/FROM "CommunicationMessage" m[\s\S]{0,400}m\."channel"\s*=\s*'IN_APP'/),
-  'Professional D chat history must include Telegram messages, not only in-app messages.',
-);
-
-const accountThreadStart = communicationService.indexOf('async listThread(');
-const accountThreadEnd = communicationService.indexOf('async listThreads(', accountThreadStart);
-const accountThread = communicationService.slice(accountThreadStart, accountThreadEnd);
-expect(
-  accountThread.includes('FROM "CommunicationMessage"')
-    && !accountThread.includes('"channel" = \'IN_APP\''),
-  'End-user D chat must show one conversation across in-app and external delivery channels.',
+  'Professional D history must include Telegram messages, not only in-app messages.',
 );
 expect(
   communicationService.includes('PlatformNoticeService')
@@ -162,14 +104,8 @@ expect(
 );
 expect(
   platformNotice.includes('async pushToTenantOwner(')
-    && platformNotice.includes('const explicitUrl = text(metadata.url);')
-    && platformNotice.includes('explicitUrl ||'),
-  'Professional direct-message push must use the existing platform push owner and support an application URL.',
-);
-expect(
-  communicationModule.includes('PlatformNoticeModule')
-    && communicationModule.includes('NotificationModule, PlatformNoticeModule'),
-  'Communication must consume PlatformNoticeModule instead of owning a parallel push implementation.',
+    && communicationModule.includes('PlatformNoticeModule'),
+  'Communication must use the existing platform push owner instead of parallel push logic.',
 );
 
 if (failures.length) {

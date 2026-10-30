@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CommunicationBroadcastService } from './communication-broadcast.service';
@@ -182,10 +182,6 @@ export class CommunicationController {
   connectTelegram(@Req() request: OwnerRequest, @Body() body: { token?: unknown }) { return this.telegramBots.connect(request.auth!.tenantId, body?.token); }
 
   @UseGuards(JwtAuthGuard)
-  @Post('integrations/telegram/repair')
-  repairTelegram(@Req() request: OwnerRequest) { return this.telegramBots.repairConnection(request.auth!.tenantId); }
-
-  @UseGuards(JwtAuthGuard)
   @Delete('integrations/telegram')
   disconnectTelegram(@Req() request: OwnerRequest) { return this.telegramBots.disconnect(request.auth!.tenantId); }
 
@@ -275,10 +271,5 @@ export class CommunicationController {
   @Post('broadcasts/send')
   sendBroadcast(@Req() request: OwnerRequest, @Body() body: { channel?: unknown; all?: unknown; phones?: unknown; personKeys?: unknown; groupId?: unknown; name?: unknown; body?: unknown }) {
     return this.broadcasts.send(request.auth!.tenantId, body || {});
-  }
-
-  @Post('telegram/webhook/:webhookKey')
-  telegramWebhook(@Param('webhookKey') webhookKey: string, @Headers('x-telegram-bot-api-secret-token') secretToken: string, @Body() update: Record<string, any>) {
-    return this.telegramBots.handleWebhook(webhookKey, secretToken, update || {});
   }
 }

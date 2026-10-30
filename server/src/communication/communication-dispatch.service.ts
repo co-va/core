@@ -14,13 +14,6 @@ function messengerChannel(value: unknown) {
   return requested;
 }
 
-function telegramRecipient(input: { phone?: unknown; uei?: unknown } = {}) {
-  const phone = text(input?.phone);
-  return phone
-    ? { phone, uei: '' }
-    : { phone: '', uei: text(input?.uei) };
-}
-
 @Injectable()
 export class CommunicationDispatchService {
   constructor(
@@ -38,7 +31,6 @@ export class CommunicationDispatchService {
       return await this.telegram.isExternalThreadAvailable(tenantId, externalThreadId) ? ['TELEGRAM'] : [];
     }
     const channels: string[] = ['CHAT'];
-    if (await this.communications.telegramIdentity(tenantId, telegramRecipient(input || {}))) channels.push('TELEGRAM');
     if (await this.email.isAvailable(tenantId) && await this.communications.emailIdentity(tenantId, input || {})) channels.push('EMAIL');
     return channels;
   }
@@ -90,11 +82,8 @@ export class CommunicationDispatchService {
     }
     if (channel === 'TELEGRAM') {
       const externalThreadId = text(input?.externalThreadId);
-      if (externalThreadId) {
-        return this.telegram.sendExternalThreadMessage(tenantId, { externalThreadId, body, purpose: input.purpose });
-      }
-      const recipient = telegramRecipient(input || {});
-      return this.telegram.sendChatMessage(tenantId, { ...recipient, body, purpose: input.purpose });
+      if (!externalThreadId) throw new NotFoundException('Telegram-диалог недоступен');
+      return this.telegram.sendExternalThreadMessage(tenantId, { externalThreadId, body, purpose: input.purpose });
     }
     if (channel === 'EMAIL') return this.email.sendMessage(tenantId, { phone: input?.phone, uei: input?.uei, subject: input?.subject, body, purpose: input.purpose });
     throw new BadRequestException('Канал пока не подключён');

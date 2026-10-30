@@ -17,13 +17,19 @@ expect(
 expect(
   source.includes('messageTimestampMs')
     && source.includes('row.connectedAt.getTime()')
-    && source.includes('skipped-pre-connection'),
+    && source.includes('if (!predatesConnection) await this.processUpdate(row, update);'),
   'Telegram polling must skip only messages that predate the bot connection while preserving post-connection backlog after recovery.',
 );
 expect(
   source.includes('SET "inboundOffset" = ${BigInt(nextOffset)}')
     && source.includes('row.inboundOffset = BigInt(nextOffset);'),
   'Telegram polling must persist the next offset after every handled or intentionally skipped update.',
+);
+expect(
+  !source.includes('handleWebhook(')
+    && !source.includes("source: 'polling' | 'webhook'")
+    && !source.includes('webhookKey'),
+  'Polling must be the only inbound Telegram runtime.',
 );
 
 if (failures.length) {

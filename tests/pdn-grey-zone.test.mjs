@@ -49,8 +49,6 @@ assert.match(broadcast, /reason: 'no-marketing-consent'/);
 assert.match(broadcast, /canSendMarketing\(tenantId, channel, destination\)/);
 
 assert.doesNotMatch(dispatch, /hasActivePdnConsent/);
-assert.doesNotMatch(telegram, /hasActivePdnConsentForContact\(tenantId, 'TELEGRAM', identity\.externalUserId\)/);
-assert.doesNotMatch(telegram, /blocked: 'PDN_CONSENT_REQUIRED'/);
-assert.match(telegram, /purpose === 'MARKETING'[\s\S]*canSendMarketing/);
+assert.doesNotMatch(telegram, /ConsentPolicyService|hasActivePdnConsentForContact|canSendMarketing|purpose === 'MARKETING'|blocked: 'PDN_CONSENT_REQUIRED'/);
 
 console.log('PDN grey-zone tests: OK');

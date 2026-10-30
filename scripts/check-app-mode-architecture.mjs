@@ -125,6 +125,7 @@ requireText(indexHtml, 'core/chat/messenger-mode.js', 'Shared Messenger owner mu
 requireText(accountRuntime, "document.querySelector('[data-v2-app] [data-account-deck-item]')", 'Account Push prompt must be owned by the rendered Account shell');
 rejectText(accountRuntime, 'endUserRootApp', 'Account Push startup must not depend on URL host/path heuristics');
 rejectText(accountRuntime, 'USER_ORIGIN', 'Account Push startup must not depend on one hostname');
-requireText(accountRuntime, 'if (!rootTelegramRoute) {', 'Account Push runtime must start independently and wait for the Account shell');
+rejectText(accountRuntime, 'rootTelegramRoute', 'Account Push startup must not depend on retired Telegram browser entry');
+requireText(accountRuntime, 'const disposeGlobalAccountPushRuntime = startGlobalAccountPushRuntime();', 'Account Push runtime must start independently and wait for the Account shell');
 
 if (!process.exitCode) console.log('APP MODE ARCHITECTURE: OK');

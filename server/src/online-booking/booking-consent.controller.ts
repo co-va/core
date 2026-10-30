@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import { CommunicationService } from '../communication/communication.service';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 import { PrismaService } from '../prisma.service';
@@ -23,7 +22,6 @@ function acceptedDocumentIds(value: unknown) {
 export class BookingConsentController {
   constructor(
     private readonly consentPolicy: ConsentPolicyService,
-    private readonly communications: CommunicationService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationEventService,
   ) {}
@@ -35,11 +33,9 @@ export class BookingConsentController {
       select: { phone: true, email: true },
     });
     if (!account) return [];
-    const telegram = await this.communications.telegramIdentity(auth.tenantId, { phone: account.phone });
     return [
       { type: 'PHONE', value: account.phone },
       { type: 'EMAIL', value: account.email },
-      ...(telegram?.externalUserId ? [{ type: 'TELEGRAM', value: telegram.externalUserId }] : []),
     ].filter((item) => String(item.value || '').trim());
   }
 

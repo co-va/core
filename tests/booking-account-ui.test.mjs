@@ -411,7 +411,7 @@ assert.doesNotMatch(bookingSettingsUi, /Внешний вид|renderAppearance|r
 assert.doesNotMatch(indexHtml, /settings\/online-booking\/online-booking\.css/);
 assert.match(indexHtml, /ui\/inputs\/inputs\.css/);
 
-// Mini App owns legal consent management; Chat settings must not mutate advertising consent.
+// Account legal consent management must not make Telegram transport a marketing identity owner.
 assert.match(accountApi, /account\/consents/);
 assert.match(accountApi, /account\/consents\/\$\{encodeURIComponent\(documentId\)\}\/revoke/);
 assert.match(accountApi, /account\/chat\/settings/);
@@ -421,7 +421,7 @@ assert.doesNotMatch(onlineBookingController, /messages-consent/);
 assert.doesNotMatch(onlineBookingController, /telegram-consent/);
 assert.doesNotMatch(consentPolicy, /async canSendMessages\(/);
 assert.match(consentPolicy, /async canSendMarketing\(/);
-assert.match(telegramBot, /purpose === 'MARKETING'[\s\S]*canSendMarketing\(tenantId, 'TELEGRAM', identity\.externalUserId\)/);
+assert.doesNotMatch(telegramBot, /ConsentPolicyService|canSendMarketing|purpose === 'MARKETING'/);
 
 // Media is a real persisted message property, not a decorative paperclip.
 assert.match(accountApi, /sendAccountChatMessage\(tenantId, body, attachments = \[\]\)/);

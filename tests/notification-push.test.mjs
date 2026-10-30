@@ -36,10 +36,9 @@ const onlineBookingModule = fs.readFileSync('server/src/online-booking/online-bo
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const platformNoticesUi = fs.readFileSync('core/platform-notices.js', 'utf8');
 
-assert.match(core, /params\.get\('tg_entry'\)/);
-assert.doesNotMatch(core, /params\.get\('tg'\)|params\.get\('telegram'\)/);
+assert.match(core, /function bookingRouteQuery\(params\)/);
 assert.doesNotMatch(booking, /telegramId/);
-assert.match(accountRuntime, /bindAccountTelegramEntry/);
+assert.doesNotMatch(accountRuntime, /bindAccountTelegramEntry|resolveAccountTelegramEntry|tg_entry|telegram-entry/, 'Account Push runtime must stay independent from retired Telegram entry');
 assert.doesNotMatch(accountRuntime, /mountBookingNotifications/);
 
 assert.match(accountShell, /getAccountNotifications/);
@@ -70,7 +69,7 @@ assert.doesNotMatch(browserPush, /deleteWebPushSubscription/);
 assert.match(accountRuntime, /startGlobalAccountPushRuntime/);
 const accountPushRuntimeSource = accountRuntime.slice(
   accountRuntime.indexOf('function pushSetupModal'),
-  accountRuntime.indexOf('let disposeRootTelegramRuntime'),
+  accountRuntime.indexOf('const disposeGlobalAccountPushRuntime'),
 );
 assert.doesNotMatch(accountPushRuntimeSource, /tenantId/);
 assert.doesNotMatch(accountPushRuntimeSource, /getGlobalAccountRelationships/);
