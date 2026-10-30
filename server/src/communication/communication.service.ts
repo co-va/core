@@ -155,21 +155,6 @@ export class CommunicationService {
     return null;
   }
 
-  async telegramIdentity(tenantId: string, input: { phone?: unknown; uei?: unknown }) {
-    const personPhone = canonicalPhone(input?.phone);
-    const uei = text(input?.uei);
-    if (!personPhone && !uei) throw new BadRequestException('Не указан человек');
-    const rows = await this.prisma.$queryRaw<TelegramIdentityRow[]>`
-      SELECT "id", "personPhone", "uei", "externalUserId", "display"
-      FROM "CommunicationIdentity"
-      WHERE "tenantId" = ${tenantId} AND "channel" = 'TELEGRAM'
-        AND ((${personPhone} <> '' AND "personPhone" = ${personPhone}) OR (${uei} <> '' AND "uei" = ${uei}))
-      ORDER BY "verifiedAt" DESC NULLS LAST, "updatedAt" DESC
-      LIMIT 1
-    `;
-    return rows[0] || null;
-  }
-
   async recordMessage(tenantId: string, input: {
     phone?: unknown; uei?: unknown; direction?: unknown; kind?: unknown; purpose?: unknown; channel?: unknown; body?: unknown; attachments?: unknown;
     externalMessageId?: unknown; externalThreadId?: unknown; status?: unknown; error?: unknown;
