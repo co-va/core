@@ -197,7 +197,7 @@ export async function getNotificationCatalog() { return []; }
 export async function setAllNotificationsEnabled() { return []; }
 export async function setNotificationEnabled() { return {}; }
 `);
-  expectFailure(fixture, 'legacy SERVICE master state must fail', /legacy duplicate SERVICE master state/);
+  expectFailure(fixture, 'retired SERVICE master state must fail', /retired duplicate SERVICE master state/);
 
   baseline(fixture);
   write(fixture, 'server/src/notification/notification-events.ts', `
