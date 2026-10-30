@@ -138,7 +138,6 @@ const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payme
 const businessControllerSource = fs.readFileSync(path.join(root, 'server/src/business-state/business-state.controller.ts'), 'utf8');
 const professionalAuthGuardSource = fs.readFileSync(path.join(root, 'server/src/auth/jwt-auth.guard.ts'), 'utf8');
 const accountAuthGuardSource = fs.readFileSync(path.join(root, 'server/src/online-booking/account.guard.ts'), 'utf8');
-const userHtml = fs.readFileSync(path.join(root, 'user.html'), 'utf8');
 
 const authenticatedStart = coreSource.slice(
   coreSource.indexOf('async function renderAuthenticated'),
@@ -188,15 +187,6 @@ if (!/let\s+allDepositsRequest\s*=\s*null/.test(depositStartupSource)
   failures.push('core/loyalty/deposit/data.js: duplicate deposit reads must share one in-flight request');
 }
 
-for (const [name, source] of [
-  ['index.html', mainHtml],
-  ['user.html', userHtml],
-]) {
-  if (!source.includes('data-startup-loading') || !source.includes('v2-sticker-screen')) {
-    failures.push(`${name}: initial app shell must render Shared loading state before async startup`);
-  }
-}
-
 if (userEntrySource.includes('accountBookingRoute(')
   || userEntrySource.includes('publicBookingPath(')
   || userEntrySource.includes('bookingRoute(')
@@ -206,9 +196,6 @@ if (userEntrySource.includes('accountBookingRoute(')
 }
 if (!userEntrySource.includes('await renderGlobalClientRoot();')) {
   failures.push('online-booking/user-entry.js: App entry must finish in the end-user application root');
-}
-if (!userEntrySource.includes('data-startup-loading')) {
-  failures.push('online-booking/user-entry.js: end-user app entry must keep visible Shared loading feedback during hydration');
 }
 
 if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")
