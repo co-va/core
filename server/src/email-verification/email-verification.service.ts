@@ -6,7 +6,7 @@ import { TransactionalEmailService } from '../transactional-email/transactional-
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 const PLATFORM_ORIGIN = 'https://app.va-tools.ru';
-const ACCOUNT_ORIGIN = 'https://client.va-tools.ru';
+const ACCOUNT_ORIGIN = 'https://user.va-tools.ru';
 
 type Kind = 'PLATFORM' | 'ACCOUNT';
 type SubjectRow = { id: string; email: string; emailVerifiedAt: Date | null };
