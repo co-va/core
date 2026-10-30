@@ -20,7 +20,7 @@ function render(title, message, actionLabel = 'Войти') {
   });
 }
 
-async function confirm() {
+async function verifyEmailLink() {
   if (!token) {
     render('Email не подтверждён', 'Ссылка подтверждения недействительна или устарела.', 'Вернуться ко входу');
     return;
@@ -48,4 +48,4 @@ async function confirm() {
   }
 }
 
-confirm();
+verifyEmailLink();
