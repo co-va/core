@@ -1,18 +1,32 @@
-import { Body, Controller, Get, Param, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { NotificationEventService } from './notification-event.service';
+import { ProfessionalServiceNoticeService } from './professional-service-notice.service';
 
 type OwnerRequest = Request & { auth?: { platformAccountId: string; tenantId: string; role: string } };
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationController {
-  constructor(private readonly notifications: NotificationEventService) {}
+  constructor(
+    private readonly notifications: NotificationEventService,
+    private readonly professionalNotices: ProfessionalServiceNoticeService,
+  ) {}
 
   @Get('catalog')
   catalog() {
     return this.notifications.catalog();
+  }
+
+  @Get('service-notices')
+  serviceNotices(@Req() request: OwnerRequest) {
+    return this.professionalNotices.list(request.auth!.tenantId, request.auth!.platformAccountId);
+  }
+
+  @Post('service-notices/:noticeId/read')
+  readServiceNotice(@Req() request: OwnerRequest, @Param('noticeId') noticeId: string) {
+    return this.professionalNotices.markRead(request.auth!.tenantId, request.auth!.platformAccountId, noticeId);
   }
 
   @Get('routing')

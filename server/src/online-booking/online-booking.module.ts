@@ -8,7 +8,6 @@ import { EventModule } from '../event/event.module';
 import { NoteModule } from '../note/note.module';
 import { TenantDocumentArchiveModule } from '../tenant-document-archive/tenant-document-archive.module';
 import { NotificationModule } from '../notification/notification.module';
-import { PlatformNoticeModule } from '../platform-notice/platform-notice.module';
 import { ProfileModule } from '../profile/profile.module';
 import { PrismaService } from '../prisma.service';
 import { TimeModule } from '../time/time.module';
@@ -40,7 +39,7 @@ import { OnlineBookingService } from './online-booking.service';
 import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
-  imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EmailVerificationModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, PlatformNoticeModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
+  imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EmailVerificationModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
   controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEmailVerificationController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
   providers: [OnlineBookingService, BookingFlowService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })

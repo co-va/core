@@ -74,7 +74,7 @@ function platformPushUnavailableMessage() {
 async function platformPushConfiguration() {
   if (platformPushConfigurationCache) return platformPushConfigurationCache;
   platformPushConfigurationCache = await jsonResponse(
-    await apiRequest('/platform-notices/push/configuration'),
+    await apiRequest('/professional-push/configuration'),
     'Не удалось проверить Push',
   );
   return platformPushConfigurationCache;
@@ -87,7 +87,7 @@ export async function getPlatformPushState() {
   const subscription = await registration?.pushManager.getSubscription();
   let serverSubscribed = false;
   if (subscription?.endpoint) {
-    const state = await jsonResponse(await apiRequest(`/platform-notices/push/subscription?endpoint=${encodeURIComponent(subscription.endpoint)}`), 'Не удалось проверить Push');
+    const state = await jsonResponse(await apiRequest(`/professional-push/subscription?endpoint=${encodeURIComponent(subscription.endpoint)}`), 'Не удалось проверить Push');
     serverSubscribed = Boolean(state?.subscribed);
   }
   return {
@@ -120,7 +120,7 @@ export async function enablePlatformPush() {
       applicationServerKey:decodeBase64Url(configuration.publicKey),
     });
   }
-  await jsonResponse(await apiRequest('/platform-notices/push/subscription', {
+  await jsonResponse(await apiRequest('/professional-push/subscription', {
     method:'POST',
     body:JSON.stringify(subscription.toJSON()),
   }), 'Не удалось включить Push');
@@ -133,7 +133,7 @@ export async function disablePlatformPush() {
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
   if (subscription) {
-    await jsonResponse(await apiRequest('/platform-notices/push/subscription', {
+    await jsonResponse(await apiRequest('/professional-push/subscription', {
       method:'DELETE',
       body:JSON.stringify({ endpoint:subscription.endpoint }),
     }), 'Не удалось отключить Push');
@@ -156,28 +156,14 @@ export async function getUnreadPlatformNoticeCount() {
 }
 
 async function markRead(id) {
-  const result = await jsonResponse(await apiRequest(`/platform-notices/${encodeURIComponent(id)}/read`, {
+  return jsonResponse(await apiRequest(`/platform-notices/${encodeURIComponent(id)}/read`, {
     method: 'POST',
     body: JSON.stringify({}),
   }), 'Не удалось отметить уведомление');
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('va-tools:service-unseen-refresh'));
-  return result;
 }
 
 export async function markPlatformNoticeSeen(id) {
   return markRead(id);
-}
-
-function normalizedNoticeType(item) {
-  return String(item?.type || '').trim().toLowerCase().replaceAll('_', '.');
-}
-
-function recordServiceNotice(item) {
-  return normalizedNoticeType(item) === 'booking.created';
-}
-
-function deletedBookingNotice(item) {
-  return normalizedNoticeType(item) === 'booking.deleted';
 }
 
 function noticeModal(item) {
@@ -190,7 +176,7 @@ function noticeModal(item) {
 function pushSetupModal(initialStatus = '') {
   return `<div class="modal-title">
     <h2>Уведомления на телефоне</h2>
-    <p>Включите уведомления, чтобы узнавать о новых записях, даже когда приложение закрыто.</p>
+    <p>Включите уведомления, чтобы получать важные сообщения, даже когда приложение закрыто.</p>
   </div>
   <div class="modal-actions">
     ${button('Включить', { data: 'data-platform-push-enable' })}
@@ -286,13 +272,8 @@ export function startPlatformNotices({
     try {
       const rows = await listNotices();
       const unread = (Array.isArray(rows) ? rows : [])
-        .filter((item) => !item.readAt && !shown.has(item.id) && !recordServiceNotice(item))
+        .filter((item) => !item.readAt && !shown.has(item.id))
         .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
-      const deleted = unread.filter((item) => deletedBookingNotice(item));
-      if (deleted.length) {
-        const nextDeleted = deleted[0];
-        unread.splice(0, unread.length, nextDeleted, ...unread.filter((item) => !deletedBookingNotice(item)));
-      }
       const item = unread[0];
       if (!item) return;
 
@@ -311,28 +292,15 @@ export function startPlatformNotices({
       if (!layer) return;
       layer.dataset.platformNoticeModal = item.id;
 
-      let readCommitted = false;
-      if (deletedBookingNotice(item)) {
-        try {
-          await markRead(item.id);
-          readCommitted = true;
-        } catch {
-          shown.delete(item.id);
-        }
-      }
-
       let settled = false;
       const settleNotice = async () => {
         if (settled) return;
         settled = true;
         observer.disconnect();
-        if (!readCommitted) {
-          try {
-            await markRead(item.id);
-            readCommitted = true;
-          } catch {
-            shown.delete(item.id);
-          }
+        try {
+          await markRead(item.id);
+        } catch {
+          shown.delete(item.id);
         }
         if (item.type === 'CAPABILITY_CHANGED' || item.type === 'ACCESS_STATUS_CHANGED') {
           await onAccessChanged(item).catch(() => undefined);

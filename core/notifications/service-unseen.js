@@ -1,6 +1,6 @@
 import { API_BASE, USER_ORIGIN } from '../environment.js';
 import { getAccountToken } from '../account/index.js';
-import { getPlatformNotices, markPlatformNoticeSeen } from '../platform-notices.js';
+import { apiRequest } from '../auth.js';
 import { escapeHtml, modal, mountModal } from '../../ui/ui.js';
 import { getServiceUnseenState, publishServiceUnseen, syncApplicationBadge } from './app-badge.js';
 
@@ -15,6 +15,10 @@ let initialized = false;
 
 function text(value) {
   return String(value ?? '').trim();
+}
+
+function normalizedServiceType(value) {
+  return text(value).toLowerCase().replaceAll('_', '.');
 }
 
 function isEndUserRuntime() {
@@ -55,11 +59,11 @@ function normalizeAccountItems(payload) {
 function normalizeProfessionalItems(rows) {
   return (Array.isArray(rows) ? rows : [])
     .filter((item) => !item?.readAt)
-    .filter((item) => text(item?.type).toUpperCase() === 'BOOKING_CREATED')
+    .filter((item) => normalizedServiceType(item?.type) === 'booking.created')
     .filter((item) => afterRollout(item?.createdAt))
     .map((item) => {
       const metadata = item?.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata) ? item.metadata : {};
-      const ids = recordIds(Array.isArray(metadata.recordIds) ? metadata.recordIds : [metadata.recordId]);
+      const ids = recordIds(Array.isArray(metadata.recordIds) ? metadata.recordIds : [metadata.recordId, metadata.entityId]);
       return {
         id: text(item?.id),
         tenantId: text(metadata.tenantId),
@@ -75,6 +79,14 @@ function normalizeProfessionalItems(rows) {
     .filter((item) => item.id && item.recordIds.length);
 }
 
+function professionalDeletedItems(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((item) => !item?.readAt)
+    .filter((item) => normalizedServiceType(item?.type) === 'booking.deleted')
+    .filter((item) => afterRollout(item?.createdAt))
+    .sort((a, b) => Date.parse(b?.createdAt || 0) - Date.parse(a?.createdAt || 0));
+}
+
 async function accountRequest(path, options = {}) {
   const token = getAccountToken();
   if (!token) return null;
@@ -86,12 +98,27 @@ async function accountRequest(path, options = {}) {
   return response.json().catch(() => ({}));
 }
 
-async function loadItems() {
+async function professionalRequest(path, options = {}) {
+  const response = await apiRequest(path, options);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || 'Не удалось обновить сервисные уведомления');
+  return payload;
+}
+
+async function loadState() {
   if (isEndUserRuntime()) {
     const payload = await accountRequest('/online-booking/account/service-unseen');
-    return normalizeAccountItems(payload || {});
+    return { items: normalizeAccountItems(payload || {}), professionalRows: [] };
   }
-  return normalizeProfessionalItems(await getPlatformNotices());
+  const rows = await professionalRequest('/notifications/service-notices');
+  return { items: normalizeProfessionalItems(rows), professionalRows: Array.isArray(rows) ? rows : [] };
+}
+
+async function markProfessionalNoticeSeen(id) {
+  return professionalRequest(`/notifications/service-notices/${encodeURIComponent(id)}/read`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 function unseenRecordIds() {
@@ -203,7 +230,7 @@ async function markRecordsSeen(ids) {
         body: JSON.stringify({ recordIds: values }),
       });
     } else {
-      await Promise.allSettled(items.map((item) => markPlatformNoticeSeen(item.id)));
+      await Promise.allSettled(items.map((item) => markProfessionalNoticeSeen(item.id)));
     }
     removeSeenLocally(values);
   } catch {
@@ -229,7 +256,7 @@ function summaryText(total) {
 }
 
 function maybeShowSummary() {
-  if (summaryShown || typeof document === 'undefined') return;
+  if (!isEndUserRuntime() || summaryShown || typeof document === 'undefined') return;
   const state = getServiceUnseenState();
   if (state.total <= 0 || !document.querySelector('[data-v2-app]')) return;
   if (document.querySelector('[data-service-summary-modal],[data-platform-notice-modal],[data-account-push-setup-modal],[data-platform-push-setup-modal]')) return;
@@ -241,6 +268,36 @@ function maybeShowSummary() {
   if (!layer) return;
   summaryShown = true;
   layer.dataset.serviceSummaryModal = 'true';
+}
+
+async function showDeletedNotice(rows) {
+  if (isEndUserRuntime() || typeof document === 'undefined') return;
+  if (!document.querySelector('[data-v2-app]') || document.querySelector('[data-service-deleted-modal]')) return;
+  const item = professionalDeletedItems(rows)[0];
+  if (!item) return;
+  if (document.querySelector('[data-platform-notice-modal],[data-platform-push-setup-modal]')) return;
+
+  const layer = mountModal(document.body, modal(`<div class="modal-title"><h2>${escapeHtml(item.title || 'Запись удалена')}</h2><p>${escapeHtml(item.body || '')}</p></div>`, {
+    title: item.title || 'Запись удалена',
+    variant: 's',
+    surface: 'app',
+  }));
+  if (!layer) return;
+  layer.dataset.serviceDeletedModal = text(item.id);
+
+  try {
+    await markProfessionalNoticeSeen(item.id);
+  } catch {
+    layer.remove();
+    return;
+  }
+
+  const observer = new MutationObserver(() => {
+    if (layer.isConnected) return;
+    observer.disconnect();
+    void refreshServiceUnseen();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 function publish(items) {
@@ -260,7 +317,9 @@ export async function refreshServiceUnseen() {
   }
   refreshBusy = true;
   try {
-    publish(await loadItems());
+    const state = await loadState();
+    publish(state.items);
+    await showDeletedNotice(state.professionalRows);
   } catch {
     // Auth/network readiness is owned by the surrounding application runtime.
   } finally {

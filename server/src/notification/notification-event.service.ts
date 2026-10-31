@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
 import { PrismaService } from '../prisma.service';
 import { NotificationService } from './notification.service';
 import { NOTIFICATION_EVENT_CATALOG, NOTIFICATION_EVENT_TYPES, notificationEventDefinition } from './notification-events';
+import { ProfessionalServiceNoticeService } from './professional-service-notice.service';
 
 type JsonObject = Record<string, any>;
 type EnabledRow = { eventType: string; enabled: boolean };
@@ -37,7 +37,7 @@ export class NotificationEventService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
-    private readonly platformNotices: PlatformNoticeService,
+    private readonly professionalNotices: ProfessionalServiceNoticeService,
   ) {}
 
   async listPolicies(tenantId: string) {
@@ -171,7 +171,7 @@ export class NotificationEventService {
     const definition = notificationEventDefinition(checked.type)!;
     const context = objectValue(input?.context);
     const policy = checked.policy as any;
-    const notice = await this.platformNotices.createForTenantOwner(tenantId, {
+    const notice = await this.professionalNotices.createForTenantOwner(tenantId, {
       type: checked.type,
       title: renderTemplate(policy?.titleTemplate || definition.defaultTitle, context),
       body: renderTemplate(policy?.bodyTemplate || definition.defaultBody, context),
