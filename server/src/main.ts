@@ -11,6 +11,7 @@ const USER_HOST = 'user.va-tools.ru';
 const LANDING_HOST = 'va-tools.ru';
 const LANDING_WWW_HOST = 'www.va-tools.ru';
 const TEMP_APP_HOST = 'va-app-temp-volokovykh.msk1.amvera.tech';
+const TEMP_USER_PREVIEW_ORIGIN = 'https://user-volokovykh.msk1.amvera.tech';
 
 const USER_PWA_ASSETS: Record<string, string> = {
   '/manifest.webmanifest': 'pwa/user/manifest.webmanifest',
@@ -39,6 +40,7 @@ function allowedOrigins() {
       `https://${APP_HOST}`,
       `https://${USER_HOST}`,
       `https://${API_HOST}`,
+      TEMP_USER_PREVIEW_ORIGIN,
     ];
   }
 
