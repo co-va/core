@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ProfessionalPushService } from '../push/professional-push.service';
 import { PlatformNoticeService } from './platform-notice.service';
 
 type AuthenticatedRequest = Request & { auth?: { platformAccountId: string; tenantId: string; role: string } };
@@ -8,7 +9,10 @@ type AuthenticatedRequest = Request & { auth?: { platformAccountId: string; tena
 @Controller('platform-notices')
 @UseGuards(JwtAuthGuard)
 export class PlatformNoticeController {
-  constructor(private readonly notices: PlatformNoticeService) {}
+  constructor(
+    private readonly notices: PlatformNoticeService,
+    private readonly push: ProfessionalPushService,
+  ) {}
 
   @Get()
   list(@Req() request: AuthenticatedRequest) {
@@ -17,17 +21,17 @@ export class PlatformNoticeController {
 
   @Get('push/configuration')
   pushConfiguration() {
-    return this.notices.pushConfiguration();
+    return this.push.configuration();
   }
 
   @Get('push/subscription')
   pushSubscription(@Req() request: AuthenticatedRequest, @Query('endpoint') endpoint: string) {
-    return this.notices.pushSubscriptionState(request.auth!.platformAccountId, endpoint);
+    return this.push.subscriptionState(request.auth!.platformAccountId, endpoint);
   }
 
   @Post('push/subscription')
   savePushSubscription(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    return this.notices.savePushSubscription(
+    return this.push.saveSubscription(
       request.auth!.platformAccountId,
       body,
       String(request.headers['user-agent'] || ''),
@@ -36,7 +40,7 @@ export class PlatformNoticeController {
 
   @Delete('push/subscription')
   deletePushSubscription(@Req() request: AuthenticatedRequest, @Body() body: { endpoint?: unknown }) {
-    return this.notices.deletePushSubscription(request.auth!.platformAccountId, body?.endpoint);
+    return this.push.deleteSubscription(request.auth!.platformAccountId, body?.endpoint);
   }
 
   @Post(':noticeId/read')
