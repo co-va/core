@@ -74,7 +74,7 @@ function platformPushUnavailableMessage() {
 async function platformPushConfiguration() {
   if (platformPushConfigurationCache) return platformPushConfigurationCache;
   platformPushConfigurationCache = await jsonResponse(
-    await apiRequest('/platform-notices/push/configuration'),
+    await apiRequest('/professional-push/configuration'),
     'Не удалось проверить Push',
   );
   return platformPushConfigurationCache;
@@ -87,7 +87,7 @@ export async function getPlatformPushState() {
   const subscription = await registration?.pushManager.getSubscription();
   let serverSubscribed = false;
   if (subscription?.endpoint) {
-    const state = await jsonResponse(await apiRequest(`/platform-notices/push/subscription?endpoint=${encodeURIComponent(subscription.endpoint)}`), 'Не удалось проверить Push');
+    const state = await jsonResponse(await apiRequest(`/professional-push/subscription?endpoint=${encodeURIComponent(subscription.endpoint)}`), 'Не удалось проверить Push');
     serverSubscribed = Boolean(state?.subscribed);
   }
   return {
@@ -120,7 +120,7 @@ export async function enablePlatformPush() {
       applicationServerKey:decodeBase64Url(configuration.publicKey),
     });
   }
-  await jsonResponse(await apiRequest('/platform-notices/push/subscription', {
+  await jsonResponse(await apiRequest('/professional-push/subscription', {
     method:'POST',
     body:JSON.stringify(subscription.toJSON()),
   }), 'Не удалось включить Push');
@@ -133,7 +133,7 @@ export async function disablePlatformPush() {
   const registration = await navigator.serviceWorker.getRegistration('/');
   const subscription = await registration?.pushManager.getSubscription();
   if (subscription) {
-    await jsonResponse(await apiRequest('/platform-notices/push/subscription', {
+    await jsonResponse(await apiRequest('/professional-push/subscription', {
       method:'DELETE',
       body:JSON.stringify({ endpoint:subscription.endpoint }),
     }), 'Не удалось отключить Push');
