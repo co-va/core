@@ -8,11 +8,13 @@ const accountRuntime = fs.readFileSync('online-booking/account-runtime.js', 'utf
 const browserPush = fs.readFileSync('core/notifications/web-push.js', 'utf8');
 const accountPushApi = fs.readFileSync('core/notifications/account-push-api.js', 'utf8');
 const routingUi = fs.readFileSync('core/notifications/routing.js', 'utf8');
+const serviceUnseenUi = fs.readFileSync('core/notifications/service-unseen.js', 'utf8');
 const notificationSettingsUi = fs.readFileSync('settings/notifications/notifications.js', 'utf8');
 const onlineBookingSettingsUi = fs.readFileSync('settings/online-booking/online-booking.js', 'utf8');
 const serviceWorker = fs.readFileSync('service-worker.js', 'utf8');
 const notificationService = fs.readFileSync('server/src/notification/notification.service.ts', 'utf8');
 const notificationEventService = fs.readFileSync('server/src/notification/notification-event.service.ts', 'utf8');
+const professionalServiceNotice = fs.readFileSync('server/src/notification/professional-service-notice.service.ts', 'utf8');
 const notificationReminderService = fs.readFileSync('server/src/notification/notification-reminder.service.ts', 'utf8');
 const notificationCatalog = fs.readFileSync('server/src/notification/notification-events.ts', 'utf8');
 const notificationController = fs.readFileSync('server/src/notification/notification.controller.ts', 'utf8');
@@ -23,8 +25,10 @@ const auxiliaryStateController = fs.readFileSync('server/src/auxiliary-state/aux
 const bookingConsentController = fs.readFileSync('server/src/online-booking/booking-consent.controller.ts', 'utf8');
 const onlineBookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const pushService = fs.readFileSync('server/src/notification/web-push.service.ts', 'utf8');
+const professionalPushService = fs.readFileSync('server/src/push/professional-push.service.ts', 'utf8');
 const migration = fs.readFileSync('server/prisma/migrations/20260913070000_web_push_subscription/migration.sql', 'utf8');
 const globalPushMigration = fs.readFileSync('server/prisma/migrations/20261029070000_global_account_push_subscription/migration.sql', 'utf8');
+const serviceNoticeMigration = fs.readFileSync('server/prisma/migrations/20261031083000_professional_service_notice/migration.sql', 'utf8');
 const templateMigration = fs.readFileSync('server/prisma/migrations/20261005223000_notification_message_templates/migration.sql', 'utf8');
 const enabledMigration = fs.readFileSync('server/prisma/migrations/20261006123000_notification_event_enabled/migration.sql', 'utf8');
 const platformNoticeService = fs.readFileSync('server/src/platform-notice/platform-notice.service.ts', 'utf8');
@@ -144,9 +148,17 @@ for (const legacyType of ['loan.received', 'loan.repaid', 'investment.received',
   assert.doesNotMatch(notificationCatalog, new RegExp(legacyType.replace('.', '\\.')));
 }
 assert.match(notificationController, /@Get\('catalog'\)/);
+assert.match(notificationController, /@Get\('service-notices'\)/);
+assert.match(notificationController, /@Post\('service-notices\/:noticeId\/read'\)/);
 assert.match(notificationEventService, /EVENT_DISABLED/);
 assert.match(notificationEventService, /createEventForTenantOwner/);
 assert.match(notificationEventService, /createEventForPersonKey/);
+assert.match(notificationEventService, /ProfessionalServiceNoticeService/);
+assert.doesNotMatch(notificationEventService, /PlatformNoticeService|platformNotices/);
+assert.match(professionalServiceNotice, /ProfessionalServiceNotice/);
+assert.match(professionalServiceNotice, /createForTenantOwner/);
+assert.match(professionalServiceNotice, /this\.push\.send/);
+assert.match(professionalServiceNotice, /"readAt" IS NULL/);
 assert.match(businessStateController, /booking\.created/);
 assert.match(businessStateController, /booking\.rescheduled/);
 assert.match(businessStateController, /booking\.cancelled/);
@@ -204,14 +216,31 @@ assert.match(templateMigration, /bodyTemplate/);
 
 assert.match(platformPushMigration, /PlatformPushSubscription/);
 assert.match(platformPushMigration, /PlatformAccount/);
+assert.match(professionalPushService, /webpush\.sendNotification/);
+assert.match(professionalPushService, /WEB_PUSH_VAPID_PUBLIC_KEY/);
+assert.match(professionalPushService, /PlatformPushSubscription/);
+assert.match(professionalPushService, /async subscriptionState/);
+assert.match(professionalPushService, /async saveSubscription/);
+assert.match(professionalPushService, /async deleteSubscription/);
+assert.match(professionalPushService, /async send/);
+assert.doesNotMatch(professionalPushService, /booking\.|BOOKING_CREATED|ProfessionalServiceNotice/);
+
+assert.match(serviceNoticeMigration, /CREATE TABLE IF NOT EXISTS "ProfessionalServiceNotice"/);
+assert.match(serviceNoticeMigration, /LIKE 'booking\.%'/);
+assert.match(serviceNoticeMigration, /INSERT INTO "ProfessionalServiceNotice"/);
+assert.match(serviceNoticeMigration, /DELETE FROM "PlatformNotice"/);
+
 assert.match(platformNoticeService, /createForTenantOwner/);
-assert.match(platformNoticeService, /webpush\.sendNotification/);
-assert.match(platformNoticeService, /metadata: json\(\{ url: '\/', \.\.\.sourceMetadata \}\)/);
-assert.match(platformNoticeService, /dispatchPush\(membership\.platformAccountId, notice\)\.catch/);
+assert.match(platformNoticeService, /ProfessionalPushService/);
+assert.match(platformNoticeService, /this\.push\.send/);
+assert.doesNotMatch(platformNoticeService, /webpush\.sendNotification/);
+assert.doesNotMatch(platformNoticeService, /booking\.|BOOKING_CREATED|ProfessionalServiceNotice|CommunicationMessage/);
+assert.match(platformNoticeController, /ProfessionalPushService/);
 assert.match(platformNoticeController, /push\/configuration/);
 assert.match(platformNoticeController, /push\/subscription/);
 assert.match(platformNoticeController, /@Get\('push\/subscription'\)/);
-assert.match(platformNoticeService, /pushSubscriptionState/);
+assert.match(platformNoticeController, /this\.push\.subscriptionState/);
+assert.match(platformNoticeController, /this\.push\.saveSubscription/);
 assert.match(platformNoticesUi, /getPlatformPushState/);
 assert.match(platformNoticesUi, /platform-notices\/push\/subscription\?endpoint=/);
 assert.match(platformNoticesUi, /enablePlatformPush/);
@@ -230,8 +259,17 @@ assert.doesNotMatch(platformNoticesUi, /data-platform-notice-ack/);
 assert.match(platformNoticesUi, /\.sort\(\(a, b\) => Date\.parse\(b\.createdAt \|\| 0\) - Date\.parse\(a\.createdAt \|\| 0\)\)/);
 assert.match(platformNoticesUi, /const stale = unread\.slice\(1\)/);
 assert.match(platformNoticesUi, /Promise\.allSettled\(stale\.map\(\(oldItem\) => markRead\(oldItem\.id\)\)\)/);
+assert.doesNotMatch(platformNoticesUi, /booking\.created|booking\.deleted|BOOKING_CREATED|service-unseen-refresh/);
 assert.doesNotMatch(platformNoticesUi, /window\.setTimeout\(\(\) => void showNext\(\), 60\)/);
 assert.doesNotMatch(platformNoticesUi, /pushPromptAttempts/);
+
+assert.match(serviceUnseenUi, /\/notifications\/service-notices/);
+assert.match(serviceUnseenUi, /booking\.created/);
+assert.match(serviceUnseenUi, /booking\.deleted/);
+assert.match(serviceUnseenUi, /data-service-unseen-list-badge/);
+assert.match(serviceUnseenUi, /data-service-deleted-modal/);
+assert.doesNotMatch(serviceUnseenUi, /getPlatformNotices|markPlatformNoticeSeen/);
+
 const enablePushSource = platformNoticesUi.slice(
   platformNoticesUi.indexOf('export async function enablePlatformPush'),
   platformNoticesUi.indexOf('export async function disablePlatformPush'),
@@ -242,7 +280,7 @@ const enableAccountPushSource = browserPush.slice(
   browserPush.indexOf('export async function disableWebPush'),
 );
 assert.ok(enableAccountPushSource.indexOf('Notification.requestPermission()') >= 0, 'Account Push permission must be requested from the direct user gesture');
-assert.match(onlineBookingModule, /PlatformNoticeModule/);
+assert.doesNotMatch(onlineBookingModule, /PlatformNoticeModule/);
 assert.match(onlineBookingModule, /NotificationModule/);
 assert.match(bookingFlowController, /NotificationEventService/);
 assert.doesNotMatch(bookingFlowController, /PlatformNoticeService/);
@@ -344,4 +382,4 @@ assert.equal(deniedRuntimePush.subscribed, false, 'system denial must leave Push
 assert.equal(runtimePush.webPushOptedOut(), true, 'system denial must persist opt-out');
 assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'system denial must suppress future setup prompts');
 
-console.log('account and platform notification Web Push tests passed');
+console.log('account, SERVICE and platform notification Web Push tests passed');
