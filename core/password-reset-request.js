@@ -130,7 +130,7 @@ function normalizeIdentifierField(form) {
 
 function normalizeLoginForm(form) {
   if (!form || form.closest('#admin-app')) return;
-  normalizeIdentifierField(form);
+  if (!form.matches('#auth-form')) normalizeIdentifierField(form);
   ensureProfessionalRegisterButton(form);
   form.classList.add('shared-login-form');
   const screen = form.closest('.v2-sticker-screen');
