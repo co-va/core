@@ -14,6 +14,15 @@ function reset() {
   consumed = new Set();
 }
 
+async function requestBootstrap() {
+  try {
+    return await payload(await apiRequest('/business-state/journal-bootstrap'));
+  } catch (error) {
+    if (error?.name === 'AbortError') return null;
+    throw error;
+  }
+}
+
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('book:auth-logout', reset);
 }
@@ -25,7 +34,7 @@ export async function consumeJournalBootstrap(slice, { start = true } = {}) {
   consumed.add(key);
   try {
     if (!bootstrapRequest) {
-      bootstrapRequest = apiRequest('/business-state/journal-bootstrap').then(payload).catch((error) => {
+      bootstrapRequest = requestBootstrap().catch((error) => {
         bootstrapRequest = null;
         consumed.clear();
         throw error;

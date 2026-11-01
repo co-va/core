@@ -1,6 +1,8 @@
 import { API_BASE } from './environment.js';
 
 const TOKEN_KEY = 'book.auth.token';
+const SESSION_CHECK_TIMEOUT_MS = 12000;
+const JOURNAL_BOOTSTRAP_TIMEOUT_MS = 12000;
 
 function migrateSessionToken() {
   const persistent = localStorage.getItem(TOKEN_KEY) || '';
@@ -37,7 +39,19 @@ export async function apiRequest(path, options = {}) {
   const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body != null && !multipart && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  return fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  const url = `${API_BASE}${path}`;
+  if (path !== '/business-state/journal-bootstrap' || options.signal) {
+    return fetch(url, { ...options, headers });
+  }
+
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), JOURNAL_BOOTSTRAP_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, headers, signal: controller.signal });
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
 }
 
 export async function login(identifier, password) {
@@ -69,7 +83,18 @@ export async function requestPasswordReset(identifier) {
 export async function getCurrentAccount() {
   const token = getAuthToken();
   if (!token) return null;
-  const response = await apiRequest('/auth/me');
+
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), SESSION_CHECK_TIMEOUT_MS);
+  let response;
+  try {
+    response = await apiRequest('/auth/me', { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Сервер не ответил вовремя');
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
 
   if (response.status === 401) {
     clearAuthToken();
