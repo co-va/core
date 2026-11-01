@@ -1,5 +1,6 @@
 import { apiRequest } from '../auth.js';
 
+const BOOTSTRAP_TIMEOUT_MS = 12000;
 let bootstrapRequest = null;
 let consumed = new Set();
 
@@ -14,6 +15,19 @@ function reset() {
   consumed = new Set();
 }
 
+async function requestBootstrap() {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
+  try {
+    return await payload(await apiRequest('/business-state/journal-bootstrap', { signal: controller.signal }));
+  } catch (error) {
+    if (error?.name === 'AbortError') return null;
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('book:auth-logout', reset);
 }
@@ -25,7 +39,7 @@ export async function consumeJournalBootstrap(slice, { start = true } = {}) {
   consumed.add(key);
   try {
     if (!bootstrapRequest) {
-      bootstrapRequest = apiRequest('/business-state/journal-bootstrap').then(payload).catch((error) => {
+      bootstrapRequest = requestBootstrap().catch((error) => {
         bootstrapRequest = null;
         consumed.clear();
         throw error;
