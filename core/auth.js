@@ -1,6 +1,7 @@
 import { API_BASE } from './environment.js';
 
 const TOKEN_KEY = 'book.auth.token';
+const SESSION_CHECK_TIMEOUT_MS = 12000;
 
 function migrateSessionToken() {
   const persistent = localStorage.getItem(TOKEN_KEY) || '';
@@ -69,7 +70,18 @@ export async function requestPasswordReset(identifier) {
 export async function getCurrentAccount() {
   const token = getAuthToken();
   if (!token) return null;
-  const response = await apiRequest('/auth/me');
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), SESSION_CHECK_TIMEOUT_MS);
+  let response;
+  try {
+    response = await apiRequest('/auth/me', { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Сервер не ответил вовремя');
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
 
   if (response.status === 401) {
     clearAuthToken();
