@@ -31,6 +31,17 @@ function time(value: unknown) {
   return candidate;
 }
 
+function accountTimeRange(fromValue: unknown, toValue: unknown) {
+  const from = time(fromValue);
+  const to = time(toValue);
+  const [fromHour, fromMinute] = from.split(':').map(Number);
+  const [toHour, toMinute] = to.split(':').map(Number);
+  if (toHour * 60 + toMinute <= fromHour * 60 + fromMinute) {
+    throw new BadRequestException('Время окончания события должно быть позже времени начала');
+  }
+  return { from, to };
+}
+
 function date(value: unknown) {
   const candidate = text(value).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) throw new BadRequestException('Некорректная дата события');
@@ -145,6 +156,7 @@ export class EventService {
     if (!eventId || (text(input.id) && text(input.id) !== eventId)) throw new BadRequestException('Некорректный id события');
     const title = text(input.title);
     if (!title) throw new BadRequestException('Укажите название события');
+    const range = accountTimeRange(input.from, input.to);
 
     const existing = await this.prisma.event.findFirst({
       where: { id: eventId, ownerType, ownerId, tenantId: null },
@@ -164,8 +176,8 @@ export class EventService {
       ownerId,
       context,
       date: date(input.date),
-      from: time(input.from),
-      to: time(input.to),
+      from: range.from,
+      to: range.to,
       title,
       description: text(input.description),
       color: text(input.color) || '#777A7D',

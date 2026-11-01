@@ -251,9 +251,19 @@ assert.match(noteView, /noteContextWithTarget/);
 assert.match(serverNoteService, /preservesExistingTarget/);
 assert.match(serverNoteService, /listOwned/);
 assert.match(serverNoteService, /upsertOwned/);
+assert.match(serverNoteService, /function optionalDateValue\(/, 'Account Note must accept an empty date without changing professional Note rules');
+assert.match(
+  serverNoteService,
+  /async upsertOwned[\s\S]*const date = optionalDateValue\(input\.date\)/,
+  'optional Note date must apply only to account-owned Notes',
+);
 assert.match(accountNoteOwner, /online-booking\/account\/notes/);
 assert.match(accountNoteOwner, /accountNoteActions/);
-assert.match(accountNoteController, /Controller\('online-booking\/account\/notes'\)/);
+assert.match(
+  accountNoteController,
+  /Controller\(\['online-booking\/account\/notes', 'account\/notes'\]\)/,
+  'Account Note must expose the canonical Account route while the live Core route remains available during the switch',
+);
 assert.match(onlineBookingModule, /NoteModule/);
 assert.match(onlineBookingModule, /AccountNoteController/);
 const readPart = noteView.slice(noteView.indexOf('const renderRead'), noteView.indexOf('const renderEdit'));
