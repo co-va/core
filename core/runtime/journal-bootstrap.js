@@ -1,6 +1,5 @@
 import { apiRequest } from '../auth.js';
 
-const BOOTSTRAP_TIMEOUT_MS = 12000;
 let bootstrapRequest = null;
 let consumed = new Set();
 
@@ -16,15 +15,11 @@ function reset() {
 }
 
 async function requestBootstrap() {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
   try {
-    return await payload(await apiRequest('/business-state/journal-bootstrap', { signal: controller.signal }));
+    return await payload(await apiRequest('/business-state/journal-bootstrap'));
   } catch (error) {
     if (error?.name === 'AbortError') return null;
     throw error;
-  } finally {
-    window.clearTimeout(timer);
   }
 }
 
