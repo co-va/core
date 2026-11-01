@@ -38,6 +38,15 @@ function dateValue(value: unknown) {
   return candidate;
 }
 
+function optionalDateValue(value: unknown) {
+  const candidate = stringValue(value).slice(0, 10);
+  if (!candidate) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
+    throw new BadRequestException('Некорректная дата заметки');
+  }
+  return candidate;
+}
+
 function optionalTime(value: unknown) {
   const candidate = stringValue(value);
   if (!candidate) return '';
@@ -261,7 +270,7 @@ export class NoteService {
       throw new NotFoundException('Заметка не найдена');
     }
 
-    const date = dateValue(input.date);
+    const date = optionalDateValue(input.date);
     const from = optionalTime(input.from);
     const to = optionalTime(input.to);
     const targetType = stringValue(input.targetType);
