@@ -8,6 +8,7 @@ import { NotificationEventService } from '../notification/notification-event.ser
 import { PrismaService } from '../prisma.service';
 import { ProfileService } from '../profile/profile.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
+import { TimeService } from '../time/time.service';
 import { BusinessStateService } from './business-state.service';
 
 type JsonObject = Record<string, any>;
@@ -41,6 +42,7 @@ export class BusinessStateController {
     private readonly notifications: NotificationEventService,
     private readonly profile: ProfileService,
     private readonly access: SaasAccessService,
+    private readonly time: TimeService,
   ) {}
 
   private async journalBundle(auth: AuthenticatedRequest['auth']) {
@@ -122,13 +124,17 @@ export class BusinessStateController {
     const workplace = workplaceKey
       ? await this.prisma.workplace.findUnique({ where: { tenantId_key: { tenantId, key: workplaceKey } } }).catch(() => null)
       : null;
+    const recordDate = text(record.date).slice(0, 10);
+    const recordFrom = text(record.from);
+    const hasScheduledStart = /^\d{4}-\d{2}-\d{2}$/.test(recordDate) && this.time.timeToMinutes(recordFrom) != null;
+    if (type === 'booking.created' && hasScheduledStart && this.time.isPastZonedStart(recordDate, recordFrom, workplace?.timeZone)) return;
     await this.notifications.createEventForPerson(tenantId, person, {
       type,
       entityType: 'record',
       entityId: text(record.id),
       context: {
-        date: text(record.date).slice(0, 10),
-        time: text(record.from),
+        date: recordDate,
+        time: recordFrom,
         workplace: text(workplace?.name) || workplaceKey,
         record: { id: text(record.id) },
       },
