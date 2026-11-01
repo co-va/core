@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 
@@ -209,7 +209,10 @@ export class AccountContactsService {
     ]);
 
     const workplaceKeys = [...new Set(records
-      .map((row) => text(objectValue(row.data).workplaceId))
+      .map((row) => {
+        const data = objectValue(row.data);
+        return text(data.workplaceId || data.workplaceKey);
+      })
       .filter(Boolean))];
     const workplaces = workplaceKeys.length
       ? await this.prisma.workplace.findMany({
@@ -233,22 +236,21 @@ export class AccountContactsService {
     return this.consentPolicy.accountConsentState(tenantId, accountId);
   }
 
-  async connect(accountId: string, tenantIdValue: unknown, facts: unknown) {
+  async acceptConsents(accountId: string, tenantIdValue: unknown, facts: unknown) {
     const tenantId = text(tenantIdValue);
     if (!tenantId) throw new BadRequestException('Контакт не выбран');
     await this.account(accountId);
     await this.profileForTenant(tenantId);
     await this.consentPolicy.acceptAccountConsents(tenantId, accountId, facts, 'account-contact');
     const state = await this.consentPolicy.accountConsentState(tenantId, accountId);
-    if (!state.pdnActive) {
-      throw new ConflictException('Необходимо подтвердить согласие на обработку персональных данных');
+    if (state.pdnActive) {
+      await this.prisma.accountTenantLink.upsert({
+        where: { accountId_tenantId: { accountId, tenantId } },
+        create: { accountId, tenantId },
+        update: { updatedAt: new Date() },
+      });
     }
-    await this.prisma.accountTenantLink.upsert({
-      where: { accountId_tenantId: { accountId, tenantId } },
-      create: { accountId, tenantId },
-      update: { updatedAt: new Date() },
-    });
-    return this.detail(accountId, tenantId);
+    return state;
   }
 
   async revokeConsent(accountId: string, tenantIdValue: unknown, documentIdValue: unknown) {
