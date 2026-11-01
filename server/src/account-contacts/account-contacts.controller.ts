@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import { AccountGuard } from '../online-booking/account.guard';
+import { AccountGuard } from '../account/account.guard';
 import { AccountContactsService } from './account-contacts.service';
 
 type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: string } };
@@ -30,13 +30,13 @@ export class AccountContactsController {
     return this.contacts.consentState(request.accountAuth!.accountId, tenantId);
   }
 
-  @Post(':tenantId/connect')
-  connect(
+  @Post(':tenantId/consents')
+  acceptConsents(
     @Req() request: AccountRequest,
     @Param('tenantId') tenantId: string,
     @Body() body: { consents?: unknown },
   ) {
-    return this.contacts.connect(request.accountAuth!.accountId, tenantId, body?.consents || []);
+    return this.contacts.acceptConsents(request.accountAuth!.accountId, tenantId, body?.consents || []);
   }
 
   @Post(':tenantId/consents/:documentId/revoke')
