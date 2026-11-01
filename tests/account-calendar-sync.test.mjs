@@ -10,7 +10,11 @@ const integrations = fs.readFileSync('online-booking/calendar-integrations.js', 
 const journal = fs.readFileSync('journal/день.js', 'utf8');
 const eventOwner = fs.readFileSync('core/event/account-owner.js', 'utf8');
 
-assert.match(controller, /online-booking\/account\/calendar/, 'calendar integration must live under account routes');
+assert.match(
+  controller,
+  /Controller\(\['online-booking\/account\/calendar', 'account\/calendar'\]\)/,
+  'Account Calendar must expose the canonical Account route while the live Core route remains available during the switch',
+);
 assert.match(service, /events\.listOwned\('account'/, 'calendar sync must read account-owned Events only');
 assert.match(service, /events\.upsertOwned\('account'/, 'external calendar Events must become account-owned Events');
 assert.doesNotMatch(service, /NoteService|accountNote|noteOwner|notes\./, 'calendar sync must not map calendar descriptions or tasks into Note yet');
@@ -24,7 +28,7 @@ assert.doesNotMatch(integrations, /entityVisualCard|normalizeEntityCardAppearanc
 assert.match(journal, /const accountMode = contextName === 'account'/, 'Journal must retain explicit personal/professional boundary');
 assert.match(journal, /withAccountOverlaps\(/, 'personal Journal must calculate overlap hints');
 assert.match(journal, /syncAccountCalendars\(\)/, 'personal Journal must start background calendar sync');
-assert.match(eventOwner, /online-booking\/account\/calendar\/sync/, 'personal Event mutations must trigger outgoing sync');
+assert.match(eventOwner, /online-booking\/account\/calendar\/sync/, 'live Core Account Event mutations must retain the old sync route until User switches');
 
 assert.match(toolService, /account\.calendar\.google[\s\S]*enabled: false/, 'Google must be OFF by default for account users');
 assert.match(toolService, /account\.calendar\.yandex[\s\S]*enabled: true/, 'Yandex must be ON by default for account users');
