@@ -5,7 +5,7 @@ import { AccountGuard } from './account.guard';
 
 type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: string } };
 
-@Controller('online-booking/account/events')
+@Controller(['online-booking/account/events', 'account/events'])
 @UseGuards(AccountGuard)
 export class AccountEventController {
   constructor(private readonly events: EventService) {}
