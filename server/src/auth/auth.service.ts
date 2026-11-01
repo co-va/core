@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma.service';
 
 type PlatformPhoneRow = { platformAccountId: string };
 
+const PROFESSIONAL_EMAIL_LOGIN_LEGACY_CUTOFF = new Date('2026-10-30T12:24:17.000Z');
+
 function canonicalPhone(value: unknown) {
   const digits = String(value ?? '').replace(/\D/g, '');
   if (digits.length === 10) return `7${digits}`;
@@ -23,10 +25,13 @@ export class AuthService {
     const raw = String(value || '').trim();
     const normalizedEmail = raw.toLowerCase();
     if (normalizedEmail.includes('@')) {
-      return this.prisma.platformAccount.findUnique({
+      const account = await this.prisma.platformAccount.findUnique({
         where: { email: normalizedEmail },
         include: { memberships: { include: { tenant: true } }, platformAdmin: true },
       });
+      if (!account) return null;
+      if (account.platformAdmin) return account;
+      return account.createdAt < PROFESSIONAL_EMAIL_LOGIN_LEGACY_CUTOFF ? account : null;
     }
 
     const normalizedPhone = canonicalPhone(raw);
