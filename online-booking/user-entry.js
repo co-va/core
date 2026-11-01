@@ -781,6 +781,4 @@ window.addEventListener('cova:account-booking-start', (event) => {
 });
 
 syncViewport();
-const bookingTargetsPrefetch = getGlobalAccountBookingTargets().catch(() => []);
 await renderGlobalClientRoot();
-void bookingTargetsPrefetch;
