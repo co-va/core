@@ -44,6 +44,7 @@ export async function loadProfileState({full=false}={}){
       })
       .catch((error)=>{
         fullProfileStateLoad=null;
+        if(!full&&error?.name==='AbortError') return null;
         throw error;
       });
   }

@@ -3,6 +3,9 @@ import { API_BASE } from './environment.js';
 const TOKEN_KEY = 'book.auth.token';
 const SESSION_CHECK_TIMEOUT_MS = 12000;
 const JOURNAL_BOOTSTRAP_TIMEOUT_MS = 12000;
+const DEFAULT_READ_TIMEOUT_MS = 12000;
+const OPTIONAL_STARTUP_READ_TIMEOUT_MS = 8000;
+const LOGIN_TIMEOUT_MS = 12000;
 
 function migrateSessionToken() {
   const persistent = localStorage.getItem(TOKEN_KEY) || '';
@@ -33,33 +36,58 @@ export function clearAuthToken() {
   sessionStorage.removeItem(TOKEN_KEY);
 }
 
+function timeoutValue(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function defaultReadTimeout(path) {
+  if (path === '/business-state/journal-bootstrap') return JOURNAL_BOOTSTRAP_TIMEOUT_MS;
+  if (path === '/profile' || path === '/finance') return OPTIONAL_STARTUP_READ_TIMEOUT_MS;
+  return DEFAULT_READ_TIMEOUT_MS;
+}
+
 export async function apiRequest(path, options = {}) {
   const token = getAuthToken();
-  const headers = new Headers(options.headers || {});
+  const { timeoutMs, ...requestOptions } = options;
+  const headers = new Headers(requestOptions.headers || {});
   const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  if (options.body != null && !multipart && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (requestOptions.body != null && !multipart && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
 
   const url = `${API_BASE}${path}`;
-  if (path !== '/business-state/journal-bootstrap' || options.signal) {
-    return fetch(url, { ...options, headers });
-  }
+  if (requestOptions.signal) return fetch(url, { ...requestOptions, headers });
+
+  const method = String(requestOptions.method || 'GET').toUpperCase();
+  const shouldBound = timeoutMs != null || method === 'GET' || method === 'HEAD';
+  if (!shouldBound) return fetch(url, { ...requestOptions, headers });
 
   const controller = new AbortController();
-  const timer = globalThis.setTimeout(() => controller.abort(), JOURNAL_BOOTSTRAP_TIMEOUT_MS);
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutValue(timeoutMs, defaultReadTimeout(path)));
   try {
-    return await fetch(url, { ...options, headers, signal: controller.signal });
+    return await fetch(url, { ...requestOptions, headers, signal: controller.signal });
   } finally {
     globalThis.clearTimeout(timer);
   }
 }
 
 export async function login(identifier, password) {
-  const response = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifier, password }),
-  });
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Сервер не ответил вовремя');
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {

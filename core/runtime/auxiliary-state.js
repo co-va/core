@@ -55,7 +55,11 @@ export async function loadFinanceState({full=false}={}){
     financeStateLoad=apiRequest('/finance')
       .then((response)=>payload(response,'Не удалось загрузить Финансы'))
       .then((finance)=>{hydrateFinanceFromServer(finance);return finance;})
-      .catch((error)=>{financeStateLoad=null;throw error;});
+      .catch((error)=>{
+        financeStateLoad=null;
+        if(!full&&error?.name==='AbortError') return null;
+        throw error;
+      });
   }
   return financeStateLoad;
 }
