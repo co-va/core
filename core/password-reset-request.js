@@ -43,6 +43,12 @@ function phoneLike(value) {
   return !String(value || '').includes('@') && digits.length >= 10 && digits.length <= 15;
 }
 
+function setLabelText(label, value) {
+  if (!label) return;
+  const next = String(value || '');
+  if (label.textContent !== next) label.textContent = next;
+}
+
 async function requestReset(target) {
   const identifier = identifierFrom(target);
   const adminSurface = isAdminSurface(target);
@@ -125,7 +131,7 @@ function normalizeIdentifierField(form) {
   input.setAttribute('aria-label', 'Телефон');
   const host = input.closest('.field');
   const label = host?.querySelector(':scope > span');
-  if (label) label.textContent = input.required ? 'Телефон *' : 'Телефон';
+  setLabelText(label, input.required ? 'Телефон *' : 'Телефон');
 }
 
 function normalizeProfessionalIdentifierField(form) {
@@ -137,7 +143,7 @@ function normalizeProfessionalIdentifierField(form) {
   input.setAttribute('aria-label', 'Телефон или email');
   const host = input.closest('.field');
   const label = host?.querySelector(':scope > span');
-  if (label) label.textContent = input.required ? 'Телефон или email *' : 'Телефон или email';
+  setLabelText(label, input.required ? 'Телефон или email *' : 'Телефон или email');
 }
 
 function normalizeLoginForm(form) {
