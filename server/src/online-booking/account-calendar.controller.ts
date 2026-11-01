@@ -12,7 +12,7 @@ function calendarProvider(value: string): AccountToolProvider {
   return provider;
 }
 
-@Controller('online-booking/account/calendar')
+@Controller(['online-booking/account/calendar', 'account/calendar'])
 export class AccountCalendarController {
   constructor(
     private readonly calendars: AccountCalendarService,
