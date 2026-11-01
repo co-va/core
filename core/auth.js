@@ -4,6 +4,7 @@ const TOKEN_KEY = 'book.auth.token';
 const SESSION_CHECK_TIMEOUT_MS = 12000;
 const JOURNAL_BOOTSTRAP_TIMEOUT_MS = 12000;
 const DEFAULT_READ_TIMEOUT_MS = 12000;
+const OPTIONAL_STARTUP_READ_TIMEOUT_MS = 8000;
 const LOGIN_TIMEOUT_MS = 12000;
 
 function migrateSessionToken() {
@@ -40,6 +41,12 @@ function timeoutValue(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function defaultReadTimeout(path) {
+  if (path === '/business-state/journal-bootstrap') return JOURNAL_BOOTSTRAP_TIMEOUT_MS;
+  if (path === '/profile' || path === '/finance') return OPTIONAL_STARTUP_READ_TIMEOUT_MS;
+  return DEFAULT_READ_TIMEOUT_MS;
+}
+
 export async function apiRequest(path, options = {}) {
   const token = getAuthToken();
   const { timeoutMs, ...requestOptions } = options;
@@ -52,14 +59,11 @@ export async function apiRequest(path, options = {}) {
   if (requestOptions.signal) return fetch(url, { ...requestOptions, headers });
 
   const method = String(requestOptions.method || 'GET').toUpperCase();
-  const defaultTimeout = path === '/business-state/journal-bootstrap'
-    ? JOURNAL_BOOTSTRAP_TIMEOUT_MS
-    : DEFAULT_READ_TIMEOUT_MS;
   const shouldBound = timeoutMs != null || method === 'GET' || method === 'HEAD';
   if (!shouldBound) return fetch(url, { ...requestOptions, headers });
 
   const controller = new AbortController();
-  const timer = globalThis.setTimeout(() => controller.abort(), timeoutValue(timeoutMs, defaultTimeout));
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutValue(timeoutMs, defaultReadTimeout(path)));
   try {
     return await fetch(url, { ...requestOptions, headers, signal: controller.signal });
   } finally {
