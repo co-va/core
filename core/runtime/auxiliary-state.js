@@ -7,7 +7,6 @@ import { consumeJournalBootstrap } from './journal-bootstrap.js';
 
 let financeStateLoad = null;
 const auxiliaryStateLoads = new Map();
-const STARTUP_FINANCE_TIMEOUT_MS = 5000;
 
 function clone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
 async function payload(response,fallback){const value=await response.json().catch(()=>({}));if(!response.ok)throw new Error(value?.message||fallback);return value;}
@@ -53,7 +52,7 @@ export async function loadFinanceState({full=false}={}){
     if(bootstrap){hydrateFinanceFromServer(bootstrap);return bootstrap;}
   }
   if(!financeStateLoad){
-    financeStateLoad=apiRequest('/finance',full?{}:{timeoutMs:STARTUP_FINANCE_TIMEOUT_MS})
+    financeStateLoad=apiRequest('/finance')
       .then((response)=>payload(response,'Не удалось загрузить Финансы'))
       .then((finance)=>{hydrateFinanceFromServer(finance);return finance;})
       .catch((error)=>{
