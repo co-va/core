@@ -128,9 +128,22 @@ function normalizeIdentifierField(form) {
   if (label) label.textContent = input.required ? 'Телефон *' : 'Телефон';
 }
 
+function normalizeProfessionalIdentifierField(form) {
+  const input = form?.querySelector?.('[name="identifier"],[name="phone"],[name="email"]');
+  if (!input) return;
+  input.type = 'text';
+  input.inputMode = 'text';
+  input.autocomplete = 'username';
+  input.setAttribute('aria-label', 'Телефон или email');
+  const host = input.closest('.field');
+  const label = host?.querySelector(':scope > span');
+  if (label) label.textContent = input.required ? 'Телефон или email *' : 'Телефон или email';
+}
+
 function normalizeLoginForm(form) {
   if (!form || form.closest('#admin-app')) return;
-  normalizeIdentifierField(form);
+  if (form.matches('#auth-form')) normalizeProfessionalIdentifierField(form);
+  else normalizeIdentifierField(form);
   ensureProfessionalRegisterButton(form);
   form.classList.add('shared-login-form');
   const screen = form.closest('.v2-sticker-screen');

@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma.service';
 
 type PlatformPhoneRow = { platformAccountId: string };
 
+const PROFESSIONAL_EMAIL_LOGIN_CUTOFF = new Date('2026-10-30T12:24:17.000Z');
+
 function canonicalPhone(value: unknown) {
   const digits = String(value ?? '').replace(/\D/g, '');
   if (digits.length === 10) return `7${digits}`;
@@ -23,11 +25,13 @@ export class AuthService {
     const raw = String(value || '').trim();
     const normalizedEmail = raw.toLowerCase();
     if (normalizedEmail.includes('@')) {
-      const admin = await this.prisma.platformAccount.findUnique({
+      const account = await this.prisma.platformAccount.findUnique({
         where: { email: normalizedEmail },
         include: { memberships: { include: { tenant: true } }, platformAdmin: true },
       });
-      return admin?.platformAdmin ? admin : null;
+      if (!account) return null;
+      if (account.platformAdmin) return account;
+      return account.createdAt < PROFESSIONAL_EMAIL_LOGIN_CUTOFF ? account : null;
     }
 
     const normalizedPhone = canonicalPhone(raw);
@@ -59,7 +63,7 @@ export class AuthService {
   async login(identifier: string, password: string) {
     const account = await this.accountByIdentifier(identifier);
     if (!account || !(await compare(String(password || ''), account.passwordHash))) {
-      throw new UnauthorizedException('Неверный телефон или пароль');
+      throw new UnauthorizedException('Неверный телефон, email или пароль');
     }
 
     const membership = account.memberships[0];
