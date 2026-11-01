@@ -13,6 +13,8 @@ const operational = read('core/runtime/operational-state.js');
 const businessRuntime = read('core/runtime/business-state.js');
 const businessController = read('server/src/business-state/business-state.controller.ts');
 const records = read('core/records/records.js');
+const serverEventService = read('server/src/event/event.service.ts');
+const accountEventController = read('server/src/online-booking/account-event.controller.ts');
 assert.match(schema, /model Event \{/);
 for (const field of ['id','ownerType','ownerId','context','date','from','to','title','description','color','workplaceId','createdAt','updatedAt']) assert.match(schema, new RegExp(`\\b${field}\\b`));
 assert.match(migration, /jsonb_array_elements[\s\S]*?'breaks'/);
@@ -64,5 +66,16 @@ assert.match(businessRuntime, /hydrateEventsFromServer/);
 assert.match(businessController, /this\.events\.list\(current\.tenantId\)/);
 assert.doesNotMatch(operational, /break-data|hydrateBreaksFromServer|queueOperationalDataset\('breaks'/);
 assert.doesNotMatch(records, /createEvent|createJournalBreak/);
+assert.match(
+  accountEventController,
+  /Controller\(\['online-booking\/account\/events', 'account\/events'\]\)/,
+  'Account Event must expose the canonical Account route while the live Core route remains available during the switch',
+);
+assert.match(serverEventService, /function accountTimeRange\(/, 'Account Event must validate its own time range on the server');
+assert.match(
+  serverEventService,
+  /async upsertOwned[\s\S]*const range = accountTimeRange\(input\.from, input\.to\)/,
+  'Account Event validation must apply to account-owned Events without changing professional Event semantics',
+);
 for (const path of ['journal/break-data.js','journal/break-read.js','journal/break-service.js','journal/break-view.js','journal/break-create.js']) assert.equal(fs.existsSync(path), false, `${path} must be removed`);
 console.log('Event domain architecture test passed.');
