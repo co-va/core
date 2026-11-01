@@ -51,7 +51,7 @@ export async function apiRequest(path, options = {}) {
   const token = getAuthToken();
   const { timeoutMs, ...requestOptions } = options;
   const headers = new Headers(requestOptions.headers || {});
-  const multipart = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
+  const multipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (requestOptions.body != null && !multipart && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
 
