@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [controller, financeProjection, profileRuntime, operationalRuntime, profileView, financeView, serviceView, bookingSettingsView, creationFlow] = await Promise.all([
+const [controller, financeProjection, profileRuntime, operationalRuntime, profileView, financeView, serviceView, bookingSettingsView, creationFlow, userEntry] = await Promise.all([
   readFile(new URL('../server/src/business-state/business-state.controller.ts', import.meta.url), 'utf8'),
   readFile(new URL('../server/src/finance/journal-finance-projection.ts', import.meta.url), 'utf8'),
   readFile(new URL('../core/profile/runtime.js', import.meta.url), 'utf8'),
@@ -11,6 +11,7 @@ const [controller, financeProjection, profileRuntime, operationalRuntime, profil
   readFile(new URL('../core/service/service.js', import.meta.url), 'utf8'),
   readFile(new URL('../settings/online-booking/online-booking.js', import.meta.url), 'utf8'),
   readFile(new URL('../journal/creation-flow.js', import.meta.url), 'utf8'),
+  readFile(new URL('../online-booking/user-entry.js', import.meta.url), 'utf8'),
 ]);
 
 assert.match(controller, /const \[journal, profileContext, operationalContext, finance, access\] = await Promise\.all/);
@@ -48,6 +49,13 @@ assert.doesNotMatch(creationFlow, /await loadOperationalState\(\{ full: true \}\
   'Record creation must not block Q opening on the full operational request');
 assert.match(creationFlow, /void operationalReady\.catch\(\(\) => \{\}\);/,
   'Background operational hydration must not turn Q opening into an unhandled failure');
+
+assert.doesNotMatch(userEntry, /bookingTargetsPrefetch/,
+  'User startup must not preload Online Booking targets');
+assert.match(userEntry, /async function openAccountBookingProfessionalSelector[^]*await getGlobalAccountBookingTargets\(\)/,
+  'Booking targets must load only when the booking professional selector is opened');
+assert.match(userEntry, /syncViewport\(\);\s*await renderGlobalClientRoot\(\);\s*$/,
+  'User startup must finish by rendering Journal without a Booking targets request');
 
 assert.match(financeView, /loadFinanceState\(\{ full: true \}\)/, 'Opening Finance must load the full Finance state');
 
