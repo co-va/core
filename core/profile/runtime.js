@@ -4,6 +4,7 @@ import { hydrateProfileFromServer, setProfileServerReady } from './data.js';
 import { hydrateWorkplacesFromServer, setWorkplacesServerReady } from './workplaces/data.js';
 
 let fullProfileStateLoad = null;
+const STARTUP_PROFILE_TIMEOUT_MS = 5000;
 
 async function payload(response,fallback){const value=await response.json().catch(()=>({}));if(!response.ok)throw new Error(value?.message||fallback);return value;}
 
@@ -34,7 +35,7 @@ export async function loadProfileState({full=false}={}){
   if(!fullProfileStateLoad){
     setProfileServerReady(false);
     setWorkplacesServerReady(false);
-    fullProfileStateLoad=apiRequest('/profile')
+    fullProfileStateLoad=apiRequest('/profile',full?{}:{timeoutMs:STARTUP_PROFILE_TIMEOUT_MS})
       .then((response)=>payload(response,'Не удалось загрузить данные профиля'))
       .then((remote)=>{
         hydrate(remote);
@@ -44,6 +45,7 @@ export async function loadProfileState({full=false}={}){
       })
       .catch((error)=>{
         fullProfileStateLoad=null;
+        if(!full&&error?.name==='AbortError') return null;
         throw error;
       });
   }
