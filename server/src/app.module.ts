@@ -7,6 +7,7 @@ import { PhoneLoginOnlyMiddleware } from './auth/phone-login-only.middleware';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { ProfileModule } from './profile/profile.module';
 import { OnlineBookingModule } from './online-booking/online-booking.module';
+import { AccountContactsModule } from './account-contacts/account-contacts.module';
 import { BusinessStateModule } from './business-state/business-state.module';
 import { BusinessStateHttpModule } from './business-state/business-state-http.module';
 import { TenantDocumentArchiveModule } from './tenant-document-archive/tenant-document-archive.module';
@@ -43,6 +44,7 @@ import { NoteModule } from './note/note.module';
     NotificationModule,
     CommunicationModule,
     OnlineBookingModule,
+    AccountContactsModule,
     SaasAccessModule,
     TenantInvitationModule,
     SaasAdminModule,
