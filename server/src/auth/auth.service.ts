@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma.service';
 
 type PlatformPhoneRow = { platformAccountId: string };
 
-const PROFESSIONAL_EMAIL_LOGIN_LEGACY_CUTOFF = new Date('2026-10-30T12:24:17.000Z');
+const PROFESSIONAL_EMAIL_LOGIN_CUTOFF = new Date('2026-10-30T12:24:17.000Z');
 
 function canonicalPhone(value: unknown) {
   const digits = String(value ?? '').replace(/\D/g, '');
@@ -31,7 +31,7 @@ export class AuthService {
       });
       if (!account) return null;
       if (account.platformAdmin) return account;
-      return account.createdAt < PROFESSIONAL_EMAIL_LOGIN_LEGACY_CUTOFF ? account : null;
+      return account.createdAt < PROFESSIONAL_EMAIL_LOGIN_CUTOFF ? account : null;
     }
 
     const normalizedPhone = canonicalPhone(raw);
