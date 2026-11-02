@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 
 type ProductType = 'SYSTEM' | 'TOOL' | 'FOLDER' | 'PACKAGE' | 'CAPACITY' | 'ADDON';
+type ProductReadiness = 'NOT_READY' | 'TESTING' | 'READY';
 
 type CatalogManifestItem = {
   key: string;
@@ -25,6 +26,7 @@ type ProductRow = {
   type: ProductType;
   position: number;
   isActive: boolean;
+  readiness: ProductReadiness;
   isSaleable: boolean;
   isFree: boolean;
   priceMinor: number;
@@ -71,6 +73,13 @@ function bool(value: unknown, fallback: boolean) {
 
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function productReadiness(value: unknown, fallback: ProductReadiness): ProductReadiness {
+  const status = text(value).toUpperCase();
+  if (!status) return fallback;
+  if (status === 'NOT_READY' || status === 'TESTING' || status === 'READY') return status;
+  throw new BadRequestException('Статус инструмента должен быть NOT_READY, TESTING или READY');
 }
 
 @Injectable()
@@ -160,9 +169,10 @@ export class CommercialCatalogService {
     const isFree = bool(input.isFree, current.isFree);
     const isSaleable = bool(input.isSaleable, current.isSaleable);
     const isActive = bool(input.isActive, current.isActive);
+    const readiness = productReadiness(input.readiness, current.readiness);
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "CommercialProduct" SET "priceMinor"=$2,"isFree"=$3,"isSaleable"=$4,"isActive"=$5,"updatedAt"=CURRENT_TIMESTAMP WHERE "key"=$1`,
-      key, priceMinor, isFree, isSaleable, isActive,
+      `UPDATE "CommercialProduct" SET "priceMinor"=$2,"isFree"=$3,"isSaleable"=$4,"isActive"=$5,"readiness"=$6,"updatedAt"=CURRENT_TIMESTAMP WHERE "key"=$1`,
+      key, priceMinor, isFree, isSaleable, isActive, readiness,
     );
 
     if (Array.isArray(input.includedProductKeys)) {
@@ -184,7 +194,7 @@ export class CommercialCatalogService {
         );
       }
     }
-    await this.audit(actorAdminId, 'CATALOG_PRODUCT_UPDATED', 'PRODUCT', current.id, { key, priceMinor, isFree, isSaleable, isActive, includedProductKeys: input.includedProductKeys });
+    await this.audit(actorAdminId, 'CATALOG_PRODUCT_UPDATED', 'PRODUCT', current.id, { key, priceMinor, isFree, isSaleable, isActive, readiness, includedProductKeys: input.includedProductKeys });
     return this.catalog();
   }
 

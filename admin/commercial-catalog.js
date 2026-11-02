@@ -24,6 +24,12 @@ const TYPE_LABELS = {
   ADDON: 'Дополнение',
 };
 
+const READINESS = {
+  NOT_READY: 'Не готово',
+  TESTING: 'Проверка',
+  READY: 'Готово',
+};
+
 const EVENT_LABELS = {
   CATALOG_PRODUCT_UPDATED: 'Изменены коммерческие условия',
   CATALOG_PACKAGE_CREATED: 'Создан пакет',
@@ -42,14 +48,16 @@ function rubles(priceMinor) {
 }
 
 function productRow(product, products) {
+  const readiness = READINESS[product.readiness] ? product.readiness : 'NOT_READY';
   const canCompose = product.type === 'FOLDER' || product.type === 'PACKAGE';
   const included = new Set((product.includedProducts || []).map((item) => item.key));
   const candidates = products.filter((item) => item.key !== product.key && item.isActive && item.type !== 'SYSTEM' && item.type !== 'CAPACITY');
-  return `<div class="commercial-product" data-commercial-product="${escapeHtml(product.key)}" data-free="${product.isFree}" data-saleable="${product.isSaleable}">
+  return `<div class="commercial-product" data-commercial-product="${escapeHtml(product.key)}" data-free="${product.isFree}" data-saleable="${product.isSaleable}" data-readiness="${escapeHtml(readiness)}">
     <div class="commercial-product-main">
       <strong>${escapeHtml(product.name)}</strong>
       <small>${escapeHtml(TYPE_LABELS[product.type] || product.type)}${product.description ? ` · ${escapeHtml(product.description)}` : ''}</small>
     </div>
+    <label class="admin-field" style="min-width:130px"><span>Статус</span><select data-commercial-readiness aria-label="Статус ${escapeHtml(product.name)}">${Object.entries(READINESS).map(([value, label]) => `<option value="${value}"${value === readiness ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>
     <div class="commercial-product-price">
       <input class="admin-input" type="number" min="0" step="1" value="${escapeHtml(rubles(product.priceMinor))}" data-commercial-price aria-label="Цена ${escapeHtml(product.name)}">
       <span>₽</span>
@@ -150,6 +158,7 @@ function bindCatalog(content) {
     bindToggle(row.querySelector('[data-commercial-free]'), 'Бесплатно', 'Платно', row, 'free');
     bindToggle(row.querySelector('[data-commercial-saleable]'), 'Продаётся', 'Не продаётся', row, 'saleable');
     row.querySelectorAll('[data-commercial-member]').forEach(bindMember);
+    row.querySelector('[data-commercial-readiness]')?.addEventListener('change', (event) => { row.dataset.readiness = event.currentTarget.value; });
     row.querySelector('[data-commercial-save]')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       const message = row.querySelector('[data-commercial-message]');
@@ -161,7 +170,7 @@ function bindCatalog(content) {
       try {
         await commercialRequest(`/${encodeURIComponent(key)}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ priceMinor: Math.round(Math.max(0, priceRub) * 100), isFree: row.dataset.free === 'true', isSaleable: row.dataset.saleable === 'true', ...(row.querySelector('[data-commercial-member]') ? { includedProductKeys } : {}) }),
+          body: JSON.stringify({ priceMinor: Math.round(Math.max(0, priceRub) * 100), isFree: row.dataset.free === 'true', isSaleable: row.dataset.saleable === 'true', readiness: row.dataset.readiness || 'NOT_READY', ...(row.querySelector('[data-commercial-member]') ? { includedProductKeys } : {}) }),
         });
         message.textContent = 'Сохранено';
       } catch (error) {
