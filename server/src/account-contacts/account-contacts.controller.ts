@@ -20,6 +20,38 @@ export class AccountContactsController {
     return this.contacts.searchByPhone(request.accountAuth!.accountId, phone);
   }
 
+  @Get(':tenantId/workplaces/:workplaceKey/history')
+  workplaceHistory(
+    @Req() request: AccountRequest,
+    @Param('tenantId') tenantId: string,
+    @Param('workplaceKey') workplaceKey: string,
+  ) {
+    return this.contacts.workplaceHistory(request.accountAuth!.accountId, tenantId, workplaceKey);
+  }
+
+  @Get(':tenantId/records/:recordId')
+  recordDetail(
+    @Req() request: AccountRequest,
+    @Param('tenantId') tenantId: string,
+    @Param('recordId') recordId: string,
+  ) {
+    return this.contacts.recordDetail(request.accountAuth!.accountId, tenantId, recordId);
+  }
+
+  @Get(':tenantId/personal-account')
+  personalAccount(@Req() request: AccountRequest, @Param('tenantId') tenantId: string) {
+    return this.contacts.personalAccount(request.accountAuth!.accountId, tenantId);
+  }
+
+  @Get(':tenantId/deposits/:depositId')
+  depositDetail(
+    @Req() request: AccountRequest,
+    @Param('tenantId') tenantId: string,
+    @Param('depositId') depositId: string,
+  ) {
+    return this.contacts.depositDetail(request.accountAuth!.accountId, tenantId, depositId);
+  }
+
   @Get(':tenantId')
   detail(@Req() request: AccountRequest, @Param('tenantId') tenantId: string) {
     return this.contacts.detail(request.accountAuth!.accountId, tenantId);
