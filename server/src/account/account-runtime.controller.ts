@@ -3,7 +3,6 @@ import type { Request } from 'express';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { WebPushService } from '../notification/web-push.service';
-import { BookingPdnConsentGuard } from '../online-booking/booking-pdn-consent.guard';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
 import { AccountGuard } from './account.guard';
 import { AccountRecordService } from './account-record.service';
@@ -169,7 +168,7 @@ export class AccountRuntimeController {
     return this.records.context(tenantId, workplace);
   }
 
-  @UseGuards(AccountGuard, BookingPdnConsentGuard)
+  @UseGuards(AccountGuard)
   @Post('professionals/:tenantId/records')
   createRecord(
     @Param('tenantId') tenantId: string,
