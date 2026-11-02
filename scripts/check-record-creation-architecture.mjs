@@ -63,10 +63,15 @@ expect(bookingEntry.includes("from './access.js'"), 'Public Booking entry must o
 expect(!userEntry.includes("from './access.js'") && !userEntry.includes('renderAccess('), 'App Journal Booking must not enter the Public technical Booking shell.');
 expect(userEntry.includes("from '../core/records/records.js'") && userEntry.includes('openRecords({'), 'App Journal Booking must reuse canonical Records inside the Shared Q owner.');
 expect(userEntry.includes('createBookingRequest(id,'), 'App Journal Booking must use the authenticated Account Booking write.');
-expect(accountRuntimeController.includes('@UseGuards(AccountGuard, BookingPdnConsentGuard)')
+expect(accountRuntimeController.includes('@UseGuards(AccountGuard)')
   && accountRuntimeController.includes("@Post('professionals/:tenantId/records')")
+  && !accountRuntimeController.includes('BookingPdnConsentGuard')
   && accountRuntimeController.includes('this.records.create(tenantId, request.accountAuth!.accountId'),
-'Canonical authenticated Account Record write must exist behind Account + PDN guards.');
+'Canonical authenticated Account Record write must use Account auth and the shared Record access marker, not a direct PDN guard.');
+expect(accountRecordService.includes('async canRecord(tenantId: string, accountId: string)')
+  && accountRecordService.includes('this.consentPolicy.hasActivePdnConsent(tenantId, accountId)')
+  && accountRecordService.includes('if (!(await this.canRecord(tenantId, accountId)))'),
+'Account Record access must have one shared server marker used by listing and creation.');
 expect(bookingController.includes('@UseGuards(AccountGuard, BookingPdnConsentGuard)')
   && bookingController.includes("@Post(':tenantId/requests')")
   && bookingController.includes('this.accountRecords.create(tenantId, request.accountAuth!.accountId'),
