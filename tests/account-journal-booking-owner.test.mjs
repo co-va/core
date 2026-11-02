@@ -13,6 +13,8 @@ const recordService = fs.readFileSync('server/src/record/record.service.ts', 'ut
 const targetsClient = fs.readFileSync('core/account/booking-targets.js', 'utf8');
 const targetsController = fs.readFileSync('server/src/online-booking/account-booking-targets.controller.ts', 'utf8');
 const bookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
+const accountRuntimeController = fs.readFileSync('server/src/account/account-runtime.controller.ts', 'utf8');
+const accountRecordService = fs.readFileSync('server/src/account/account-record.service.ts', 'utf8');
 const bookingService = fs.readFileSync('server/src/online-booking/online-booking.service.ts', 'utf8');
 
 const dayActionStart = day.indexOf('function openAccountDayAction');
@@ -26,7 +28,7 @@ const bookingAction = dayAction.slice(bookingActionStart, noteActionStart);
 assert.match(bookingAction, /cova:account-journal-open-contacts/, 'Journal booking X action must hand off without creating local booking UI');
 assert.doesNotMatch(bookingAction, /\bdate\b|\bfrom\b|timeHint|detail\s*:/, 'Journal booking must not inherit the tapped day or time');
 
-assert.match(targetsClient, /\/online-booking\/account\/booking-targets/, 'Professional selector must keep the existing Account booking-targets endpoint');
+assert.match(targetsClient, /\/online-booking\/account\/booking-targets/, 'Legacy professional selector must keep the existing Account booking-targets endpoint until User cutover');
 assert.match(targetsClient, /cachedTargets/, 'Professional targets must be cached while the account session is unchanged');
 assert.match(entry, /getGlobalAccountBookingTargets/, 'App Journal professional selector must use the narrow Account booking-targets projection');
 assert.match(entry, /openRecordCreationOwner\(\)/, 'App Journal must start inside the existing Shared Record Q owner');
@@ -36,14 +38,16 @@ assert.match(entry, /label: 'Имя'[\s\S]*required: true[\s\S]*autocomplete: 'g
 assert.match(entry, /label: 'Телефон'[\s\S]*required: false[\s\S]*autocomplete: 'tel'/, 'Additional participant phone must stay optional');
 assert.match(entry, /label: 'Email'[\s\S]*required: false[\s\S]*autocomplete: 'email'/, 'Additional participant email must stay optional');
 
-assert.match(targetsController, /this\.prisma\.accountTenantLink\.findMany/, 'Booking targets must start from existing AccountTenantLink relationships');
-assert.match(targetsController, /this\.prisma\.profile\.findMany/, 'Booking targets must read the existing Profile source directly');
-assert.match(targetsController, /orderBy: \{ createdAt: 'asc' \}/, 'Booking targets must preserve the existing first-created Profile semantics');
+assert.match(targetsController, /this\.records\.listTargets\(request\.accountAuth!\.accountId\)/, 'Legacy booking-targets route must delegate to the shared Account Record owner');
+assert.doesNotMatch(targetsController, /this\.prisma\./, 'Legacy booking-targets controller must not duplicate Account target queries');
+assert.match(accountRecordService, /this\.prisma\.accountTenantLink\.findMany/, 'Booking targets must start from existing AccountTenantLink relationships');
+assert.match(accountRecordService, /this\.prisma\.profile\.findMany/, 'Booking targets must read the existing Profile source directly');
+assert.match(accountRecordService, /orderBy: \{ createdAt: 'asc' \}/, 'Booking targets must preserve the existing first-created Profile semantics');
 for (const field of ['tenantId', 'name', 'surname', 'profession', 'phone']) {
-  assert.match(targetsController, new RegExp(`${field}: true`), `Booking targets Profile projection must include ${field}`);
+  assert.match(accountRecordService, new RegExp(`${field}: true`), `Booking targets Profile projection must include ${field}`);
 }
-assert.doesNotMatch(targetsController, /ProfileService|accountRelationshipProfile/, 'Booking targets must not load the full relationship Profile/Card');
-assert.doesNotMatch(targetsController, /photo|photoCropX|photoCropY|about|cardAppearance|workplaces/, 'Booking targets must not request Card-level Profile or workplace data');
+assert.doesNotMatch(accountRecordService, /ProfileService|accountRelationshipProfile/, 'Booking targets must not load the full relationship Profile/Card');
+assert.doesNotMatch(accountRecordService, /photo|photoCropX|photoCropY|about|cardAppearance|workplaces/, 'Booking targets must not request Card-level Profile or workplace data');
 
 const journalStart = entry.indexOf('async function startJournalBooking');
 const selectorStart = entry.indexOf('async function openAccountBookingProfessionalSelector', journalStart);
@@ -106,14 +110,10 @@ assert.match(creationFlow, /data-modal-close.*handleBackControl/s, 'Shared Q hea
 assert.match(recordService, /bookedByMatch/, 'End-user Journal must include the same Record when the account booked it for another person');
 assert.match(recordService, /record\.group.*participants/s, 'End-user Journal visibility must include non-primary group participants');
 
-const requestRouteStart = bookingController.indexOf("@UseGuards(AccountGuard, BookingPdnConsentGuard)");
-const requestRouteEnd = bookingController.indexOf('\n  }\n}', requestRouteStart);
-assert.ok(requestRouteStart >= 0 && requestRouteEnd > requestRouteStart, 'Authenticated App Booking write route must exist');
-const requestRoute = bookingController.slice(requestRouteStart, requestRouteEnd);
-assert.match(requestRoute, /@Post\(':tenantId\/requests'\)/, 'App Journal Booking write must stay on the authenticated Account route');
-assert.match(requestRoute, /this\.booking\.createRequest\(tenantId, accountId/, 'Single-participant App Booking must reuse the existing Account Booking service owner');
-assert.match(requestRoute, /if \(participantMode\) \{[\s\S]*this\.bookingFlow\.confirm\(tenantId,/, 'Multi-participant App Booking must keep one canonical write path without duplicate Records');
-assert.match(requestRoute, /BookingPdnConsentGuard/, 'App Journal Booking write must preserve the existing PDN gate without asking for identity again');
+assert.match(accountRuntimeController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)[\s\S]*@Post\('professionals\/:tenantId\/records'\)[\s\S]*this\.records\.create\(tenantId, request\.accountAuth!\.accountId/, 'Canonical Account Record route must preserve Account + PDN guards and delegate to the shared runtime');
+assert.match(bookingController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)[\s\S]*@Post\(':tenantId\/requests'\)[\s\S]*this\.accountRecords\.create\(tenantId, request\.accountAuth!\.accountId/, 'Legacy App Booking route must preserve Account + PDN guards and delegate to the shared runtime');
+assert.match(accountRecordService, /async create\(tenantId: string, accountId: string[\s\S]*if \(participantMode\)[\s\S]*this\.bookingFlow\.confirm\(tenantId,[\s\S]*this\.account\.createRequest\(tenantId, accountId/, 'Single- and multi-participant writes must have one shared Account Record owner');
+assert.match(accountRecordService, /source: 'online-booking'/, 'Shared Account Record runtime must preserve the proven Booking source semantics during server extraction');
 
 const contextStart = bookingService.indexOf('async getContext');
 const prepareAccountStart = bookingService.indexOf('async prepareAccount', contextStart);
