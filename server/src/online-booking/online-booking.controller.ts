@@ -1,12 +1,12 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
+import { AccountRecordService } from '../account/account-record.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CommunicationService } from '../communication/communication.service';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { NotificationService } from '../notification/notification.service';
 import { AccountGuard } from './account.guard';
-import { BookingFlowService } from './booking-flow.service';
 import { BookingPdnConsentGuard } from './booking-pdn-consent.guard';
 import { PersonIdentityService } from './person-identity.service';
 import { OnlineBookingService } from './online-booking.service';
@@ -18,7 +18,7 @@ type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: s
 export class OnlineBookingController {
   constructor(
     private readonly booking: OnlineBookingService,
-    private readonly bookingFlow: BookingFlowService,
+    private readonly accountRecords: AccountRecordService,
     private readonly accountDocuments: AccountDocumentService,
     private readonly notifications: NotificationService,
     private readonly notificationEvents: NotificationEventService,
@@ -296,72 +296,11 @@ export class OnlineBookingController {
 
   @UseGuards(AccountGuard, BookingPdnConsentGuard)
   @Post(':tenantId/requests')
-  async createRequest(@Param('tenantId') tenantId: string, @Req() request: AccountRequest, @Body() body: Record<string, any>) {
-    const accountId = request.accountAuth!.accountId;
-    const participantMode = ['self', 'other', 'joint'].includes(String(body?.mode || ''))
-      && Array.isArray(body?.participants)
-      && body.participants.length > 0;
-
-    let created: Record<string, any>;
-    if (participantMode) {
-      const account = await this.booking.getAccount(tenantId, accountId) as Record<string, any>;
-      const result = await this.bookingFlow.confirm(tenantId, {
-        ...(body || {}),
-        booker: {
-          name: [String(account?.name || '').trim(), String(account?.surname || '').trim()].filter(Boolean).join(' '),
-          phone: String(account?.phone || '').trim(),
-          email: String(account?.email || '').trim(),
-        },
-      }, {
-        legalVerified: true,
-        source: 'online-booking',
-        createdBy: { type: 'account', accountId, profileId: '' },
-      });
-      const records = Array.isArray(result?.records) ? result.records : [];
-      created = {
-        ...result,
-        id: String(result?.bookingSessionId || ''),
-        status: 'IMPORTED',
-        recordId: String(records[0]?.id || ''),
-        recordIds: records.map((record: any) => String(record?.id || '')).filter(Boolean),
-      };
-    } else {
-      created = await this.booking.createRequest(tenantId, accountId, body || {}) as Record<string, any>;
-    }
-
-    const recordId = String(created?.recordId || '');
-    const recordIds = Array.isArray(created?.recordIds) && created.recordIds.length ? created.recordIds : recordId ? [recordId] : [];
-    const date = String(created?.date || '').slice(0, 10);
-    const time = String(created?.from || '');
-    const workplaceKey = String(created?.workplaceKey || '');
-
-    void Promise.allSettled([
-      this.notificationEvents.createEventForTenantOwner(tenantId, {
-        type: 'booking.created',
-        entityType: 'record',
-        entityId: recordId,
-        context: { date, time, workplace: workplaceKey },
-        metadata: {
-          recordId,
-          recordIds,
-          date,
-          time,
-          workplaceKey,
-          source: 'account-journal',
-        },
-      }),
-      this.notificationEvents.createEventForPerson(tenantId, { accountId }, {
-        type: 'booking.created',
-        entityType: 'record',
-        entityId: recordId,
-        context: {
-          date,
-          time,
-          workplace: workplaceKey,
-          record: { id: recordId },
-        },
-      }),
-    ]);
-    return created;
+  createRequest(
+    @Param('tenantId') tenantId: string,
+    @Req() request: AccountRequest,
+    @Body() body: Record<string, any>,
+  ) {
+    return this.accountRecords.create(tenantId, request.accountAuth!.accountId, body || {});
   }
 }
