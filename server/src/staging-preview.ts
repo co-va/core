@@ -61,8 +61,14 @@ export async function stagingPreviewMiddleware(
 
   const method = request.method.toUpperCase();
   const loginRequest = method === 'POST' && request.path === '/auth/login';
+  const documentRegistrySync = method === 'POST' && request.path === '/saas-admin/document-registry/sync';
   if (!['GET', 'HEAD'].includes(method)) {
     if (loginRequest) return next();
+    if (documentRegistrySync) {
+      response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      response.setHeader('X-CO-VA-Preview', 'staging');
+      return response.status(200).json({ preview: true, synchronized: false });
+    }
     response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     response.setHeader('X-CO-VA-Preview', 'staging');
     return response.status(405).json({
