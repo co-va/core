@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PrismaService } from '../prisma.service';
 import { BookingFlowService } from '../online-booking/booking-flow.service';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
+import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 
 @Injectable()
 export class AccountRecordService {
@@ -11,7 +12,17 @@ export class AccountRecordService {
     private readonly bookingFlow: BookingFlowService,
     private readonly notificationEvents: NotificationEventService,
     private readonly prisma: PrismaService,
+    private readonly consentPolicy: ConsentPolicyService,
   ) {}
+
+  async canRecord(tenantId: string, accountId: string) {
+    const link = await this.prisma.accountTenantLink.findUnique({
+      where: { accountId_tenantId: { accountId, tenantId } },
+      select: { id: true },
+    });
+    if (!link) return false;
+    return this.consentPolicy.hasActivePdnConsent(tenantId, accountId);
+  }
 
   async listTargets(accountId: string) {
     const links = await this.prisma.accountTenantLink.findMany({
@@ -21,8 +32,13 @@ export class AccountRecordService {
     });
     if (!links.length) return [];
 
+    const allowed = (await Promise.all(links.map(async (link) => (
+      (await this.canRecord(link.tenantId, accountId)) ? link : null
+    )))).filter((link): link is (typeof links)[number] => Boolean(link));
+    if (!allowed.length) return [];
+
     const profiles = await this.prisma.profile.findMany({
-      where: { tenantId: { in: links.map((link) => link.tenantId) } },
+      where: { tenantId: { in: allowed.map((link) => link.tenantId) } },
       orderBy: { createdAt: 'asc' },
       select: { tenantId: true, name: true, surname: true, profession: true, phone: true },
     });
@@ -31,7 +47,7 @@ export class AccountRecordService {
       if (!profileByTenantId.has(profile.tenantId)) profileByTenantId.set(profile.tenantId, profile);
     });
 
-    return links.flatMap((link) => {
+    return allowed.flatMap((link) => {
       const profile = profileByTenantId.get(link.tenantId);
       if (!profile) return [];
       return [{
@@ -55,6 +71,10 @@ export class AccountRecordService {
   }
 
   async create(tenantId: string, accountId: string, body: Record<string, any>) {
+    if (!(await this.canRecord(tenantId, accountId))) {
+      throw new ForbiddenException('Запись недоступна');
+    }
+
     const participantMode = ['self', 'other', 'joint'].includes(String(body?.mode || ''))
       && Array.isArray(body?.participants)
       && body.participants.length > 0;
