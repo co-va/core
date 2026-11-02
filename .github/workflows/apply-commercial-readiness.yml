@@ -1,0 +1,48 @@
+name: Apply Commercial Readiness
+
+on:
+  push:
+    branches:
+      - staging
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+
+      - name: Apply prepared patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+          workflow = Path('.github/workflows/patch-commercial-readiness-v2.yml').read_text()
+          marker = "python - <<'PY'\n"
+          if marker not in workflow:
+              raise SystemExit('Prepared patch block not found')
+          script = workflow.split(marker, 1)[1].split("\n          PY", 1)[0]
+          exec(compile(dedent(script), '<commercial-readiness-patch>', 'exec'))
+          PY
+          node --check admin/commercial-catalog.js
+          node scripts/check-commercial-readiness-architecture.mjs
+          npm install --prefix server --no-audit --no-fund
+          npm run build --prefix server
+          rm -f server/package-lock.json
+          git diff --check
+
+      - name: Commit readiness gate
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add admin/admin.css admin/commercial-catalog.js server/src/saas-admin/commercial-catalog.service.ts server/src/saas-admin/commercial-tenant.service.ts server/src/saas-access/saas-access.service.ts server/prisma/migrations/20261102103000_commercial_product_readiness/migration.sql scripts/check-commercial-readiness-architecture.mjs package.json
+          git diff --cached --check
+          git commit -m 'Add three-state commercial readiness gate [skip ci]'
+          git push origin HEAD:staging
