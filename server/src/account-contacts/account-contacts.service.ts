@@ -210,10 +210,15 @@ export class AccountContactsService {
   }
 
   private async explicitlyRemoved(accountId: string, tenantId: string) {
+    const link = await this.prisma.accountTenantLink.findUnique({
+      where: { accountId_tenantId: { accountId, tenantId } },
+      select: { id: true },
+    });
+    if (link) return false;
     try {
       const state = await this.consentPolicy.accountConsentState(tenantId, accountId);
       const pdn = arrayValue(state?.consents).find((item) => text(item?.documentId) === 'pdn-consent');
-      return text(pdn?.status) === 'revoked';
+      return text(pdn?.status) === 'revoked' && text(pdn?.source) === 'account-contact-delete';
     } catch {
       return false;
     }
@@ -453,15 +458,12 @@ export class AccountContactsService {
     await this.account(accountId);
     await this.profileForTenant(tenantId);
     await this.consentPolicy.acceptAccountConsents(tenantId, accountId, facts, 'account-contact');
-    const state = await this.consentPolicy.accountConsentState(tenantId, accountId);
-    if (state.pdnActive) {
-      await this.prisma.accountTenantLink.upsert({
-        where: { accountId_tenantId: { accountId, tenantId } },
-        create: { accountId, tenantId },
-        update: { updatedAt: new Date() },
-      });
-    }
-    return state;
+    await this.prisma.accountTenantLink.upsert({
+      where: { accountId_tenantId: { accountId, tenantId } },
+      create: { accountId, tenantId },
+      update: { updatedAt: new Date() },
+    });
+    return this.consentPolicy.accountConsentState(tenantId, accountId);
   }
 
   async revokeConsent(accountId: string, tenantIdValue: unknown, documentIdValue: unknown) {
