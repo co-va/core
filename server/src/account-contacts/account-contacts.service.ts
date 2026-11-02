@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { DepositService } from '../loyalty/deposit.service';
+import { PersonalAccountService } from '../loyalty/personal-account.service';
 import { PrismaService } from '../prisma.service';
+import { RecordService } from '../record/record.service';
 import { ConsentPolicyService } from '../tenant-document-archive/consent-policy.service';
 
 function text(value: unknown) {
@@ -45,17 +48,21 @@ function profileCard(profile: any) {
   };
 }
 
+function participantMatchesAccount(personValue: unknown, accountId: string, accountPhone: string) {
+  const person = objectValue(personValue);
+  const phone = canonicalPhone(accountPhone);
+  return text(person.accountId) === accountId
+    || Boolean(phone && canonicalPhone(person.phone) === phone)
+    || arrayValue(person.phones).some((value) => canonicalPhone(value) === phone);
+}
+
 function recordMatchesAccount(dataValue: unknown, accountId: string, accountPhone: string) {
   const data = objectValue(dataValue);
   const participants = [
     objectValue(data.person),
     ...arrayValue(objectValue(data.group).participants).map((item) => objectValue(item)),
   ];
-  const phone = canonicalPhone(accountPhone);
-  return participants.some((person) => (
-    text(person.accountId) === accountId
-    || Boolean(phone && canonicalPhone(person.phone) === phone)
-  ));
+  return participants.some((person) => participantMatchesAccount(person, accountId, accountPhone));
 }
 
 function workplaceCard(workplace: any) {
@@ -74,11 +81,45 @@ function workplaceCard(workplace: any) {
   };
 }
 
+function completedRecord(record: Record<string, any>) {
+  if (text(record.status) === 'cancelled') return false;
+  if (text(record.attendance) === 'arrived') return true;
+  const date = text(record.date).slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  return Boolean(date && date < today);
+}
+
+function recordSummary(record: Record<string, any>) {
+  return {
+    id: text(record.id),
+    date: text(record.date).slice(0, 10),
+    from: text(record.from),
+    to: text(record.to),
+    workplaceId: text(record.workplaceId),
+    status: text(record.status),
+    attendance: text(record.attendance),
+    procedures: arrayValue(record.procedures).map((item) => {
+      const procedure = objectValue(item);
+      return {
+        id: text(procedure.id),
+        name: text(procedure.name),
+        cost: Number(procedure.cost ?? procedure.price ?? 0),
+        duration: Number(procedure.duration ?? 0),
+      };
+    }),
+    finance: objectValue(record.finance),
+    payment: objectValue(record.payment),
+  };
+}
+
 @Injectable()
 export class AccountContactsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly consentPolicy: ConsentPolicyService,
+    private readonly personalAccounts: PersonalAccountService,
+    private readonly deposits: DepositService,
+    private readonly records: RecordService,
   ) {}
 
   private async account(accountId: string) {
@@ -106,10 +147,50 @@ export class AccountContactsService {
     };
     const rows = await this.prisma.record.findMany({
       where,
-      select: { tenantId: true, data: true, createdAt: true },
+      select: { tenantId: true, recordId: true, data: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
     return rows.filter((row) => recordMatchesAccount(row.data, accountId, accountPhone));
+  }
+
+  private matchingParticipants(records: Array<{ data: unknown }>, accountId: string, accountPhone: string) {
+    const result: Record<string, any>[] = [];
+    const seen = new Set<string>();
+    for (const row of records) {
+      const data = objectValue(row.data);
+      const participants = [
+        objectValue(data.person),
+        ...arrayValue(objectValue(data.group).participants).map((item) => objectValue(item)),
+      ];
+      for (const participant of participants) {
+        if (!participantMatchesAccount(participant, accountId, accountPhone)) continue;
+        const key = text(participant.key || participant.id || participant.accountId || participant.phone);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        result.push(participant);
+      }
+    }
+    return result;
+  }
+
+  private async professionalPerson(tenantId: string, accountId: string, accountPhone: string, records: Array<{ data: unknown }>) {
+    const recordParticipants = this.matchingParticipants(records, accountId, accountPhone);
+    const recordKeys = new Set(recordParticipants.flatMap((person) => [text(person.key), text(person.id)]).filter(Boolean));
+    const phone = canonicalPhone(accountPhone);
+    const rows = await this.prisma.person.findMany({
+      where: { tenantId },
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    });
+    for (const row of rows) {
+      const person = objectValue(row.data);
+      const key = text(person.key || row.key);
+      const accountIds = arrayValue(person.accounts).map((value) => text(value));
+      const phones = [person.phone, ...arrayValue(person.phones)].map(canonicalPhone).filter(Boolean);
+      if (recordKeys.has(key) || accountIds.includes(accountId) || Boolean(phone && phones.includes(phone))) {
+        return { ...person, key };
+      }
+    }
+    return recordParticipants[0] || null;
   }
 
   private async candidateTenantIds(accountId: string, accountPhone: string) {
@@ -144,6 +225,78 @@ export class AccountContactsService {
     });
     if (!profile) throw new NotFoundException('Профиль не найден');
     return profile;
+  }
+
+  private async contactContext(accountId: string, tenantIdValue: unknown) {
+    const tenantId = text(tenantIdValue);
+    if (!tenantId) throw new BadRequestException('Контакт не выбран');
+    const account = await this.account(accountId);
+    const [profile, link, records, removed] = await Promise.all([
+      this.profileForTenant(tenantId),
+      this.prisma.accountTenantLink.findUnique({
+        where: { accountId_tenantId: { accountId: account.id, tenantId } },
+      }),
+      this.matchingRecords(account.id, account.phone, tenantId),
+      this.explicitlyRemoved(account.id, tenantId),
+    ]);
+    if (removed || (!link && !records.length)) throw new NotFoundException('Контакт не найден');
+    const person = await this.professionalPerson(tenantId, account.id, account.phone, records);
+    return { tenantId, account, profile, link, records, person };
+  }
+
+  private async visibleDeposits(tenantId: string, personKey: string) {
+    if (!personKey) return [];
+    const [deposits, programRows] = await Promise.all([
+      this.deposits.list(tenantId, personKey),
+      this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
+    ]);
+    const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
+    return deposits.filter((deposit: Record<string, any>) => {
+      if (typeof deposit.visibleToPersonOverride === 'boolean') return deposit.visibleToPersonOverride;
+      return objectValue(programs.get(text(deposit.programId))).showToAll !== false;
+    });
+  }
+
+  private async programSummaries(tenantId: string, personValue: unknown) {
+    const person = objectValue(personValue);
+    const personKey = text(person.key || person.id);
+    if (!personKey) return [];
+    const [personalAccount, deposits] = await Promise.all([
+      this.personalAccounts.endUserSummary(tenantId, personKey).catch(() => null),
+      this.visibleDeposits(tenantId, personKey).catch(() => []),
+    ]);
+    return [
+      personalAccount ? {
+        type: 'personal-account',
+        title: 'Личный счёт',
+        balance: Number(personalAccount.balance || 0),
+        debtTotal: Number(personalAccount.debtTotal || 0),
+      } : null,
+      ...deposits.map((deposit: Record<string, any>) => ({
+        type: 'deposit',
+        depositId: text(deposit.depositId),
+        title: text(deposit.programName) || 'Депозит',
+        balance: Number(deposit.balance || 0),
+        fundedAmount: Number(deposit.fundedAmount || 0),
+        status: text(deposit.status),
+        terms: {
+          termRule: text(objectValue(deposit.terms).termRule),
+          benefit: text(objectValue(deposit.terms).benefit),
+        },
+      })),
+    ].filter(Boolean);
+  }
+
+  private async projectedRecords(context: Awaited<ReturnType<AccountContactsService['contactContext']>>) {
+    const people = this.matchingParticipants(context.records, context.account.id, context.account.phone);
+    if (context.person) people.push(objectValue(context.person));
+    const unique = new Map<string, Record<string, any>>();
+    for (const person of people) {
+      const key = text(person.key || person.id || person.accountId || person.phone);
+      if (key && !unique.has(key)) unique.set(key, person);
+    }
+    if (!unique.size) return [];
+    return this.records.listForPeople(context.tenantId, [...unique.values()]);
   }
 
   async list(accountId: string) {
@@ -196,36 +349,77 @@ export class AccountContactsService {
   }
 
   async detail(accountId: string, tenantIdValue: unknown) {
-    const tenantId = text(tenantIdValue);
-    if (!tenantId) throw new BadRequestException('Контакт не выбран');
-    const account = await this.account(accountId);
-    const profile = await this.profileForTenant(tenantId);
-    const [link, records, removed] = await Promise.all([
-      this.prisma.accountTenantLink.findUnique({
-        where: { accountId_tenantId: { accountId: account.id, tenantId } },
-      }),
-      this.matchingRecords(account.id, account.phone, tenantId),
-      this.explicitlyRemoved(account.id, tenantId),
-    ]);
-
-    const workplaceKeys = [...new Set(records
+    const context = await this.contactContext(accountId, tenantIdValue);
+    const workplaceKeys = [...new Set(context.records
       .map((row) => {
         const data = objectValue(row.data);
         return text(data.workplaceId || data.workplaceKey);
       })
       .filter(Boolean))];
-    const workplaces = workplaceKeys.length
-      ? await this.prisma.workplace.findMany({
-          where: { tenantId, key: { in: workplaceKeys }, deletedAt: null },
-          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-        })
-      : [];
+    const [workplaces, programs] = await Promise.all([
+      workplaceKeys.length
+        ? this.prisma.workplace.findMany({
+            where: { tenantId: context.tenantId, key: { in: workplaceKeys }, deletedAt: null },
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+          })
+        : [],
+      this.programSummaries(context.tenantId, context.person),
+    ]);
 
     return {
-      ...profileCard(profile),
-      connected: Boolean((link || records.length) && !removed),
+      ...profileCard(context.profile),
+      connected: true,
       workplaces: workplaces.map(workplaceCard),
+      programs,
     };
+  }
+
+  async workplaceHistory(accountId: string, tenantIdValue: unknown, workplaceKeyValue: unknown) {
+    const workplaceKey = text(workplaceKeyValue);
+    if (!workplaceKey) throw new BadRequestException('Пространство не выбрано');
+    const context = await this.contactContext(accountId, tenantIdValue);
+    const allowed = context.records.some((row) => text(objectValue(row.data).workplaceId || objectValue(row.data).workplaceKey) === workplaceKey);
+    if (!allowed) throw new NotFoundException('Пространство не найдено в истории контакта');
+    const rows = await this.projectedRecords(context);
+    return arrayValue(rows)
+      .filter((record) => text(record.workplaceId) === workplaceKey && completedRecord(objectValue(record)))
+      .map((record) => recordSummary(objectValue(record)));
+  }
+
+  async recordDetail(accountId: string, tenantIdValue: unknown, recordIdValue: unknown) {
+    const recordId = text(recordIdValue);
+    if (!recordId) throw new BadRequestException('Запись не выбрана');
+    const context = await this.contactContext(accountId, tenantIdValue);
+    if (!context.records.some((row) => text(row.recordId || objectValue(row.data).id) === recordId)) {
+      throw new NotFoundException('Запись не найдена');
+    }
+    const rows = await this.projectedRecords(context);
+    const record = arrayValue(rows).find((item) => text(item?.id) === recordId);
+    if (!record || !completedRecord(objectValue(record))) throw new NotFoundException('Запись не найдена');
+    return record;
+  }
+
+  async personalAccount(accountId: string, tenantIdValue: unknown) {
+    const context = await this.contactContext(accountId, tenantIdValue);
+    const personKey = text(objectValue(context.person).key || objectValue(context.person).id);
+    if (!personKey) throw new NotFoundException('Личный счёт недоступен');
+    const summary = await this.personalAccounts.endUserSummary(context.tenantId, personKey);
+    if (!summary) throw new NotFoundException('Личный счёт недоступен');
+    const detail = await this.personalAccounts.endUserView(context.tenantId, personKey);
+    if (!detail) throw new NotFoundException('Личный счёт недоступен');
+    return detail;
+  }
+
+  async depositDetail(accountId: string, tenantIdValue: unknown, depositIdValue: unknown) {
+    const depositId = text(depositIdValue);
+    if (!depositId) throw new BadRequestException('Депозит не выбран');
+    const context = await this.contactContext(accountId, tenantIdValue);
+    const personKey = text(objectValue(context.person).key || objectValue(context.person).id);
+    if (!personKey) throw new NotFoundException('Депозит недоступен');
+    const deposits = await this.visibleDeposits(context.tenantId, personKey);
+    const deposit = deposits.find((item: Record<string, any>) => text(item.depositId) === depositId);
+    if (!deposit) throw new NotFoundException('Депозит недоступен');
+    return deposit;
   }
 
   async consentState(accountId: string, tenantIdValue: unknown) {
