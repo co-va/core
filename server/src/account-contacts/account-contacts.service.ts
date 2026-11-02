@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { DepositService } from '../loyalty/deposit.service';
+import { expireDepositInstances } from '../loyalty/deposit-state';
 import { PersonalAccountService } from '../loyalty/personal-account.service';
 import { PrismaService } from '../prisma.service';
 import { RecordService } from '../record/record.service';
@@ -244,16 +245,33 @@ export class AccountContactsService {
     return { tenantId, account, profile, link, records, person };
   }
 
-  private async visibleDeposits(tenantId: string, personKey: string) {
+  private async visibleDepositSummaries(tenantId: string, personKey: string) {
     if (!personKey) return [];
-    const [deposits, programRows] = await Promise.all([
-      this.deposits.list(tenantId, personKey),
+    await expireDepositInstances(this.prisma, tenantId);
+    const [rows, programRows] = await Promise.all([
+      this.prisma.loyaltyDepositInstance.findMany({
+        where: { tenantId, personKey },
+        orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
+      }),
       this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
     ]);
     const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
-    return deposits.filter((deposit: Record<string, any>) => {
+    return rows.map((row) => {
+      const terms = objectValue(row.terms);
+      const presentation = objectValue(terms.presentation);
+      return {
+        depositId: text(row.depositId),
+        programId: text(row.programId),
+        programName: text(row.programName),
+        fundedAmount: Number(row.initialAmount || 0),
+        balance: Number(row.balance || 0),
+        status: text(row.status),
+        terms,
+        visibleToPersonOverride: typeof presentation.visibleToPerson === 'boolean' ? presentation.visibleToPerson : null,
+      };
+    }).filter((deposit) => {
       if (typeof deposit.visibleToPersonOverride === 'boolean') return deposit.visibleToPersonOverride;
-      return objectValue(programs.get(text(deposit.programId))).showToAll !== false;
+      return objectValue(programs.get(deposit.programId)).showToAll !== false;
     });
   }
 
@@ -263,7 +281,7 @@ export class AccountContactsService {
     if (!personKey) return [];
     const [personalAccount, deposits] = await Promise.all([
       this.personalAccounts.endUserSummary(tenantId, personKey).catch(() => null),
-      this.visibleDeposits(tenantId, personKey).catch(() => []),
+      this.visibleDepositSummaries(tenantId, personKey).catch(() => []),
     ]);
     return [
       personalAccount ? {
@@ -416,10 +434,9 @@ export class AccountContactsService {
     const context = await this.contactContext(accountId, tenantIdValue);
     const personKey = text(objectValue(context.person).key || objectValue(context.person).id);
     if (!personKey) throw new NotFoundException('Депозит недоступен');
-    const deposits = await this.visibleDeposits(context.tenantId, personKey);
-    const deposit = deposits.find((item: Record<string, any>) => text(item.depositId) === depositId);
-    if (!deposit) throw new NotFoundException('Депозит недоступен');
-    return deposit;
+    const summaries = await this.visibleDepositSummaries(context.tenantId, personKey);
+    if (!summaries.some((item) => text(item.depositId) === depositId)) throw new NotFoundException('Депозит недоступен');
+    return this.deposits.get(context.tenantId, depositId);
   }
 
   async consentState(accountId: string, tenantIdValue: unknown) {
