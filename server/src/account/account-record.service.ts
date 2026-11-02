@@ -123,7 +123,6 @@ export class AccountRecordService {
     });
   }
 
-  // Legacy route compatibility only. User Record uses contactContext().
   context(tenantId: string, workplace = '') {
     return this.account.getContext(tenantId, workplace);
   }
@@ -310,7 +309,6 @@ export class AccountRecordService {
     };
   }
 
-  // Legacy route compatibility only. User Record uses createContact().
   async create(tenantId: string, accountId: string, body: Record<string, any>) {
     if (!(await this.canRecord(tenantId, accountId))) {
       throw new ForbiddenException('Запись недоступна');
