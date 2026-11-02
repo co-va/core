@@ -17,10 +17,12 @@ import { CommercialSelfServiceController } from './commercial-self-service.contr
 import { CommercialReceiptService } from './commercial-receipt.service';
 import { CommercialInvoiceService } from './commercial-invoice.service';
 import { AccountToolsController } from './account-tools.controller';
+import { ToolReadinessController } from './tool-readiness.controller';
+import { ToolReadinessService } from './tool-readiness.service';
 
 @Module({
   imports: [AuthModule, SaasAccessModule, TenantInvitationModule, DocumentRegistryModule, TransactionalEmailModule, PlatformNoticeModule],
-  controllers: [SaasAdminController, AccountToolsController, CommercialCatalogController, CommercialTenantController, CommercialSelfServiceController],
-  providers: [SaasAdminService, CommercialCatalogService, CommercialTenantService, CommercialReceiptService, CommercialInvoiceService, PlatformAdminGuard, PrismaService],
+  controllers: [SaasAdminController, AccountToolsController, ToolReadinessController, CommercialCatalogController, CommercialTenantController, CommercialSelfServiceController],
+  providers: [SaasAdminService, ToolReadinessService, CommercialCatalogService, CommercialTenantService, CommercialReceiptService, CommercialInvoiceService, PlatformAdminGuard, PrismaService],
 })
 export class SaasAdminModule {}
