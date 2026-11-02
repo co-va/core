@@ -104,26 +104,14 @@ export class PersonalAccountService {
     `;
     const row = rows[0];
     if (!row || !row.visibleToEndUser) return null;
-    const [movements, debts] = await Promise.all([
-      this.prisma.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*)::bigint AS "count"
-        FROM "LoyaltyPersonalAccountMovement"
-        WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
-      `,
-      this.prisma.$queryRaw<Array<{ count: bigint; total: unknown }>>`
-        SELECT COUNT(*)::bigint AS "count", COALESCE(SUM("outstandingAmount"), 0) AS "total"
-        FROM "LoyaltyPersonalAccountDebt"
-        WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
-      `,
-    ]);
-    const movementCount = Number(movements[0]?.count || 0);
-    const debtCount = Number(debts[0]?.count || 0);
-    const balance = money(row.balance);
-    const debtTotal = money(debts[0]?.total);
-    if (!movementCount && !debtCount && balance <= 0.009 && debtTotal <= 0.009) return null;
+    const debts = await this.prisma.$queryRaw<Array<{ total: unknown }>>`
+      SELECT COALESCE(SUM("outstandingAmount"), 0) AS "total"
+      FROM "LoyaltyPersonalAccountDebt"
+      WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
+    `;
     return {
-      balance,
-      debtTotal,
+      balance: money(row.balance),
+      debtTotal: money(debts[0]?.total),
       spendLimitPercent: percent(row.spendLimitPercent),
     };
   }
