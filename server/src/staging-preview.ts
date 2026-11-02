@@ -58,7 +58,17 @@ export async function stagingPreviewMiddleware(
   next: NextFunction,
 ) {
   if (requestHost(request) !== STAGING_PREVIEW_HOST) return next();
-  if (!['GET', 'HEAD'].includes(request.method)) return next();
+
+  const method = request.method.toUpperCase();
+  const loginRequest = method === 'POST' && request.path === '/auth/login';
+  if (!['GET', 'HEAD'].includes(method)) {
+    if (loginRequest) return next();
+    response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    response.setHeader('X-CO-VA-Preview', 'staging');
+    return response.status(405).json({
+      message: 'Staging preview доступен только для просмотра',
+    });
+  }
 
   if (request.path === '/admin') return response.redirect(302, '/admin/');
 
@@ -84,7 +94,7 @@ export async function stagingPreviewMiddleware(
     response.setHeader('Expires', '0');
     response.setHeader('X-CO-VA-Preview', 'staging');
 
-    if (request.method === 'HEAD') return response.status(200).end();
+    if (method === 'HEAD') return response.status(200).end();
 
     const body = Buffer.from(await upstream.arrayBuffer());
     return response.status(200).send(body);
