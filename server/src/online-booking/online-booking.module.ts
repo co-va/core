@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { AccountGuard as CanonicalAccountGuard } from '../account/account.guard';
+import { AccountRecordService } from '../account/account-record.service';
+import { AccountRuntimeController } from '../account/account-runtime.controller';
 import { AuthModule } from '../auth/auth.module';
 import { BusinessStateModule } from '../business-state/business-state.module';
 import { CommunicationModule } from '../communication/communication.module';
@@ -40,7 +43,7 @@ import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
   imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EmailVerificationModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
-  controllers: [OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEmailVerificationController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
-  providers: [OnlineBookingService, BookingFlowService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
+  controllers: [AccountRuntimeController, OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEmailVerificationController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
+  providers: [OnlineBookingService, BookingFlowService, AccountRecordService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, CanonicalAccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })
 export class OnlineBookingModule {}

@@ -17,6 +17,8 @@ const bookingEntry = read('online-booking/booking-entry.js');
 const userEntry = read('online-booking/user-entry.js');
 const serverMain = read('server/src/main.ts');
 const bookingController = read('server/src/online-booking/online-booking.controller.ts');
+const accountRuntimeController = read('server/src/account/account-runtime.controller.ts');
+const accountRecordService = read('server/src/account/account-record.service.ts');
 const bookingFlowService = read('server/src/online-booking/booking-flow.service.ts');
 
 expect(!fs.existsSync('journal/record.js'), 'journal/record.js must not exist.');
@@ -61,10 +63,18 @@ expect(bookingEntry.includes("from './access.js'"), 'Public Booking entry must o
 expect(!userEntry.includes("from './access.js'") && !userEntry.includes('renderAccess('), 'App Journal Booking must not enter the Public technical Booking shell.');
 expect(userEntry.includes("from '../core/records/records.js'") && userEntry.includes('openRecords({'), 'App Journal Booking must reuse canonical Records inside the Shared Q owner.');
 expect(userEntry.includes('createBookingRequest(id,'), 'App Journal Booking must use the authenticated Account Booking write.');
+expect(accountRuntimeController.includes('@UseGuards(AccountGuard, BookingPdnConsentGuard)')
+  && accountRuntimeController.includes("@Post('professionals/:tenantId/records')")
+  && accountRuntimeController.includes('this.records.create(tenantId, request.accountAuth!.accountId'),
+'Canonical authenticated Account Record write must exist behind Account + PDN guards.');
 expect(bookingController.includes('@UseGuards(AccountGuard, BookingPdnConsentGuard)')
   && bookingController.includes("@Post(':tenantId/requests')")
-  && bookingController.includes('this.booking.createRequest(tenantId, accountId'),
-'Authenticated App Booking write must exist behind Account + PDN guards.');
+  && bookingController.includes('this.accountRecords.create(tenantId, request.accountAuth!.accountId'),
+'Legacy App Booking route must delegate to the shared Account Record runtime behind the same guards.');
+expect(accountRecordService.includes('async create(tenantId: string, accountId: string')
+  && accountRecordService.includes('this.account.createRequest(tenantId, accountId')
+  && accountRecordService.includes('this.bookingFlow.confirm(tenantId'),
+'Account Record creation orchestration must have one shared server owner.');
 expect(!booking.includes('createBookingRequest(') && !bookingEntry.includes('createBookingRequest('), 'Public Booking must not use the authenticated App Booking write.');
 expect(!userEntry.includes('resolveBookingPublicRoute') && !userEntry.includes('startAccountRuntime'), 'App user entry must not contain a public Booking fallback into App runtime.');
 expect(serverMain.includes("response.sendFile(resolve(siteRoot, 'booking.html'))"), 'USER_HOST public Booking paths must resolve to isolated booking.html.');

@@ -15,6 +15,16 @@ export class PasswordResetController {
     return this.resets.confirmPlatform(body?.token, body?.newPassword);
   }
 
+  @Post('account/password-reset/request')
+  requestCanonicalAccount(@Body() body: { identifier?: unknown }) {
+    return this.resets.requestAccount(body?.identifier);
+  }
+
+  @Post('account/password-reset/confirm')
+  confirmCanonicalAccount(@Body() body: { token?: unknown; newPassword?: unknown }) {
+    return this.resets.confirmAccount(body?.token, body?.newPassword);
+  }
+
   @Post('online-booking/account/password-reset/request')
   requestAccount(@Body() body: { identifier?: unknown }) {
     return this.resets.requestAccount(body?.identifier);
