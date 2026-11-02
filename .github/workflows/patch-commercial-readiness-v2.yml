@@ -1,0 +1,95 @@
+name: Patch Commercial Readiness V2
+
+on:
+  push:
+    branches:
+      - staging
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+
+      - name: Apply three-state readiness gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Expected block not found in {path}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once('server/src/saas-admin/commercial-catalog.service.ts', "type ProductType = 'SYSTEM' | 'TOOL' | 'FOLDER' | 'PACKAGE' | 'CAPACITY' | 'ADDON';\n", "type ProductType = 'SYSTEM' | 'TOOL' | 'FOLDER' | 'PACKAGE' | 'CAPACITY' | 'ADDON';\ntype ProductReadiness = 'NOT_READY' | 'TESTING' | 'READY';\n")
+          replace_once('server/src/saas-admin/commercial-catalog.service.ts', "  isActive: boolean;\n  isSaleable: boolean;\n", "  isActive: boolean;\n  readiness: ProductReadiness;\n  isSaleable: boolean;\n")
+          replace_once('server/src/saas-admin/commercial-catalog.service.ts', "function text(value: unknown) {\n  return String(value ?? '').trim();\n}\n", "function text(value: unknown) {\n  return String(value ?? '').trim();\n}\n\nfunction productReadiness(value: unknown, fallback: ProductReadiness): ProductReadiness {\n  const status = text(value).toUpperCase();\n  if (!status) return fallback;\n  if (status === 'NOT_READY' || status === 'TESTING' || status === 'READY') return status;\n  throw new BadRequestException('Статус инструмента должен быть NOT_READY, TESTING или READY');\n}\n")
+          replace_once('server/src/saas-admin/commercial-catalog.service.ts', "    const isActive = bool(input.isActive, current.isActive);\n    await this.prisma.$executeRawUnsafe(\n      `UPDATE \"CommercialProduct\" SET \"priceMinor\"=$2,\"isFree\"=$3,\"isSaleable\"=$4,\"isActive\"=$5,\"updatedAt\"=CURRENT_TIMESTAMP WHERE \"key\"=$1`,\n      key, priceMinor, isFree, isSaleable, isActive,\n    );", "    const isActive = bool(input.isActive, current.isActive);\n    const readiness = productReadiness(input.readiness, current.readiness);\n    await this.prisma.$executeRawUnsafe(\n      `UPDATE \"CommercialProduct\" SET \"priceMinor\"=$2,\"isFree\"=$3,\"isSaleable\"=$4,\"isActive\"=$5,\"readiness\"=$6,\"updatedAt\"=CURRENT_TIMESTAMP WHERE \"key\"=$1`,\n      key, priceMinor, isFree, isSaleable, isActive, readiness,\n    );")
+          replace_once('server/src/saas-admin/commercial-catalog.service.ts', "    await this.audit(actorAdminId, 'CATALOG_PRODUCT_UPDATED', 'PRODUCT', current.id, { key, priceMinor, isFree, isSaleable, isActive, includedProductKeys: input.includedProductKeys });", "    await this.audit(actorAdminId, 'CATALOG_PRODUCT_UPDATED', 'PRODUCT', current.id, { key, priceMinor, isFree, isSaleable, isActive, readiness, includedProductKeys: input.includedProductKeys });")
+
+          replace_once('server/src/saas-admin/commercial-tenant.service.ts', "  isActive: boolean;\n  isSaleable: boolean;\n", "  isActive: boolean;\n  readiness: 'NOT_READY' | 'TESTING' | 'READY';\n  isSaleable: boolean;\n")
+          replace_once('server/src/saas-admin/commercial-tenant.service.ts', '`SELECT "id","key","name","type","priceMinor","currency","isActive","isSaleable","isFree" FROM "CommercialProduct" ORDER BY "position" ASC,"name" ASC`,', '`SELECT "id","key","name","type","priceMinor","currency","isActive","readiness","isSaleable","isFree" FROM "CommercialProduct" ORDER BY "position" ASC,"name" ASC`,')
+          replace_once('server/src/saas-admin/commercial-tenant.service.ts', "    const expandedIds = this.expandSelectedProductIds(selectedIds, inclusions);\n    const managedCapabilityKeys = [...new Set(capabilityLinks", "    const readyProductIds = new Set(products\n      .filter((product) => product.isActive && product.readiness === 'READY')\n      .map((product) => product.id));\n    const readySelectedIds = new Set([...selectedIds].filter((id) => readyProductIds.has(id)));\n    const expandedIds = this.expandSelectedProductIds(readySelectedIds, inclusions);\n    const managedCapabilityKeys = [...new Set(capabilityLinks")
+          replace_once('server/src/saas-admin/commercial-tenant.service.ts', "    const enabledCapabilityKeys = new Set(capabilityLinks\n      .filter((link) => expandedIds.has(link.productId))\n      .map((link) => link.capabilityKey));", "    const enabledCapabilityKeys = new Set(capabilityLinks\n      .filter((link) => expandedIds.has(link.productId) && readyProductIds.has(link.productId))\n      .map((link) => link.capabilityKey));")
+
+          replace_once('server/src/saas-access/saas-access.service.ts', "type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED';", "type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED' | 'PRODUCT_NOT_READY';")
+          marker = "  async resolveCapability(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {"
+          helper = """  private async productReadinessByCapability() {\n    const rows = await this.prisma.$queryRawUnsafe<Array<{ capabilityKey: string; ready: boolean }>>(\n      `SELECT link.\"capabilityKey\" AS \"capabilityKey\",\n              BOOL_OR(product.\"isActive\" = true AND product.\"readiness\" = 'READY') AS \"ready\"\n       FROM \"CommercialProductCapability\" link\n       JOIN \"CommercialProduct\" product ON product.\"id\" = link.\"productId\"\n       GROUP BY link.\"capabilityKey\"`,\n    );\n    return new Map(rows.map((row) => [row.capabilityKey, Boolean(row.ready)]));\n  }\n\n  private productNotReadyValue(key: string, valueType: CapabilityValueType): ResolvedCapability {\n    if (valueType === CapabilityValueType.BOOLEAN) {\n      return { key, valueType, enabled: false, limit: null, source: 'PRODUCT_NOT_READY' };\n    }\n    return { key, valueType, enabled: null, limit: 0, source: 'PRODUCT_NOT_READY' };\n  }\n\n"""
+          replace_once('server/src/saas-access/saas-access.service.ts', marker, helper + marker)
+          replace_once('server/src/saas-access/saas-access.service.ts', "    if (!capability || !capability.isActive) {\n      throw new NotFoundException(`Неизвестная возможность: ${capabilityKey}`);\n    }\n\n    const access = await this.prisma.tenantAccess.findUnique({", "    if (!capability || !capability.isActive) {\n      throw new NotFoundException(`Неизвестная возможность: ${capabilityKey}`);\n    }\n\n    const readinessByCapability = await this.productReadinessByCapability();\n    if (readinessByCapability.get(capability.key) === false) {\n      return this.productNotReadyValue(capability.key, capability.valueType);\n    }\n\n    const access = await this.prisma.tenantAccess.findUnique({")
+          replace_once('server/src/saas-access/saas-access.service.ts', "  async resolveTenantAccess(tenantId: string): Promise<ResolvedTenantAccess> {\n    const capabilities = await this.prisma.capability.findMany({", "  async resolveTenantAccess(tenantId: string): Promise<ResolvedTenantAccess> {\n    const readinessByCapability = await this.productReadinessByCapability();\n    const capabilities = await this.prisma.capability.findMany({")
+          replace_once('server/src/saas-access/saas-access.service.ts', "    const resolved = capabilities.map<ResolvedCapability>((capability) => {\n      if (access.status === TenantAccessStatus.SUSPENDED) {", "    const resolved = capabilities.map<ResolvedCapability>((capability) => {\n      if (readinessByCapability.get(capability.key) === false) {\n        return this.productNotReadyValue(capability.key, capability.valueType);\n      }\n      if (access.status === TenantAccessStatus.SUSPENDED) {")
+
+          replace_once('admin/commercial-catalog.js', "const EVENT_LABELS = {", "const READINESS = {\n  NOT_READY: { label: 'Не готово', className: 'not-ready' },\n  TESTING: { label: 'Проверка', className: 'testing' },\n  READY: { label: 'Готово', className: 'ready' },\n};\n\nconst EVENT_LABELS = {")
+          replace_once('admin/commercial-catalog.js', "  return `<div class=\"commercial-product\" data-commercial-product=\"${escapeHtml(product.key)}\" data-free=\"${product.isFree}\" data-saleable=\"${product.isSaleable}\">", "  const readiness = READINESS[product.readiness] ? product.readiness : 'NOT_READY';\n  return `<div class=\"commercial-product\" data-commercial-product=\"${escapeHtml(product.key)}\" data-free=\"${product.isFree}\" data-saleable=\"${product.isSaleable}\" data-readiness=\"${escapeHtml(readiness)}\">")
+          replace_once('admin/commercial-catalog.js', "    </div>\n    <div class=\"commercial-product-price\">", "    </div>\n    <label class=\"commercial-readiness ${escapeHtml(READINESS[readiness].className)}\" data-commercial-readiness-wrap>\n      <span class=\"commercial-readiness-dot\" aria-hidden=\"true\"></span>\n      <select class=\"admin-input\" data-commercial-readiness aria-label=\"Работоспособность ${escapeHtml(product.name)}\">\n        ${Object.entries(READINESS).map(([value, item]) => `<option value=\"${value}\"${value === readiness ? ' selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}\n      </select>\n    </label>\n    <div class=\"commercial-product-price\">")
+          replace_once('admin/commercial-catalog.js', "    row.querySelectorAll('[data-commercial-member]').forEach(bindMember);\n    row.querySelector('[data-commercial-save]')?.addEventListener('click', async (event) => {", "    row.querySelectorAll('[data-commercial-member]').forEach(bindMember);\n    row.querySelector('[data-commercial-readiness]')?.addEventListener('change', (event) => {\n      const next = READINESS[event.currentTarget.value] ? event.currentTarget.value : 'NOT_READY';\n      row.dataset.readiness = next;\n      const wrap = row.querySelector('[data-commercial-readiness-wrap]');\n      if (wrap) wrap.className = `commercial-readiness ${READINESS[next].className}`;\n    });\n    row.querySelector('[data-commercial-save]')?.addEventListener('click', async (event) => {")
+          replace_once('admin/commercial-catalog.js', "          body: JSON.stringify({ priceMinor: Math.round(Math.max(0, priceRub) * 100), isFree: row.dataset.free === 'true', isSaleable: row.dataset.saleable === 'true', ...(row.querySelector('[data-commercial-member]') ? { includedProductKeys } : {}) }),", "          body: JSON.stringify({ priceMinor: Math.round(Math.max(0, priceRub) * 100), isFree: row.dataset.free === 'true', isSaleable: row.dataset.saleable === 'true', readiness: row.dataset.readiness || 'NOT_READY', ...(row.querySelector('[data-commercial-member]') ? { includedProductKeys } : {}) }),")
+
+          css = Path('admin/admin.css')
+          css_text = css.read_text()
+          if '/* Commercial product readiness: exactly three workability states. */' not in css_text:
+              css.write_text(css_text + """\n\n/* Commercial product readiness: exactly three workability states. */\n.commercial-readiness{display:flex;align-items:center;gap:8px;min-width:138px}.commercial-readiness-dot{width:10px;height:10px;flex:0 0 10px;border-radius:50%;background:#a33d32}.commercial-readiness.testing .commercial-readiness-dot{background:#c49a32}.commercial-readiness.ready .commercial-readiness-dot{background:#3f7a4c}.commercial-readiness select{min-width:112px;border:1px solid #d8d0c9;border-radius:9px;padding:8px 9px;background:#fff;color:#292522}\n""")
+
+          migration = Path('server/prisma/migrations/20261102103000_commercial_product_readiness/migration.sql')
+          migration.parent.mkdir(parents=True, exist_ok=True)
+          migration.write_text('''ALTER TABLE "CommercialProduct" ADD COLUMN "readiness" TEXT;\n\nUPDATE "CommercialProduct"\nSET "readiness" = 'READY'\nWHERE "readiness" IS NULL;\n\nALTER TABLE "CommercialProduct" ALTER COLUMN "readiness" SET NOT NULL;\nALTER TABLE "CommercialProduct" ALTER COLUMN "readiness" SET DEFAULT 'NOT_READY';\nALTER TABLE "CommercialProduct"\n  ADD CONSTRAINT "CommercialProduct_readiness_check"\n  CHECK ("readiness" IN ('NOT_READY', 'TESTING', 'READY'));\n''')
+
+          Path('scripts/check-commercial-readiness-architecture.mjs').write_text('''import fs from 'node:fs';\n\nconst read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');\nconst catalog = read('server/src/saas-admin/commercial-catalog.service.ts');\nconst tenant = read('server/src/saas-admin/commercial-tenant.service.ts');\nconst access = read('server/src/saas-access/saas-access.service.ts');\nconst admin = read('admin/commercial-catalog.js');\nconst migration = read('server/prisma/migrations/20261102103000_commercial_product_readiness/migration.sql');\n\nconst requireText = (source, needle, message) => { if (!source.includes(needle)) throw new Error(message); };\nrequireText(catalog, "type ProductReadiness = 'NOT_READY' | 'TESTING' | 'READY'", 'CommercialProduct must have exactly three readiness states');\nrequireText(catalog, 'productReadiness(input.readiness, current.readiness)', 'Catalog update must persist readiness');\nrequireText(tenant, "product.readiness === 'READY'", 'Tenant capability selection must require READY products');\nrequireText(access, "source: 'PRODUCT_NOT_READY'", 'Final access resolution must mask non-ready products');\nrequireText(access, 'productReadinessByCapability()', 'Final access resolution must read product readiness');\nfor (const status of ['NOT_READY', 'TESTING', 'READY']) requireText(admin, `${status}:`, `Admin must expose ${status}`);\nrequireText(migration, "SET DEFAULT 'NOT_READY'", 'New products must default to NOT_READY');\nrequireText(migration, 'UPDATE "CommercialProduct"', 'Existing products must be backfilled for compatibility');\nconsole.log('Commercial readiness architecture: PASS');\n''')
+
+          pkg_path = Path('package.json')
+          pkg = json.loads(pkg_path.read_text())
+          hook = 'node scripts/check-commercial-readiness-architecture.mjs'
+          if hook not in pkg['scripts']['check']:
+              anchor = 'node scripts/check-notification-event-coverage.mjs'
+              if anchor not in pkg['scripts']['check']:
+                  raise SystemExit('Root check anchor not found')
+              pkg['scripts']['check'] = pkg['scripts']['check'].replace(anchor, f'{hook} && {anchor}', 1)
+          pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+          node --check admin/commercial-catalog.js
+          node scripts/check-commercial-readiness-architecture.mjs
+          npm ci --prefix server
+          npm run build --prefix server
+          git diff --check
+
+      - name: Commit readiness gate
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add admin/admin.css admin/commercial-catalog.js server/src/saas-admin/commercial-catalog.service.ts server/src/saas-admin/commercial-tenant.service.ts server/src/saas-access/saas-access.service.ts server/prisma/migrations/20261102103000_commercial_product_readiness/migration.sql scripts/check-commercial-readiness-architecture.mjs package.json
+          git diff --cached --check
+          git commit -m 'Add three-state commercial readiness gate [skip ci]'
+          git push origin HEAD:staging
