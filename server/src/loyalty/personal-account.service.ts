@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 import {
   listPersonalAccountsWithActivity,
   personalAccountSnapshot,
+  resolvePersonalAccountIdentity,
   updatePersonalAccountSettingsWith,
 } from './personal-account-state';
 
@@ -14,6 +15,16 @@ function objectValue(value: unknown): Record<string, any> {
 
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function money(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(Math.max(0, number) * 100) / 100 : 0;
+}
+
+function percent(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number * 100) / 100)) : 100;
 }
 
 function isRetryableTransactionError(error: unknown) {
@@ -75,6 +86,34 @@ export class PersonalAccountService {
 
   settleDebt(tenantId: string, debtId: string, body: unknown) {
     return this.finance.settleDebt(tenantId, debtId, body);
+  }
+
+  async endUserSummary(tenantId: string, personKeyValue: string) {
+    const identity = await resolvePersonalAccountIdentity(this.prisma, tenantId, personKeyValue).catch(() => null);
+    if (!identity?.primaryKey) return null;
+    const personKey = identity.primaryKey;
+    const rows = await this.prisma.$queryRaw<Array<{
+      balance: unknown;
+      spendLimitPercent: unknown;
+      visibleToEndUser: boolean;
+    }>>`
+      SELECT "balance", "spendLimitPercent", "visibleToEndUser"
+      FROM "LoyaltyPersonalAccount"
+      WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row || !row.visibleToEndUser) return null;
+    const debts = await this.prisma.$queryRaw<Array<{ total: unknown }>>`
+      SELECT COALESCE(SUM("outstandingAmount"), 0) AS "total"
+      FROM "LoyaltyPersonalAccountDebt"
+      WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
+    `;
+    return {
+      balance: money(row.balance),
+      debtTotal: money(debts[0]?.total),
+      spendLimitPercent: percent(row.spendLimitPercent),
+    };
   }
 
   async endUserView(tenantId: string, personKey: string) {
