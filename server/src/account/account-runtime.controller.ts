@@ -160,6 +160,25 @@ export class AccountRuntimeController {
   }
 
   @UseGuards(AccountGuard)
+  @Get('contacts/:tenantId/record-context')
+  contactRecordContext(
+    @Param('tenantId') tenantId: string,
+    @Query('workplace') workplace = '',
+  ) {
+    return this.records.contactContext(tenantId, workplace);
+  }
+
+  @UseGuards(AccountGuard)
+  @Post('contacts/:tenantId/records')
+  createContactRecord(
+    @Param('tenantId') tenantId: string,
+    @Req() request: AccountRequest,
+    @Body() body: Record<string, any>,
+  ) {
+    return this.records.create(tenantId, request.accountAuth!.accountId, body || {});
+  }
+
+  @UseGuards(AccountGuard)
   @Get('professionals/:tenantId/record-context')
   recordContext(
     @Param('tenantId') tenantId: string,
