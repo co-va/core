@@ -3,9 +3,9 @@ import type { Request } from 'express';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { WebPushService } from '../notification/web-push.service';
-import { AccountGuard } from '../online-booking/account.guard';
 import { BookingPdnConsentGuard } from '../online-booking/booking-pdn-consent.guard';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
+import { AccountGuard } from './account.guard';
 import { AccountRecordService } from './account-record.service';
 
 type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: string } };
