@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import { AccountGuard as CanonicalAccountGuard } from '../account/account.guard';
-import { AccountGuard as LegacyAccountGuard } from '../online-booking/account.guard';
+import { AccountGuard as AccountApiGuard } from '../account/account.guard';
+import { AccountGuard as BookingAccountGuard } from '../online-booking/account.guard';
 import { AccountUnreadService } from './account-unread.service';
 
 type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: string } };
@@ -26,8 +26,8 @@ abstract class AccountUnreadRoutes {
 }
 
 @Controller('account')
-@UseGuards(CanonicalAccountGuard)
-export class CanonicalAccountUnreadController extends AccountUnreadRoutes {
+@UseGuards(AccountApiGuard)
+export class AccountApiUnreadController extends AccountUnreadRoutes {
   constructor(unread: AccountUnreadService) {
     super(unread);
   }
@@ -52,7 +52,7 @@ export class CanonicalAccountUnreadController extends AccountUnreadRoutes {
 }
 
 @Controller('online-booking/account')
-@UseGuards(LegacyAccountGuard)
+@UseGuards(BookingAccountGuard)
 export class AccountUnreadController extends AccountUnreadRoutes {
   constructor(unread: AccountUnreadService) {
     super(unread);
