@@ -163,9 +163,10 @@ export class AccountRuntimeController {
   @Get('contacts/:tenantId/record-context')
   contactRecordContext(
     @Param('tenantId') tenantId: string,
+    @Req() request: AccountRequest,
     @Query('workplace') workplace = '',
   ) {
-    return this.records.contactContext(tenantId, workplace);
+    return this.records.contactContext(tenantId, request.accountAuth!.accountId, workplace);
   }
 
   @UseGuards(AccountGuard)
@@ -175,7 +176,7 @@ export class AccountRuntimeController {
     @Req() request: AccountRequest,
     @Body() body: Record<string, any>,
   ) {
-    return this.records.create(tenantId, request.accountAuth!.accountId, body || {});
+    return this.records.createContact(tenantId, request.accountAuth!.accountId, body || {});
   }
 
   @UseGuards(AccountGuard)
