@@ -3,6 +3,7 @@ import { json, static as serveStatic, urlencoded } from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { resolve } from 'node:path';
 import { AppModule } from './app.module';
+import { stagingPreviewMiddleware } from './staging-preview';
 
 const API_HOST = 'api.va-tools.ru';
 const ADMIN_HOST = 'admin.va-tools.ru';
@@ -64,6 +65,8 @@ async function bootstrap() {
     index: 'index.html',
     fallthrough: true,
   });
+
+  app.use(stagingPreviewMiddleware);
 
   app.use((request: Request, response: Response, next: NextFunction) => {
     if (!['GET', 'HEAD'].includes(request.method)) return next();
