@@ -4,6 +4,7 @@ import { AccountDocumentService } from '../document-registry/account-document.se
 import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { WebPushService } from '../notification/web-push.service';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
+import { AccountContactRecordService } from './account-contact-record.service';
 import { AccountGuard } from './account.guard';
 import { AccountRecordService } from './account-record.service';
 
@@ -14,6 +15,7 @@ export class AccountRuntimeController {
   constructor(
     private readonly account: OnlineBookingService,
     private readonly records: AccountRecordService,
+    private readonly contactRecords: AccountContactRecordService,
     private readonly accountDocuments: AccountDocumentService,
     private readonly emailVerification: EmailVerificationService,
     private readonly webPush: WebPushService,
@@ -166,7 +168,7 @@ export class AccountRuntimeController {
     @Req() request: AccountRequest,
     @Query('workplace') workplace = '',
   ) {
-    return this.records.contactContext(tenantId, request.accountAuth!.accountId, workplace);
+    return this.contactRecords.context(tenantId, request.accountAuth!.accountId, workplace);
   }
 
   @UseGuards(AccountGuard)
@@ -176,7 +178,7 @@ export class AccountRuntimeController {
     @Req() request: AccountRequest,
     @Body() body: Record<string, any>,
   ) {
-    return this.records.createContact(tenantId, request.accountAuth!.accountId, body || {});
+    return this.contactRecords.create(tenantId, request.accountAuth!.accountId, body || {});
   }
 
   @UseGuards(AccountGuard)
