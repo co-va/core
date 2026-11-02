@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const service = fs.readFileSync('server/src/online-booking/account-calendar.service.ts', 'utf8');
 const controller = fs.readFileSync('server/src/online-booking/account-calendar.controller.ts', 'utf8');
 const toolService = fs.readFileSync('server/src/saas-access/account-tool.service.ts', 'utf8');
-const adminTools = fs.readFileSync('admin/account-tools.js', 'utf8');
+const adminTools = fs.readFileSync('admin/commercial-catalog.js', 'utf8');
 const adminIndex = fs.readFileSync('admin/index.html', 'utf8');
 const integrations = fs.readFileSync('online-booking/calendar-integrations.js', 'utf8');
 const journal = fs.readFileSync('journal/день.js', 'utf8');
@@ -39,8 +39,12 @@ assert.match(controller, /assertProviderEnabled\('google'\)/, 'Google connect mu
 assert.match(controller, /assertProviderEnabled\('yandex'\)/, 'Yandex connect must be guarded by the admin tool switch');
 assert.match(integrations, /status\?\.google\?\.platformEnabled/, 'Google MiniCard must be rendered only when enabled by admin');
 assert.match(integrations, /status\?\.yandex\?\.platformEnabled/, 'Yandex MiniCard must be rendered only when enabled by admin');
-assert.match(adminIndex, /account-tools\.js/, 'admin shell must load end-user tool controls');
-assert.match(adminTools, /Конечные пользователи/, 'admin must expose a distinct end-user tools section');
-assert.match(adminTools, /type="checkbox" data-account-tool/, 'end-user tools must be controlled by checkboxes');
+
+assert.doesNotMatch(adminIndex, /account-tools\.js/, 'admin shell must not load a second end-user tools overlay');
+assert.match(adminTools, /records:\s*\[/, 'admin tools must expose the Records application as its own area');
+assert.match(adminTools, /account\.calendar\.google/, 'Google Calendar availability must live inside Records tools');
+assert.match(adminTools, /account\.calendar\.yandex/, 'Yandex Calendar availability must live inside Records tools');
+assert.match(adminTools, /\/saas-admin\/account-tools/, 'unified tools view must keep the real account-tools API control');
+assert.match(adminTools, /data-account-tool=/, 'Records integration controls must remain directly controllable in Admin');
 
 console.log('account calendar sync architecture: PASS');

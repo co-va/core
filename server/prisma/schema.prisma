@@ -835,6 +835,12 @@ model PlatformNotice {
   @@index([platformAccountId, readAt, createdAt])
 }
 
+model AdminToolReadiness {
+  key       String   @id
+  status    String   @default("NOT_READY")
+  updatedAt DateTime @updatedAt
+}
+
 model InventoryItem {
   id                String   @id @default(cuid())
   tenantId          String

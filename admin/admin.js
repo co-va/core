@@ -1,6 +1,7 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
+import { renderAdminTools } from './commercial-catalog.js';
 
 const app = document.querySelector('#admin-app');
 const state = {
@@ -469,15 +470,7 @@ function tenantRow(item) {
 
 function renderCapabilities() {
   setActiveSection('Инструменты');
-  const content = app.querySelector('[data-content]');
-  const groups = new Map();
-  state.capabilities.forEach((item) => {
-    if (!groups.has(item.groupKey)) groups.set(item.groupKey, []);
-    groups.get(item.groupKey).push(item);
-  });
-  content.innerHTML = `
-    <div class="admin-heading"><div><h2>Инструменты</h2><p>Единый каталог функций. Здесь ничего не выдаётся пользователю — индивидуальный доступ меняется в его карточке.</p></div></div>
-    ${[...groups.entries()].map(([group, items]) => `<section class="admin-card" style="padding:18px;margin-bottom:14px"><strong>${escapeHtml(group)}</strong>${items.map((item) => `<div class="admin-capability"><div>${escapeHtml(item.name)}<small>${escapeHtml(item.key)}</small></div><span>${item.valueType === 'LIMIT' ? 'лимит' : 'ON / OFF'}</span></div>`).join('')}</section>`).join('')}`;
+  renderAdminTools(app.querySelector('[data-content]'));
 }
 
 function formatAdminMoment(value, fallback = '—') {
