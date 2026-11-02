@@ -70,6 +70,20 @@ export class AccountRecordService {
     return this.account.getContext(tenantId, workplace);
   }
 
+  async contactContext(tenantId: string, workplace = '') {
+    const source = await this.account.getContext(tenantId, workplace) as Record<string, any>;
+    return {
+      ...source,
+      procedures: (Array.isArray(source?.procedures) ? source.procedures : []).map((procedure: any) => ({
+        ...procedure,
+        workplaces: (Array.isArray(procedure?.workplaces) ? procedure.workplaces : []).map((assignment: any) => {
+          const { bookingPrice, ...rest } = assignment || {};
+          return { ...rest, price: assignment?.price ?? bookingPrice ?? {} };
+        }),
+      })),
+    };
+  }
+
   async create(tenantId: string, accountId: string, body: Record<string, any>) {
     if (!(await this.canRecord(tenantId, accountId))) {
       throw new ForbiddenException('Запись недоступна');
