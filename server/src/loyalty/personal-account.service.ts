@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 import {
   listPersonalAccountsWithActivity,
   personalAccountSnapshot,
+  resolvePersonalAccountIdentity,
   updatePersonalAccountSettingsWith,
 } from './personal-account-state';
 
@@ -14,6 +15,16 @@ function objectValue(value: unknown): Record<string, any> {
 
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function money(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(Math.max(0, number) * 100) / 100 : 0;
+}
+
+function percent(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number * 100) / 100)) : 100;
 }
 
 function isRetryableTransactionError(error: unknown) {
@@ -75,6 +86,46 @@ export class PersonalAccountService {
 
   settleDebt(tenantId: string, debtId: string, body: unknown) {
     return this.finance.settleDebt(tenantId, debtId, body);
+  }
+
+  async endUserSummary(tenantId: string, personKeyValue: string) {
+    const identity = await resolvePersonalAccountIdentity(this.prisma, tenantId, personKeyValue).catch(() => null);
+    if (!identity?.primaryKey) return null;
+    const personKey = identity.primaryKey;
+    const rows = await this.prisma.$queryRaw<Array<{
+      balance: unknown;
+      spendLimitPercent: unknown;
+      visibleToEndUser: boolean;
+    }>>`
+      SELECT "balance", "spendLimitPercent", "visibleToEndUser"
+      FROM "LoyaltyPersonalAccount"
+      WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row || !row.visibleToEndUser) return null;
+    const [movements, debts] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "LoyaltyPersonalAccountMovement"
+        WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
+      `,
+      this.prisma.$queryRaw<Array<{ count: bigint; total: unknown }>>`
+        SELECT COUNT(*)::bigint AS "count", COALESCE(SUM("outstandingAmount"), 0) AS "total"
+        FROM "LoyaltyPersonalAccountDebt"
+        WHERE "tenantId" = ${tenantId} AND "personKey" = ${personKey}
+      `,
+    ]);
+    const movementCount = Number(movements[0]?.count || 0);
+    const debtCount = Number(debts[0]?.count || 0);
+    const balance = money(row.balance);
+    const debtTotal = money(debts[0]?.total);
+    if (!movementCount && !debtCount && balance <= 0.009 && debtTotal <= 0.009) return null;
+    return {
+      balance,
+      debtTotal,
+      spendLimitPercent: percent(row.spendLimitPercent),
+    };
   }
 
   async endUserView(tenantId: string, personKey: string) {
