@@ -110,9 +110,10 @@ assert.match(creationFlow, /data-modal-close.*handleBackControl/s, 'Shared Q hea
 assert.match(recordService, /bookedByMatch/, 'End-user Journal must include the same Record when the account booked it for another person');
 assert.match(recordService, /record\.group.*participants/s, 'End-user Journal visibility must include non-primary group participants');
 
-assert.match(accountRuntimeController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)[\s\S]*@Post\('professionals\/:tenantId\/records'\)[\s\S]*this\.records\.create\(tenantId, request\.accountAuth!\.accountId/, 'Canonical Account Record route must preserve Account + PDN guards and delegate to the shared runtime');
+assert.match(accountRuntimeController, /@UseGuards\(AccountGuard\)[\s\S]*@Post\('professionals\/:tenantId\/records'\)[\s\S]*this\.records\.create\(tenantId, request\.accountAuth!\.accountId/, 'Canonical Account Record route must preserve Account authentication and delegate record access to the shared runtime');
 assert.match(bookingController, /@UseGuards\(AccountGuard, BookingPdnConsentGuard\)[\s\S]*@Post\(':tenantId\/requests'\)[\s\S]*this\.accountRecords\.create\(tenantId, request\.accountAuth!\.accountId/, 'Legacy App Booking route must preserve Account + PDN guards and delegate to the shared runtime');
-assert.match(accountRecordService, /async create\(tenantId: string, accountId: string[\s\S]*if \(participantMode\)[\s\S]*this\.bookingFlow\.confirm\(tenantId,[\s\S]*this\.account\.createRequest\(tenantId, accountId/, 'Single- and multi-participant writes must have one shared Account Record owner');
+assert.match(accountRecordService, /async canRecord\(tenantId: string, accountId: string\)[\s\S]*accountTenantLink\.findUnique[\s\S]*hasActivePdnConsent/, 'Canonical Account Record runtime must own one record-access marker for both target listing and writes');
+assert.match(accountRecordService, /async create\(tenantId: string, accountId: string[\s\S]*canRecord\(tenantId, accountId\)[\s\S]*if \(participantMode\)[\s\S]*this\.bookingFlow\.confirm\(tenantId,[\s\S]*this\.account\.createRequest\(tenantId, accountId/, 'Single- and multi-participant writes must have one shared Account Record owner behind the record-access marker');
 assert.match(accountRecordService, /source: 'online-booking'/, 'Shared Account Record runtime must preserve the proven Booking source semantics during server extraction');
 
 const contextStart = bookingService.indexOf('async getContext');
