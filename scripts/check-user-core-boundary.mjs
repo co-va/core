@@ -41,11 +41,9 @@ assert.match(
   'PROJECT_STATE must keep the User/Core frontend boundary explicit',
 );
 
-// Stage 3 freezes the known legacy User frontend that still exists in Core.
-// Stage 4 deletes these files and removes this temporary legacy list instead of expanding it.
+// Stage 3 froze the known legacy User frontend that still existed in Core.
+// Stage 4 removes entries from this temporary list only as each bounded cleanup slice completes.
 const frozenLegacyUserFrontend = new Map([
-  ['user.html', '07f31f7f4e46a351b22ff5edbe9be2a6bb2b20ec'],
-  ['online-booking/user-entry.js', '00a50a7664d32f3abcacd0aea7884e27ea522742'],
   ['online-booking/account-runtime.js', '4265718da411fc8dfb28edc6f93482b6fbbffc9b'],
 ]);
 
@@ -114,4 +112,4 @@ assert.deepEqual(
   `End User App belongs to co-va/user. Core may keep backend/API/server/Prisma/DB only.\n${forbidden.join('\n')}`,
 );
 
-console.log('user/core boundary check: OK (legacy User frontend frozen pending Stage 4 removal)');
+console.log('user/core boundary check: OK (remaining legacy User frontend frozen pending Stage 4 removal)');
