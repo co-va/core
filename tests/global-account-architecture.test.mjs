@@ -9,8 +9,6 @@ const guard = fs.readFileSync('server/src/online-booking/account.guard.ts', 'utf
 const booking = fs.readFileSync('server/src/online-booking/online-booking.service.ts', 'utf8');
 const auxiliaryState = fs.readFileSync('server/src/auxiliary-state/auxiliary-state.service.ts', 'utf8');
 const communication = fs.readFileSync('server/src/communication/communication.service.ts', 'utf8');
-const bookingUi = fs.readFileSync('online-booking/booking.js', 'utf8');
-const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 const consentController = fs.readFileSync('server/src/online-booking/booking-consent.controller.ts', 'utf8');
 const controller = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
 const reset = fs.readFileSync('server/scripts/reset-test-account-before-global-migration.mjs', 'utf8');
@@ -75,10 +73,6 @@ const investmentDecisionEnd = booking.indexOf('async globalAccountRelationships'
 const investmentDecisionBlock = booking.slice(investmentDecisionStart, investmentDecisionEnd);
 assert.match(investmentDecisionBlock, /participantStatus\) !== 'pending'/, 'Investment proposal can be decided only once');
 assert.match(investmentDecisionBlock, /finance\.investment\.raise\.access/, 'Investment acceptance must respect the administrator capability');
-assert.match(accountShell, /data-account-investment=/, 'Accepted investment must appear as an Entity Card in the end-user Overview');
-assert.match(accountShell, /data-account-investment-chat/, 'Linked investment must expose the shared Header D chat');
-assert.match(accountShell, /v2Section\('История', accountInvestmentHistory\(investment\)\)/, 'Linked investor card must expose the same investment history');
-assert.match(accountShell, /await getGlobalAccountRelationships\(\)/, 'Accepting an investment must refresh the linked projection immediately');
 assert.match(auxiliaryState, /protectInvestmentAgreements/, 'Auxiliary investment writes must preserve server-owned agreement state');
 assert.match(auxiliaryState, /previousStatus === 'accepted'[\s\S]*entity\.investmentTerms = clone\(previousTerms\)/, 'Accepted investment terms must remain immutable without blocking unrelated auxiliary writes');
 assert.match(auxiliaryState, /participantStatus: participantAccountId \? 'pending' : ''/, 'A new linked investment proposal must start pending instead of self-accepting');
@@ -91,21 +85,6 @@ assert.doesNotMatch(deleteRelationshipBlock, /bookingRequest\.delete|records\.de
 
 assert.match(consentController, /accountTenantLink\.upsert/, 'A tenant relationship must be persisted only after tenant consent becomes active');
 assert.match(consentController, /consentState\?\.pdnActive/, 'Tenant relationship must be gated by active tenant PDN');
-assert.match(bookingUi, /export async function renderGlobalClient\(/, 'Client host must have a global Account entry flow');
-assert.match(bookingUi, /state\.platformOnlyLegal = state\.identityDestination === 'profile'/, 'Profile entry must keep platform terms separate from tenant legal documents');
-assert.match(bookingUi, /onExitToAccount/, 'Booking context must be escapable back to the global client profile');
-assert.match(accountShell, /export async function renderGlobalAccount\(/, 'Global Account must reuse the shared client shell');
-assert.match(accountShell, /async function renderGlobalMessages\(/, 'Global Account must expose the shared chat list');
-assert.match(accountShell, /data-account-open-chat-root/, 'Global Account header must expose chat directly');
-assert.match(accountShell, /state\.accountSelectedChatTenantId/, 'Global Account must own selected chat contact state directly');
-assert.doesNotMatch(accountShell, /onOpenChat: callbacks\.onOpenChat/, 'Global Account chat must not bridge into a second tenant account UI');
-assert.doesNotMatch(bookingUi, /params\.set\('entry', 'chat'\)/, 'Global chat must not navigate through a tenant chat route');
-const bookingHeaderStart = bookingUi.indexOf('function bookingHeaderMarkup');
-const bookingHeaderEnd = bookingUi.indexOf('function bookingActionForStep', bookingHeaderStart);
-const bookingHeader = bookingUi.slice(bookingHeaderStart, bookingHeaderEnd);
-assert.match(bookingHeader, /d:\s*null/, 'Online booking itself must keep Header D absent on booking steps.');
-assert.match(accountShell, /async function renderGlobalMessages\(/, 'Chat remains owned by the single global Account chat surface.');
-assert.doesNotMatch(bookingHeader, /data-booking-flow-chat|kind:\s*'chat'/, 'Online booking must not restore a parallel Chat control inside booking Header.');
-
+// User UI assertions belong to the independent User repository.
 
 console.log('global account architecture tests passed');

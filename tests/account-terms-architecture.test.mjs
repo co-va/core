@@ -6,7 +6,6 @@ const accountDocuments = fs.readFileSync('server/src/document-registry/account-d
 const registry = fs.readFileSync('server/src/document-registry/document-registry.service.ts', 'utf8');
 const bookingService = fs.readFileSync('server/src/online-booking/online-booking.service.ts', 'utf8');
 const bookingController = fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8');
-const bookingUi = fs.readFileSync('online-booking/booking.js', 'utf8');
 const accountApi = fs.readFileSync('core/account/index.js', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/check.yml', 'utf8');
 
@@ -52,18 +51,6 @@ assert.match(bookingController, /@Post\(':tenantId\/account\/platform-terms'\)/)
 assert.match(accountApi, /export async function getAccountTerms\(/);
 assert.match(accountApi, /export async function getAccountPlatformState\(/);
 assert.match(accountApi, /export async function acceptAccountTerms\(/);
-
-assert.match(bookingUi, /function renderLegalSticker\(/);
-assert.doesNotMatch(bookingUi, /function renderAccountTerms\(/);
-assert.doesNotMatch(bookingUi, /function renderTenantAgreements\(/);
-assert.match(bookingUi, /accountTerms: currentAccountTermsFact\(state\)/);
-assert.match(bookingUi, /const platformState = await getAccountPlatformState\(state\.tenantId\)/);
-assert.match(bookingUi, /const consentState = await refreshTenantConsentState\(state\)/);
-assert.ok(
-  bookingUi.indexOf('const platformState = await getAccountPlatformState(state.tenantId)')
-    < bookingUi.indexOf('const consentState = await refreshTenantConsentState(state)'),
-  'Platform terms must be checked before Tenant consent',
-);
 
 assert.match(workflow, /online-booking\/account-terms/);
 assert.match(workflow, /accountTerms:JSON\.parse/);

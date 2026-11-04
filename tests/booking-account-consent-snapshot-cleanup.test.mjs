@@ -6,7 +6,6 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 const bookingService = read('server/src/online-booking/online-booking.service.ts');
 const bookingConsent = read('server/src/online-booking/booking-consent.controller.ts');
 const pdnGuard = read('server/src/online-booking/booking-pdn-consent.guard.ts');
-const bookingUi = read('online-booking/booking.js');
 const peopleUi = read('core/people/people.js');
 const consentCache = read('settings/documents/consents.js');
 const documentRuntime = read('core/runtime/tenant-document-archive.js');
@@ -19,9 +18,6 @@ assert.doesNotMatch(bookingService, /consents:\s*true/);
 assert.doesNotMatch(pdnGuard, /derivedConsents/);
 assert.doesNotMatch(pdnGuard, /account\.updateMany/);
 assert.doesNotMatch(pdnGuard, /PrismaService/);
-assert.doesNotMatch(bookingUi, /account\.consents/);
-assert.doesNotMatch(bookingUi, /state\.account\?\.consents/);
-assert.doesNotMatch(bookingUi, /updateAccount\(state\.tenantId, \{ consents \}\)/);
 
 // Account registration is independent from Tenant consent. The dedicated controller writes canonical Tenant consent facts.
 assert.doesNotMatch(bookingService, /acceptAccountConsents/);
