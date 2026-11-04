@@ -5,7 +5,6 @@ const environment = readFileSync(new URL('../core/environment.js', import.meta.u
 const serverMain = readFileSync(new URL('../server/src/main.ts', import.meta.url), 'utf8');
 const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8');
 const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const userHtml = readFileSync(new URL('../user.html', import.meta.url), 'utf8');
 const landingHtml = readFileSync(new URL('../landing/index.html', import.meta.url), 'utf8');
 const buildPages = readFileSync(new URL('../scripts/build-pages.mjs', import.meta.url), 'utf8');
 const iconRenderer = readFileSync(new URL('../scripts/render-pwa-icons.mjs', import.meta.url), 'utf8');
@@ -42,7 +41,9 @@ assert.match(serverMain, /USER_PWA_ASSETS/);
 assert.match(serverMain, /pwa\/user\/manifest\.webmanifest/);
 assert.match(serverMain, /pwa\/user\/app-icon\.svg/);
 assert.match(serverMain, /publicBookingPath/);
-assert.match(serverMain, /sendFile\(resolve\(siteRoot, 'user\.html'\)\)/);
+assert.doesNotMatch(serverMain, /sendFile\(resolve\(siteRoot, 'user\.html'\)\)/, 'Core must not serve the detached User application');
+assert.equal(existsSync(new URL('../user.html', import.meta.url)), false, 'Core must not own the User HTML entry');
+assert.equal(existsSync(new URL('../online-booking/user-entry.js', import.meta.url)), false, 'Core must not own the User application entry');
 
 assert.doesNotMatch(landingHtml, /book\.va-tools\.ru/);
 assert.match(landingHtml, /https:\/\/app\.va-tools\.ru\/invite\//);
@@ -52,11 +53,6 @@ assert.match(indexHtml, /<base href="\/">/);
 assert.match(indexHtml, /theme-color" content="#2F3338"/);
 assert.match(indexHtml, /rel="manifest" href="\/manifest\.webmanifest"/);
 assert.match(indexHtml, /rel="apple-touch-icon" sizes="192x192" href="\/icon-192\.png"/);
-
-assert.match(userHtml, /<base href="\/">/);
-assert.match(userHtml, /<title>Запись<\/title>/);
-assert.match(userHtml, /src="online-booking\/user-entry\.js"/);
-assert.doesNotMatch(userHtml, /src="core\.js"/);
 
 assert.equal(appManifest.name, 'Кабинет');
 assert.equal(appManifest.short_name, 'Кабинет');

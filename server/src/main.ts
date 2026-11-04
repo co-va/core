@@ -146,7 +146,7 @@ async function bootstrap() {
       if (bookingQuery) return response.sendFile(resolve(siteRoot, 'booking.html'));
 
       if (request.path === '/' || request.path === '/user.html') {
-        return response.sendFile(resolve(siteRoot, 'user.html'));
+        return response.status(404).send('Not Found');
       }
 
       return staticSite(request, response, () => {
