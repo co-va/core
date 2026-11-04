@@ -114,6 +114,10 @@ const retiredUserFrontend = [
   'online-booking/password-settings.js',
   'online-booking/personal-account-data.js',
   'online-booking/personal-data.js',
+  'core/account/booking-targets.js',
+  'core/account/email.js',
+  'core/notifications/web-push.js',
+  'core/notifications/account-push-api.js',
   'ui/booking/account-mobile.css',
   'tests/account-shell-runtime-browser.html',
 ];

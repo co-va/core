@@ -961,16 +961,16 @@ jobs:
           expect_status "app.va-tools.ru" "/" "200"
           expect_status "app.va-tools.ru" "/core.js" "200"
           expect_contains "app.va-tools.ru" "/" "<title>Рабочее пространство</title>"
-          expect_contains "app.va-tools.ru" "/core.js" "app-content"
+          expect_contains "app.va-tools.ru" "/core.js" "renderAuthenticated(currentAccount)"
 
           expect_status "user.va-tools.ru" "/" "404"
           expect_status "user.va-tools.ru" "/user.html" "404"
           expect_status "user.va-tools.ru" "/?booking=smoke" "200"
-          expect_status "user.va-tools.ru" "/online-booking/booking.js" "200"
+          expect_status "user.va-tools.ru" "/online-booking/access.js" "200"
           expect_status "user.va-tools.ru" "/online-booking/model.js" "200"
           expect_status "user.va-tools.ru" "/core/time/zone.js" "200"
           expect_contains "user.va-tools.ru" "/?booking=smoke" "online-booking/booking-entry.js"
-          expect_contains "user.va-tools.ru" "/online-booking/booking.js" "renderOnlineBooking"
+          expect_contains "user.va-tools.ru" "/online-booking/access.js" "renderAccess"
           expect_contains "user.va-tools.ru" "/online-booking/model.js" "zonedDateTimeParts"
           expect_contains "user.va-tools.ru" "/core/time/zone.js" "Intl.DateTimeFormat"
 
@@ -984,7 +984,7 @@ jobs:
               && curl -fsS http://localhost:8080/core.js >/dev/null 2>&1 \
               && curl -fsS http://localhost:8080/core/environment.js >/dev/null 2>&1 \
               && curl -fsS http://localhost:8080/service-worker.js >/dev/null 2>&1 \
-              && curl -fsS http://localhost:8080/core/notifications/web-push.js >/dev/null 2>&1 \
+              && curl -fsS http://localhost:8080/core/platform-notices.js >/dev/null 2>&1 \
               && curl -fsS http://localhost:8080/api/health >/dev/null 2>&1; then
               break
             fi
