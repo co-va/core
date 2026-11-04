@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { PrismaService } from '../prisma.service';
@@ -23,28 +23,40 @@ export class AccountGuard implements CanActivate {
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
     if (!token) throw new UnauthorizedException('Требуется вход в аккаунт');
 
+    let payload: AccountToken;
     try {
-      const payload = await this.jwt.verifyAsync<AccountToken>(token);
-      if (payload.kind !== 'account' || !payload.sub) throw new Error('invalid account token');
-      const account = await this.prisma.account.findUnique({
-        where: { id: payload.sub },
-        select: { profileData: true, createdAt: true },
-      });
-      const profileData = account?.profileData && typeof account.profileData === 'object' && !Array.isArray(account.profileData)
-        ? account.profileData as Record<string, unknown>
-        : {};
-      if (!account || String(profileData.deletedAt || '').trim()) throw new Error('inactive account token');
-
-      request.accountAuth = {
-        accountId: payload.sub,
-        tenantId: String(request.params?.tenantId || '').trim(),
-      };
-      if (Date.now() - account.createdAt.getTime() <= 30 * 60 * 1000) {
-        void this.emailVerification.requestAccount(payload.sub).catch(() => undefined);
-      }
-      return true;
+      payload = await this.jwt.verifyAsync<AccountToken>(token);
     } catch {
       throw new UnauthorizedException('Войдите в аккаунт заново');
     }
+    if (payload.kind !== 'account' || !payload.sub) {
+      throw new UnauthorizedException('Войдите в аккаунт заново');
+    }
+
+    let account;
+    try {
+      account = await this.prisma.account.findUnique({
+        where: { id: payload.sub },
+        select: { profileData: true, createdAt: true },
+      });
+    } catch {
+      throw new ServiceUnavailableException('Не удалось проверить аккаунт. Повторите попытку');
+    }
+
+    const profileData = account?.profileData && typeof account.profileData === 'object' && !Array.isArray(account.profileData)
+      ? account.profileData as Record<string, unknown>
+      : {};
+    if (!account || String(profileData.deletedAt || '').trim()) {
+      throw new UnauthorizedException('Войдите в аккаунт заново');
+    }
+
+    request.accountAuth = {
+      accountId: payload.sub,
+      tenantId: String(request.params?.tenantId || '').trim(),
+    };
+    if (Date.now() - account.createdAt.getTime() <= 30 * 60 * 1000) {
+      void this.emailVerification.requestAccount(payload.sub).catch(() => undefined);
+    }
+    return true;
   }
 }
