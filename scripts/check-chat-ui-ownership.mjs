@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 
 const profileChat = fs.readFileSync('chat/chat.js', 'utf8');
-const accountChat = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 const chatApi = fs.readFileSync('core/communications/chat.js', 'utf8');
 const controller = fs.readFileSync('server/src/communication/communication.controller.ts', 'utf8');
 const dispatch = fs.readFileSync('server/src/communication/communication-dispatch.service.ts', 'utf8');
@@ -30,11 +29,6 @@ expect(!profileChat.includes('function bindMessageAttachments') && !profileChat.
 expect(!profileChat.includes('<style>') && !profileChat.includes("document.createElement('style')"), 'Professional Chat must not own local styles.');
 expect(!settingsSource.includes("['communications', 'Уведомления'") && !fs.existsSync('settings/communications/communications.js'), 'Duplicate Notifications E and its retired settings UI must stay removed.');
 
-expect(accountChat.includes('v2Header({') && accountChat.includes('v2Shell'), 'End-user Chat must use the shared V2 H + Z shell.');
-expect(accountChat.includes("from '../core/chat/runtime.js'") && accountChat.includes('mountChatThread(') && accountChat.includes('mountChatList('), 'End-user Chat must use the neutral Core Chat runtime.');
-expect(!accountChat.includes('bindMessageAttachments(form)') && !accountChat.includes('messageThread(') && !accountChat.includes('messageComposer('), 'End-user account shell must not own Chat thread/composer behavior.');
-expect(!accountChat.includes('accountBottomNavigation') && !accountChat.includes('bindBottomNavigation'), 'End-user V2 Chat must not restore bottom navigation.');
-expect(!accountChat.includes('<style>') && !accountChat.includes("document.createElement('style')"), 'End-user Chat must not own local styles.');
 
 expect(chatRuntime.includes('export function mountChatList') && chatRuntime.includes('export function mountChatThread'), 'Core Chat runtime must own shared list/thread behavior.');
 expect(chatRuntime.includes("kind: 'mode'") && chatRuntime.includes('data-chat-mode-switch'), 'Messenger Z1 D must exit Messenger mode.');
@@ -72,7 +66,6 @@ expect(chatApi.includes('attachments = []') && chatApi.includes('body, attachmen
 expect(controller.includes('attachments?: unknown'), 'Professional chat controller must accept attachments.');
 expect(dispatch.includes('Array.isArray(input?.attachments)') && dispatch.includes("channel: 'IN_APP'") && dispatch.includes('attachments,'), 'Professional media messages must persist into the shared thread.');
 expect(profileChat.includes("application/pdf") === false, 'Professional Chat feature file must not duplicate attachment MIME rules owned by ui/chat.');
-expect(accountChat.includes("application/pdf") === false, 'End-user Chat feature file must not duplicate attachment MIME rules owned by ui/chat.');
 expect(chatUi.includes("application/pdf"), 'Shared ui/chat must own PDF attachment acceptance.');
 
 expect(v2Ui.includes('v2Header') && v2Ui.includes('v2Shell'), 'V2 H + Z geometry must be owned by shared ui/v2.');
