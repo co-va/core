@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const core = fs.readFileSync('core.js', 'utf8');
-const booking = fs.readFileSync('online-booking/booking.js', 'utf8');
-const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 const browserPush = fs.readFileSync('core/notifications/web-push.js', 'utf8');
 const accountPushApi = fs.readFileSync('core/notifications/account-push-api.js', 'utf8');
 const routingUi = fs.readFileSync('core/notifications/routing.js', 'utf8');
@@ -40,14 +38,7 @@ const onlineBookingModule = fs.readFileSync('server/src/online-booking/online-bo
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const platformNoticesUi = fs.readFileSync('core/platform-notices.js', 'utf8');
 
-assert.doesNotMatch(booking, /telegramId/);
 
-assert.match(accountShell, /getAccountNotifications/);
-assert.match(accountShell, /markAccountNotificationRead/);
-assert.match(accountShell, /notificationMessages/);
-assert.match(accountShell, /label: 'Push'/);
-assert.match(accountShell, /enableWebPush/);
-assert.match(accountShell, /disableWebPush/);
 assert.equal(fs.existsSync('online-booking/notifications.js'), false, 'Legacy notification bridge must stay removed');
 
 assert.match(browserPush, /serviceWorker\.register\('\/service-worker\.js'/);

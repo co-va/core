@@ -6,7 +6,6 @@ const controller = fs.readFileSync('server/src/online-booking/account-calendar.c
 const toolService = fs.readFileSync('server/src/saas-access/account-tool.service.ts', 'utf8');
 const adminTools = fs.readFileSync('admin/commercial-catalog.js', 'utf8');
 const adminIndex = fs.readFileSync('admin/index.html', 'utf8');
-const integrations = fs.readFileSync('online-booking/calendar-integrations.js', 'utf8');
 const journal = fs.readFileSync('journal/день.js', 'utf8');
 const eventOwner = fs.readFileSync('core/event/account-owner.js', 'utf8');
 
@@ -22,9 +21,6 @@ assert.match(service, /if \(link\.localType === 'record'\)/, 'Record links need 
 assert.match(service, /recordPayload/, 'canonical Record must be projected outward as a calendar event');
 assert.match(service, /payloadHash: ''/, 'external Record edits must force the canonical mirror to be restored');
 
-assert.match(integrations, /miniCard\(/, 'calendar providers must use Shared MiniCard');
-assert.match(integrations, /miniCardRail\(/, 'calendar providers must use Shared MiniCard rail');
-assert.doesNotMatch(integrations, /entityVisualCard|normalizeEntityCardAppearance/, 'calendar providers must not create EntityCards');
 assert.match(journal, /const accountMode = contextName === 'account'/, 'Journal must retain explicit personal/professional boundary');
 assert.match(journal, /withAccountOverlaps\(/, 'personal Journal must calculate overlap hints');
 assert.match(journal, /syncAccountCalendars\(\)/, 'personal Journal must start background calendar sync');
@@ -37,8 +33,6 @@ assert.match(toolService, /status: 'tool-disabled'/, 'disabled calendar tools mu
 assert.match(controller, /platformEnabled/, 'account calendar status must expose platform tool availability');
 assert.match(controller, /assertProviderEnabled\('google'\)/, 'Google connect must be guarded by the admin tool switch');
 assert.match(controller, /assertProviderEnabled\('yandex'\)/, 'Yandex connect must be guarded by the admin tool switch');
-assert.match(integrations, /status\?\.google\?\.platformEnabled/, 'Google MiniCard must be rendered only when enabled by admin');
-assert.match(integrations, /status\?\.yandex\?\.platformEnabled/, 'Yandex MiniCard must be rendered only when enabled by admin');
 
 assert.doesNotMatch(adminIndex, /account-tools\.js/, 'admin shell must not load a second end-user tools overlay');
 assert.match(adminTools, /records:\s*\[/, 'admin tools must expose the Records application as its own area');

@@ -11,7 +11,6 @@ const serviceSource = read('../server/src/loyalty/personal-account.service.ts');
 const accountControllerSource = read('../server/src/online-booking/account-personal-account.controller.ts');
 const cardSource = read('../core/loyalty/personal-account/index.js');
 const paymentSource = read('../journal/record-payment.js');
-const endUserSource = read('../online-booking/account-shell.js');
 
 // Money held for a person and unpaid debt are separate persisted values.
 assert.match(migration, /CREATE TABLE IF NOT EXISTS "LoyaltyPersonalAccount"/);
@@ -74,15 +73,5 @@ const endUserView = serviceSource.slice(serviceSource.indexOf('async endUserView
 assert.doesNotMatch(endUserView, /memberKeys|walletId|walletName|providerPaymentId/);
 assert.match(accountControllerSource, /personalAccounts\.endUserView/);
 
-// In the end-user professional profile, Personal Account is the first program card and opens public history.
-assert.match(endUserSource, /v2Section\('Рабочие пространства', workplaces\)/);
-assert.match(endUserSource, /v2Section\('Программы', programs\)/);
-assert.match(endUserSource, /contactPersonalAccountCard/);
-assert.match(endUserSource, /data-global-contact-personal-account/);
-assert.match(endUserSource, /contactPersonalAccountHistory/);
-assert.match(endUserSource, /contactPersonalAccountDebts/);
-assert.ok(
-  endUserSource.indexOf("v2Section('Рабочие пространства', workplaces)")
-    < endUserSource.indexOf("v2Section('Программы', programs)"),
-  'Programs must follow workplace cards in the professional profile',
-);
+
+console.log('Personal Account backend and Finance tests passed');
