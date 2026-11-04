@@ -4,7 +4,6 @@ import fs from 'node:fs';
 const core = fs.readFileSync('core.js', 'utf8');
 const booking = fs.readFileSync('online-booking/booking.js', 'utf8');
 const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
-const accountRuntime = fs.readFileSync('online-booking/account-runtime.js', 'utf8');
 const browserPush = fs.readFileSync('core/notifications/web-push.js', 'utf8');
 const accountPushApi = fs.readFileSync('core/notifications/account-push-api.js', 'utf8');
 const routingUi = fs.readFileSync('core/notifications/routing.js', 'utf8');
@@ -41,10 +40,7 @@ const onlineBookingModule = fs.readFileSync('server/src/online-booking/online-bo
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const platformNoticesUi = fs.readFileSync('core/platform-notices.js', 'utf8');
 
-assert.match(core, /function bookingRouteQuery\(params\)/);
 assert.doesNotMatch(booking, /telegramId/);
-assert.doesNotMatch(accountRuntime, /bindAccountTelegramEntry|resolveAccountTelegramEntry|tg_entry|telegram-entry/, 'Account Push runtime must stay independent from retired Telegram entry');
-assert.doesNotMatch(accountRuntime, /mountBookingNotifications/);
 
 assert.match(accountShell, /getAccountNotifications/);
 assert.match(accountShell, /markAccountNotificationRead/);
@@ -71,24 +67,6 @@ assert.match(browserPush, /deleteGlobalWebPushSubscription/);
 assert.doesNotMatch(browserPush, /getWebPushConfiguration/);
 assert.doesNotMatch(browserPush, /saveWebPushSubscription/);
 assert.doesNotMatch(browserPush, /deleteWebPushSubscription/);
-assert.match(accountRuntime, /startGlobalAccountPushRuntime/);
-const accountPushRuntimeSource = accountRuntime.slice(
-  accountRuntime.indexOf('function pushSetupModal'),
-  accountRuntime.indexOf('const disposeGlobalAccountPushRuntime'),
-);
-assert.doesNotMatch(accountPushRuntimeSource, /tenantId/);
-assert.doesNotMatch(accountPushRuntimeSource, /getGlobalAccountRelationships/);
-assert.match(accountPushRuntimeSource, /shouldOfferWebPushSetup/);
-assert.match(accountPushRuntimeSource, /syncWebPush\(\)/);
-assert.match(accountPushRuntimeSource, /enableWebPush\(\{\s*strict:\s*false\s*\}\)/);
-assert.doesNotMatch(accountPushRuntimeSource, /declineWebPushSetup\(\)/);
-assert.match(accountPushRuntimeSource, /data-account-push-enable/);
-assert.match(accountPushRuntimeSource, /Уведомления на телефоне/);
-assert.match(accountPushRuntimeSource, /Не сейчас/);
-assert.match(accountPushRuntimeSource, /data-account-push-later[\s\S]*synchronized = true;[\s\S]*layer\.remove\(\)/);
-assert.match(accountPushRuntimeSource, /variant: 'x'/);
-assert.match(accountPushRuntimeSource, /xRole: 'action'/);
-assert.match(accountPushRuntimeSource, /Notification\.permission === 'granted'/);
 assert.match(serviceWorker, /addEventListener\('push'/);
 assert.match(serviceWorker, /addEventListener\('notificationclick'/);
 

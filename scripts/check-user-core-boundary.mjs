@@ -41,11 +41,8 @@ assert.match(
   'PROJECT_STATE must keep the User/Core frontend boundary explicit',
 );
 
-// Stage 3 froze the known legacy User frontend that still existed in Core.
-// Stage 4 removes entries from this temporary list only as each bounded cleanup slice completes.
-const frozenLegacyUserFrontend = new Map([
-  ['online-booking/account-runtime.js', '4265718da411fc8dfb28edc6f93482b6fbbffc9b'],
-]);
+// Legacy User entry runtimes have been removed from Core.
+const frozenLegacyUserFrontend = new Map([]);
 
 for (const [file, expectedBlob] of frozenLegacyUserFrontend) {
   assert.equal(existsSync(resolve(root, file)), true, `${file} is a frozen legacy User frontend surface until Stage 4 removes it`);
@@ -112,4 +109,4 @@ assert.deepEqual(
   `End User App belongs to co-va/user. Core may keep backend/API/server/Prisma/DB only.\n${forbidden.join('\n')}`,
 );
 
-console.log('user/core boundary check: OK (remaining legacy User frontend frozen pending Stage 4 removal)');
+console.log('user/core boundary check: OK (legacy User entry runtimes removed)');

@@ -43,8 +43,8 @@ assert.doesNotMatch(bookingSource, /workplaces\.map\(\s*\(item\)\s*=>\s*copyLink
 
 assert.match(accountSource, /export async function resolveBookingPublicRoute/);
 assert.match(accountSource, /\/online-booking\/route\//);
-assert.match(coreSource, /await bookingRoute\(\)/);
-assert.match(coreSource, /resolveBookingPublicRoute/);
+assert.doesNotMatch(coreSource, /await bookingRoute\(\)/);
+assert.doesNotMatch(coreSource, /renderGlobalClientRoot/);
 assert.doesNotMatch(coreSource, /params\.get\('booking'\)/, 'Retired query-string booking route must not return');
 assert.match(controllerSource, /@Get\('owner\/route'\)/);
 assert.match(controllerSource, /@Get\('route\/:profileSlug'\)/);
