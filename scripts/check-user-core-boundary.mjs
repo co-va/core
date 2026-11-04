@@ -103,6 +103,26 @@ for (const name of readdirSync(root, { withFileTypes: true })) {
   }
 }
 
+const retiredUserFrontend = [
+  'core/account-transition-runtime.js',
+  'online-booking/account-runtime.js',
+  'online-booking/account-shell.js',
+  'online-booking/booking.js',
+  'online-booking/calendar-integrations.js',
+  'online-booking/consent-settings.js',
+  'online-booking/deposit-data.js',
+  'online-booking/password-settings.js',
+  'online-booking/personal-account-data.js',
+  'online-booking/personal-data.js',
+  'ui/booking/account-mobile.css',
+  'tests/account-shell-runtime-browser.html',
+];
+for (const path of retiredUserFrontend) {
+  if (existsSync(resolve(root, path))) {
+    forbidden.push(`${path}: retired User application frontend must remain absent from Core`);
+  }
+}
+
 assert.deepEqual(
   forbidden,
   [],
