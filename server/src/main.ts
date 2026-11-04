@@ -14,12 +14,6 @@ const LANDING_WWW_HOST = 'www.va-tools.ru';
 const TEMP_APP_HOST = 'va-app-temp-volokovykh.msk1.amvera.tech';
 const TEMP_USER_PREVIEW_ORIGIN = 'https://user-volokovykh.msk1.amvera.tech';
 
-const USER_PWA_ASSETS: Record<string, string> = {
-  '/manifest.webmanifest': 'pwa/user/manifest.webmanifest',
-  '/app-icon.svg': 'pwa/user/app-icon.svg',
-  '/icon-192.png': 'pwa/user/icon-192.png',
-};
-
 function normalizeOrigin(value: string) {
   try {
     return new URL(value).origin;
@@ -134,14 +128,6 @@ async function bootstrap() {
     }
 
     if (host === USER_HOST) {
-      const userPwaAsset = USER_PWA_ASSETS[request.path];
-      if (userPwaAsset) {
-        if (request.path === '/manifest.webmanifest') {
-          response.type('application/manifest+json');
-        }
-        return response.sendFile(resolve(siteRoot, userPwaAsset));
-      }
-
       const bookingQuery = request.path === '/' && typeof request.query.booking === 'string' && String(request.query.booking).trim();
       if (bookingQuery) return response.sendFile(resolve(siteRoot, 'booking.html'));
 

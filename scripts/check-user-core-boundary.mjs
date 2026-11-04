@@ -119,6 +119,8 @@ const retiredUserFrontend = [
   'core/notifications/web-push.js',
   'core/notifications/account-push-api.js',
   'ui/booking/account-mobile.css',
+  'pwa/user/app-icon.svg',
+  'pwa/user/manifest.webmanifest',
   'tests/account-shell-runtime-browser.html',
 ];
 for (const path of retiredUserFrontend) {
