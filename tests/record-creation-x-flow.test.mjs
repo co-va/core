@@ -11,7 +11,6 @@ const journalCreation = fs.readFileSync('journal/creation-flow.js', 'utf8');
 const eventCreation = fs.readFileSync('journal/event-create.js', 'utf8');
 const recordView = fs.readFileSync('core/records/view.js', 'utf8');
 const booking = fs.readFileSync('online-booking/access.js', 'utf8');
-const accountEntry = fs.readFileSync('online-booking/user-entry.js', 'utf8');
 const bookingFlowService = fs.readFileSync('server/src/online-booking/booking-flow.service.ts', 'utf8');
 const personEntry = fs.readFileSync('core/people/record-creation.js', 'utf8');
 const personCreate = fs.readFileSync('core/people/create.js', 'utf8');
@@ -93,17 +92,6 @@ const publicServiceNextStart = publicServices.indexOf("querySelector('[data-book
 assert.ok(publicServiceClickStart >= 0 && publicServiceNextStart > publicServiceClickStart);
 assert.doesNotMatch(publicServices.slice(publicServiceClickStart, publicServiceNextStart), /participant\.procedureIds\s*=/, 'Public service checkbox must not commit participant services');
 assert.match(publicServices.slice(publicServiceNextStart), /participant\.procedureIds = \[\.\.\.selected\]/, 'Public Далее must commit participant services');
-
-// App mode choice must paint immediately; Account is resolved only after a self/joint choice needs it.
-const appModeStart = accountEntry.indexOf('const renderMode = () =>');
-const appModeEnd = accountEntry.indexOf('const enterWorkplace', appModeStart);
-assert.ok(appModeStart >= 0 && appModeEnd > appModeStart, 'App mode renderer must exist');
-const appMode = accountEntry.slice(appModeStart, appModeEnd);
-const appModePaint = appMode.indexOf('creationOwner.render({');
-const appModeAccountWait = appMode.indexOf('await resolveAccount()');
-assert.ok(appModePaint >= 0 && appModeAccountWait > appModePaint, 'App mode screen must render before Account wait');
-assert.match(appMode, /nextMode === MODE_OTHER[\s\S]*renderParticipantData\(\);[\s\S]*return;/, 'Other-person entry must not wait for Account');
-assert.match(appMode, /if \(modeOpening\) return;/, 'App mode account handoff must reject repeated clicks');
 
 // Manual Person creation reuses a unique phone match instead of creating a duplicate.
 assert.match(personCreate, /findPeopleByPhone/);

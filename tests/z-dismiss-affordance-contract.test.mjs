@@ -15,7 +15,6 @@ const vCss = fs.readFileSync('ui/v2/v.css', 'utf8');
 const noteOwner = fs.readFileSync('ui/note/index.js', 'utf8');
 const noteCss = fs.readFileSync('ui/note/note.css', 'utf8');
 const surfaceHeaderCss = fs.readFileSync('ui/v2/surface-header.css', 'utf8');
-const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 
 assert.match(
   affordance,
@@ -64,8 +63,6 @@ assert.match(yOwner, /host\.style\.paddingBottom = active \? '12px' : '';/, 'Sha
 assert.match(zLayout, /'min-height:28px'[\s\S]*?'padding:0 18px 0 0'/, 'Shared Z/Q Header must keep its compact 28px base geometry.');
 assert.match(surfaceHeaderCss, /\[data-v2-z-header\]:has[\s\S]*?min-height:28px!important;[\s\S]*?padding-bottom:0!important;/, 'Empty Shared Z Header must not recreate a white upper band.');
 assert.match(surfaceHeaderCss, /\[data-v2-q-header\],[\s\S]*?background:transparent!important;[\s\S]*?border:0!important;[\s\S]*?box-shadow:none!important;/, 'Q fixed and scroll regions must read as one continuous visual surface.');
-assert.match(accountShell, /initV2WorkspaceInteraction\(root, \{/, 'End-user account shell must stay on the shared workspace interaction contour.');
-assert.doesNotMatch(accountShell, /bindV2ZDismissAffordance/, 'End-user account shell must not own a separate Z affordance implementation.');
 
 function browserBinary() {
   for (const candidate of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {

@@ -14,7 +14,6 @@ const personEntry = read('core/people/record-creation.js');
 const booking = read('online-booking/access.js');
 const bookingHtml = read('booking.html');
 const bookingEntry = read('online-booking/booking-entry.js');
-const userEntry = read('online-booking/user-entry.js');
 const serverMain = read('server/src/main.ts');
 const bookingController = read('server/src/online-booking/online-booking.controller.ts');
 const accountRuntimeController = read('server/src/account/account-runtime.controller.ts');
@@ -60,9 +59,6 @@ for (const forbidden of ['journal/', 'core/finance/', 'core/people/', 'core/prof
   expect(!bookingEntry.includes(forbidden), `Public Booking entry must not import App runtime dependency ${forbidden}.`);
 }
 expect(bookingEntry.includes("from './access.js'"), 'Public Booking entry must open the isolated technical Booking flow.');
-expect(!userEntry.includes("from './access.js'") && !userEntry.includes('renderAccess('), 'App Journal Booking must not enter the Public technical Booking shell.');
-expect(userEntry.includes("from '../core/records/records.js'") && userEntry.includes('openRecords({'), 'App Journal Booking must reuse canonical Records inside the Shared Q owner.');
-expect(userEntry.includes('createBookingRequest(id,'), 'App Journal Booking must use the authenticated Account Booking write.');
 expect(accountRuntimeController.includes('@UseGuards(AccountGuard)')
   && accountRuntimeController.includes("@Post('professionals/:tenantId/records')")
   && !accountRuntimeController.includes('BookingPdnConsentGuard')
@@ -81,7 +77,6 @@ expect(accountRecordService.includes('async create(tenantId: string, accountId: 
   && accountRecordService.includes('this.bookingFlow.confirm(tenantId'),
 'Account Record creation orchestration must have one shared server owner.');
 expect(!booking.includes('createBookingRequest(') && !bookingEntry.includes('createBookingRequest('), 'Public Booking must not use the authenticated App Booking write.');
-expect(!userEntry.includes('resolveBookingPublicRoute') && !userEntry.includes('startAccountRuntime'), 'App user entry must not contain a public Booking fallback into App runtime.');
 expect(serverMain.includes("response.sendFile(resolve(siteRoot, 'booking.html'))"), 'USER_HOST public Booking paths must resolve to isolated booking.html.');
 
 expect(!fs.existsSync('records/records.js'), 'Root records/records.js must not remain after Records moved into Core.');

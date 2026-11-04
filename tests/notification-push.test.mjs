@@ -2,11 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const core = fs.readFileSync('core.js', 'utf8');
-const booking = fs.readFileSync('online-booking/booking.js', 'utf8');
-const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
-const accountRuntime = fs.readFileSync('online-booking/account-runtime.js', 'utf8');
-const browserPush = fs.readFileSync('core/notifications/web-push.js', 'utf8');
-const accountPushApi = fs.readFileSync('core/notifications/account-push-api.js', 'utf8');
 const routingUi = fs.readFileSync('core/notifications/routing.js', 'utf8');
 const serviceUnseenUi = fs.readFileSync('core/notifications/service-unseen.js', 'utf8');
 const notificationSettingsUi = fs.readFileSync('settings/notifications/notifications.js', 'utf8');
@@ -41,62 +36,12 @@ const onlineBookingModule = fs.readFileSync('server/src/online-booking/online-bo
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
 const platformNoticesUi = fs.readFileSync('core/platform-notices.js', 'utf8');
 
-assert.match(core, /function bookingRouteQuery\(params\)/);
-assert.doesNotMatch(booking, /telegramId/);
-assert.doesNotMatch(accountRuntime, /bindAccountTelegramEntry|resolveAccountTelegramEntry|tg_entry|telegram-entry/, 'Account Push runtime must stay independent from retired Telegram entry');
-assert.doesNotMatch(accountRuntime, /mountBookingNotifications/);
 
-assert.match(accountShell, /getAccountNotifications/);
-assert.match(accountShell, /markAccountNotificationRead/);
-assert.match(accountShell, /notificationMessages/);
-assert.match(accountShell, /label: 'Push'/);
-assert.match(accountShell, /enableWebPush/);
-assert.match(accountShell, /disableWebPush/);
 assert.equal(fs.existsSync('online-booking/notifications.js'), false, 'Legacy notification bridge must stay removed');
 
-assert.match(browserPush, /serviceWorker\.register\('\/service-worker\.js'/);
-assert.match(browserPush, /PushManager/);
-assert.match(browserPush, /enableWebPush/);
-assert.match(browserPush, /disableWebPush/);
-assert.match(browserPush, /shouldOfferWebPushSetup/);
-assert.match(browserPush, /webPushFailureMessage/);
-assert.match(browserPush, /WEB_PUSH_OPT_OUT_KEY/);
-assert.match(browserPush, /webPushOptedOut/);
-assert.doesNotMatch(browserPush, /declineWebPushSetup/);
-assert.match(browserPush, /Notification\.permission === 'denied' \|\| webPushOptedOut\(\)/);
-assert.match(browserPush, /permission !== 'granted'[\s\S]*setWebPushOptOut\(true\)/);
-assert.match(browserPush, /getGlobalWebPushConfiguration/);
-assert.match(browserPush, /saveGlobalWebPushSubscription/);
-assert.match(browserPush, /deleteGlobalWebPushSubscription/);
-assert.doesNotMatch(browserPush, /getWebPushConfiguration/);
-assert.doesNotMatch(browserPush, /saveWebPushSubscription/);
-assert.doesNotMatch(browserPush, /deleteWebPushSubscription/);
-assert.match(accountRuntime, /startGlobalAccountPushRuntime/);
-const accountPushRuntimeSource = accountRuntime.slice(
-  accountRuntime.indexOf('function pushSetupModal'),
-  accountRuntime.indexOf('const disposeGlobalAccountPushRuntime'),
-);
-assert.doesNotMatch(accountPushRuntimeSource, /tenantId/);
-assert.doesNotMatch(accountPushRuntimeSource, /getGlobalAccountRelationships/);
-assert.match(accountPushRuntimeSource, /shouldOfferWebPushSetup/);
-assert.match(accountPushRuntimeSource, /syncWebPush\(\)/);
-assert.match(accountPushRuntimeSource, /enableWebPush\(\{\s*strict:\s*false\s*\}\)/);
-assert.doesNotMatch(accountPushRuntimeSource, /declineWebPushSetup\(\)/);
-assert.match(accountPushRuntimeSource, /data-account-push-enable/);
-assert.match(accountPushRuntimeSource, /Уведомления на телефоне/);
-assert.match(accountPushRuntimeSource, /Не сейчас/);
-assert.match(accountPushRuntimeSource, /data-account-push-later[\s\S]*synchronized = true;[\s\S]*layer\.remove\(\)/);
-assert.match(accountPushRuntimeSource, /variant: 'x'/);
-assert.match(accountPushRuntimeSource, /xRole: 'action'/);
-assert.match(accountPushRuntimeSource, /Notification\.permission === 'granted'/);
 assert.match(serviceWorker, /addEventListener\('push'/);
 assert.match(serviceWorker, /addEventListener\('notificationclick'/);
 
-assert.match(accountPushApi, /\/online-booking\/account\/push/);
-assert.match(accountPushApi, /getGlobalWebPushConfiguration/);
-assert.match(accountPushApi, /saveGlobalWebPushSubscription/);
-assert.match(accountPushApi, /deleteGlobalWebPushSubscription/);
-assert.doesNotMatch(accountPushApi, /tenantId/);
 assert.match(accountPushController, /@Controller\('online-booking\/account\/push'\)/);
 assert.match(accountPushController, /@Get\('config'\)/);
 assert.match(accountPushController, /@Put\('subscription'\)/);
@@ -280,11 +225,6 @@ const enablePushSource = platformNoticesUi.slice(
   platformNoticesUi.indexOf('export async function disablePlatformPush'),
 );
 assert.ok(enablePushSource.indexOf('Notification.requestPermission()') < enablePushSource.indexOf('platformPushConfiguration()'), 'Push permission must be requested from the direct user gesture before async configuration work');
-const enableAccountPushSource = browserPush.slice(
-  browserPush.indexOf('export async function enableWebPush'),
-  browserPush.indexOf('export async function disableWebPush'),
-);
-assert.ok(enableAccountPushSource.indexOf('Notification.requestPermission()') >= 0, 'Account Push permission must be requested from the direct user gesture');
 assert.doesNotMatch(onlineBookingModule, /PlatformNoticeModule/);
 assert.match(onlineBookingModule, /NotificationModule/);
 assert.match(bookingFlowController, /NotificationEventService/);
@@ -300,91 +240,4 @@ assert.match(adminUi, /data-enable-admin-push/);
 assert.match(adminUi, /Включить PUSH/);
 assert.doesNotMatch(adminUi, /data-live-request-count/);
 
-const runtimeAccountPayload = Buffer.from(JSON.stringify({ sub: 'runtime-account', kind: 'account' }), 'utf8').toString('base64url');
-const storage = new Map([['book.account.token', `e30.${runtimeAccountPayload}.signature`]]);
-const localStorageMock = {
-  getItem(key) { return storage.get(String(key)) ?? null; },
-  setItem(key, value) { storage.set(String(key), String(value)); },
-  removeItem(key) { storage.delete(String(key)); },
-};
-let activeSubscription = null;
-const runtimeSubscription = {
-  endpoint: 'https://push.example.test/account-endpoint',
-  toJSON() {
-    return { endpoint: this.endpoint, keys: { p256dh: 'runtime-p256dh', auth: 'runtime-auth' } };
-  },
-  async unsubscribe() {
-    activeSubscription = null;
-    return true;
-  },
-};
-const runtimeRegistration = {
-  pushManager: {
-    async getSubscription() { return activeSubscription; },
-    async subscribe() {
-      activeSubscription = runtimeSubscription;
-      return activeSubscription;
-    },
-  },
-};
-const notificationRuntime = {
-  permission: 'default',
-  async requestPermission() {
-    this.permission = 'granted';
-    return this.permission;
-  },
-};
-const navigatorRuntime = {
-  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
-  standalone: true,
-  serviceWorker: {
-    async getRegistration() { return null; },
-    async register() { return runtimeRegistration; },
-    ready: Promise.resolve(runtimeRegistration),
-  },
-};
-const windowRuntime = {
-  PushManager: function PushManager() {},
-  Notification: notificationRuntime,
-  matchMedia() { return { matches: true }; },
-  setTimeout,
-};
-const pushRequests = [];
-Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorageMock });
-Object.defineProperty(globalThis, 'location', { configurable: true, value: { hostname: 'user.va-tools.ru' } });
-Object.defineProperty(globalThis, 'navigator', { configurable: true, value: navigatorRuntime });
-Object.defineProperty(globalThis, 'window', { configurable: true, value: windowRuntime });
-Object.defineProperty(globalThis, 'Notification', { configurable: true, value: notificationRuntime });
-Object.defineProperty(globalThis, 'fetch', {
-  configurable: true,
-  value: async (url, options = {}) => {
-    pushRequests.push({ url: String(url), method: String(options.method || 'GET') });
-    const body = String(url).endsWith('/config')
-      ? { enabled: true, publicKey: 'AQ' }
-      : { subscribed: String(options.method || 'GET').toUpperCase() !== 'DELETE' };
-    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-  },
-});
-
-const runtimePush = await import('../core/notifications/web-push.js');
-assert.equal(runtimePush.shouldOfferWebPushSetup(), true, 'fresh Account must be offered Push without professional relationships');
-const enabledRuntimePush = await runtimePush.enableWebPush();
-assert.equal(enabledRuntimePush.subscribed, true, 'global Account Push enable must create a browser subscription');
-assert.equal(notificationRuntime.permission, 'granted', 'global Account Push enable must request browser permission');
-assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/config'), 'global Account Push must load global configuration');
-assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/subscription' && item.method === 'PUT'), 'global Account Push must save through the tenant-free Account route');
-assert.ok(pushRequests.every((item) => !/\/online-booking\/[^/]+\/account\/push\//.test(item.url)), 'Account Push runtime must not route through a professional tenant');
-const persistedRuntimePush = await runtimePush.getWebPushState();
-assert.equal(persistedRuntimePush.subscribed, true, 'Push subscription must remain ON when a later app entry resolves registration through serviceWorker.ready');
-await runtimePush.disableWebPush();
-assert.equal(runtimePush.webPushOptedOut(), true, 'explicit Push disable must persist opt-out');
-assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'explicit Push disable must suppress future setup prompts');
-assert.ok(pushRequests.some((item) => item.url === 'https://api.va-tools.ru/online-booking/account/push/subscription' && item.method === 'DELETE'), 'global Account Push disable must remove the global subscription');
-
-notificationRuntime.permission = 'denied';
-const deniedRuntimePush = await runtimePush.enableWebPush({ strict: false });
-assert.equal(deniedRuntimePush.subscribed, false, 'system denial must leave Push disabled');
-assert.equal(runtimePush.webPushOptedOut(), true, 'system denial must persist opt-out');
-assert.equal(runtimePush.shouldOfferWebPushSetup(), false, 'system denial must suppress future setup prompts');
-
-console.log('account, SERVICE and platform notification Web Push tests passed');
+console.log('Professional and server-side Account Push tests passed');

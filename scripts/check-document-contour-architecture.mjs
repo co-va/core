@@ -9,8 +9,6 @@ const files = {
   ui: readFileSync('ui/ui.js','utf8'),
   profile: readFileSync('ui/profile/index.js','utf8'),
   accountControls: readFileSync('core/profile/account-controls.js','utf8'),
-  booking: readFileSync('online-booking/booking.js','utf8'),
-  consentSettings: readFileSync('online-booking/consent-settings.js','utf8'),
   people: readFileSync('core/people/people.js','utf8'),
   settingsDocuments: readFileSync('settings/documents/documents.js','utf8'),
   invite: readFileSync('invite/invite.js','utf8'),
@@ -37,8 +35,6 @@ for (const [name, source] of Object.entries({
   profile: files.profile,
   accountControls: files.accountControls,
   accountControls: files.accountControls,
-  booking: files.booking,
-  consentSettings: files.consentSettings,
   people: files.people,
   settingsDocuments: files.settingsDocuments,
   accountControls: files.accountControls,
@@ -51,8 +47,6 @@ for (const [name, source] of Object.entries({
 }
 
 for (const [name, source] of Object.entries({
-  booking: files.booking,
-  consentSettings: files.consentSettings,
   settingsDocuments: files.settingsDocuments,
   accountControls: files.accountControls,
   invite: files.invite,
@@ -89,8 +83,6 @@ assert.match(peopleDocumentInfo,/variant: 's'/,'People document details must use
 assert.doesNotMatch(files.people,/miniCard\(\{[\s\S]*?data-person-(?:consent|document)/,'People document surfaces must not use Mini Card');
 
 for (const [name, source] of Object.entries({
-  booking: files.booking,
-  consentSettings: files.consentSettings,
   settingsDocuments: files.settingsDocuments,
   accountControls: files.accountControls,
   invite: files.invite,

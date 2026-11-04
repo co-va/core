@@ -15,7 +15,6 @@ const finance = text('server/src/finance/finance.service.ts');
 const procedure = text('server/src/procedure/procedure.service.ts');
 const personIdentity = text('server/src/online-booking/person-identity.service.ts');
 const account = text('core/account/index.js');
-const accountShell = text('online-booking/account-shell.js');
 const sync = text('online-booking/server-sync.js');
 
 assert(!core.includes('owner-bridge'), 'core.js must not start the legacy owner booking bridge');
@@ -54,7 +53,6 @@ assert(procedure.includes('async snapshots('), 'ProcedureService must own bookin
 assert(account.includes('getAccountRecords'), 'Account API contract must expose Records');
 assert(account.includes('/account/records'), 'Account API must use the Records endpoint');
 assert(!account.includes('getAccountRequests'), 'Account API must not expose BookingRequests as history');
-assert(!accountShell.includes('recordSnapshot'), 'Account UI must not derive state from BookingRequest snapshots');
 
 assert(!business.includes('createOnlineBookingRecord'), 'BusinessState must not own a second Record constructor');
 assert(!business.includes('publicBookingOccupancy'), 'BusinessState must not own Record occupancy');

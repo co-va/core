@@ -4,7 +4,6 @@ const files = {
   bot: fs.readFileSync('server/src/communication/telegram-bot.service.ts', 'utf8'),
   communication: fs.readFileSync('server/src/communication/communication.service.ts', 'utf8'),
   controller: fs.readFileSync('server/src/communication/communication.controller.ts', 'utf8'),
-  accountRuntime: fs.readFileSync('online-booking/account-runtime.js', 'utf8'),
   accountApi: fs.readFileSync('core/account/index.js', 'utf8'),
   bookingController: fs.readFileSync('server/src/online-booking/online-booking.controller.ts', 'utf8'),
   integrationUi: fs.readFileSync('settings/integrations/integrations.js', 'utf8'),

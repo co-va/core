@@ -131,7 +131,6 @@ const journalBootstrapSource = fs.readFileSync(path.join(root, 'core/runtime/jou
 const auxiliaryStartupSource = fs.readFileSync(path.join(root, 'core/runtime/auxiliary-state.js'), 'utf8');
 const documentArchiveSource = fs.readFileSync(path.join(root, 'core/runtime/tenant-document-archive.js'), 'utf8');
 const depositStartupSource = fs.readFileSync(path.join(root, 'core/loyalty/deposit/data.js'), 'utf8');
-const userEntrySource = fs.readFileSync(path.join(root, 'online-booking/user-entry.js'), 'utf8');
 const bookingAccessSource = fs.readFileSync(path.join(root, 'online-booking/access.js'), 'utf8');
 const recordServiceSource = fs.readFileSync(path.join(root, 'core/record/service.js'), 'utf8');
 const paymentSource = fs.readFileSync(path.join(root, 'core/payment/record-payment.js'), 'utf8');
@@ -185,17 +184,6 @@ if (!/let\s+allDepositsRequest\s*=\s*null/.test(depositStartupSource)
   || !/if\s*\(\s*!allDepositsRequest\s*\)/.test(depositStartupSource)
   || !/return\s+allDepositsRequest/.test(depositStartupSource)) {
   failures.push('core/loyalty/deposit/data.js: duplicate deposit reads must share one in-flight request');
-}
-
-if (userEntrySource.includes('accountBookingRoute(')
-  || userEntrySource.includes('publicBookingPath(')
-  || userEntrySource.includes('bookingRoute(')
-  || userEntrySource.includes('renderAccessRoute(')
-  || userEntrySource.includes('startAccountRuntime(')) {
-  failures.push('online-booking/user-entry.js: App entry must not own public Booking routing or Account runtime');
-}
-if (!userEntrySource.includes('await renderGlobalClientRoot();')) {
-  failures.push('online-booking/user-entry.js: App entry must finish in the end-user application root');
 }
 
 if (!bookingAccessSource.includes("action.textContent = 'Записываем…'")

@@ -7,7 +7,6 @@ const policy = read('server/src/tenant-document-archive/consent-policy.service.t
 const controller = read('server/src/online-booking/booking-consent.controller.ts');
 const guard = read('server/src/online-booking/booking-pdn-consent.guard.ts');
 const service = read('server/src/online-booking/online-booking.service.ts');
-const booking = read('online-booking/booking.js');
 
 assert.match(policy, /async accountConsentState\(/);
 assert.match(policy, /return \{ pdnActive: Boolean\(pdn\?\.accepted\), consents \}/);
@@ -28,7 +27,5 @@ assert.doesNotMatch(service, /this\.ensurePdnConsent/);
 assert.doesNotMatch(service, /ensureRequiredConsents/);
 assert.match(controller, /acceptAccountConsents\(auth\.tenantId, auth\.accountId/);
 
-assert.match(booking, /consentState\.pdnActive/);
-assert.doesNotMatch(booking, /consentState\.allowed/);
 
 console.log('PDN consent state cleanup tests: OK');

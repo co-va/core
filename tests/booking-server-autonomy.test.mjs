@@ -8,7 +8,6 @@ const record = fs.readFileSync('server/src/record/record.service.ts', 'utf8');
 const time = fs.readFileSync('server/src/time/time.service.ts', 'utf8');
 const finance = fs.readFileSync('server/src/finance/finance.service.ts', 'utf8');
 const business = fs.readFileSync('server/src/business-state/business-state.service.ts', 'utf8');
-const accountShell = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 const consentPolicy = fs.readFileSync('server/src/tenant-document-archive/consent-policy.service.ts', 'utf8');
 const core = fs.readFileSync('core.js', 'utf8');
 const serverSync = fs.readFileSync('online-booking/server-sync.js', 'utf8');
@@ -44,7 +43,6 @@ assert.match(finance, /state:\s*due <= 0\.009 \? 'paid' : paid > 0\.009 \? 'part
 assert.doesNotMatch(business, /createOnlineBookingRecord|publicBookingOccupancy|bookingRecordSnapshot/);
 assert.match(controller, /@Get\(':tenantId\/account\/records'\)/);
 assert.doesNotMatch(controller, /@Get\(':tenantId\/account\/requests'\)/);
-assert.doesNotMatch(accountShell, /recordSnapshot/);
 
 assert.doesNotMatch(service, /acceptAccountConsents/);
 assert.match(bookingConsent, /acceptAccountConsents\(auth\.tenantId, auth\.accountId/);

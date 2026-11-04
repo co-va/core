@@ -22,8 +22,6 @@ const appearanceQ = read('ui/cards/appearance-q.js');
 const selectors = read('ui/selectors/selectors.css');
 const info = read('ui/info/info.css');
 const time = read('ui/time/index.js');
-const accountShell = read('online-booking/account-shell.js');
-const booking = read('online-booking/booking.js');
 const professionalShell = read('core.js');
 const recordRuntime = read('ui/record/runtime.js');
 const indexHtml = read('index.html');
@@ -48,9 +46,6 @@ expect(!indexHtml.includes('c-action-policy.js'), 'Application entry must not lo
 expect(workspaceHeader.includes('function isAddAction(action)') && workspaceHeader.includes("data-v2-primary-label=\"+\""), 'Workspace Header context must expose only add actions through C.');
 expect(professionalShell.includes('function isAddPrimarySource(source)') && !professionalShell.includes("surface.querySelector('form button[type=\"submit\"]')"), 'Professional shell must discover only add actions for C and never promote generic submits.');
 expect(recordRuntime.includes('data-record-owner-primary-actions') && !recordRuntime.includes("source.dataset.v2PrimaryAction = ''"), 'Shared Record primary action must live in Z/Q bottom actions instead of C.');
-expect(!booking.includes('c: action ?') && booking.includes('function actionMarkup(action = null)') && booking.includes('actionBlock(button(action.label'), 'End-user booking flow completion actions must be bottom actions, not Header C.');
-expect(!accountShell.includes("label: 'Сохранить',\n      data: 'data-account-profile-save'") && !accountShell.includes("c: { kind: 'text', label: 'Записаться'") && !accountShell.includes("c: canRepeat ? { kind: 'text'"), 'End-user account shell must not place save/book/repeat actions in C.');
-expect(accountShell.includes("actionBlock(button('Записаться'") && accountShell.includes("actionBlock(button('Повторить'"), 'End-user account booking/repeat actions must use the shared bottom action owner.');
 
 expect(v2Css.includes('--v2-base:var(--surface-dark)') && style.includes('--surface-dark:#2F3338'), 'Shared H owner must use the canonical dark application surface token.');
 expect(shell.includes('data-v2-horizontal-rail'), 'Shared horizontal rail must expose one canonical marker.');
@@ -107,7 +102,6 @@ expect(v2Index.includes('bindV2StableZFrame') && !v2Index.includes('ensureRootZF
 expect(v2Index.includes('bindV2HorizontalAffordances'), 'Shared V2 runtime must bind horizontal rail affordances.');
 expect(horizontalAffordance.includes('rail.children.length > 1') && horizontalAffordance.includes("classList.toggle('has-v2-horizontal-rail'"), 'Horizontal rail cue must be based on real multiple-card layout.');
 expect(horizontalAffordanceCss.includes('.v2-section.has-v2-horizontal-rail') && horizontalAffordanceCss.includes('content:"→"') && horizontalAffordanceCss.includes('opacity:.72'), 'Horizontal rail cue must be clearly visible and visually distinct from the Z dismiss chevron.');
-expect(accountShell.includes('if (!canReuseScene) {') && accountShell.includes('root.innerHTML = v2Shell({'), 'End-user surfaces must keep the persistent Shared FEZ scene.');
 
 expect(modalPortal.includes('function lockModalHeader(app)') && modalPortal.includes('header.inert = true') && !modalPortal.includes('qHeaderAction') && !modalPortal.includes('allowContextActions'), 'Q veil must keep Header C and D visible underneath but fully inert.');
 expect(

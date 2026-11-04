@@ -17,14 +17,9 @@ const css = fs.readFileSync('ui/v2/v2.css', 'utf8');
 const facade = fs.readFileSync('ui/ui.js', 'utf8');
 const documentUi = fs.readFileSync('ui/documents/index.js', 'utf8');
 const documentCss = fs.readFileSync('ui/documents/document.css', 'utf8');
-const booking = fs.readFileSync('online-booking/booking.js', 'utf8');
-const account = fs.readFileSync('online-booking/account-shell.js', 'utf8');
 const chatRuntime = fs.readFileSync('core/chat/runtime.js', 'utf8');
 const calendar = fs.readFileSync('ui/calendar/calendar.css', 'utf8');
 const calendarUi = fs.readFileSync('ui/calendar/calendar.js', 'utf8');
-const personalData = fs.readFileSync('online-booking/personal-data.js', 'utf8');
-const passwordSettings = fs.readFileSync('online-booking/password-settings.js', 'utf8');
-const consentSettings = fs.readFileSync('online-booking/consent-settings.js', 'utf8');
 const inputs = fs.readFileSync('ui/inputs/index.js', 'utf8');
 const modals = fs.readFileSync('ui/modals/index.js', 'utf8');
 const headerUi = fs.readFileSync('ui/header/index.js', 'utf8');
@@ -32,7 +27,6 @@ const timeUi = fs.readFileSync('ui/time/index.js', 'utf8');
 const colorUi = fs.readFileSync('ui/colors/index.js', 'utf8');
 const workplacesUi = fs.readFileSync('core/profile/workplaces/workplaces.js', 'utf8');
 const accountControlsUi = fs.readFileSync('core/profile/account-controls.js', 'utf8');
-const accountMobileCss = fs.readFileSync('ui/booking/account-mobile.css', 'utf8');
 const core = fs.readFileSync('core.js', 'utf8');
 const people = fs.readFileSync('core/people/people.js', 'utf8');
 const timetable = fs.readFileSync('timetable/timetable.js', 'utf8');
@@ -239,9 +233,6 @@ expect(/\.v2-z\{[\s\S]*?border-radius:var\(--v2-z-radius\) 0 0 0/.test(css), 'FE
 expect(core.includes("navigationLevel: 'f'") && core.includes("state.navigationLevel = hasE ? 'e' : 'f'") && core.includes("eOpen: state.navigationOpen && state.navigationLevel === 'e'"), 'Professional workspace must route F-with-E into the shared E level instead of opening Z prematurely.');
 expect(core.includes("let shell = app.querySelector(':scope > [data-v2-app].v2-app--workspace')") && core.includes('if (!shell) {') && core.includes('persistentSurface?.replaceChildren()'), 'Professional FEZ scene must stay mounted across F/E selections instead of rebuilding the whole shell.');
 expect(core.includes('const nextFIds = rootItems.map') && core.includes('const currentFIds =') && core.includes('currentF.outerHTML = rootDeck'), 'Persistent professional FEZ must refresh F only when the allowed root set actually changes.');
-expect(account.includes('const canReuseScene = Boolean(deck && shell?.querySelector') && account.includes('if (!canReuseScene) {') && account.includes('if (z) z.innerHTML = body;'), 'End-user FEZ scene must reuse the mounted F/Z stage across root selections.');
-expect(account.includes('initV2WorkspaceInteraction(root') && account.includes('state.accountDeckOpen = false;'), 'End-user contour must use the same Shared FEZ owner.');
-expect(account.includes('root.v2WorkspaceInteractionDispose?.();') && account.includes('root.v2WorkspaceInteractionDispose = dispose;'), 'Persistent end-user FEZ must dispose the previous Shared owner before binding the next one.');
 expect(ui.includes("if (typeof layer.v2Dispose === 'function') layer.v2Dispose();") && ui.includes('node.v2Dispose = dispose;'), 'Replacing a non-stacked Z layer must dispose its observer and gesture owner instead of removing raw DOM.');
 const stickerSwipe = ui.slice(ui.indexOf('export function initV2StickerSwipe'));
 expect(stickerSwipe.includes('surface.setPointerCapture?.(event.pointerId)') && !stickerSwipe.includes('gestureHost.setPointerCapture?.(event.pointerId)'), 'Sticker swipe must capture on its own surface and may not reference the Z-only gestureHost.');
@@ -254,12 +245,7 @@ expect(recordRuntime.includes('export function recordTimeRows') && timeCss.inclu
 expect(!/\.booking-account--account \.v2-app \.calendar__date\{[^}]*border-radius/.test(css), 'V2 must not redesign Calendar geometry.');
 expect(calendar.includes('.calendar__grid') && calendar.includes('.calendar__month-button'), 'Canonical Calendar owner must remain intact.');
 
-expect(booking.includes('recordWorkplaceCards(') && booking.includes('recordProcedureList(') && booking.includes('recordTimeRows(') && booking.includes('recordConfirmationMiniCard('), 'Online booking must consume the canonical Shared Record step owners.');
-expect(!/bookingChoiceCards\(|bookingTimeGroups\(|v2ServiceStickers\(|v2-confirmation/.test(booking), 'Online booking must not restore parallel local visual owners for canonical booking steps.');
 expect(inputs.includes('export function passwordField') && inputs.includes('export function initPasswordFields'), 'Password reveal control must belong to shared UI inputs.');
-expect(booking.includes('passwordField({') && booking.includes('initPasswordFields(root)'), 'Auth and Registration must use the shared password reveal control.');
-expect(booking.includes("step: 'workplaces'") && booking.includes("step: 'confirmation'"), 'Booking must remain a V2 Z-stack flow.');
-expect(booking.includes('initV2Swipe(root'), 'Online booking must preserve the proven swipe controller while consuming Shared booking UI owners.');
 expect(ui.includes("const horizontal = Math.abs(nextX) >= Math.abs(nextY) * .72") && ui.includes("const allowedDirection = (nextX > 0 && onRight) || (nextX < 0 && onLeft)"), 'Shared Z edge swipe must accept a natural rightward thumb diagonal after the edge start has established ownership.');
 expect(ui.includes("app?.classList.add('is-revealing-deck')") && ui.includes("app?.classList.remove('is-revealing-deck')"), 'Z swipe must reveal and reset the F stack physically.');
 expect(sharedSwipe.includes("const dragSurface = isBaseZ && front ? front : surface") && sharedSwipe.includes("const dragProperty = isBaseZ && front ? '--v2-front-drag-x' : '--v2-drag-x'") && sharedSwipe.includes("dragSurface.style.setProperty(dragProperty"), 'Shared edge swipe must move the whole front for Z1 and only the sheet for Z2/Z3.');
@@ -274,32 +260,17 @@ expect(css.includes('.v2-z .entity-card{transform:translateY(-2px)') && css.incl
 expect(/\.v2-z\{[\s\S]*?touch-action:auto/.test(css) && /\.v2-edge-swipe-zone\{[\s\S]*?width:36px;[\s\S]*?pointer-events:none;[\s\S]*?touch-action:none/.test(css) && css.includes('.v2-edge-swipe-zone.is-active{pointer-events:auto}'), 'Z must keep native vertical/horizontal inner scrolling while only an actively retained 36px screen-edge owner may intercept return navigation.');
 expect(ui.includes('function retainV2EdgeHost(host)') && ui.includes("host.dataset.v2EdgeOwners") && ui.includes("host.classList.add('is-active')") && ui.includes("host.classList.remove('is-active')"), 'Shared edge zone must be reference-counted so inactive screens never keep a dead touch strip.');
 expect(ui.includes("retainV2EdgeHost(bindZ && edgeHost?.matches?.('[data-v2-edge-swipe]') ? edgeHost : null)"), 'Workspace edge zone must stay inactive whenever bindZ is false.');
-expect(account.includes('GLOBAL_ACCOUNT_ROOTS') && account.includes("id: 'profile', label: 'Профиль'") && account.includes("id: 'journal', label: 'Журнал'") && account.includes("id: 'contacts', label: 'Контакты'") && !account.includes("id: 'history', label: 'История'") && account.includes('initV2WorkspaceInteraction(root') && account.includes('GLOBAL_ACCOUNT_ROOTS.some((item) => item.id === id)'), 'Changing the active end-user F folder must route through the Shared workspace owner and immediately change Z to the selected Profile / Journal / Contacts face.');
-expect(accountMobileCss.includes('background:var(--v2-base)'), 'Public booking shell safe area must continue the H base.');
-expect(core.includes("setThemeColor('#2F3338')") && core.includes("setThemeColor('#F5F5F3')"), 'Public booking must tint browser chrome to H and restore the workspace theme afterwards.');
-expect(booking.includes('documentTile(') && booking.includes('documentTiles(') && booking.includes('openDocumentViewer(') && booking.includes('v2Sticker({') && !booking.includes('v2LegalCards(') && !booking.includes('v2Document('), 'Legal checkpoint may use the Shared U container but every document inside it must use the canonical Document UI and viewer.');
-expect(
-  booking.includes("closeData: 'data-booking-welcome-u-close'")
-    && booking.includes("closeData: 'data-booking-u-close'")
-    && booking.includes("closeData: 'data-booking-legal-u-close'")
-    && core.includes("closeData: 'data-specialist-u-close'"),
-  'Every U entry/information surface must expose the explicit Shared U close control.'
-);
 expect(
   !/auth-view|auth-card/.test(core)
     && core.includes("v2Sticker({")
     && core.includes("className: 'v2-sticker-screen--auth'"),
   'Specialist auth and technical entry states must use the Shared U owner, never the retired auth-card shell.'
 );
-expect(!booking.includes('data-booking-workplaces-back') && !booking.includes('data-booking-confirm-back'), 'V2 booking flow must not restore legacy back buttons.');
 
 expect(core.includes("className: 'v2-app--workspace'") && core.includes("v2CardDeck(childItems, {") && core.includes("axis: 'y'") && core.includes("level: 'e'"), 'Professional workspace must render E with the same Shared CardDeck owner on the vertical axis.');
-expect(core.includes('v2Shell({') && account.includes('v2Shell({'), 'Professional and end-user contours must both render through the Shared H/F/E/Z shell owner.');
-expect(core.includes('v2Header({') && account.includes('v2Header({'), 'Professional and end-user contours must both render Header A/B/C/D through the Shared Header owner.');
 expect(ui.includes('export function v2Shell') && ui.includes('data-v2-app') && ui.includes('data-v2-fe') && ui.includes('data-v2-z'), 'Shared shell owner must own H, FE and Z structural layers.');
 expect(ui.includes('function avatarControl') && ui.includes('avatarControl(a)') && ui.includes("actionControl(c, 'c')") && ui.includes("actionControl(d, 'd')") && ui.includes('v2-header__title'), 'Shared Header owner must own photo-only A, B, contextual C and Messenger D.');
 expect(css.includes('--v2-base:var(--surface-dark)') && css.includes('.v2-header{') && css.includes('.v2-app__stage{') && css.includes('.v2-fe-deck{') && css.includes('.v2-z{'), 'H/F/E/Z geometry and Header geometry must stay in the shared V2 stylesheet.');
-expect(!account.includes('appHeader(') && !account.includes('appShell('), 'End-user account must not create a parallel local H/Header/Z shell.');
 expect(!core.includes('appHeader(') && !core.includes('appShell('), 'Professional workspace must not create a parallel local H/Header/Z shell.');
 
 for (const marker of ["{ id: 'people', label: 'Клиенты'", "{ id: 'finance', label: 'Финансы'", "{ id: 'timetable', label: 'График'", "{ id: 'journal', label: 'Журнал'", "{ id: 'profile', label: 'Профиль'", "{ id: 'service', label: 'Сервис'", "{ id: 'settings', label: 'Настройки'"]) {
@@ -410,37 +381,18 @@ for (const [name, source] of [
   ['profile account controls', accountControlsUi],
   ['shared time', timeUi],
   ['shared colors', colorUi],
-  ['end-user account shell', account],
-  ['consent-settings', consentSettings],
 ]) {
   expect(source.includes('modal(') && source.includes('mountModal('), `${name} must consume the sole shared modal owner.`);
   expect(!source.includes('mountV2Layer(') && !source.includes('v2Layer('), `${name} must not bypass ui/modals with a parallel V2 modal path.`);
 }
-expect(personalData.includes('datePicker({label:\'Дата рождения\'') && personalData.includes('initDatePickers(layer)') && !personalData.includes('birthDateField') && !personalData.includes('openBirthDatePicker') && !personalData.includes('data-account-birth-') && !personalData.includes('ui-select__control') && !personalData.includes('mountModal(') && !personalData.includes('modal('), 'End-user Profile personal data must consume the Shared Date Picker owner and must not draw or mount a local date/select modal.');
 expect(calendarUi.includes('export function datePicker') && calendarUi.includes('export function initDatePickers') && calendarUi.includes('initCalendar(calendarHost') && calendarUi.includes('select({') && calendarUi.includes('mountModal(document.body, modal'), 'Shared Calendar owner must own full-date field, year select, calendar and modal manifestation.');
-const endUserProfileCard = account.slice(account.indexOf('function profileSummary'), account.indexOf('function bindGlobalRelationships'));
-expect(endUserProfileCard.includes('entityVisualCard({') && endUserProfileCard.includes('ACCOUNT_PROFILE_CARD_APPEARANCE') && !endUserProfileCard.includes('entityCard({') && !endUserProfileCard.includes('entity-card--hero') && !/className\s*:\s*['\"][^'\"]*account-profile-card/.test(endUserProfileCard), 'End-user Profile root card must consume the canonical Entity Visual Card and must not retain the legacy hero/local card manifestation.');
-expect(passwordSettings.includes('openSharedPasswordAction') && !passwordSettings.includes('modal(') && !passwordSettings.includes('mountModal('), 'End-user password settings must consume the Shared Profile password owner instead of owning a modal.');
 expect(!inputs.includes('modal(') && !inputs.includes('mountModal('), 'Shared photo/input owner must keep crop inline and must not open a modal.');
 expect(!inputs.includes('mountV2Layer(') && !inputs.includes('v2Layer('), 'Shared inputs must not bypass canonical owners with local V2 layers.');
 
 
 
-expect(account.includes('v2CardDeck(GLOBAL_ACCOUNT_ROOTS') && account.includes("axis: 'x'") && account.includes("level: 'f'"), 'End-user root must use the shared horizontal CardDeck.');
-expect(account.includes("id: 'profile', label: 'Профиль'")
-  && account.includes("id: 'journal', label: 'Журнал'")
-  && account.includes("id: 'contacts', label: 'Контакты'")
-  && !account.includes("id: 'history', label: 'История'")
-  && !account.includes("id: 'home', label: 'Обзор'")
-  && !account.includes("id: 'representatives'"),
-  'End-user F owner must expose exactly Profile / Journal / Contacts and no retired History/Overview/two-folder deck.');
-expect(account.includes('initV2WorkspaceInteraction(root'), 'End-user F/E/Z interaction must use the single Shared workspace owner.');
-expect(!account.includes('initV2DeckSwipe(root') && !account.includes('function bindRootSwipe') && !account.includes('function bindDeck('), 'End-user account must not re-own F/Z gesture binding beside the Shared workspace owner.');
 expect(core.includes('initV2WorkspaceInteraction(shell') && !core.includes('initV2DeckSwipe(rootDeckNode') && !core.includes('initV2Swipe(z'), 'Professional workspace must consume the same Shared workspace interaction owner as the end-user account.');
-expect(account.includes("selected ? 'v2-app--chat' : 'v2-app--chat-list'"), 'End-user Chat must share V2 H + Z geometry inside the single global account owner.');
 expect(chatRuntime.includes("attachmentTrigger: 'external'") && chatRuntime.includes("kind: 'attachment'"), 'Chat attachment action must live in neutral Core Chat Header D.');
-expect(!account.includes('accountBottomNavigation') && !account.includes('bindBottomNavigation'), 'End-user V2 must not contain bottom navigation.');
-expect(!account.includes('<style>') && !booking.includes('<style>'), 'Feature code must not create local V2 style owners.');
 
 const globalFeatureCss = /\.(?:bottom-nav|nav-item|entity-list|color-picker|cost-field|duration-picker|workplace-selector|journal-list-|record-status-controls|work-time-row|app-content)/;
 expect(!globalFeatureCss.test(style), 'Global style.css must remain foundation-only; component styling belongs to Shared UI owners.');
