@@ -86,6 +86,7 @@ export class AccountContactRecordService {
           timeZone: true,
           from: true,
           to: true,
+          visibleInPublicBooking: true,
         },
       }),
       this.prisma.businessOperationalState.findUnique({ where: { tenantId } }),
@@ -102,7 +103,8 @@ export class AccountContactRecordService {
       : null;
     if (requestedWorkplace && !selected) throw new BadRequestException('Рабочее пространство не найдено');
 
-    const workplaces = selected ? [selected] : sourceWorkplaces;
+    const generalWorkplaces = sourceWorkplaces.filter((item) => item.visibleInPublicBooking !== false);
+    const workplaces = selected ? [selected] : generalWorkplaces;
     const allowedKeys = new Set(workplaces.map((item) => text(item.key)).filter(Boolean));
     const operational = objectValue(operationalRow?.data);
 
