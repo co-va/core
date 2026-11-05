@@ -130,23 +130,7 @@ async function bootstrap() {
       return response.redirect(302, `https://${PROF_HOST}${redirectPath}`);
     }
 
-    if (host === USER_HOST) {
-      const bookingQuery = request.path === '/' && typeof request.query.booking === 'string' && String(request.query.booking).trim();
-      if (bookingQuery) return response.sendFile(resolve(siteRoot, 'booking.html'));
-
-      if (request.path === '/' || request.path === '/user.html') {
-        return response.status(404).send('Not Found');
-      }
-
-      return staticSite(request, response, () => {
-        const segments = request.path.split('/').filter(Boolean);
-        const publicBookingPath = segments.length >= 1
-          && segments.length <= 2
-          && segments.every((segment) => !segment.includes('.'));
-        if (publicBookingPath) return response.sendFile(resolve(siteRoot, 'booking.html'));
-        return response.status(404).send('Not Found');
-      });
-    }
+    if (host === USER_HOST) return response.status(404).send('Not Found');
 
     return next();
   });
