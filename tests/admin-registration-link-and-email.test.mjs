@@ -178,4 +178,16 @@ assert.match(adminUi, /role="switch"/);
 assert.match(adminUi, /testerChanged/);
 assert.doesNotMatch(invitation, /isTester:\s*true/);
 
-console.log('Canonical onboarding, registration resume, password recovery, technical email and tester-status contracts passed');
+const readinessPolicy = fs.readFileSync('server/src/saas-access/readiness-policy.ts', 'utf8');
+const readinessService = fs.readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
+const runtimeAccess = fs.readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
+assert.match(readinessPolicy, /row\.status === 'READY'/);
+assert.match(readinessPolicy, /row\.status === 'TESTING' && actor\.isTester/);
+assert.match(readinessPolicy, /actor\.isOwnerBook/);
+assert.match(readinessPolicy, /item\.enforced === true/);
+assert.match(readinessService, /update: \{ status, enforced: true \}/);
+assert.match(runtimeAccess, /capabilities: effectiveCapabilities/);
+assert.match(runtimeAccess, /return applyReadinessGate\(resolved, readiness, access\)/);
+const readinessMigration = fs.readFileSync('server/prisma/migrations/20261105131000_admin_readiness_enforcement/migration.sql', 'utf8');
+assert.match(readinessMigration, /"enforced" BOOLEAN NOT NULL DEFAULT false/);
+console.log('Canonical onboarding, registration resume, password recovery, technical email, tester and readiness contracts passed');
