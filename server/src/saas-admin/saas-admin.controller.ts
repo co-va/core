@@ -90,7 +90,7 @@ export class SaasAdminController {
   @Put('tenants/:tenantId/access')
   updateTenantAccess(
     @Param('tenantId') tenantId: string,
-    @Body() body: { status?: unknown; capabilities?: unknown },
+    @Body() body: { status?: unknown; capabilities?: unknown; isTester?: unknown },
   ) {
     return this.admin.updateTenantAccess(tenantId, body || {});
   }

@@ -144,4 +144,21 @@ assert.doesNotMatch(adminUi, /data-delete-invitation/);
 assert.match(adminController, /request\.platformAdminId!/);
 assert.match(adminService, /setCommercialMode\(tenantId: string, mode: unknown, platformAdminId: string\)/);
 
-console.log('Canonical onboarding, registration resume, password recovery and technical email tests passed');
+// Tester is an administrator-controlled flag, not inferred from the registration path.
+const schema = fs.readFileSync('server/prisma/schema.prisma', 'utf8');
+const migration = fs.readFileSync('server/prisma/migrations/20261105090000_admin_tester_status/migration.sql', 'utf8');
+const accessService = fs.readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
+assert.match(schema, /isTester\s+Boolean\s+@default\(false\)/);
+assert.match(migration, /ALTER TABLE "TenantAccess" ADD COLUMN "isTester" BOOLEAN NOT NULL DEFAULT false/);
+assert.match(adminController, /isTester\?: unknown/);
+assert.match(adminService, /isTester: row\.isTester/);
+assert.match(adminService, /typeof input\.isTester !== 'boolean'/);
+assert.match(adminService, /data: \{ isTester: input\.isTester \}/);
+assert.match(adminService, /TESTER_STATUS_CHANGED/);
+assert.match(accessService, /isTester: access\.isTester/);
+assert.match(adminUi, /data-tester-toggle/);
+assert.match(adminUi, /role="switch"/);
+assert.match(adminUi, /testerChanged/);
+assert.doesNotMatch(invitation, /isTester:\s*true/);
+
+console.log('Canonical onboarding, registration resume, password recovery, technical email and tester-status contracts passed');
