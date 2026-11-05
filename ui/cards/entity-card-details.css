@@ -1,6 +1,0 @@
-.entity-card--canonical .entity-card__details{box-sizing:border-box;grid-column:1;display:grid;width:100%;max-width:100%;min-width:0;padding:0 var(--entity-card-inline) 16px;background:rgba(47,51,56,.14)}
-.entity-card--canonical .entity-card__detail-row{box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;min-width:0;padding:10px 0;border-top:1px solid rgba(255,255,255,.18);font-size:14px;line-height:1.25}
-.entity-card--canonical .entity-card__detail-row:first-child{border-top:0}
-.entity-card--canonical .entity-card__detail-row span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.entity-card--canonical .entity-card__detail-row span:last-child{text-align:right}
-.entity-card--canonical .entity-card__detail-row--strong{font-size:16px;font-weight:800}

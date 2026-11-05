@@ -1,6 +1,0 @@
-.ui-info{position:relative;display:inline-flex;vertical-align:middle}
-.ui-info__panel{position:absolute;z-index:40;top:calc(100% + 6px);left:0;width:min(260px,72vw);padding:10px 11px;border:1px solid #111;border-radius:0;background:#fff;color:#111;box-shadow:0 8px 24px rgba(0,0,0,.14);font-size:12px;line-height:1.35;text-align:left}
-.ui-info__panel[hidden]{display:none!important}
-.ui-info--inverse .ui-info__panel,.v2-header .ui-info__panel{border-color:#fff;background:#111;color:#fff}
-[data-v2-z-header-content] [data-info-ui],[data-v2-q-header-content] [data-info-ui]{align-self:flex-end;margin-left:auto}
-[data-v2-z-header-content] [data-info-ui] .ui-info__panel,[data-v2-q-header-content] [data-info-ui] .ui-info__panel{left:auto;right:0}

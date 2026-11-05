@@ -1,6 +1,0 @@
-:root{
-  --visual-vh:var(--app-stable-vh,100vh)!important;
-}
-body,.app-shell{
-  min-height:var(--app-stable-vh,100vh);
-}

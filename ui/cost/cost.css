@@ -1,8 +1,0 @@
-.cost-field{display:grid;gap:8px}
-.cost-field__label,.cost-free{color:var(--text-secondary);font-size:13px}
-.cost-free{display:flex;align-items:center;gap:8px}
-.cost-free input{width:18px;height:18px}
-.cost-modes{margin:0}
-.cost-range{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.cost-field .segment-control{margin-bottom:0}
-@media(max-width:360px){.cost-range{gap:6px}}
