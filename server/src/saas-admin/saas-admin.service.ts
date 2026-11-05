@@ -98,6 +98,7 @@ export class SaasAdminService {
         tenantName: row.tenant.name,
         status: row.status,
         isOwnerBook: row.isOwnerBook,
+        isTester: row.isTester,
         plan: row.plan,
         ownerProfile: membership ? {
           platformAccountId: membership.account.id,
@@ -173,6 +174,7 @@ export class SaasAdminService {
   async updateTenantAccess(tenantId: string, input: {
     status?: unknown;
     capabilities?: unknown;
+    isTester?: unknown;
   }) {
     const tenantAccess = await this.prisma.tenantAccess.findUnique({
       where: { tenantId },
@@ -247,6 +249,29 @@ export class SaasAdminService {
             ? 'Администратор временно ограничил доступ к рабочему пространству.'
             : 'Администратор восстановил доступ к рабочему пространству.',
           metadata: { status: statusText },
+        });
+      }
+    }
+
+    // Tester is an explicit administrator assignment, independent of registration or DEMO/LIVE.
+    if (input?.isTester !== undefined) {
+      if (typeof input.isTester !== 'boolean') {
+        throw new BadRequestException('Статус тестировщика должен быть включён или выключен');
+      }
+      if (tenantAccess.isOwnerBook) {
+        throw new BadRequestException('Статус тестировщика нельзя менять для пространства администратора');
+      }
+      if (input.isTester !== tenantAccess.isTester) {
+        await this.prisma.tenantAccess.update({
+          where: { tenantId },
+          data: { isTester: input.isTester },
+        });
+        await this.prisma.platformActivityEvent.create({
+          data: {
+            tenantId,
+            eventType: 'TESTER_STATUS_CHANGED',
+            metadata: { before: tenantAccess.isTester, after: input.isTester },
+          },
         });
       }
     }

@@ -709,6 +709,7 @@ model TenantAccess {
   planId                          String?
   status                          TenantAccessStatus @default(ACTIVE)
   isOwnerBook                     Boolean            @default(false)
+  isTester                        Boolean            @default(false)
   commercialMode                  String             @default("DEMO")
   demoActivatedAt                 DateTime?
   demoExpiresAt                   DateTime?

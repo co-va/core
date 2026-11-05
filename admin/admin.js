@@ -464,8 +464,9 @@ function tenantRow(item) {
   const statusClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
   const statusLabel = item.status === 'SUSPENDED' ? 'Отключён' : pending ? 'Ждёт регистрации' : item.ownerProfile ? 'Активен' : 'Создан';
   const modeClass = mode === 'LIVE' ? 'active' : 'pending';
+  const testerBadge = item.isTester ? ' <span class="admin-pill pending">Тестировщик</span>' : '';
   const remove = `<button class="admin-button danger" data-delete-tenant="${escapeHtml(item.tenantId)}">Удалить</button>`;
-  return `<tr data-tenant="${escapeHtml(item.tenantId)}"><td><strong>${escapeHtml(name)}</strong></td><td>${email ? escapeHtml(email) : '—'}</td><td><span class="admin-pill ${modeClass}">${escapeHtml(mode)}</span></td><td><span class="admin-pill ${statusClass}">${statusLabel}</span> ${remove}</td></tr>`;
+  return `<tr data-tenant="${escapeHtml(item.tenantId)}"><td><strong>${escapeHtml(name)}</strong>${testerBadge}</td><td>${email ? escapeHtml(email) : '—'}</td><td><span class="admin-pill ${modeClass}">${escapeHtml(mode)}</span></td><td><span class="admin-pill ${statusClass}">${statusLabel}</span> ${remove}</td></tr>`;
 }
 
 function renderCapabilities() {
@@ -532,6 +533,19 @@ function openAccessDrawer(tenantId) {
       </section>
 
       <section class="admin-section">
+        <h4>Роль доступа</h4>
+        <div class="admin-capability">
+          <div>
+            <strong data-tester-label>${tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
+            <small>Назначается администратором. Не зависит от ссылки или DEMO/LIVE.</small>
+          </div>
+          <button type="button" class="admin-toggle${tenant.isTester ? ' is-on' : ''}"
+            role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
+            data-tester-toggle></button>
+        </div>
+      </section>
+
+      <section class="admin-section">
         <h4>Инструменты пользователя</h4>
         <p class="admin-service-note">Здесь можно вручную включить, выключить и расположить инструменты конкретного пользователя.</p>
         <div data-capability-order-list>
@@ -556,7 +570,7 @@ function openAccessDrawer(tenantId) {
         </form>
       </section>` : ''}
 
-      <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить инструменты</button></div>
+      <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить изменения</button></div>
       <p class="admin-inline-message" data-save-message></p>
     </aside>`;
   document.body.append(backdrop);
@@ -594,6 +608,14 @@ function openAccessDrawer(tenantId) {
       const rect = row.getBoundingClientRect();
       capabilityList.insertBefore(dragging, event.clientY < rect.top + rect.height / 2 ? row : row.nextSibling);
     });
+  });
+
+  const testerToggle = backdrop.querySelector('[data-tester-toggle]');
+  testerToggle?.addEventListener('click', () => {
+    const enabled = testerToggle.getAttribute('aria-checked') !== 'true';
+    testerToggle.setAttribute('aria-checked', String(enabled));
+    testerToggle.classList.toggle('is-on', enabled);
+    backdrop.querySelector('[data-tester-label]').textContent = enabled ? 'Тестировщик' : 'Пользователь';
   });
 
   backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
@@ -669,18 +691,19 @@ function openAccessDrawer(tenantId) {
     const orderKeys = [...capabilityList.querySelectorAll('[data-capability-row][data-capability-orderable="true"]')]
       .map((row) => row.dataset.capabilityRow);
     const orderChanged = orderKeys.join('|') !== originalOrder;
+    const testerChanged = (testerToggle?.getAttribute('aria-checked') === 'true') !== Boolean(tenant.isTester);
     const message = backdrop.querySelector('[data-save-message]');
-    if (!changes.length && !orderChanged) {
+    if (!changes.length && !orderChanged && !testerChanged) {
       message.textContent = 'Изменений нет.';
       return;
     }
 
     try {
-      if (changes.length) {
+      if (changes.length || testerChanged) {
         await adminRequest(`/tenants/${encodeURIComponent(tenantId)}/access`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ capabilities: changes }),
+          body: JSON.stringify({ capabilities: changes, ...(testerChanged ? { isTester: testerToggle.getAttribute('aria-checked') === 'true' } : {}) }),
         });
       }
       if (orderChanged) {
@@ -690,7 +713,7 @@ function openAccessDrawer(tenantId) {
           body: JSON.stringify({ keys: orderKeys }),
         });
       }
-      message.textContent = 'Инструменты сохранены.';
+      message.textContent = 'Изменения сохранены.';
       message.classList.remove('error');
       await refreshData();
       window.setTimeout(() => { close(); renderCurrentSection(); }, 300);

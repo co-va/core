@@ -25,6 +25,7 @@ export type ResolvedTenantAccess = {
   tenantId: string;
   status: TenantAccessStatus;
   isOwnerBook: boolean;
+  isTester: boolean;
   commercialMode: string;
   demoActivatedAt: string;
   demoExpiresAt: string;
@@ -567,6 +568,7 @@ export class SaasAccessService {
       tenantId,
       status: access.status,
       isOwnerBook: access.isOwnerBook,
+      isTester: access.isTester,
       commercialMode: access.commercialMode,
       demoActivatedAt: access.demoActivatedAt?.toISOString() || '',
       demoExpiresAt: access.demoExpiresAt?.toISOString() || '',
