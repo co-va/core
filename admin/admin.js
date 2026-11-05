@@ -23,7 +23,11 @@ function escapeHtml(value) {
 async function adminRequest(path, options = {}) {
   const response = await apiRequest(`/saas-admin${path}`, options);
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.message || 'Ошибка панели управления');
+  if (!response.ok) {
+    const error = new Error(payload?.message || 'Ошибка панели управления');
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
@@ -86,6 +90,57 @@ function startAdminPolling() {
   }, 30_000);
 }
 
+function renderConnectionFailure(message = 'Не удалось связаться с сервером.') {
+  app.innerHTML = `
+    <main class="admin-login">
+      <section class="admin-login-card">
+        <h1>Нет соединения с сервером</h1>
+        <p>Сохранённый вход не удалён. Повтори проверку, когда сервер ответит.</p>
+        <p class="admin-error" data-connection-error>${escapeHtml(message)}</p>
+        <div class="admin-form">
+          <button class="admin-button" type="button" data-retry-session>Повторить соединение</button>
+          <button class="admin-button secondary" type="button" data-other-account>Войти заново</button>
+        </div>
+      </section>
+    </main>`;
+
+  const button = app.querySelector('[data-retry-session]');
+  const error = app.querySelector('[data-connection-error]');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    error.textContent = 'Проверяем соединение…';
+    try {
+      const account = await getCurrentAccount();
+      if (!account) return renderLogin();
+      state.account = account;
+      await loadAdmin();
+    } catch (retryError) {
+      if (retryError?.status === 401 || retryError?.status === 403) {
+        clearAuthToken();
+        return renderLogin(retryError.message);
+      }
+      error.textContent = retryError instanceof Error ? retryError.message : 'Сервер недоступен';
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  });
+  app.querySelector('[data-other-account]').addEventListener('click', () => {
+    clearAuthToken();
+    state.account = null;
+    renderLogin();
+  });
+}
+
+async function loginWithOneRetry(identifier, password, onRetry) {
+  try {
+    return await login(identifier, password);
+  } catch (error) {
+    if (error?.message !== 'Сервер не ответил вовремя') throw error;
+    onRetry?.();
+    return login(identifier, password);
+  }
+}
+
 function renderLogin(message = '') {
   app.innerHTML = `
     <main class="admin-login">
@@ -110,11 +165,23 @@ function renderLogin(message = '') {
     button.disabled = true;
     const data = new FormData(form);
     try {
-      state.account = await login(data.get('email'), data.get('password'));
-      await loadAdmin();
+      state.account = await loginWithOneRetry(data.get('email'), data.get('password'), () => {
+        error.textContent = 'Сервер не ответил. Пробуем ещё раз…';
+      });
     } catch (loginError) {
       error.textContent = loginError instanceof Error ? loginError.message : 'Не удалось войти';
       button.disabled = false;
+      return;
+    }
+    try {
+      await loadAdmin();
+    } catch (loadError) {
+      if (loadError?.status === 401 || loadError?.status === 403) {
+        clearAuthToken();
+        renderLogin(loadError.message);
+      } else {
+        renderConnectionFailure(loadError instanceof Error ? loadError.message : 'Сервер недоступен');
+      }
     }
   });
 }
@@ -742,6 +809,10 @@ try {
   }
 } catch (error) {
   const message = error instanceof Error ? error.message : 'Нет доступа к панели управления';
-  clearAuthToken();
-  renderLogin(message);
+  if (error?.status === 401 || error?.status === 403) {
+    clearAuthToken();
+    renderLogin(message);
+  } else {
+    renderConnectionFailure(message);
+  }
 }

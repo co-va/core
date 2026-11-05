@@ -9,6 +9,14 @@ const adminController = fs.readFileSync('server/src/saas-admin/saas-admin.contro
 const adminService = fs.readFileSync('server/src/saas-admin/saas-admin.service.ts', 'utf8');
 const adminModule = fs.readFileSync('server/src/saas-admin/saas-admin.module.ts', 'utf8');
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
+const adminEntry = fs.readFileSync('admin/index.html', 'utf8');
+assert.doesNotMatch(adminEntry, /password-reset-request\.js/);
+// A transient API outage must not clear the stored session or force another password entry.
+assert.match(adminUi, /function renderConnectionFailure\(/);
+assert.match(adminUi, /Повторить соединение/);
+assert.match(adminUi, /loginWithOneRetry/);
+assert.match(adminUi, /error\?\.message !== 'Сервер не ответил вовремя'/);
+assert.match(adminUi, /if \(error\?\.status === 401 \|\| error\?\.status === 403\)/);
 const specialistCore = fs.readFileSync('core.js', 'utf8');
 const authUi = fs.readFileSync('core/auth.js', 'utf8');
 const resetPage = fs.readFileSync('core/password-reset-page.js', 'utf8');
