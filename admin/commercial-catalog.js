@@ -12,9 +12,9 @@ const READINESS = Object.freeze({
   READY: 'Готово',
 });
 
-const TOOL_MAP = Object.freeze({
+export const TOOL_MAP = Object.freeze({
   cabinet: [
-    { id: 'people', label: 'Люди', readinessKey: 'cabinet.people' },
+    { id: 'people', label: 'Клиенты', readinessKey: 'cabinet.people' },
     {
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
         { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day' },
@@ -93,6 +93,25 @@ const TOOL_MAP = Object.freeze({
       ],
     },
   ],
+});
+
+// Binding to the existing capability model. Catalog hierarchy and labels stay owned by TOOL_MAP.
+export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
+  'cabinet.people': ['people.access'],
+  'cabinet.journal.day': ['journal.day.access'],
+  'cabinet.journal.month': ['journal.month.access'],
+  'cabinet.timetable': ['timetable.access'],
+  'cabinet.journal.list': ['journal.list.access'],
+  'cabinet.profile.workspaces': ['workplaces.access', 'workplaces.max'],
+  'cabinet.service': ['services.access'],
+  'cabinet.finance.cash': ['finance.cash.access'],
+  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
+  'cabinet.finance.z-report': ['finance.z_report.access'],
+  'cabinet.settings.online-booking': ['online_booking.access'],
+  'cabinet.settings.notifications': ['notifications.access'],
+  'cabinet.settings.integrations': ['integrations.access'],
+  'cabinet.settings.documents': ['documents.access'],
+  'cabinet.settings.tags': ['tags.access'],
 });
 
 const TYPE_LABELS = Object.freeze({
@@ -311,6 +330,7 @@ function bindReadiness(content) {
         });
         toolReadinessCache = Array.isArray(items) ? items : [];
         hydrateAllReadiness(content, toolReadinessCache);
+        document.dispatchEvent(new CustomEvent('admin:tool-readiness-changed'));
       } catch (error) {
         select.value = previous;
         select.dataset.previous = previous;

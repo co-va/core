@@ -1,7 +1,7 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools } from './commercial-catalog.js';
+import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
 
 const app = document.querySelector('#admin-app');
 const state = {
@@ -9,6 +9,7 @@ const state = {
   admin: null,
   tenants: [],
   capabilities: [],
+  toolReadiness: [],
   section: 'tenants',
 };
 
@@ -206,12 +207,14 @@ async function loadAdmin() {
 }
 
 async function refreshData() {
-  const [tenants, capabilities] = await Promise.all([
+  const [tenants, capabilities, toolReadiness] = await Promise.all([
     adminRequest('/tenants'),
     adminRequest('/capabilities'),
+    adminRequest('/tool-readiness'),
   ]);
   state.tenants = Array.isArray(tenants) ? tenants : [];
   state.capabilities = Array.isArray(capabilities) ? capabilities : [];
+  state.toolReadiness = Array.isArray(toolReadiness) ? toolReadiness : [];
 }
 
 function renderShell() {
@@ -553,32 +556,48 @@ function formatAdminMoment(value, fallback = '—') {
   }).format(date);
 }
 
-function orderedCapabilityCatalog(tenant) {
-  const byKey = new Map(state.capabilities.map((item) => [item.key, item]));
-  const order = Array.isArray(tenant.access?.capabilityOrder) ? tenant.access.capabilityOrder : [];
-  const result = order.map((key) => byKey.get(key)).filter(Boolean);
-  state.capabilities.forEach((item) => {
-    if (!result.some((entry) => entry.key === item.key)) result.push(item);
-  });
-  return result;
+function readinessLabel(key) {
+  const item = state.toolReadiness.find((row) => row.key === key);
+  return ({ NOT_READY: 'Не готово', TESTING: 'Проверка', READY: 'Готово' })[item?.status] || 'Не готово';
 }
 
-function capabilityOrderRow(capability, resolved) {
-  const orderable = capability.valueType === 'BOOLEAN';
-  return `<div class="admin-capability-order-row" draggable="${orderable}" data-capability-row="${escapeHtml(capability.key)}" data-capability-orderable="${orderable}">
-    <div class="admin-capability-move">
-      <button type="button" data-capability-up aria-label="Поднять">↑</button>
-      <button type="button" data-capability-down aria-label="Опустить">↓</button>
-    </div>
-    <div class="admin-capability-control">${capabilityEditor(capability, resolved)}</div>
-  </div>`;
+function renderRegistryLeaf(item, resolved, readonly = false) {
+  const key = item.readinessKey || '';
+  const keys = TOOL_CAPABILITY_BINDINGS[key] || [];
+  const capabilities = readonly ? [] : keys.map((name) => state.capabilities.find((capability) => capability.key === name)).filter(Boolean);
+  const controls = capabilities.map((capability) => capabilityEditor(capability, resolved.get(capability.key))).join('');
+  const note = readonly
+    ? 'Управляется отдельно в приложении «Записи».'
+    : 'Отдельное индивидуальное разрешение пока не предусмотрено.';
+  return '<div class="admin-capability-order-row" data-readiness-key="' + escapeHtml(key) + '">' +
+    '<div class="admin-capability-control">' +
+    '<div class="admin-capability"><div><strong>' + escapeHtml(item.label) +
+    '</strong><small>' + escapeHtml(readinessLabel(key)) + ' · ' + escapeHtml(key) + '</small></div></div>' +
+    (controls || '<p class="admin-service-note">' + note + '</p>') +
+    '</div></div>';
+}
+
+function renderRegistrySection(item, resolved, readonly = false) {
+  const children = Array.isArray(item.items) ? item.items : [];
+  if (!children.length) return renderRegistryLeaf(item, resolved, readonly);
+  return '<details class="admin-section"><summary><strong>' + escapeHtml(item.label) +
+    '</strong> · ' + children.length + '</summary>' +
+    children.map((child) => renderRegistryLeaf(child, resolved, readonly)).join('') +
+    '</details>';
+}
+
+function renderTenantRegistry(resolved) {
+  return '<section class="admin-section"><h4>Кабинет</h4>' +
+    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved)).join('') +
+    '</section><details class="admin-section"><summary><strong>Записи</strong> · отдельное приложение</summary>' +
+    TOOL_MAP.records.map((item) => renderRegistrySection(item, resolved, true)).join('') +
+    '</details>';
 }
 
 function openAccessDrawer(tenantId) {
   const tenant = state.tenants.find((item) => item.tenantId === tenantId);
   if (!tenant) return;
   const resolved = new Map((tenant.access?.capabilities || []).map((item) => [item.key, item]));
-  const capabilities = orderedCapabilityCatalog(tenant);
   const mode = String(tenant.access?.commercialMode || 'DEMO');
   const demoActivated = tenant.access?.demoActivatedAt || tenant.invitation?.activatedAt || '';
   const demoExpires = tenant.access?.demoExpiresAt || tenant.invitation?.demoExpiresAt || '';
@@ -614,9 +633,9 @@ function openAccessDrawer(tenantId) {
 
       <section class="admin-section">
         <h4>Инструменты пользователя</h4>
-        <p class="admin-service-note">Здесь можно вручную включить, выключить и расположить инструменты конкретного пользователя.</p>
+        <p class="admin-service-note">Состав и порядок совпадают с реестром «Инструменты». Здесь меняются индивидуальные разрешения.</p>
         <div data-capability-order-list>
-          ${capabilities.map((capability) => capabilityOrderRow(capability, resolved.get(capability.key))).join('')}
+          ${renderTenantRegistry(resolved)}
         </div>
       </section>
 
@@ -645,37 +664,6 @@ function openAccessDrawer(tenantId) {
   const close = () => backdrop.remove();
   backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
-
-  const capabilityList = backdrop.querySelector('[data-capability-order-list]');
-  const originalOrder = capabilities.filter((item) => item.valueType === 'BOOLEAN').map((item) => item.key).join('|');
-  const moveCapability = (row, direction) => {
-    const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
-    if (!sibling) return;
-    if (direction < 0) capabilityList.insertBefore(row, sibling);
-    else capabilityList.insertBefore(sibling, row);
-  };
-  capabilityList?.querySelectorAll('[data-capability-row]').forEach((row) => {
-    if (row.dataset.capabilityOrderable !== 'true') {
-      row.querySelector('[data-capability-up]')?.setAttribute('disabled', 'disabled');
-      row.querySelector('[data-capability-down]')?.setAttribute('disabled', 'disabled');
-      return;
-    }
-    row.querySelector('[data-capability-up]')?.addEventListener('click', () => moveCapability(row, -1));
-    row.querySelector('[data-capability-down]')?.addEventListener('click', () => moveCapability(row, 1));
-    row.addEventListener('dragstart', (event) => {
-      row.classList.add('is-dragging');
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', row.dataset.capabilityRow || '');
-    });
-    row.addEventListener('dragend', () => row.classList.remove('is-dragging'));
-    row.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      const dragging = capabilityList.querySelector('.is-dragging');
-      if (!dragging || dragging === row) return;
-      const rect = row.getBoundingClientRect();
-      capabilityList.insertBefore(dragging, event.clientY < rect.top + rect.height / 2 ? row : row.nextSibling);
-    });
-  });
 
   const testerToggle = backdrop.querySelector('[data-tester-toggle]');
   testerToggle?.addEventListener('click', () => {
@@ -755,12 +743,9 @@ function openAccessDrawer(tenantId) {
       }
     });
 
-    const orderKeys = [...capabilityList.querySelectorAll('[data-capability-row][data-capability-orderable="true"]')]
-      .map((row) => row.dataset.capabilityRow);
-    const orderChanged = orderKeys.join('|') !== originalOrder;
     const testerChanged = (testerToggle?.getAttribute('aria-checked') === 'true') !== Boolean(tenant.isTester);
     const message = backdrop.querySelector('[data-save-message]');
-    if (!changes.length && !orderChanged && !testerChanged) {
+    if (!changes.length && !testerChanged) {
       message.textContent = 'Изменений нет.';
       return;
     }
@@ -773,13 +758,6 @@ function openAccessDrawer(tenantId) {
           body: JSON.stringify({ capabilities: changes, ...(testerChanged ? { isTester: testerToggle.getAttribute('aria-checked') === 'true' } : {}) }),
         });
       }
-      if (orderChanged) {
-        await adminRequest(`/tenants/${encodeURIComponent(tenantId)}/capability-order`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: orderKeys }),
-        });
-      }
       message.textContent = 'Изменения сохранены.';
       message.classList.remove('error');
       await refreshData();
@@ -790,6 +768,8 @@ function openAccessDrawer(tenantId) {
     }
   });
 }
+
+document.addEventListener('admin:tool-readiness-changed', () => { void refreshData(); });
 
 function capabilityEditor(capability, resolved) {
   if (capability.valueType === 'LIMIT') {

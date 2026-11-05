@@ -61,7 +61,7 @@ const CAPABILITY_CATALOG: Array<{
   { key: 'workplaces.access', groupKey: 'profile', name: 'Рабочие пространства', valueType: CapabilityValueType.BOOLEAN, position: 10, starterEnabled: true },
   { key: 'workplaces.max', groupKey: 'system', name: 'Количество рабочих пространств', valueType: CapabilityValueType.LIMIT, position: 15, starterLimit: 1 },
   { key: 'timetable.access', groupKey: 'work', name: 'График', valueType: CapabilityValueType.BOOLEAN, position: 20, starterEnabled: false },
-  { key: 'people.access', groupKey: 'people', name: 'Люди', valueType: CapabilityValueType.BOOLEAN, position: 30, starterEnabled: true },
+  { key: 'people.access', groupKey: 'people', name: 'Клиенты', valueType: CapabilityValueType.BOOLEAN, position: 30, starterEnabled: true },
 
   { key: 'finance.cash.access', groupKey: 'finance', name: 'Касса', valueType: CapabilityValueType.BOOLEAN, position: 40, starterEnabled: false },
   { key: 'finance.dds.access', groupKey: 'finance', name: 'ДДС', valueType: CapabilityValueType.BOOLEAN, position: 50, starterEnabled: false },

@@ -9,6 +9,7 @@ const adminController = fs.readFileSync('server/src/saas-admin/saas-admin.contro
 const adminService = fs.readFileSync('server/src/saas-admin/saas-admin.service.ts', 'utf8');
 const adminModule = fs.readFileSync('server/src/saas-admin/saas-admin.module.ts', 'utf8');
 const adminUi = fs.readFileSync('admin/admin.js', 'utf8');
+const sharedToolRegistry = fs.readFileSync('admin/commercial-catalog.js', 'utf8');
 const adminEntry = fs.readFileSync('admin/index.html', 'utf8');
 assert.doesNotMatch(adminEntry, /password-reset-request\.js/);
 // A transient API outage must not clear the stored session or force another password entry.
@@ -164,6 +165,14 @@ assert.match(adminService, /typeof input\.isTester !== 'boolean'/);
 assert.match(adminService, /data: \{ isTester: input\.isTester \}/);
 assert.match(adminService, /TESTER_STATUS_CHANGED/);
 assert.match(accessService, /isTester: access\.isTester/);
+assert.match(sharedToolRegistry, /export const TOOL_MAP/);
+assert.match(sharedToolRegistry, /TOOL_CAPABILITY_BINDINGS/);
+assert.match(sharedToolRegistry, /id: 'people', label: 'Клиенты'/);
+assert.match(adminUi, /TOOL_MAP\.cabinet\.map/);
+assert.match(adminUi, /TOOL_MAP\.records\.map/);
+assert.match(adminUi, /renderTenantRegistry/);
+assert.match(adminUi, /adminRequest\('\/tool-readiness'\)/);
+assert.doesNotMatch(adminUi, /function orderedCapabilityCatalog/);
 assert.match(adminUi, /data-tester-toggle/);
 assert.match(adminUi, /role="switch"/);
 assert.match(adminUi, /testerChanged/);
