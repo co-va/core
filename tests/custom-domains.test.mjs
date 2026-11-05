@@ -33,7 +33,7 @@ assert.match(serverMain, /host === APP_HOST/);
 assert.ok(serverMain.includes('host === TEMP_APP_HOST || host === APP_HOST'), 'old Professional hosts must share one redirect');
 assert.ok(serverMain.includes("const legacyBookingQuery = request.path === '/'"), 'legacy guest Booking must retain its route');
 assert.ok(serverMain.includes('return response.redirect(302, `https://${PROF_HOST}${redirectPath}`);'), 'old Professional hosts must redirect to canonical Professional');
-assert.doesNotMatch(serverMain, /if \\(host === APP_HOST\\) \\{[\\s\\S]*?return staticSite\\(/);
+assert.ok(!serverMain.includes("if (host === APP_HOST) {\n      return staticSite"), 'old Professional must not be served by Core');
 
 assert.match(serverMain, /host === USER_HOST/);
 assert.doesNotMatch(serverMain, /USER_PWA_ASSETS/, 'Core must not expose User-owned PWA assets');
