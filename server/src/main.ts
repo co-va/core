@@ -123,10 +123,10 @@ async function bootstrap() {
 
     if (host === TEMP_APP_HOST || host === APP_HOST) {
       // The retired Professional origins redirect to the standalone application.
-      // Legacy ?booking=... links still belong to the guest Booking entry.
+      // Preserve ?booking=... deep links on the guest Booking entry.
       const originalUrl = request.originalUrl || '/';
-      const legacyBookingQuery = request.path === '/' && typeof request.query.booking === 'string';
-      const redirectPath = legacyBookingQuery ? `/booking${originalUrl.slice(1)}` : originalUrl;
+      const guestBookingQuery = request.path === '/' && typeof request.query.booking === 'string';
+      const redirectPath = guestBookingQuery ? `/booking${originalUrl.slice(1)}` : originalUrl;
       return response.redirect(302, `https://${PROF_HOST}${redirectPath}`);
     }
 
