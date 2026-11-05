@@ -121,12 +121,13 @@ async function bootstrap() {
       return response.status(404).send('Not Found');
     }
 
-    if (host === TEMP_APP_HOST) {
-      return staticSite(request, response, next);
-    }
-
-    if (host === APP_HOST) {
-      return staticSite(request, response, () => response.status(404).send('Not Found'));
+    if (host === TEMP_APP_HOST || host === APP_HOST) {
+      // The retired Professional origins redirect to the standalone application.
+      // Preserve ?booking=... deep links on the guest Booking entry.
+      const originalUrl = request.originalUrl || '/';
+      const guestBookingQuery = request.path === '/' && typeof request.query.booking === 'string';
+      const redirectPath = guestBookingQuery ? `/booking${originalUrl.slice(1)}` : originalUrl;
+      return response.redirect(302, `https://${PROF_HOST}${redirectPath}`);
     }
 
     if (host === USER_HOST) {
