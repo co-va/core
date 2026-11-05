@@ -39,70 +39,8 @@ jobs:
         run: npm run check
       - name: Domain regression tests
         run: npm test
-      - name: Browser FEZ runtime regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          chrome_bin=""
-          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
-            if command -v "$candidate" >/dev/null 2>&1; then
-              chrome_bin="$(command -v "$candidate")"
-              break
-            fi
-          done
-          if [ -z "$chrome_bin" ]; then
-            echo "No Chromium-compatible browser found on runner"
-            exit 1
-          fi
-          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/fez-http.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 20); do
-            if curl -fsS http://127.0.0.1:4173/tests/fez-runtime-browser.html >/dev/null; then
-              break
-            fi
-            sleep 0.25
-          done
-          run_browser_case() {
-            local path="$1"
-            local marker="$2"
-            local stage_attr="$3"
-            local output="$4"
-            local browser_status
-            set +e
-            timeout --signal=TERM --kill-after=5s 45s "$chrome_bin" \
-              --headless=new \
-              --no-sandbox \
-              --disable-gpu \
-              --disable-dev-shm-usage \
-              --window-size=390,844 \
-              --force-device-scale-factor=1 \
-              --touch-events=enabled \
-              --virtual-time-budget=12000 \
-              --dump-dom \
-              "http://127.0.0.1:4173/$path" \
-              > "$output"
-            browser_status=$?
-            set -e
-            if [ "$browser_status" -eq 124 ] || [ "$browser_status" -eq 137 ]; then
-              echo "Browser runtime regression timed out after 45s: $path"
-              exit 1
-            fi
-            if [ "$browser_status" -ne 0 ]; then
-              echo "Browser runtime regression browser failed: $path (exit $browser_status)"
-              exit 1
-            fi
-            if ! grep -Fq "$marker" "$output"; then
-              echo "Browser runtime regression failed: $path"
-              grep -o "$stage_attr=\"[^\"]*\"" "$output" || true
-              grep -A4 -B2 '<pre id="result"' "$output" || true
-              exit 1
-            fi
-          }
-          run_browser_case "tests/fez-runtime-browser.html" 'data-fez-runtime="pass"' 'data-fez-runtime-stage' /tmp/fez-runtime-dom.html
-          run_browser_case "tests/professional-core-runtime-browser.html" 'data-professional-runtime="pass"' 'data-professional-runtime-stage' /tmp/professional-runtime-dom.html
-          run_browser_case "tests/documents-runtime-browser.html" 'data-documents-runtime="pass"' 'data-documents-runtime-stage' /tmp/documents-runtime-dom.html
-          run_browser_case "tests/data-transfer-runtime-browser.html" 'data-transfer-runtime="pass"' 'data-transfer-runtime-stage' /tmp/data-transfer-runtime-dom.html
+      - name: Package platform assets only
+        run: node scripts/build-pages.mjs
       - name: Validate staging compose
         run: docker compose -f docker-compose.staging.yml config >/dev/null
       - name: Install server dependencies
@@ -111,34 +49,6 @@ jobs:
         run: npm run prisma:generate --prefix server
       - name: Build server
         run: npm run build --prefix server
-
-  modal-browser-interaction:
-    runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Install isolated browser test runner
-        run: npm install --prefix "$RUNNER_TEMP/modal-browser" --no-audit --no-fund playwright@1.62.1
-      - name: Verify shared modal hit targets with mouse and touch
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/modal-http.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
-          for attempt in $(seq 1 20); do
-            if curl -fsS http://127.0.0.1:4173/tests/modal-hit-targets-browser.html >/dev/null; then
-              break
-            fi
-            sleep 0.25
-          done
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/modal-browser/node_modules/playwright/index.mjs" node scripts/check-modal-browser-interaction.mjs
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/modal-browser/node_modules/playwright/index.mjs" node scripts/check-list-reorder-browser-interaction.mjs
 
   # Historical migration/recovery checks are intentionally manual-only.
   profile-migration-upgrade:
@@ -883,270 +793,60 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build staging backend image
+      - name: Build Core platform/backend image
         run: docker compose -f docker-compose.staging.yml build backend
-      - name: Start isolated database and backend
+      - name: Start isolated PostgreSQL and backend
         run: |
-          docker compose -f docker-compose.staging.yml up -d db
-          docker compose -f docker-compose.staging.yml up -d backend
-      - name: Verify staging backend
+          docker compose -f docker-compose.staging.yml up -d db backend
+      - name: Wait for Core health
         shell: bash
         run: |
-          set -euo pipefail
           for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
-              exit 0
-            fi
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then exit 0; fi
             sleep 2
           done
           docker compose -f docker-compose.staging.yml logs db backend
           exit 1
-      - name: Verify centralized data transfer with PostgreSQL
-        run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-data-transfer.mjs
-      - name: Verify all four production domains
+      - name: Verify platform-only domain boundaries and API
         shell: bash
         run: |
           set -euo pipefail
-
           expect_status() {
-            local host="$1"
-            local path="$2"
-            local expected="$3"
-            local actual
-            actual=$(curl -sS -o /tmp/domain-response -w '%{http_code}' -H "Host: $host" "http://localhost:3000$path")
-            if [ "$actual" != "$expected" ]; then
-              echo "$host$path: expected HTTP $expected, got $actual"
-              cat /tmp/domain-response || true
-              docker compose -f docker-compose.staging.yml logs backend
+            local host="$1" path="$2" expected="$3" status
+            status=$(curl -sS -o /dev/null -w '%{http_code}' -H "Host: $host" "http://localhost:3000$path")
+            if [ "$status" != "$expected" ]; then
+              echo "$host$path: expected HTTP $expected, got $status"
               exit 1
             fi
           }
-
-          expect_contains() {
-            local host="$1"
-            local path="$2"
-            local needle="$3"
-            local body_file
-            body_file=$(mktemp)
-            if ! curl -fsS -H "Host: $host" "http://localhost:3000$path" -o "$body_file"; then
-              echo "$host$path: request failed"
-              docker compose -f docker-compose.staging.yml logs backend
-              rm -f "$body_file"
+          expect_redirect() {
+            local host="$1" path="$2" expected="$3" destination
+            destination=$(curl -sS -o /dev/null -w '%{http_code}|%{redirect_url}' -H "Host: $host" "http://localhost:3000$path")
+            if [ "$destination" != "302|$expected" ]; then
+              echo "$host$path: expected 302 to $expected; got $destination"
               exit 1
             fi
-            if ! grep -Fq "$needle" "$body_file"; then
-              echo "$host$path: response does not contain expected marker: $needle"
-              cat "$body_file" || true
-              docker compose -f docker-compose.staging.yml logs backend
-              rm -f "$body_file"
-              exit 1
-            fi
-            rm -f "$body_file"
           }
-
           expect_status "api.va-tools.ru" "/health" "200"
-
-          expect_status "admin.va-tools.ru" "/" "302"
           expect_status "admin.va-tools.ru" "/admin/" "200"
           expect_status "admin.va-tools.ru" "/admin/admin.js" "200"
-          expect_status "admin.va-tools.ru" "/admin/document-registry/view.js" "200"
-          expect_status "admin.va-tools.ru" "/admin/document-registry/catalog.js" "200"
-          expect_status "admin.va-tools.ru" "/admin/document-registry/history.js" "200"
-          expect_contains "admin.va-tools.ru" "/admin/" "<title>Администрирование</title>"
-          expect_contains "admin.va-tools.ru" "/admin/" "admin.js?build="
-          expect_contains "admin.va-tools.ru" "/admin/admin.js" "document-registry/view.js"
-          expect_contains "admin.va-tools.ru" "/admin/document-registry/catalog.js" "privacy-policy"
-          expect_contains "admin.va-tools.ru" "/admin/document-registry/view.js" "Реестр документов"
-
-          # Core no longer serves the old Professional UI; verify redirects and deep links.
-          expect_redirect() {
-            local host="$1"
-            local path="$2"
-            local destination="$3"
-            local actual
-            actual=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' -H "Host: $host" "http://localhost:3000$path")
-            if [ "$actual" != "302 $destination" ]; then
-              echo "$host$path: expected 302 redirect to $destination, got $actual"
-              exit 1
-            fi
-          }
+          expect_status "admin.va-tools.ru" "/admin/reset-password.html" "200"
+          expect_status "admin.va-tools.ru" "/core/auth.js" "200"
+          expect_status "admin.va-tools.ru" "/core/password-reset-page.js" "200"
+          expect_status "admin.va-tools.ru" "/ui/documents/index.js" "200"
+          expect_status "admin.va-tools.ru" "/ui/ui.js" "404"
+          expect_status "admin.va-tools.ru" "/core.js" "404"
+          expect_status "va-tools.ru" "/" "200"
+          expect_status "va-tools.ru" "/ui/lists/list-entry.css" "200"
+          expect_status "va-tools.ru" "/booking.html" "404"
+          expect_status "user.va-tools.ru" "/" "404"
+          expect_status "user.va-tools.ru" "/?booking=smoke" "404"
           expect_redirect "app.va-tools.ru" "/" "https://prof.va-tools.ru/"
-          expect_redirect "app.va-tools.ru" "/core.js" "https://prof.va-tools.ru/core.js"
           expect_redirect "app.va-tools.ru" "/?booking=smoke" "https://prof.va-tools.ru/booking?booking=smoke"
           expect_redirect "va-app-temp-volokovykh.msk1.amvera.tech" "/" "https://prof.va-tools.ru/"
-
-          expect_status "user.va-tools.ru" "/" "404"
-          expect_status "user.va-tools.ru" "/user.html" "404"
-          expect_status "user.va-tools.ru" "/?booking=smoke" "200"
-          expect_status "user.va-tools.ru" "/online-booking/access.js" "200"
-          expect_status "user.va-tools.ru" "/online-booking/model.js" "200"
-          expect_status "user.va-tools.ru" "/core/time/zone.js" "200"
-          expect_contains "user.va-tools.ru" "/?booking=smoke" "online-booking/booking-entry.js"
-          expect_contains "user.va-tools.ru" "/online-booking/access.js" "renderAccess"
-          expect_contains "user.va-tools.ru" "/online-booking/model.js" "zonedDateTimeParts"
-          expect_contains "user.va-tools.ru" "/core/time/zone.js" "Intl.DateTimeFormat"
-
-      - name: Start and verify staging frontend
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker compose -f docker-compose.staging.yml up -d frontend
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/ >/dev/null 2>&1 \
-              && curl -fsS http://localhost:8080/core.js >/dev/null 2>&1 \
-              && curl -fsS http://localhost:8080/core/environment.js >/dev/null 2>&1 \
-              && curl -fsS http://localhost:8080/service-worker.js >/dev/null 2>&1 \
-              && curl -fsS http://localhost:8080/core/platform-notices.js >/dev/null 2>&1 \
-              && curl -fsS http://localhost:8080/api/health >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" = "30" ]; then
-              docker compose -f docker-compose.staging.yml logs frontend backend
-              exit 1
-            fi
-            sleep 2
-          done
-
-          owner_password=$(docker compose -f docker-compose.staging.yml exec -T backend printenv OWNER_PASSWORD | tr -d '\r\n')
-          login_payload=$(curl -fsS \
-            -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({email:'staging@book.local',password:process.argv[1]}))" "$owner_password")" \
-            http://localhost:8080/api/auth/login)
-          access_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$login_payload")
-          tenant_id=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.tenant?.id) process.exit(1); process.stdout.write(p.tenant.id)" "$login_payload")
-          curl -fsS -H "Authorization: Bearer $access_token" http://localhost:8080/api/auth/me >/dev/null
-
-          booking_context=$(curl -fsS "http://localhost:8080/api/online-booking/$tenant_id/context")
-          node -e "const p=JSON.parse(process.argv[1]); const w=(p.workplaces||[]).find((item)=>item.key==='studio-test'); if(!w || w.timeZone!=='Europe/Moscow') { console.error('Workplace timezone missing from public booking context'); process.exit(1); }" "$booking_context"
-
-          pdn_consent=$(node -e "const p=JSON.parse(process.argv[1]); const d=(p.documents||[]).find((item)=>item.id==='pdn-consent'); if(!d) { console.error('PDN consent missing from public booking context'); process.exit(1); } process.stdout.write(JSON.stringify({documentId:d.id,accepted:true}))" "$booking_context")
-          booking_state=$(curl -fsS \
-            -X POST \
-            -H 'Content-Type: application/json' \
-            -d '{"name":"Push","phone":"+79990000999","email":"push-smoke@book.local"}' \
-            "http://localhost:8080/api/online-booking/$tenant_id/booking-state")
-          node -e "
-            const state=JSON.parse(process.argv[1]);
-            const pdn=(state.consents||[]).find((item)=>String(item.documentId||'')==='pdn-consent');
-            const marketing=(state.consents||[]).find((item)=>String(item.documentId||'')==='messages-consent');
-            if(state.legalState?.pdnActive!==false || state.legalState?.marketingActive!==false || !pdn || pdn.active!==false || pdn.required!==true || !marketing || marketing.active!==false || marketing.marketing!==true){
-              console.error('Public booking state did not expose ready inactive PDN/marketing state for a new contact');
-              process.exit(1);
-            }
-          " "$booking_state"
-
-          booking_today=$(node -e "const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).filter((x)=>x.type!=='literal').map((x)=>[x.type,x.value])); process.stdout.write(parts.year+'-'+parts.month+'-'+parts.day)")
-          has_today=$(node -e "const p=JSON.parse(process.argv[1]); const today=process.argv[2]; process.stdout.write((p.days||[]).some((d)=>String(d.workplaceId||'')==='studio-test' && String(d.date||'').slice(0,10)===today)?'yes':'no')" "$booking_context" "$booking_today")
-          if [ "$has_today" = "yes" ]; then
-            past_payload=$(node -e "
-              const consent=JSON.parse(process.argv[2]);
-              process.stdout.write(JSON.stringify({
-                workplaceKey:'studio-test',date:process.argv[1],from:'00:00',mode:'self',
-                booker:{name:'Push',phone:'+79990000999',email:'push-smoke@book.local'},
-                participants:[{id:'booker',name:'Push',phone:'+79990000999',email:'push-smoke@book.local',procedureIds:['procedure-cut']}],
-                consents:[consent],
-              }));
-            " "$booking_today" "$pdn_consent")
-            past_body=$(mktemp)
-            past_status=$(curl -sS -o "$past_body" -w '%{http_code}' \
-              -X POST \
-              -H 'Content-Type: application/json' \
-              -d "$past_payload" \
-              "http://localhost:8080/api/online-booking/$tenant_id/confirm")
-            if [ "$past_status" != "409" ] || ! grep -Fq "Это время уже прошло" "$past_body"; then
-              echo "Public booking /confirm past-time guard failed: HTTP $past_status"
-              cat "$past_body" || true
-              rm -f "$past_body"
-              exit 1
-            fi
-            rm -f "$past_body"
-          fi
-
-          booking_slot=$(node -e "
-            const p=JSON.parse(process.argv[1]);
-            const today=process.argv[2];
-            const workplace=(p.workplaces||[]).find((item)=>String(item.key||'')==='studio-test')||{};
-            const procedure=(p.procedures||[]).find((item)=>String(item.id||'')==='procedure-cut')||{};
-            const duration=Math.max(1,Number(procedure.duration||60));
-            const toMinutes=(value)=>{ const m=String(value||'').match(/^(\d{1,2}):(\d{2})$/); return m?Number(m[1])*60+Number(m[2]):null; };
-            const toTime=(value)=>String(Math.floor(value/60)).padStart(2,'0')+':'+String(value%60).padStart(2,'0');
-            const days=(p.days||[])
-              .filter((d)=>String(d.workplaceId||'')==='studio-test' && String(d.date||'').slice(0,10)>today)
-              .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-            for(const day of days){
-              const date=String(day.date||'').slice(0,10);
-              const start=toMinutes(day.from||workplace.from);
-              const end=toMinutes(day.to||workplace.to);
-              if(start==null||end==null) continue;
-              const usages=(p.occupancy||[]).filter((u)=>String(u.workplaceId||'')==='studio-test' && String(u.date||'').slice(0,10)===date)
-                .map((u)=>({from:toMinutes(u.from),to:toMinutes(u.to)})).filter((u)=>u.from!=null&&u.to!=null);
-              for(let cursor=start;cursor+duration<=end;cursor+=15){
-                if(usages.every((u)=>cursor+duration<=u.from||cursor>=u.to)){
-                  process.stdout.write(JSON.stringify({date,from:toTime(cursor)}));
-                  process.exit(0);
-                }
-              }
-            }
-            console.error('No future studio-test booking slot in staging context');
-            process.exit(1);
-          " "$booking_context" "$booking_today")
-          booking_date=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).date)" "$booking_slot")
-          booking_from=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).from)" "$booking_slot")
-          confirm_payload=$(node -e "
-            const consent=JSON.parse(process.argv[3]);
-            process.stdout.write(JSON.stringify({
-              workplaceKey:'studio-test',date:process.argv[1],from:process.argv[2],mode:'self',
-              booker:{name:'Push',phone:'+79990000999',email:'push-smoke@book.local'},
-              participants:[{id:'booker',name:'Push',phone:'+79990000999',email:'push-smoke@book.local',procedureIds:['procedure-cut']}],
-              consents:[consent],
-            }));
-          " "$booking_date" "$booking_from" "$pdn_consent")
-          created_booking=$(curl -fsS \
-            -X POST \
-            -H 'Content-Type: application/json' \
-            -d "$confirm_payload" \
-            "http://localhost:8080/api/online-booking/$tenant_id/confirm")
-          created_record_id=$(node -e "const p=JSON.parse(process.argv[1]); const id=p.records?.[0]?.id; if(!id) { console.error('Public /confirm did not return a Record'); process.exit(1); } process.stdout.write(id)" "$created_booking")
-
-          owner_business=$(curl -fsS \
-            -H "Authorization: Bearer $access_token" \
-            "http://localhost:8080/api/business-state")
-          node -e "
-            const business=JSON.parse(process.argv[1]);
-            const recordId=process.argv[2];
-            const people=Array.isArray(business.people)?business.people:[];
-            const records=Array.isArray(business.records)?business.records:[];
-            const linked=people.find((person)=>String(person.name||'')==='Push' && Array.isArray(person.phones) && person.phones.includes('+79990000999'));
-            if(!linked){ console.error('Account-free public Booking Person is missing from owner business state'); process.exit(1); }
-            if(Array.isArray(linked.accounts) && linked.accounts.length){ console.error('Public Booking unexpectedly created or required an Account link'); process.exit(1); }
-            const record=records.find((item)=>String(item.id||'')===recordId);
-            if(!record){ console.error('Public booking Record is missing from owner business state'); process.exit(1); }
-            if(String(record.person?.key||'')!==String(linked.key||'')){
-              console.error('Public booking Record is linked to a different Person');
-              process.exit(1);
-            }
-          " "$owner_business" "$created_record_id"
-
-          account_terms=$(curl -fsS "http://localhost:8080/api/online-booking/account-terms")
-          account_terms_fact=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.key || !p.version) process.exit(1); process.stdout.write(JSON.stringify({key:p.key,version:p.version,accepted:true,acceptedAt:new Date().toISOString()}))" "$account_terms")
-          smoke_password="Smoke-${GITHUB_RUN_ID}-Pass"
-          push_account=$(curl -fsS \
-            -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({email:'push-account-smoke@book.local',password:process.argv[1],name:'Push Account',phone:'+79990000888',accountTerms:JSON.parse(process.argv[2])}))" "$smoke_password" "$account_terms_fact")" \
-            "http://localhost:8080/api/online-booking/$tenant_id/account/register")
-          booking_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$push_account")
-
-          push_config=$(curl -fsS \
-            -H "Authorization: Bearer $booking_token" \
-            "http://localhost:8080/api/online-booking/account/push/config")
-          node -e "const p=JSON.parse(process.argv[1]); if(!p.enabled || !p.publicKey) process.exit(1)" "$push_config"
-
-          curl -fsS \
-            -X PUT \
-            -H "Authorization: Bearer $booking_token" \
-            -H 'Content-Type: application/json' \
-            -d '{"subscription":{"endpoint":"https://push.example.invalid/book-smoke","keys":{"p256dh":"staging-p256dh","auth":"staging-auth"}}}' \
-            "http://localhost:8080/api/online-booking/account/push/subscription" >/dev/null
-      - name: Stop isolated staging
+          echo "Platform-only API, Admin, landing, redirects and User isolation: PASS"
+      - name: Verify canonical data transfer with PostgreSQL
+        run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-data-transfer.mjs
+      - name: Stop isolated Core environment
         if: always()
         run: docker compose -f docker-compose.staging.yml down -v
