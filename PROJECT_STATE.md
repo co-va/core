@@ -86,3 +86,9 @@
 - **Незакрытый инфраструктурный остаток:** Core пока содержит старый Professional frontend `core.js` и `timetable/timetable.js`, где ещё существует отдельный F-вход. Это не второй утверждённый владелец: данный runtime удаляется **целиком**, а не переписывается второй раз, после подтверждения, что действующий домен, вход, Journal, Booking, уведомления и API работают из самостоятельного `co-va/professional/staging`.
 - До подтверждения переключения Core legacy Professional удалять нельзя, чтобы не оборвать действующих пользователей. Удаление провести отдельным закрытым scope с проверкой runtime, ссылок и всех entry/import; backend/API/DB сохранить.
 - Закрытие миграции требует двух доказательств: работа независимого Professional из нового origin и отсутствие старых F-маршрутов/модулей в итоговом Core runtime. Сейчас второе **не выполнено**.
+
+## Domain cutover handoff — `prof.va-tools.ru` (2026-11-05)
+
+- Core `server/src/main.ts`: added `https://prof.va-tools.ru` to production CORS for the independent `co-va/professional/staging`. No change to backend API/business logic, old host routing or data.
+- The old `app.va-tools.ru` is still temporarily served by Core, only until the replacement origin passes real live checks. This is NOT the target final state. Professional has updated its canonical `APP_ORIGIN` and Nginx host in its own repository.
+- **After independent Professional validation:** replace Core's legacy `APP_HOST` and `TEMP_APP_HOST` static hosting with redirect/retirement; replace `https://app.va-tools.ru` in `server/src/password-reset/password-reset.service.ts` and `server/src/tenant-invitation/tenant-invitation.service.ts` (check `FRONTEND_ORIGIN` override), then remove leftover legacy Professional UI/assets while preserving server API/DB/Admin/Landing and public booking links. Never leave two independent working Professional frontends. Do not prematurely remove old access for active users.
