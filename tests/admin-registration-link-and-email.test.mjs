@@ -182,7 +182,7 @@ const readinessPolicy = fs.readFileSync('server/src/saas-access/readiness-policy
 const readinessService = fs.readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
 const runtimeAccess = fs.readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
 assert.match(readinessPolicy, /row\.status === 'READY'/);
-assert.match(readinessPolicy, /row\.status === 'TESTING' && actor\.isTester/);
+assert.match(readinessPolicy, /row\.status === 'TESTING' && \(actor\.isTester \|\| actor\.isOwnerBook\)/);
 assert.match(readinessPolicy, /actor\.isOwnerBook/);
 assert.match(readinessPolicy, /item\.enforced === true/);
 assert.match(readinessService, /update: \{ status, enforced: true \}/);

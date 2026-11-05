@@ -25,4 +25,7 @@ if (JSON.stringify(a) !== JSON.stringify(b)) {
 }
 if (a.length < 30) throw new Error(`Readiness registry is unexpectedly small: ${a.length}`);
 
+const policy = fs.readFileSync('server/src/saas-access/readiness-policy.ts', 'utf8');
+if (policy.includes('|| actor.isOwnerBook ||')) throw new Error('Owner must not bypass NOT_READY');
+if (!policy.includes('(actor.isTester || actor.isOwnerBook)')) throw new Error('Owner must be allowed to test TESTING instruments');
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);

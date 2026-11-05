@@ -1,5 +1,6 @@
 import { emptyState, page } from '../../ui/ui.js';
 import { loyaltyHeader } from './shared.js';
+import { canUseBookCapability } from '../access.js';
 
 const LOYALTY_NAVIGATION = [
   { id: 'deposit', label: 'Депозит' },
@@ -10,11 +11,24 @@ const LOYALTY_NAVIGATION = [
   { id: 'bonus', label: 'Бонусная программа' },
 ];
 
+const LOYALTY_CAPABILITIES = Object.freeze({
+  'deposit': 'loyalty.deposit.access',
+  'personal-account': 'loyalty.personal_account.access',
+  'certificate': 'loyalty.certificate.access',
+  'subscription': 'loyalty.subscription.access',
+  'referral': 'loyalty.referral.access',
+  'bonus': 'loyalty.bonus.access',
+});
+
 export function loyaltyNavigationItems() {
-  return LOYALTY_NAVIGATION.map((item) => ({ ...item }));
+  return LOYALTY_NAVIGATION.filter((item) => canUseBookCapability(LOYALTY_CAPABILITIES[item.id])).map(({ id, label }) => ({ id, label }));
 }
 
 export async function renderLoyaltySection(root, section = 'deposit') {
+  if (!loyaltyNavigationItems().some((item) => item.id === section)) {
+    root.innerHTML = page([loyaltyHeader('Лояльность'), emptyState('Инструмент недоступен', 'У вас нет доступа к этому инструменту.')]);
+    return;
+  }
   if (section === 'deposit') {
     const { renderDeposit } = await import('./deposit/index.js');
     return renderDeposit(root);

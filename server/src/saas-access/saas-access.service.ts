@@ -322,7 +322,6 @@ export class SaasAccessService {
     if (resolved.valueType !== CapabilityValueType.BOOLEAN || resolved.enabled !== true) return resolved;
     const access = await this.prisma.tenantAccess.findUnique({ where: { tenantId } });
     if (!access) throw new NotFoundException('Состояние рабочего пространства не настроено');
-    if (access.isOwnerBook) return resolved;
     const readiness = await this.prisma.adminToolReadiness.findMany({ where: { enforced: true } });
     return applyReadinessGate(resolved, readiness, access);
   }
@@ -575,9 +574,7 @@ export class SaasAccessService {
       };
     });
 
-    const readiness = access.isOwnerBook
-      ? []
-      : await this.prisma.adminToolReadiness.findMany({ where: { enforced: true } });
+    const readiness = await this.prisma.adminToolReadiness.findMany({ where: { enforced: true } });
     const effectiveCapabilities = resolved.map((capability) => applyReadinessGate(capability, readiness, access));
 
     return {
