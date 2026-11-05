@@ -126,6 +126,62 @@ export class AccountUnreadService {
     return { total: items.length, items };
   }
 
+
+  async deletedRecordHistory(accountId: string) {
+    const rows = await this.prisma.$queryRaw<Array<{
+      notificationId: string;
+      tenantId: string;
+      recordId: string;
+      title: string;
+      body: string;
+      createdAt: Date;
+      readAt: Date | null;
+    }>>`
+      SELECT
+        n."id" AS "notificationId",
+        n."tenantId",
+        n."entityId" AS "recordId",
+        n."title",
+        n."body",
+        n."createdAt",
+        d."readAt"
+      FROM "Notification" n
+      INNER JOIN "NotificationDelivery" d
+        ON d."notificationId" = n."id"
+       AND d."tenantId" = n."tenantId"
+       AND d."channel" = 'IN_APP'
+      INNER JOIN "AccountTenantLink" l
+        ON l."accountId" = ${accountId}
+       AND l."tenantId" = n."tenantId"
+      INNER JOIN "AccountContact" c
+        ON c."accountId" = ${accountId}
+       AND c."type" = 'PHONE'
+       AND c."value" = d."recipientKey"
+      WHERE n."purpose" = 'SERVICE'
+        AND n."type" = 'booking.deleted'
+        AND n."entityType" = 'record'
+        AND n."entityId" <> ''
+      ORDER BY n."createdAt" DESC, n."id" DESC
+      LIMIT 250
+    `;
+    return {
+      items: rows.map((row) => {
+        const body = text(row.body);
+        return {
+          id: text(row.notificationId),
+          tenantId: text(row.tenantId),
+          recordId: text(row.recordId),
+          title: text(row.title),
+          body,
+          date: body.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || '',
+          from: body.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '',
+          removedAt: row.createdAt,
+          read: Boolean(row.readAt),
+        };
+      }),
+    };
+  }
+
   async markServiceRecordsSeen(accountId: string, recordIdsValue: unknown) {
     const recordIds = [...new Set((Array.isArray(recordIdsValue) ? recordIdsValue : [])
       .map((value) => text(value))
