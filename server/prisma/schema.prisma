@@ -62,6 +62,8 @@ model Tenant {
   ueiState                 UeiState?
   records                  Record[]
   recordEvents             RecordEvent[]
+  deletedRecordArchives    DeletedRecordArchive[]
+  accountHiddenRecords     AccountHiddenRecord[]
   events                   Event[]
   notes                    Note[]
   businessOperationalState BusinessOperationalState?
@@ -239,6 +241,7 @@ model Account {
   createdViaTenant Tenant?             @relation("AccountCreatedViaTenant", fields: [createdViaTenantId], references: [id], onDelete: SetNull)
   contacts            AccountContact[]
   tenantLinks         AccountTenantLink[]
+  hiddenJournalRecords AccountHiddenRecord[]
   requests            BookingRequest[]
   calendarConnections AccountCalendarConnection[]
 
@@ -443,6 +446,26 @@ model RecordEvent {
   @@index([tenantId, recordId])
   @@index([tenantId, position])
   @@map("BusinessRecordEvent")
+}
+
+model DeletedRecordArchive {
+  id        String @id @default(cuid())
+  tenantId  String
+  recordId  String
+  data      Json
+  deletedAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, recordId])
+}
+model AccountHiddenRecord {
+  id        String @id @default(cuid())
+  accountId String
+  tenantId  String
+  recordId  String
+  hiddenAt  DateTime @default(now())
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([accountId, tenantId, recordId])
 }
 
 model Event {
