@@ -40,7 +40,7 @@ const APP_CATALOG: CatalogManifestItem[] = [
   { key: 'system.profile', name: 'Профиль', description: 'Профиль пользователя', type: 'SYSTEM', position: 10, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['profile.access'] },
   { key: 'system.workplace', name: 'Рабочее пространство', description: 'Первое рабочее пространство', type: 'SYSTEM', position: 20, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['workplaces.access'] },
   { key: 'capacity.workplace.extra', name: 'Дополнительное рабочее пространство', description: 'Дополнительная ёмкость рабочих пространств', type: 'CAPACITY', position: 30, isSaleable: true, isFree: false, priceMinor: 0, capabilityKeys: ['workplaces.max'] },
-  { key: 'tool.timetable', name: 'График', description: 'Рабочий график', type: 'TOOL', position: 100, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['timetable.access'] },
+  { key: 'tool.timetable', name: 'График (режим Журнала)', description: 'Управление рабочими днями из режима месяца Журнала; отдельной F-карточки нет', type: 'TOOL', position: 100, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['timetable.access'] },
   { key: 'tool.people', name: 'Люди', description: 'Работа со списком людей', type: 'TOOL', position: 110, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['people.access'] },
   { key: 'tool.services', name: 'Сервис', description: 'Услуги и процедуры', type: 'TOOL', position: 120, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['services.access'] },
   { key: 'tool.online-booking', name: 'Онлайн-запись', description: 'Публичная онлайн-запись', type: 'TOOL', position: 130, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['online_booking.access'] },
@@ -48,7 +48,7 @@ const APP_CATALOG: CatalogManifestItem[] = [
   { key: 'tool.tags', name: 'Ярлыки', description: 'Ярлыки и классификация', type: 'TOOL', position: 150, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['tags.access'] },
   { key: 'tool.notifications', name: 'Уведомления', description: 'Системные уведомления', type: 'TOOL', position: 160, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['notifications.access'] },
   { key: 'tool.integrations', name: 'Интеграции', description: 'Базовый раздел интеграций', type: 'TOOL', position: 170, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['integrations.access'] },
-  { key: 'tool.journal', name: 'Журнал', description: 'День, месяц и список записей', type: 'TOOL', position: 180, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['journal.day.access', 'journal.month.access', 'journal.list.access'] },
+  { key: 'tool.journal', name: 'Журнал', description: 'День, месяц (просмотр и режим графика), список записей', type: 'TOOL', position: 180, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['journal.day.access', 'journal.month.access', 'journal.list.access'] },
 
   { key: 'tool.finance.cash', name: 'Касса', description: 'Кошельки и движения по ним', type: 'TOOL', position: 300, isSaleable: true, isFree: false, priceMinor: 0, capabilityKeys: ['finance.cash.access'] },
   { key: 'tool.finance.dds', name: 'ДДС', description: 'Движение денежных средств, статьи и финансовые операции', type: 'TOOL', position: 310, isSaleable: true, isFree: false, priceMinor: 0, capabilityKeys: ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'] },
