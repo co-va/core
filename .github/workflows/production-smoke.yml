@@ -1,4 +1,4 @@
-name: Production Smoke
+name: Core Platform Production Smoke
 
 on:
   workflow_dispatch:
@@ -9,78 +9,38 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-smoke
+  group: core-platform-production-smoke
   cancel-in-progress: true
 
 jobs:
   domains:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 6
     steps:
-      - name: Check production domains and critical auth recovery
+      - name: Verify platform landing, Admin, API and password recovery
         shell: bash
         run: |
           set -euo pipefail
-
-          check_page() {
-            local name="$1"
-            local url="$2"
-            local output
-            output="$(curl --fail-with-body --silent --show-error --location \
-              --connect-timeout 5 --max-time 15 \
-              --output /tmp/body \
-              --write-out '%{http_code}|%{time_namelookup}|%{time_connect}|%{time_appconnect}|%{time_starttransfer}|%{time_total}|%{url_effective}' \
-              "$url")"
-            IFS='|' read -r code dns connect tls ttfb total effective <<<"$output"
-            printf '%-16s status=%s dns=%ss connect=%ss tls=%ss ttfb=%ss total=%ss final=%s\n' \
-              "$name" "$code" "$dns" "$connect" "$tls" "$ttfb" "$total" "$effective"
-            case "$code" in
-              2*|3*) ;;
-              *) echo "$name returned unexpected HTTP $code"; exit 1 ;;
-            esac
-          }
-
-          check_page app https://app.va-tools.ru/
-          check_page user https://user.va-tools.ru/
-          check_page admin https://admin.va-tools.ru/
-
-          health_meta="$(curl --fail-with-body --silent --show-error --location \
-            --connect-timeout 5 --max-time 15 \
-            --output /tmp/health.json \
-            --write-out '%{http_code}|%{time_namelookup}|%{time_connect}|%{time_appconnect}|%{time_starttransfer}|%{time_total}|%{url_effective}' \
-            https://api.va-tools.ru/health)"
-          IFS='|' read -r code dns connect tls ttfb total effective <<<"$health_meta"
-          printf '%-16s status=%s dns=%ss connect=%ss tls=%ss ttfb=%ss total=%ss final=%s\n' \
-            api "$code" "$dns" "$connect" "$tls" "$ttfb" "$total" "$effective"
-          test "$code" = "200"
-          node -e "const fs=require('fs'); const x=JSON.parse(fs.readFileSync('/tmp/health.json','utf8')); if(x.status!=='ok'||x.database!=='ok') { console.error(x); process.exit(1) } console.log('api health:', JSON.stringify(x))"
-
-          deployed=0
-          for attempt in $(seq 1 30); do
-            app_reset="$(curl --silent --show-error --location --connect-timeout 5 --max-time 15 https://app.va-tools.ru/reset-password.html || true)"
-            user_reset="$(curl --silent --show-error --location --connect-timeout 5 --max-time 15 https://user.va-tools.ru/reset-password.html || true)"
-            admin_reset="$(curl --silent --show-error --location --connect-timeout 5 --max-time 15 https://admin.va-tools.ru/admin/reset-password.html || true)"
-            platform_reset="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
-              -H 'Content-Type: application/json' \
-              -d '{"email":"production-smoke-does-not-exist@invalid.example","surface":"app"}' \
-              https://api.va-tools.ru/auth/password-reset/request || true)"
-            account_reset="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
-              -H 'Content-Type: application/json' \
-              -d '{"identifier":"production-smoke-does-not-exist@invalid.example"}' \
-              https://api.va-tools.ru/online-booking/account/password-reset/request || true)"
-
-            if [[ "$app_reset" == *"Восстановление пароля"* \
-              && "$user_reset" == *"Восстановление пароля"* \
-              && "$admin_reset" == *"Восстановление пароля"* \
-              && "$platform_reset" == *'"accepted":true'* \
-              && "$account_reset" == *'"accepted":true'* ]]; then
-              deployed=1
-              echo "critical auth recovery: deployed and responding (attempt $attempt)"
-              break
+          curl --fail-with-body --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            https://va-tools.ru/ -o /tmp/platform-landing.html
+          grep -Fq 'prof.va-tools.ru/' /tmp/platform-landing.html
+          curl --fail-with-body --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            https://admin.va-tools.ru/admin/ -o /tmp/platform-admin.html
+          grep -Fq '<title>Администрирование</title>' /tmp/platform-admin.html
+          curl --fail-with-body --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            https://admin.va-tools.ru/admin/admin.js -o /dev/null
+          curl --fail-with-body --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            https://api.va-tools.ru/health -o /tmp/platform-health.json
+          node -e "const fs=require('fs');const h=JSON.parse(fs.readFileSync('/tmp/platform-health.json','utf8'));if(h.status!=='ok'||h.database!=='ok')process.exit(1)"
+          for endpoint in auth/password-reset/request online-booking/account/password-reset/request; do
+            if [ "$endpoint" = "auth/password-reset/request" ]; then
+              payload='{"email":"production-smoke-does-not-exist@invalid.example","surface":"admin"}'
+            else
+              payload='{"identifier":"production-smoke-does-not-exist@invalid.example"}'
             fi
-
-            echo "critical auth recovery not deployed yet (attempt $attempt)"
-            sleep 10
+            curl --fail-with-body --silent --show-error --connect-timeout 5 --max-time 15 \
+              -H 'Content-Type: application/json' -d "$payload" \
+              "https://api.va-tools.ru/$endpoint" -o /tmp/platform-reset.json
+            node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('/tmp/platform-reset.json','utf8'));if(p.accepted!==true)process.exit(1)"
           done
-
-          test "$deployed" = "1"
+          echo "Core platform production: PASS"
