@@ -2,7 +2,7 @@ name: Production Admin Login Probe
 
 on:
   push:
-    branches: [staging]
+    branches: [staging, main]
   workflow_dispatch:
 
 permissions:
@@ -39,4 +39,29 @@ jobs:
           fi
           if [ "$code" = '000' ]; then
             echo 'Probe could not reach the production endpoint. Check Amvera container and proxy logs.'
+          fi
+
+      - name: Check whether the login hotfix is actually deployed to the admin domain
+        shell: bash
+        run: |
+          set -uo pipefail
+          if curl --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            'https://admin.va-tools.ru/admin/' --output /tmp/live-admin-entry.html; then
+            if grep -q 'password-reset-request.js' /tmp/live-admin-entry.html; then
+              echo 'ADMIN_RESET_BUTTON_OLD_VERSION_STILL_DEPLOYED'
+            else
+              echo 'ADMIN_RESET_BUTTON_REMOVAL_PUBLISHED'
+            fi
+          else
+            echo 'ADMIN_ENTRY_UNAVAILABLE'
+          fi
+          if curl --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            'https://admin.va-tools.ru/admin/admin.js' --output /tmp/live-admin-script.js; then
+            if grep -q 'function loginWithOneRetry' /tmp/live-admin-script.js; then
+              echo 'ADMIN_LOGIN_SESSION_FIX_PUBLISHED'
+            else
+              echo 'ADMIN_LOGIN_SESSION_FIX_NOT_DEPLOYED'
+            fi
+          else
+            echo 'ADMIN_SCRIPT_UNAVAILABLE'
           fi
