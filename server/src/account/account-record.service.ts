@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PrismaService } from '../prisma.service';
 import { BookingFlowService } from '../online-booking/booking-flow.service';
@@ -131,5 +131,84 @@ export class AccountRecordService {
     ]);
 
     return created;
+  }
+
+  async journal(accountId: string) {
+    const [records, hidden, oldDeletionNotices] = await Promise.all([
+      this.account.globalAccountRecords(accountId),
+      this.prisma.accountHiddenRecord.findMany({
+        where: { accountId },
+        select: { tenantId: true, recordId: true },
+      }),
+      this.prisma.$queryRaw<Array<{ tenantId: string; entityId: string; body: string; createdAt: Date }>>`
+        SELECT DISTINCT ON (n."tenantId", n."entityId")
+          n."tenantId", n."entityId", n."body", n."createdAt"
+        FROM "Notification" n
+        INNER JOIN "NotificationDelivery" d
+          ON d."notificationId" = n."id"
+         AND d."tenantId" = n."tenantId"
+         AND d."channel" = 'IN_APP'
+        INNER JOIN "AccountTenantLink" l
+          ON l."accountId" = ${accountId}
+         AND l."tenantId" = n."tenantId"
+        INNER JOIN "AccountContact" c
+          ON c."accountId" = ${accountId}
+         AND c."type" = 'PHONE'
+         AND c."value" = d."recipientKey"
+        WHERE n."type" = 'booking.deleted'
+          AND n."entityType" = 'record'
+          AND n."entityId" <> ''
+        ORDER BY n."tenantId", n."entityId", n."createdAt" DESC
+      `,
+    ]);
+    const key = (tenant: unknown, id: unknown) => `${String(tenant || '')}:${String(id || '')}`;
+    const hiddenKeys = new Set(hidden.map((item) => key(item.tenantId, item.recordId)));
+    const known = new Map<string, Record<string, any>>();
+    for (const row of Array.isArray(records) ? records : []) {
+      const record = row && typeof row === 'object' ? row as Record<string, any> : {};
+      const id = String(record.id || record.sourceId || '');
+      const tenantId = String(record.tenantId || '');
+      if (tenantId && id) known.set(key(tenantId, id), record);
+    }
+    // Deletions made before archive deployment may still have an account notification.
+    // The notification body is the only known historical detail: never invent a service or a date.
+    for (const row of oldDeletionNotices) {
+      const id = String(row.entityId || '');
+      const tenantId = String(row.tenantId || '');
+      const itemKey = key(tenantId, id);
+      if (!id || !tenantId || known.has(itemKey)) continue;
+      const message = String(row.body || '');
+      known.set(itemKey, {
+        id, tenantId,
+        date: message.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || '',
+        from: message.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '',
+        status: 'deleted',
+        deletedAt: row.createdAt,
+        deletedSummary: message,
+        procedures: [],
+      });
+    }
+    return [...known.entries()]
+      .filter(([itemKey]) => !hiddenKeys.has(itemKey))
+      .map(([, record]) => record);
+  }
+
+  async hideFromJournal(accountId: string, tenantId: string, recordId: string) {
+    const tenant = String(tenantId || '').trim();
+    const id = String(recordId || '').trim();
+    if (!tenant || !id || tenant.length > 128 || id.length > 128) {
+      throw new NotFoundException('Запись не найдена');
+    }
+    const visible = await this.journal(accountId);
+    if (!visible.some((record) => String(record.tenantId) === tenant
+      && String(record.id || record.sourceId) === id)) {
+      throw new NotFoundException('Запись не найдена');
+    }
+    await this.prisma.accountHiddenRecord.upsert({
+      where: { accountId_tenantId_recordId: { accountId, tenantId: tenant, recordId: id } },
+      create: { accountId, tenantId: tenant, recordId: id },
+      update: {},
+    });
+    return { hidden: true };
   }
 }
