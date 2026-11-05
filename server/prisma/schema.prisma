@@ -62,7 +62,6 @@ model Tenant {
   ueiState                 UeiState?
   records                  Record[]
   recordEvents             RecordEvent[]
-  deletedRecordArchives    DeletedRecordArchive[]
   events                   Event[]
   notes                    Note[]
   businessOperationalState BusinessOperationalState?
@@ -446,15 +445,6 @@ model RecordEvent {
   @@map("BusinessRecordEvent")
 }
 
-model DeletedRecordArchive {
-  id        String @id @default(cuid())
-  tenantId  String
-  recordId  String
-  data      Json
-  deletedAt DateTime @default(now())
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  @@unique([tenantId, recordId])
-}
 model Event {
   id          String   @id
   tenantId    String?

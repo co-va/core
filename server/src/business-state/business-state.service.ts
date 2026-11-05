@@ -292,14 +292,6 @@ export class BusinessStateService {
   async deleteRecord(tenantId: string, recordId: string) {
     const id = text(recordId);
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
-      if (existing) {
-        await tx.deletedRecordArchive.upsert({
-          where: { tenantId_recordId: { tenantId, recordId: id } },
-          create: { tenantId, recordId: id, data: existing.data },
-          update: { data: existing.data, deletedAt: new Date() },
-        });
-      }
       const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
