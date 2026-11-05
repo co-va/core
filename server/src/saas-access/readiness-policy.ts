@@ -50,11 +50,11 @@ export function applyReadinessGate(
   rows: readonly ReadinessGateRow[],
   actor: { isTester: boolean; isOwnerBook: boolean },
 ): ResolvedCapability {
-  if (capability.valueType !== 'BOOLEAN' || actor.isOwnerBook || capability.enabled !== true) return capability;
+  if (capability.valueType !== 'BOOLEAN' || capability.enabled !== true) return capability;
   const key = capabilityToReadinessKey.get(capability.key);
   if (!key) return capability;
   const row = rows.find((item) => item.key === key && item.enforced === true);
   if (!row) return capability; // unconfigured statuses cannot cut off existing LIVE access
-  if (row.status === 'READY' || (row.status === 'TESTING' && actor.isTester)) return capability;
+  if (row.status === 'READY' || (row.status === 'TESTING' && (actor.isTester || actor.isOwnerBook))) return capability;
   return { ...capability, enabled: false, source: 'READINESS' };
 }
