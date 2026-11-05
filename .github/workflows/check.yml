@@ -958,10 +958,22 @@ jobs:
           expect_contains "admin.va-tools.ru" "/admin/document-registry/catalog.js" "privacy-policy"
           expect_contains "admin.va-tools.ru" "/admin/document-registry/view.js" "Реестр документов"
 
-          expect_status "app.va-tools.ru" "/" "200"
-          expect_status "app.va-tools.ru" "/core.js" "200"
-          expect_contains "app.va-tools.ru" "/" "<title>Рабочее пространство</title>"
-          expect_contains "app.va-tools.ru" "/core.js" "renderAuthenticated(currentAccount)"
+          # Core no longer serves the old Professional UI; verify redirects and deep links.
+          expect_redirect() {
+            local host="$1"
+            local path="$2"
+            local destination="$3"
+            local actual
+            actual=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' -H "Host: $host" "http://localhost:3000$path")
+            if [ "$actual" != "302 $destination" ]; then
+              echo "$host$path: expected 302 redirect to $destination, got $actual"
+              exit 1
+            fi
+          }
+          expect_redirect "app.va-tools.ru" "/" "https://prof.va-tools.ru/"
+          expect_redirect "app.va-tools.ru" "/core.js" "https://prof.va-tools.ru/core.js"
+          expect_redirect "app.va-tools.ru" "/?booking=smoke" "https://prof.va-tools.ru/booking?booking=smoke"
+          expect_redirect "va-app-temp-volokovykh.msk1.amvera.tech" "/" "https://prof.va-tools.ru/"
 
           expect_status "user.va-tools.ru" "/" "404"
           expect_status "user.va-tools.ru" "/user.html" "404"
