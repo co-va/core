@@ -1,53 +1,51 @@
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
-import { renderPwaIcons } from './render-pwa-icons.mjs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 
 const root = process.cwd();
 const out = join(root, '_site');
-const excluded = new Set([
-  '.git',
-  '.github',
-  'node_modules',
-  '_site',
-  'server',
-  'tests',
-  'scripts',
-  'docs',
-  'archive',
-]);
-const excludedRootFiles = new Set([
-  '.dockerignore',
-  'Dockerfile',
-  'README.md',
-  'amvera.yml',
-  'docker-compose.staging.yml',
-  'package.json',
-  'package-lock.json',
-]);
 const rawToken = String(process.env.GITHUB_SHA || Date.now());
 const buildToken = rawToken.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'build';
 
+// Core ships its platform Admin and public landing only. No app, Booking or PWA bundle.
+const platformFiles = [
+  'css/style.css',
+  'core/auth.js',
+  'core/environment.js',
+  'core/password-reset-page.js',
+  'core/phone/index.js',
+  'ui/auth/auth.css',
+  'ui/buttons/buttons.css',
+  'ui/buttons/index.js',
+  'ui/commercial-catalog.css',
+  'ui/documents/document.css',
+  'ui/documents/index.js',
+  'ui/inputs/inputs.css',
+  'ui/inputs/index.js',
+  'ui/lists/list-entry.css',
+  'ui/modals/modal.css',
+  'ui/modals/index.js',
+  'ui/receipt/receipt.css',
+  'ui/selectors/index.js',
+  'ui/utils/escape-html.js',
+  'ui/v2/geometry.js',
+  'ui/v2/html.js',
+  'ui/v2/lifecycle.js',
+  'ui/v2/modal-portal.js',
+  'ui/v2/sticker.js',
+  'ui/v2/swipe.js',
+  'ui/v2/v2.css',
+  'ui/v2/z-affordance.js',
+  'ui/v2/z-layout.js',
+];
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
-
-function copyTree(source, target) {
-  for (const name of readdirSync(source)) {
-    if (excluded.has(name)) continue;
-    if (source === root && excludedRootFiles.has(name)) continue;
-    const from = join(source, name);
-    const to = join(target, name);
-    const stat = statSync(from);
-    if (stat.isDirectory()) {
-      mkdirSync(to, { recursive: true });
-      copyTree(from, to);
-    } else {
-      cpSync(from, to);
-    }
-  }
+for (const path of ['admin', 'landing', ...platformFiles]) {
+  const source = join(root, path);
+  if (!existsSync(source)) throw new Error(`Platform asset missing: ${path}`);
+  const target = join(out, path);
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(source, target, { recursive: true });
 }
-
-copyTree(root, out);
-renderPwaIcons(out);
 
 function versionModuleSpecifier(specifier) {
   if (!/^\.{1,2}\/.+\.(?:js|mjs)$/.test(specifier)) return specifier;
