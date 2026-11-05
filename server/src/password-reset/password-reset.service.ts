@@ -58,7 +58,7 @@ export class PasswordResetService {
 
     const admin = text(surface).toLowerCase() === 'admin';
     const base = production
-      ? (admin ? 'https://admin.va-tools.ru' : 'https://app.va-tools.ru')
+      ? (admin ? 'https://admin.va-tools.ru' : 'https://prof.va-tools.ru')
       : text(process.env.FRONTEND_ORIGIN) || 'http://localhost:8080';
     const path = admin ? '/admin/reset-password.html' : '/reset-password.html';
     const url = new URL(path, base);
