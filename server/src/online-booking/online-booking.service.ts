@@ -134,6 +134,7 @@ function normalizeProfileData(value: unknown) {
     }),
     telegram: text(source.telegram).slice(0, 100),
     links,
+    journalHiddenRecords: uniqueStrings(source.journalHiddenRecords, (value) => text(value).slice(0, 280), 2000),
   };
 }
 
