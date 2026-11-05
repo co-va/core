@@ -54,7 +54,7 @@ export function applyReadinessGate(
   const key = capabilityToReadinessKey.get(capability.key);
   if (!key) return capability;
   const row = rows.find((item) => item.key === key && item.enforced === true);
-  if (!row) return capability; // nonconfigured legacy statuses cannot cut off existing LIVE access
+  if (!row) return capability; // unconfigured statuses cannot cut off existing LIVE access
   if (row.status === 'READY' || (row.status === 'TESTING' && actor.isTester)) return capability;
   return { ...capability, enabled: false, source: 'READINESS' };
 }
