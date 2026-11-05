@@ -45,6 +45,17 @@ export const TOOL_CAPABILITY_KEYS = [
   'integrations.access',
   'documents.access',
   'tags.access',
+  'loyalty.deposit.access',
+  'loyalty.personal_account.access',
+  'loyalty.certificate.access',
+  'loyalty.subscription.access',
+  'loyalty.referral.access',
+  'loyalty.bonus.access',
+  'inventory.stock.access',
+  'inventory.movements.access',
+  'inventory.order.access',
+  'inventory.stocktake.access',
+  'data_transfer.access',
 ] as const;
 const TOOL_CAPABILITY_SET = new Set<string>(TOOL_CAPABILITY_KEYS);
 
@@ -83,6 +94,18 @@ const CAPABILITY_CATALOG: Array<{
   { key: 'integrations.access', groupKey: 'settings', name: 'Интеграции', valueType: CapabilityValueType.BOOLEAN, position: 160, starterEnabled: false },
   { key: 'documents.access', groupKey: 'settings', name: 'Документы', valueType: CapabilityValueType.BOOLEAN, position: 170, starterEnabled: false },
   { key: 'tags.access', groupKey: 'settings', name: 'Ярлыки', valueType: CapabilityValueType.BOOLEAN, position: 180, starterEnabled: false },
+
+  { key: 'loyalty.deposit.access', groupKey: 'loyalty', name: 'Лояльность · Депозит', valueType: CapabilityValueType.BOOLEAN, position: 190, starterEnabled: false },
+  { key: 'loyalty.personal_account.access', groupKey: 'loyalty', name: 'Лояльность · Личный счёт', valueType: CapabilityValueType.BOOLEAN, position: 191, starterEnabled: false },
+  { key: 'loyalty.certificate.access', groupKey: 'loyalty', name: 'Лояльность · Сертификат', valueType: CapabilityValueType.BOOLEAN, position: 192, starterEnabled: false },
+  { key: 'loyalty.subscription.access', groupKey: 'loyalty', name: 'Лояльность · Абонемент', valueType: CapabilityValueType.BOOLEAN, position: 193, starterEnabled: false },
+  { key: 'loyalty.referral.access', groupKey: 'loyalty', name: 'Лояльность · Реферальная программа', valueType: CapabilityValueType.BOOLEAN, position: 194, starterEnabled: false },
+  { key: 'loyalty.bonus.access', groupKey: 'loyalty', name: 'Лояльность · Бонусная программа', valueType: CapabilityValueType.BOOLEAN, position: 195, starterEnabled: false },
+  { key: 'inventory.stock.access', groupKey: 'inventory', name: 'Склад · Остатки', valueType: CapabilityValueType.BOOLEAN, position: 201, starterEnabled: false },
+  { key: 'inventory.movements.access', groupKey: 'inventory', name: 'Склад · Движения', valueType: CapabilityValueType.BOOLEAN, position: 202, starterEnabled: false },
+  { key: 'inventory.order.access', groupKey: 'inventory', name: 'Склад · Заказ', valueType: CapabilityValueType.BOOLEAN, position: 203, starterEnabled: false },
+  { key: 'inventory.stocktake.access', groupKey: 'inventory', name: 'Склад · Инвентаризация', valueType: CapabilityValueType.BOOLEAN, position: 204, starterEnabled: false },
+  { key: 'data_transfer.access', groupKey: 'settings', name: 'Настройки · Перенос данных', valueType: CapabilityValueType.BOOLEAN, position: 210, starterEnabled: false },
 
   { key: 'journal.access', groupKey: 'system', name: 'Журнал', valueType: CapabilityValueType.BOOLEAN, position: 900, starterEnabled: false },
   { key: 'finance.access', groupKey: 'system', name: 'Финансы', valueType: CapabilityValueType.BOOLEAN, position: 910, starterEnabled: false },

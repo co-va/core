@@ -103,6 +103,17 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.timetable': ['timetable.access'],
   'cabinet.journal.list': ['journal.list.access'],
   'cabinet.profile.workspaces': ['workplaces.access', 'workplaces.max'],
+  'cabinet.loyalty.deposit': ['loyalty.deposit.access'],
+  'cabinet.loyalty.personal-account': ['loyalty.personal_account.access'],
+  'cabinet.loyalty.certificate': ['loyalty.certificate.access'],
+  'cabinet.loyalty.subscription': ['loyalty.subscription.access'],
+  'cabinet.loyalty.referral': ['loyalty.referral.access'],
+  'cabinet.loyalty.bonus': ['loyalty.bonus.access'],
+  'cabinet.inventory.stock': ['inventory.stock.access'],
+  'cabinet.inventory.movements': ['inventory.movements.access'],
+  'cabinet.inventory.order': ['inventory.order.access'],
+  'cabinet.inventory.stocktake': ['inventory.stocktake.access'],
+  'cabinet.settings.data-transfer': ['data_transfer.access'],
   'cabinet.service': ['services.access'],
   'cabinet.finance.cash': ['finance.cash.access'],
   'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
@@ -212,7 +223,8 @@ function readinessOptions(value) {
 
 function readinessSelect(readinessKey, byKey, className) {
   const value = readinessValue(byKey.get(readinessKey));
-  return `<select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}">${readinessOptions(value)}</select>`;
+  const enforced = byKey.get(readinessKey)?.enforced === true;
+  return `<select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="${enforced ? 'Статус управляет доступом' : 'Для применения к доступу выберите новый статус'}">${readinessOptions(value)}</select>`;
 }
 
 function aggregateKeys(item) {
@@ -287,6 +299,9 @@ function hydrateReadiness(root, items = []) {
     select.value = value;
     select.dataset.previous = value;
     select.disabled = false;
+    select.title = byKey.get(String(select.dataset.readinessKey || ''))?.enforced
+      ? 'Статус управляет доступом'
+      : 'Для применения к доступу выберите новый статус';
   });
   root.querySelectorAll('[data-readiness-count]').forEach((node) => {
     const total = Number(node.dataset.readinessCount || 0);
@@ -379,6 +394,7 @@ export function renderAdminTools(content) {
   if (!content) return;
 
   content.innerHTML = `<div class="admin-tool-areas">
+    <p class="admin-service-note">Ранее выставленные статусы остаются информационными до нового выбора. Новые сохранённые статусы управляют доступом. Это защищает действующие рабочие инструменты от массового отключения.</p>
     <details class="admin-tool-area">
       <summary class="admin-tool-area-summary"><strong>Кабинет</strong><span aria-hidden="true">⌄</span></summary>
       <div class="admin-tool-area-body" data-tool-area-body="cabinet">${renderArchitecture('cabinet', toolReadinessCache)}</div>

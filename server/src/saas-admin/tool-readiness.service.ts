@@ -59,7 +59,7 @@ export class ToolReadinessService {
 
   private async ensureRows() {
     await this.prisma.adminToolReadiness.createMany({
-      data: READINESS_KEYS.map((key) => ({ key, status: 'NOT_READY' })),
+      data: READINESS_KEYS.map((key) => ({ key, status: 'NOT_READY', enforced: false })),
       skipDuplicates: true,
     });
   }
@@ -70,7 +70,7 @@ export class ToolReadinessService {
       where: { key: { in: [...READINESS_KEYS] } },
     });
     const byKey = new Map(rows.map((row) => [row.key, row]));
-    return READINESS_KEYS.map((key) => ({ key, status: byKey.get(key)?.status || 'NOT_READY' }));
+    return READINESS_KEYS.map((key) => ({ key, status: byKey.get(key)?.status || 'NOT_READY', enforced: byKey.get(key)?.enforced === true }));
   }
 
   async update(key: string, input: Record<string, unknown>) {
@@ -78,8 +78,8 @@ export class ToolReadinessService {
     const status = statusValue(input.status);
     await this.prisma.adminToolReadiness.upsert({
       where: { key },
-      update: { status },
-      create: { key, status },
+      update: { status, enforced: true },
+      create: { key, status, enforced: true },
     });
     return this.list();
   }
