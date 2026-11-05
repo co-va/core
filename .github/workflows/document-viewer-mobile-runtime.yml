@@ -7,12 +7,22 @@ on:
       - '.github/workflows/document-viewer-mobile-runtime.yml'
       - 'tests/document-viewer-mobile-runtime-browser.html'
       - 'ui/documents/**'
+      - 'ui/modals/**'
+      - 'ui/v2/**'
+      - 'admin/**'
+      - 'core/password-reset-page.js'
+      - 'scripts/build-pages.mjs'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/document-viewer-mobile-runtime.yml'
       - 'tests/document-viewer-mobile-runtime-browser.html'
       - 'ui/documents/**'
+      - 'ui/modals/**'
+      - 'ui/v2/**'
+      - 'admin/**'
+      - 'core/password-reset-page.js'
+      - 'scripts/build-pages.mjs'
   workflow_dispatch:
 
 permissions:

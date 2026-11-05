@@ -1,17 +1,14 @@
-import { clearAccount } from './account/index.js';
 import { clearAuthToken } from './auth.js';
 import { API_BASE } from './environment.js';
-import { initPasswordFields, openNotice, passwordField, v2Sticker } from '../ui/ui.js';
+import { initPasswordFields, passwordField } from '../ui/inputs/index.js';
+import { openNotice } from '../ui/modals/index.js';
+import { v2Sticker } from '../ui/v2/sticker.js';
 
 const root = document.querySelector('#app');
 const params = new URLSearchParams(location.search);
 const token = String(params.get('token') || '').trim();
-const kind = String(params.get('kind') || 'platform').trim().toLowerCase() === 'account' ? 'account' : 'platform';
 
-function loginUrl() {
-  if (kind === 'account') return '/';
-  return String(location.hostname || '').toLowerCase() === 'admin.va-tools.ru' ? '/admin/' : '/';
-}
+function loginUrl() { return '/admin/'; }
 
 function renderInvalid(message = 'Ссылка восстановления недействительна или истекла.') {
   root.innerHTML = v2Sticker({
@@ -23,8 +20,7 @@ function renderInvalid(message = 'Ссылка восстановления не
 }
 
 function renderSuccess() {
-  if (kind === 'account') clearAccount('');
-  else clearAuthToken();
+  clearAuthToken();
   root.innerHTML = v2Sticker({
     title: 'Пароль изменён',
     body: '<p>Новый пароль сохранён. Войдите с ним в систему.</p>',
@@ -70,9 +66,7 @@ function renderForm() {
 
     submit.disabled = true;
     try {
-      const path = kind === 'account'
-        ? '/online-booking/account/password-reset/confirm'
-        : '/auth/password-reset/confirm';
+      const path = '/auth/password-reset/confirm';
       const response = await fetch(`${API_BASE}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

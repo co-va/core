@@ -1,5 +1,5 @@
 import { escapeHtml } from '../utils/escape-html.js';
-import { mountV2Layer, v2Layer } from '../v2/index.js';
+import { mountV2Layer, v2Layer } from '../v2/modal-portal.js';
 import { v2QFrame } from '../v2/z-layout.js';
 
 let modalLevel = 0;

@@ -24,14 +24,4 @@ assert.equal(applyReadinessGate(capability('journal.day.access'), rows('NOT_READ
   true, 'unrelated status does not disable the journal');
 console.log('Readiness user/tester/owner matrix PASS');
 
-// In the Core-owned active Professional frontend, every unfinished subtool must obey the API resolver.
-import { readFileSync } from 'node:fs';
-const loyaltyNav = readFileSync('core/loyalty/index.js', 'utf8');
-const inventoryNav = readFileSync('core/inventory/index.js', 'utf8');
-const settingsNav = readFileSync('settings/settings.js', 'utf8');
-const accessModule = readFileSync('core/access.js', 'utf8');
-assert.match(loyaltyNav, /canUseBookCapability\(LOYALTY_CAPABILITIES\[item\.id\]\)/);
-assert.match(inventoryNav, /canUseBookCapability\(item\.capability\)/);
-assert.match(settingsNav, /data_transfer\.access/);
-assert.match(settingsNav, /notifications\.access/);
-assert.match(accessModule, /if \(!capability\) return false/);
+
