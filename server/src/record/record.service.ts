@@ -425,9 +425,10 @@ export class RecordService {
       .map((value) => text(value).toLowerCase()).filter(Boolean));
     if (!personKeys.size && !personIds.size && !personPhones.size && !personEmails.size) return [];
 
-    const [rows, eventRows] = await Promise.all([
+    const [rows, eventRows, archivedRows] = await Promise.all([
       this.prisma.record.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.recordEvent.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+      this.prisma.deletedRecordArchive.findMany({ where: { tenantId }, orderBy: { deletedAt: 'desc' } }),
     ]);
     const byRecord = new Map<string, JsonObject[]>();
     for (const row of eventRows) {
@@ -436,9 +437,7 @@ export class RecordService {
       byRecord.set(row.recordId, list);
     }
 
-    const result: JsonObject[] = [];
-    for (const row of rows) {
-      const record = objectValue(row.data);
+    const matchesAccount = (record: JsonObject) => {
       const person = objectValue(record.person);
       const directMatch = personKeys.has(text(person?.key)) || personIds.has(text(person?.id));
       const groupMatch = arrayValue(objectValue(record.group).participants)
@@ -447,9 +446,15 @@ export class RecordService {
       const booker = objectValue(objectValue(record.createdBy).booker);
       const bookerPhone = canonicalPhone(booker.phone);
       const bookerEmail = text(booker.email).toLowerCase();
-      const bookedByMatch = (bookerPhone && personPhones.has(bookerPhone))
-        || (bookerEmail && personEmails.has(bookerEmail));
-      if (!directMatch && !groupMatch && !bookedByMatch) continue;
+      return Boolean(directMatch || groupMatch || (bookerPhone && personPhones.has(bookerPhone))
+        || (bookerEmail && personEmails.has(bookerEmail)));
+    };
+
+    const result: JsonObject[] = [];
+    for (const row of rows) {
+      const record = objectValue(row.data);
+      const person = objectValue(record.person);
+      if (!matchesAccount(record)) continue;
       const events = byRecord.get(text(record.id)) || [];
       const lifecycle = this.projectLifecycle(record, events);
       const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram);
@@ -474,6 +479,22 @@ export class RecordService {
         finance: settlement,
         payment,
         history: events,
+      });
+    }
+    const activeIds = new Set(rows.map((row) => text(row.recordId)));
+    for (const archive of archivedRows) {
+      if (activeIds.has(text(archive.recordId))) continue;
+      const record = objectValue(archive.data);
+      if (!matchesAccount(record)) continue;
+      result.push({
+        ...record,
+        id: text(archive.recordId),
+        tenantId,
+        status: 'deleted',
+        deletedAt: archive.deletedAt.toISOString(),
+        history: [],
+        finance: null,
+        payment: null,
       });
     }
     return result.sort((left, right) => {
