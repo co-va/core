@@ -1,0 +1,42 @@
+name: Production Admin Login Probe
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unauthenticated-login:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check API availability and measure login response
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo 'Testing production API without real credentials or account data'
+          health_meta="$(curl --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            --output /tmp/admin-health-response.json \
+            --write-out '%{http_code}|%{time_total}' \
+            'https://api.va-tools.ru/health' 2>/dev/null)" || health_meta='000|timeout'
+          echo "API /health: ${health_meta}"
+          login_meta="$(curl --silent --show-error --connect-timeout 5 --max-time 20 \
+            -H 'Content-Type: application/json' \
+            -X POST -d '{"identifier":"unregistered-login-probe@example.invalid","password":"invalid-login-probe"}' \
+            --output /tmp/admin-login-response.json \
+            --write-out '%{http_code}|%{time_total}' \
+            'https://api.va-tools.ru/auth/login' 2>/dev/null)" || login_meta='000|timeout'
+          echo "API /auth/login (invalid account): ${login_meta}; expected 401 in under 12 seconds"
+          code="${login_meta%%|*}"
+          elapsed="${login_meta#*|}"
+          if [ "$code" = '401' ]; then
+            echo 'LOGIN_ENDPOINT_REACHABLE'
+          else
+            echo 'LOGIN_ENDPOINT_UNAVAILABLE_OR_UNEXPECTED'
+          fi
+          if [ "$code" = '000' ]; then
+            echo 'Probe could not reach the production endpoint. Check Amvera container and proxy logs.'
+          fi
