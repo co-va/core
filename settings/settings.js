@@ -2,9 +2,9 @@ import { canUseBookCapability } from '../core/access.js';
 import { folderList, pageHeader } from '../ui/ui.js';
 
 const folders = [
-  ['data-transfer', 'Перенос данных', '◫', () => import('./data-transfer/data-transfer.js'), ''],
+  ['data-transfer', 'Перенос данных', '◫', () => import('./data-transfer/data-transfer.js'), 'data_transfer.access'],
   ['online-booking', 'Онлайн-запись', '◫', () => import('./online-booking/online-booking.js'), 'online_booking.access'],
-  ['notifications', 'Уведомления', '◫', () => import('./notifications/notifications.js'), 'online_booking.access'],
+  ['notifications', 'Уведомления', '◫', () => import('./notifications/notifications.js'), 'notifications.access'],
   ['integrations', 'Интеграции', '◫', () => import('./integrations/integrations.js'), 'integrations.access'],
   ['documents', 'Документы', '◫', () => import('./documents/documents.js'), 'documents.access'],
   ['tags', 'Ярлыки', '◫', () => import('./tags/tags.js'), 'tags.access'],
