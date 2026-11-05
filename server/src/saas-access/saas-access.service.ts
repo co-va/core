@@ -1,10 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CapabilityValueType, TenantAccessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { applyReadinessGate } from './readiness-policy';
 
 const DEMO_DAYS = 14;
 
-type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED';
+type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED' | 'READINESS';
 
 type CommercialPaidState = {
   startsAt: Date | null;
@@ -317,6 +318,16 @@ export class SaasAccessService {
   }
 
   async resolveCapability(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {
+    const resolved = await this.resolveCapabilityWithoutReadiness(tenantId, capabilityKey);
+    if (resolved.valueType !== CapabilityValueType.BOOLEAN || resolved.enabled !== true) return resolved;
+    const access = await this.prisma.tenantAccess.findUnique({ where: { tenantId } });
+    if (!access) throw new NotFoundException('Состояние рабочего пространства не настроено');
+    if (access.isOwnerBook) return resolved;
+    const readiness = await this.prisma.adminToolReadiness.findMany({ where: { enforced: true } });
+    return applyReadinessGate(resolved, readiness, access);
+  }
+
+  private async resolveCapabilityWithoutReadiness(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {
     const capability = await this.prisma.capability.findUnique({
       where: { key: capabilityKey },
     });
@@ -564,6 +575,11 @@ export class SaasAccessService {
       };
     });
 
+    const readiness = access.isOwnerBook
+      ? []
+      : await this.prisma.adminToolReadiness.findMany({ where: { enforced: true } });
+    const effectiveCapabilities = resolved.map((capability) => applyReadinessGate(capability, readiness, access));
+
     return {
       tenantId,
       status: access.status,
@@ -579,7 +595,7 @@ export class SaasAccessService {
       paidAccessExpired: commercialPaid.expired,
       plan: access.plan ? { id: access.plan.id, key: access.plan.key, name: access.plan.name } : null,
       capabilityOrder: capabilities.map((capability) => capability.key),
-      capabilities: resolved,
+      capabilities: effectiveCapabilities,
     };
   }
 

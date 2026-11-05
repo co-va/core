@@ -839,6 +839,7 @@ model PlatformNotice {
 model AdminToolReadiness {
   key       String   @id
   status    String   @default("NOT_READY")
+  enforced  Boolean  @default(false)
   updatedAt DateTime @updatedAt
 }
 

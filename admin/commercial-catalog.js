@@ -12,9 +12,9 @@ const READINESS = Object.freeze({
   READY: 'Готово',
 });
 
-const TOOL_MAP = Object.freeze({
+export const TOOL_MAP = Object.freeze({
   cabinet: [
-    { id: 'people', label: 'Люди', readinessKey: 'cabinet.people' },
+    { id: 'people', label: 'Клиенты', readinessKey: 'cabinet.people' },
     {
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
         { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day' },
@@ -93,6 +93,36 @@ const TOOL_MAP = Object.freeze({
       ],
     },
   ],
+});
+
+// Binding to the existing capability model. Catalog hierarchy and labels stay owned by TOOL_MAP.
+export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
+  'cabinet.people': ['people.access'],
+  'cabinet.journal.day': ['journal.day.access'],
+  'cabinet.journal.month': ['journal.month.access'],
+  'cabinet.timetable': ['timetable.access'],
+  'cabinet.journal.list': ['journal.list.access'],
+  'cabinet.profile.workspaces': ['workplaces.access', 'workplaces.max'],
+  'cabinet.loyalty.deposit': ['loyalty.deposit.access'],
+  'cabinet.loyalty.personal-account': ['loyalty.personal_account.access'],
+  'cabinet.loyalty.certificate': ['loyalty.certificate.access'],
+  'cabinet.loyalty.subscription': ['loyalty.subscription.access'],
+  'cabinet.loyalty.referral': ['loyalty.referral.access'],
+  'cabinet.loyalty.bonus': ['loyalty.bonus.access'],
+  'cabinet.inventory.stock': ['inventory.stock.access'],
+  'cabinet.inventory.movements': ['inventory.movements.access'],
+  'cabinet.inventory.order': ['inventory.order.access'],
+  'cabinet.inventory.stocktake': ['inventory.stocktake.access'],
+  'cabinet.settings.data-transfer': ['data_transfer.access'],
+  'cabinet.service': ['services.access'],
+  'cabinet.finance.cash': ['finance.cash.access'],
+  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
+  'cabinet.finance.z-report': ['finance.z_report.access'],
+  'cabinet.settings.online-booking': ['online_booking.access'],
+  'cabinet.settings.notifications': ['notifications.access'],
+  'cabinet.settings.integrations': ['integrations.access'],
+  'cabinet.settings.documents': ['documents.access'],
+  'cabinet.settings.tags': ['tags.access'],
 });
 
 const TYPE_LABELS = Object.freeze({
@@ -193,7 +223,8 @@ function readinessOptions(value) {
 
 function readinessSelect(readinessKey, byKey, className) {
   const value = readinessValue(byKey.get(readinessKey));
-  return `<select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}">${readinessOptions(value)}</select>`;
+  const enforced = byKey.get(readinessKey)?.enforced === true;
+  return `<span class="admin-tool-readiness-editor"><select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="${enforced ? 'Статус управляет доступом' : 'Статус пока не применён'}">${readinessOptions(value)}</select><button class="admin-tool-readiness-apply" type="button" data-activate-readiness="${escapeHtml(readinessKey)}" title="Применить выбранный статус к доступу" aria-label="Применить статус" ${enforced ? 'hidden' : ''}>✓</button></span>`;
 }
 
 function aggregateKeys(item) {
@@ -268,6 +299,12 @@ function hydrateReadiness(root, items = []) {
     select.value = value;
     select.dataset.previous = value;
     select.disabled = false;
+    select.title = byKey.get(String(select.dataset.readinessKey || ''))?.enforced
+      ? 'Статус управляет доступом'
+      : 'Статус пока не применён';
+  });
+  root.querySelectorAll('[data-activate-readiness]').forEach((button) => {
+    button.hidden = byKey.get(String(button.dataset.activateReadiness || ''))?.enforced === true;
   });
   root.querySelectorAll('[data-readiness-count]').forEach((node) => {
     const total = Number(node.dataset.readinessCount || 0);
@@ -295,6 +332,28 @@ function hydrateAccountTools(content, tools = []) {
 }
 
 function bindReadiness(content) {
+  content.querySelectorAll('[data-activate-readiness]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const key = String(button.dataset.activateReadiness || '');
+      const select = button.parentElement?.querySelector('[data-readiness-key]');
+      if (!key || !select) return;
+      button.disabled = true;
+      try {
+        const items = await toolReadinessRequest('/' + encodeURIComponent(key), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: select.value }),
+        });
+        toolReadinessCache = Array.isArray(items) ? items : [];
+        hydrateAllReadiness(content, toolReadinessCache);
+        document.dispatchEvent(new CustomEvent('admin:tool-readiness-changed'));
+      } catch (error) {
+        button.title = error instanceof Error ? error.message : 'Не удалось применить статус';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
   content.querySelectorAll('[data-readiness-key]').forEach((select) => {
     select.addEventListener('click', (event) => event.stopPropagation());
     select.addEventListener('change', async () => {
@@ -311,6 +370,7 @@ function bindReadiness(content) {
         });
         toolReadinessCache = Array.isArray(items) ? items : [];
         hydrateAllReadiness(content, toolReadinessCache);
+        document.dispatchEvent(new CustomEvent('admin:tool-readiness-changed'));
       } catch (error) {
         select.value = previous;
         select.dataset.previous = previous;
@@ -359,6 +419,7 @@ export function renderAdminTools(content) {
   if (!content) return;
 
   content.innerHTML = `<div class="admin-tool-areas">
+    <p class="admin-service-note">Статусы управляют доступом после сохранения. Для ранее выставленного статуса нажмите ✓ рядом с ним, чтобы применить его. До этого рабочие права сохраняются.</p>
     <details class="admin-tool-area">
       <summary class="admin-tool-area-summary"><strong>Кабинет</strong><span aria-hidden="true">⌄</span></summary>
       <div class="admin-tool-area-body" data-tool-area-body="cabinet">${renderArchitecture('cabinet', toolReadinessCache)}</div>
