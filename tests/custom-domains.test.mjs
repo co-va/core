@@ -31,7 +31,7 @@ assert.match(serverMain, /host === ADMIN_HOST/);
 assert.match(serverMain, /host === API_HOST/);
 assert.match(serverMain, /host === APP_HOST/);
 assert.ok(serverMain.includes('host === TEMP_APP_HOST || host === APP_HOST'), 'old Professional hosts must share one redirect');
-assert.ok(serverMain.includes("const legacyBookingQuery = request.path === '/'"), 'legacy guest Booking must retain its route');
+assert.ok(serverMain.includes("const guestBookingQuery = request.path === '/'"), 'legacy guest Booking must retain its route');
 assert.ok(serverMain.includes('return response.redirect(302, `https://${PROF_HOST}${redirectPath}`);'), 'old Professional hosts must redirect to canonical Professional');
 assert.ok(!serverMain.includes("if (host === APP_HOST) {\n      return staticSite"), 'old Professional must not be served by Core');
 
