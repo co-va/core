@@ -25,9 +25,9 @@ services:
       OWNER_EMAIL: staging@book.local
       OWNER_PASSWORD: BookStaging-2026!
       OWNER_TENANT_NAME: Book Staging
-      FRONTEND_ORIGIN: http://localhost:8080
+      FRONTEND_ORIGIN: https://prof.va-tools.ru
       PUBLIC_API_URL: http://localhost:3000
-      ACCOUNT_APP_URL: http://localhost:8080
+      ACCOUNT_APP_URL: https://user.va-tools.ru
       WEB_PUSH_VAPID_PUBLIC_KEY: BHiWL1O1iVRVOfjqlev6lQZc-bDwmzpb1EI5mMpPsFgshXHKikRBwr4PkBOAHmzijHJtILulRxHjZxEUERP73Gs
       WEB_PUSH_VAPID_PRIVATE_KEY: gxC9jcEI6J7exbNd0NA-KlF3w1ZfhIKyXnmEPCvyiig
       WEB_PUSH_VAPID_SUBJECT: mailto:staging@book.local
@@ -43,18 +43,6 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-
-  frontend:
-    image: node:24-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
-    command: ["sh", "-c", "node scripts/build-pages.mjs && node scripts/serve-staging.mjs _site 8080"]
-    ports:
-      - "8080:8080"
-    depends_on:
-      backend:
-        condition: service_healthy
 
 volumes:
   book_staging_pg:
