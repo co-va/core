@@ -134,7 +134,6 @@ function normalizeProfileData(value: unknown) {
     }),
     telegram: text(source.telegram).slice(0, 100),
     links,
-    journalHiddenRecords: uniqueStrings(source.journalHiddenRecords, (value) => text(value).slice(0, 280), 2000),
   };
 }
 
@@ -171,8 +170,7 @@ function accountContactFacts(account: {
   return facts;
 }
 
-function publicAccount(account: any, includePrivateJournal = false) {
-  const profile = normalizeProfileData(account.profileData);
+function publicAccount(account: any) {
   return {
     id: account.id,
     email: account.email,
@@ -180,7 +178,7 @@ function publicAccount(account: any, includePrivateJournal = false) {
     surname: account.surname,
     phone: account.phone,
     telegramId: account.telegramId || '',
-    profileData: includePrivateJournal ? profile : { ...profile, journalHiddenRecords: undefined },
+    profileData: normalizeProfileData(account.profileData),
     discountPercent: percent(account.discountPercent),
     visits: Math.max(0, Math.floor(numeric(account.visits, 0))),
     totalSpent: Math.max(0, numeric(account.totalSpent, 0)),
