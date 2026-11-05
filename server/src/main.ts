@@ -3,7 +3,6 @@ import { json, static as serveStatic, urlencoded } from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { resolve } from 'node:path';
 import { AppModule } from './app.module';
-import { stagingPreviewMiddleware } from './staging-preview';
 
 const API_HOST = 'api.va-tools.ru';
 const ADMIN_HOST = 'admin.va-tools.ru';
@@ -33,7 +32,6 @@ function allowedOrigins() {
   if (process.env.NODE_ENV === 'production') {
     return [
       `https://${ADMIN_HOST}`,
-      `https://${APP_HOST}`,
       `https://${PROF_HOST}`,
       `https://${USER_HOST}`,
       `https://${API_HOST}`,
@@ -61,8 +59,6 @@ async function bootstrap() {
     index: 'index.html',
     fallthrough: true,
   });
-
-  app.use(stagingPreviewMiddleware);
 
   app.use((request: Request, response: Response, next: NextFunction) => {
     if (!['GET', 'HEAD'].includes(request.method)) return next();
@@ -92,26 +88,15 @@ async function bootstrap() {
       return response.status(404).send('Not Found');
     }
 
-    const landingPreviewPath = request.path === '/landing'
-      || request.path === '/landing/'
-      || request.path.startsWith('/landing/');
-
-    if (landingPreviewPath) {
-      if (request.path === '/landing') return response.redirect(302, '/landing/');
-      return staticSite(request, response, () => response.status(404).send('Not Found'));
-    }
-
     if (host === API_HOST) {
-      if (request.path === '/') return response.redirect(302, '/admin/');
-      if (!request.path.startsWith('/admin/') && !request.path.startsWith('/core/')) return next();
-      return staticSite(request, response, next);
+      if (request.path === '/') return response.redirect(302, `https://${ADMIN_HOST}/admin/`);
+      return next();
     }
 
     if (host === ADMIN_HOST) {
       if (request.path === '/') return response.redirect(302, '/admin/');
       if (
-        request.path === '/service-worker.js'
-        || request.path.startsWith('/admin/')
+        request.path.startsWith('/admin/')
         || request.path.startsWith('/core/')
         || request.path.startsWith('/ui/')
         || request.path.startsWith('/css/')
