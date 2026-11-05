@@ -30,6 +30,11 @@ assert.doesNotMatch(serverMain, /client\.va-tools\.ru/);
 assert.match(serverMain, /host === ADMIN_HOST/);
 assert.match(serverMain, /host === API_HOST/);
 assert.match(serverMain, /host === APP_HOST/);
+assert.ok(serverMain.includes('host === TEMP_APP_HOST || host === APP_HOST'), 'old Professional hosts must share one redirect');
+assert.ok(serverMain.includes("const legacyBookingQuery = request.path === '/'"), 'legacy guest Booking must retain its route');
+assert.ok(serverMain.includes('return response.redirect(302, `https://${PROF_HOST}${redirectPath}`);'), 'old Professional hosts must redirect to canonical Professional');
+assert.doesNotMatch(serverMain, /if \\(host === APP_HOST\\) \\{[\\s\\S]*?return staticSite\\(/);
+
 assert.match(serverMain, /host === USER_HOST/);
 assert.doesNotMatch(serverMain, /USER_PWA_ASSETS/, 'Core must not expose User-owned PWA assets');
 assert.equal(existsSync(new URL('../pwa/user/app-icon.svg', import.meta.url)), false);
@@ -44,8 +49,9 @@ assert.equal(existsSync(new URL('../user.html', import.meta.url)), false, 'Core 
 assert.equal(existsSync(new URL('../online-booking/user-entry.js', import.meta.url)), false, 'Core must not own the User application entry');
 
 assert.doesNotMatch(landingHtml, /book\.va-tools\.ru/);
-assert.match(landingHtml, /https:\/\/app\.va-tools\.ru\/invite\//);
-assert.match(landingHtml, /https:\/\/app\.va-tools\.ru\//);
+assert.match(landingHtml, /https:\/\/prof\.va-tools\.ru\/invite\//);
+assert.match(landingHtml, /https:\/\/prof\.va-tools\.ru\//);
+assert.doesNotMatch(landingHtml, /https:\/\/app\.va-tools\.ru/);
 
 assert.match(indexHtml, /<base href="\/">/);
 assert.match(indexHtml, /theme-color" content="#2F3338"/);
