@@ -19,10 +19,10 @@ const TOOL_MAP = Object.freeze({
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
         { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day' },
         { label: 'Месяц', kind: 'mode', readinessKey: 'cabinet.journal.month' },
+        { label: 'График (режим месяца)', kind: 'mode', readinessKey: 'cabinet.timetable' },
         { label: 'Список', kind: 'mode', readinessKey: 'cabinet.journal.list' },
       ],
     },
-    { id: 'timetable', label: 'График', readinessKey: 'cabinet.timetable' },
     {
       id: 'profile', label: 'Профиль', nesting: 'composition', items: [
         { label: 'Данные профиля', kind: 'composition', readinessKey: 'cabinet.profile.data' },
