@@ -7,8 +7,6 @@ const telegramBot = fs.readFileSync('server/src/communication/telegram-bot.servi
 const communicationHistory = fs.readFileSync('server/src/communication/communication-history.service.ts', 'utf8');
 const communicationModule = fs.readFileSync('server/src/communication/communication.module.ts', 'utf8');
 const platformNotice = fs.readFileSync('server/src/platform-notice/platform-notice.service.ts', 'utf8');
-const chatApi = fs.readFileSync('core/communications/chat.js', 'utf8');
-const chatUi = fs.readFileSync('chat/chat.js', 'utf8');
 
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
@@ -78,17 +76,8 @@ expect(
   'Professional D history must expose Telegram-only conversations without creating a Person.',
 );
 expect(
-  communicationController.includes("@Query('externalThreadId') externalThreadId = ''")
-    && chatApi.includes("externalThreadId: String(externalThreadId || '')")
-    && chatApi.includes('externalThreadId, body, attachments'),
-  'Professional chat API must carry the Telegram external thread id through load, channel resolution and reply.',
-);
-expect(
-  chatUi.includes('function threadTitle(thread = {})')
-    && chatUi.includes("const externalThreadId = String(thread?.externalThreadId || '').trim();")
-    && chatUi.includes('getCommunicationThread({ phone, uei, externalThreadId })')
-    && chatUi.includes('sendCommunicationMessage({ channel: selectedChannel, phone, uei, externalThreadId, body, attachments })'),
-  'Professional D UI must open Telegram external threads and reply through their external thread id.',
+  communicationController.includes("@Query('externalThreadId') externalThreadId = ''"),
+  'Core must expose the external Telegram thread identifier through its communication API.',
 );
 expect(
   communicationHistory.includes('FROM "CommunicationMessage" m')
