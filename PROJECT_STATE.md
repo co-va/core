@@ -1,98 +1,59 @@
-# PROJECT_STATE
+# PROJECT_STATE — Core platform
 
-## Обязательный контракт
+## Ownership
+This repository is the platform and API backend, **not** the Professional or User application.
 
-- Рабочая ветка только `staging`. Production только `main`. Другие рабочие ветки запрещены.
-- Новый функционал собирается из существующего Shared UI по `UI_ALPHABET.md`. Локальный клон существующего UI запрещён.
-- Бизнес-классификация F/E, главный рабочий контур, условная видимость инструментов и правило `capability != F` определяются только `BUSINESS_ARCHITECTURE.md`. Новый F/E нельзя добавлять под отдельную профессию в обход этого реестра.
-- F/E/Z, свайпы, CardDeck, modal geometry и viewport geometry имеют одного владельца: Shared UI.
-- Feature-код не создаёт собственный глобальный pointer/touch owner, fixed/full-screen слой, modal geometry или canonical component CSS.
-- A/B/C/D, F/E/Z, Q/X/S, CardDeck, EntityCard, miniCard, v2ListEntry/v2ListEntries, Calendar, TimePicker, Receipt и Document используются только через Shared UI.
-- Runtime `legacy`, `bridge`, `compat`, `migration`, migrate/verify/bootstrap-переходы запрещены. Исторические Prisma migrations сохраняются как история БД и не являются runtime.
-- Бизнес-данные принадлежат серверу/PostgreSQL. Browser storage — только session/technical/UI state.
-- Новое общее UI-проявление сначала создаётся в Shared UI и получает guard/test; только потом используется инструментом.
-- CI обязан падать при попытке вернуть запрещённую архитектуру.
-- Перед `main`: `npm run check`, `npm test`, browser runtime tests и фактическая проверка затронутых контуров.
-
-## Граница User / Core
-
+- Core: `co-va/core` — NestJS API, PostgreSQL/Prisma, business services, identity/consents, permissions, messaging, notifications, platform Admin and public landing.
+- Professional: `co-va/professional/staging` — independent frontend, Journal, Profile, Time, Finance interface, notifications interface, guest Booking experience and PWA.
+- User: `co-va/user/staging` — independent User frontend, account and PWA.
 - Приложение конечного пользователя имеет единственного владельца: `co-va/user`.
-- `co-va/core` НЕ является приложением конечного пользователя.
-- Для `co-va/user` этот репозиторий владеет только backend/API/server logic/Prisma/PostgreSQL и общими серверными контрактами.
-- User frontend/runtime/routes/UI должны быть полностью удалены из Core отдельным этапом после установки защиты User; возвращать их в Core запрещено.
-- Удаление User из Core не означает удаление API, серверной логики, Prisma или данных, необходимых `co-va/user`.
-- Professional и другие продуктовые контуры не переписываются в рамках удаления User.
-- Этапный план ведётся в `co-va/user/PROJECT_STATE.md`. Следующий исполнитель не создаёт новый план, а продолжает с первого незавершённого этапа этого плана.
+- User frontend/runtime/routes/UI должны быть полностью удалены из Core.
+- No browser application source may be copied back into Core from either repo. No second frontend on either application domain.
 
-### Зафиксированное состояние отделения User — 2026-11-04
+## Production domains
+- `api.va-tools.ru` — Core API and database-backed endpoints.
+- `admin.va-tools.ru` — Core platform Admin and Admin password recovery.
+- `va-tools.ru`, `www.va-tools.ru` — public platform landing.
+- `prof.va-tools.ru` — standalone Professional, served by its own deployment.
+- `user.va-tools.ru` — standalone User, served by its own deployment.
+- Old `app.va-tools.ru` and `va-app-temp-volokovykh.msk1.amvera.tech` redirect to the independent Professional origin; Core does not serve a second Professional frontend.
+- Core does not serve User or guest Booking frontend on `USER_HOST`.
+- CORS for the active independent applications remains in the Core API and is not evidence of frontend duplication.
 
-- `co-va/user` — единственный репозиторий приложения конечного пользователя; его рабочий код и домен не менялись в рамках этой очистки.
-- В `co-va/core/staging` удалены прежние User HTML/JS entry, Account Shell, User runtime/route/client-side UI, их отдельные CSS/PWA assets и тесты, требовавшие старый User UI внутри Core.
-- `co-va/core` остаётся владельцем backend/API/Prisma/PostgreSQL и общих серверных контрактов Account, Record, Consent, Messenger, Notifications. Эти контракты не удалять по имени `Account` без анализа потребителей.
-- `Professional` **пока работает из Core** и не переключён на отдельный домен. Его `core.js`, Journal, Shared UI, Professional Push, Backend и Public Booking `online-booking/access.js` + `online-booking/booking-entry.js` сохраняются до отдельного подтверждённого переключения.
-- Обработчик `USER_HOST` в сервере Core временно сохраняет только гостевой Public Booking на старом host для совместимости, **не User App**. Его удаление — только после проверки действующих ссылок и маршрутов.
-- **Отдельное незакрытое расхождение маршрутов:** `settings/online-booking/online-booking.js` в Core формирует URL на `user.va-tools.ru/<profileSlug>`, хотя перенесённый User-домен уже принадлежит отдельному приложению. Риск маршрутизации существующих/новых ссылок требует отдельного решения с проверкой реального домена. В этой очистке ссылки и маршруты публичной записи не менялись.
-- Проверки после удаления User в `core/staging` на коммите `69ed0d2`: `check` PASS, `staging-smoke` PASS, `modal-browser-interaction` PASS, `onboarding-smoke` PASS. После документационного коммита эти же проверки должны оставаться зелёными.
-- `core/main` не изменён. Перенос `staging → main` разрешён только отдельным подтверждённым PR после проверок; автоматический merge не делать.
+## Protected backend contracts
+The `server/src/**`, `server/prisma/**`, server migrations and database schema remain the canonical owners of:
+- Account/Person/UEI, Profile, Tenant, workplace, access control and commercial readiness.
+- Time, Procedure, Record, Event, Note, Finance, settlement, loyalty, auxiliary state and data transfer.
+- Communication, Telegram/email, service/marketing/system notifications, push and unread counts.
+- PDN, consent documents, platform terms, legal archive, authentication and invitations.
+- Guest Booking **server API** in `server/src/online-booking/**`: this is required by the separate applications and must never be deleted merely because the historical frontend directory had the same name.
+- Shared pure domain rules required by server build under `core/finance/rules`, `core/loyalty/price-condition`, `core/phone`, `core/time/zone` and `core/uei-format`.
 
-## Task Scope Gate
+Do not remove server routes, DB columns, notifications, records or migrations as part of frontend cleanup. Do not migrate production data during this cleanup.
 
-- Пользователь описывает желаемый результат и не обязан определять технический контур задачи.
-- До первой правки исполнитель обязан сам классифицировать текущий этап, зафиксировать один активный contour и ограниченный ALLOW-набор файлов/директорий через Task Scope Gate.
-- Найденная необходимость изменить другой contour не расширяет текущий scope. Такое изменение фиксируется как dependency/handoff и выполняется только отдельным следующим этапом с новым scope.
-- Запрещено делать изменения «заодно», даже если исполнитель считает соседний код неправильным.
-- Scope фиксируется на чистом `staging` до первой правки и привязывается к текущему HEAD. После lock изменение scope запрещено; расширение требует завершения текущего этапа и нового scope.
-- Перед коммитом и перед завершением этапа обязателен `npm run check:scope`. Любой файл вне ALLOW или внутри DENY является `SCOPE VIOLATION`; задача не считается выполненной.
-- `npm run check:scope` не заменяет `npm run check`, `npm test`, browser/runtime checks и Check Book; он проверяет только границы текущего этапа.
+## Core frontend surface
+Only platform Admin (`admin/**`), public platform landing (`landing/**`) and the strict direct frontend dependencies in `core/**`, `ui/**` and `css/style.css` may be served by Core.
+`scripts/build-pages.mjs` uses an explicit allowlist; it must never package a Professional/User app bundle, Journal, guest Booking UI or PWA.
+`scripts/check-platform-only-boundary.mjs` rejects reintroduced frontend ownership.
+No separate `frontend` service may run in `docker-compose.staging.yml`; Core tests use the real backend and isolated PostgreSQL.
 
-## Репозитории и защищённый merge
+## Cleanup execution — 2026-11-05
+- Baseline: 816 tracked files at `core/main`, commit `1f2b4751`.
+- Earlier old entrypoint/chat removal: 13 files in `staging`.
+- Remaining retired frontend/scripts/browser tests removed in a separate batch: 422 files.
+- Platform-only tree after cleanup: 382 tracked files before documentation changes.
+- Old UI-only test suites were retired from Core; the remaining platform/API tests and isolated database smoke are executed by CI.
+- Professional and User repositories were not modified.
+- Completion requires fresh Check Book and Onboarding Smoke PASS plus platform Admin and API domain integration, not just an asserted build.
 
-- Проект разделён на несколько рабочих репозиториев организации `co-va`; нельзя считать `co-va/core` владельцем всех приложений.
-- `co-va/core` — backend/API/DB и оставшиеся Core-контуры до их отдельного выделения.
-- `co-va/user` — единственное приложение конечного пользователя.
-- `3001vaf-maker` — рабочий аккаунт исполнителя, а не владелец репозитория. Проект нельзя искать или подменять личным репозиторием `3001vaf-maker`.
-- Если GitHub-подключение не показывает нужный проект через профиль исполнителя, сначала обращаться к точному репозиторию организации `co-va` или его URL. Если точный репозиторий всё равно недоступен, остановиться и сообщить о проблеме подключения; не выдумывать пути, файлы или другой репозиторий.
-- `co-tools` — администратор и Code Owner защищённых файлов.
-- Если GitHub запросил review от `co-tools`, это штатный архитектурный шлагбаум. Его нельзя обходить, отключать или менять ради merge.
-- При таком шлагбауме исполнитель сам доводит PR и CI до зелёного состояния, после чего от пользователя требуется только `Approve` → `Submit review` под `co-tools`.
-- После одобрения исполнитель сам выполняет merge в `main` и синхронизирует `staging`; пользователь не должен вручную делать merge.
+## Release and process
+- All changes occur on `staging`; `main` stays production until an approved PR.
+- Keep full integration checks on staging, then PR staging → main. Re-align staging to main after merge.
+- No new branch or parallel replacement application.
+- Preserve the actual running Professional and User applications; the Core cleanup changes only their old duplicate source and host routes, not their API contracts.
+- Do not claim live Amvera deployment from GitHub CI; owner deploys Core main via Amvera after merge.
 
-## Владение F/E и D
-
-- `Профиль` — самостоятельная F и имеет единственного владельца `core/profile`. `Настройки` не владеют Профилем и не могут содержать его alias, bridge или прокси-модуль.
-- `Сервис` — самостоятельная F и имеет единственного владельца `core/service`. `Настройки` не владеют Сервисом и не могут содержать его alias, bridge или прокси-модуль.
-- F `Настройки` содержит только свои E: `Онлайн-запись`, `Уведомления`, `Интеграции`, `Документы`, `Ярлыки`, `Перенос данных`; добавление `Профиль` или `Сервис` в реестр `settings` запрещено даже как скрытый пункт.
-- Shared `CardDeck` обязан рендерить все разрешённые реальные F без числового лимита; появление нового корневого раздела не может скрывать последний F.
-- F `Финансы` владеет E `Касса`, `ДДС`, `Z-отчёт`.
-- F `Склад` владеет E `Остатки`, `Движения`, `Заказ`, `Инвентаризация`.
-- D `Чат` — глобальный application layer, а не F/E. Он сохраняет контекст возврата и может открываться из разных контуров; ни одна F/E не становится владельцем чата.
-- Возврат Профиля или Сервиса под `Настройки`, а также включение D `Чат` в `ROOT_SECTIONS`, является архитектурной регрессией и блокируется CI.
-
-## CSS-граница
-
-- В основном приложении CSS разрешён только в `ui/**` и фундаментальном `css/style.css`.
-- Изолированные entry-поверхности `admin/admin.css` и `invite/invite.css` не являются Shared UI и не могут импортироваться рабочими инструментами.
-- Новый feature-CSS вне Shared UI запрещён.
-
-- Мёртвый runtime JS запрещён: каждый JS-модуль должен быть достижим от реального HTML-entry или `service-worker.js`.
-
-- UI owner без регистрации в `UI_ALPHABET.md` запрещён. Новый `ui/<owner>` не проходит CI, пока не описан и не защищён guard/test.
-
-## Handoff: График как режим Журнала — 2026-11-05
-
-- Новая утверждённая архитектура: один календарь «Журнал → Месяц» с режимами просмотра и управления Графиком, без отдельной F-карточки.
-- В `co-va/professional/staging` прежняя F-карточка удалена, а режим графика перенесён в `journal/график.js`; оба режима используют один Shared Calendar. Владельцы расписания `timetable/day-editor.js` и `core/day/*` остаются едиными.
-- В `co-va/core/staging` обновлены `BUSINESS_ARCHITECTURE.md`, `admin/commercial-catalog.js` и `server/src/saas-admin/commercial-catalog.service.ts`: администратор видит График как режим Журнала. Идентификаторы `timetable.access`, `cabinet.timetable`, `tool.timetable` сохраняются как права/учётные ключи, **не** как F.
-- **Незакрытый инфраструктурный остаток:** Core пока содержит старый Professional frontend `core.js` и `timetable/timetable.js`, где ещё существует отдельный F-вход. Это не второй утверждённый владелец: данный runtime удаляется **целиком**, а не переписывается второй раз, после подтверждения, что действующий домен, вход, Journal, Booking, уведомления и API работают из самостоятельного `co-va/professional/staging`.
-- До подтверждения переключения Core legacy Professional удалять нельзя, чтобы не оборвать действующих пользователей. Удаление провести отдельным закрытым scope с проверкой runtime, ссылок и всех entry/import; backend/API/DB сохранить.
-- Закрытие миграции требует двух доказательств: работа независимого Professional из нового origin и отсутствие старых F-маршрутов/модулей в итоговом Core runtime. Сейчас второе **не выполнено**.
-
-## Domain cutover handoff — `prof.va-tools.ru` (2026-11-05)
-
-- Core `server/src/main.ts`: added `https://prof.va-tools.ru` to production CORS for the independent `co-va/professional/staging`. No change to backend API/business logic, old host routing or data.
-- The old `app.va-tools.ru` is still temporarily served by Core, only until the replacement origin passes real live checks. This is NOT the target final state. Professional has updated its canonical `APP_ORIGIN` and Nginx host in its own repository.
-- **After independent Professional validation:** replace Core's legacy `APP_HOST` and `TEMP_APP_HOST` static hosting with redirect/retirement; replace `https://app.va-tools.ru` in `server/src/password-reset/password-reset.service.ts` and `server/src/tenant-invitation/tenant-invitation.service.ts` (check `FRONTEND_ORIGIN` override), then remove leftover legacy Professional UI/assets while preserving server API/DB/Admin/Landing and public booking links. Never leave two independent working Professional frontends. Do not prematurely remove old access for active users.
-
-## Core platform-only cleanup — approved scope (2026-11-05)
-
-Owner requested removal of the retired Professional and User browser applications, including obsolete guest Booking frontend, from Core. The target Core contains only platform Admin and public landing plus backend/API, Prisma/DB, identity/consent/records/notifications and shared pure server rules. Work is isolated to staging; main remains untouched until a checked PR is approved. The removal map classifies 42 obsolete root/feature frontend files, 138 other browser core modules for dependency review, 119 UI assets for platform-only pruning, and 177 scripts/tests for ownership-aware CI realignment. Admin imports of core/auth and UI document viewer must be separated safely before deleting these dependencies. Server-side Online Booking endpoints remain essential API and must NOT be removed.
+## Naming and guards
+Use neutral platform terms: Platform, Tenant, Account, Person, Profile, UEI, Record, Time, Procedure, Finance. Do not introduce profession-specific technical owners.
+No shadow owners or duplicate business logic. Enforce server authority for all stored business data.
+For Admin capability status: NOT_READY hidden for everybody, TESTING visible to approved testers and owner, READY governed by entitlement. The server readiness owner and Admin catalog stay in Core.
