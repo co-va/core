@@ -1,215 +1,40 @@
-# PROJECT GUIDE
+# CO-VA Core — Platform and API
 
-`PROJECT_STATE.md` — обязательный короткий контракт проекта. Этот файл содержит подробные постоянные правила и не может ему противоречить.
+Source of truth for the platform, server API, database, platform Admin and public landing. This is **not** the Professional or User frontend.
 
-Он хранит только правила, которые нельзя надёжно вывести из текущего кода.
-Текущее состояние функций, файлов, веток, миграций и реализации определяется самим репозиторием, тестами и guard-скриптами. История задач, PR, SHA, завершённые этапы и временные планы в документации не хранятся.
+## Repository owners
+| Repository | Owner | Deployment |
+| --- | --- | --- |
+| `co-va/core` | NestJS API, PostgreSQL/Prisma, platform Admin and public landing | Amvera `va-app` from `main` |
+| `co-va/professional` | Professional frontend, working tools, PWA and guest Booking interface | `staging` → `prof.va-tools.ru` |
+| `co-va/user` | User frontend and PWA | `staging` → `user.va-tools.ru` |
 
-## 1. Ветки и выпуск
+## Contracts
+- `server/src/**`: API, canonical Record/Time/Finance/People, identity, messages, notifications, consents, documents, platform administration and authentication.
+- `server/prisma/**`: database schema and immutable migrations.
+- `admin/**`: platform administration, commercial catalogue, document registry, tool readiness and Admin sign-in/password recovery.
+- `landing/index.html`: platform public landing, with sign-in and invitations on the Professional origin.
+- `core/**` and `ui/**`: only explicit Admin/landing dependencies and server-imported pure shared rules. No application runtime or global workspace shell.
 
-- `staging` — единственная рабочая ветка.
-- `main` — production.
-- Изменения выполняются и проверяются в `staging`.
-- В `main` попадает только проверенное состояние `staging`.
-- CI необходим, но не является доказательством фактической работоспособности интерфейса.
-- Перед переносом в `main` проверяется реальная работа всех затронутых контуров и production-доменов.
+The server Online Booking endpoints are API; the removed `online-booking/**` directory was an obsolete **browser frontend**. Deleting browser files does not delete Record, identity, Time, booking, consent or notification data.
 
-## 2. Терминология
+## Build and checks
+```sh
+npm run check
+npm test
+node scripts/build-pages.mjs
+docker compose -f docker-compose.staging.yml build backend
+```
 
-Новые технические сущности, файлы, маршруты, переменные, API, модели БД и архитектурные владельцы должны быть нейтральными.
+`scripts/build-pages.mjs` packages platform assets only. `scripts/check-platform-only-boundary.mjs` rejects reintroduced Professional/User UI and guest Booking browser entries. The backend image preserves the Prisma schema and shared pure server rules.
 
-Не создавать новые системные названия на основе:
-- `Book`;
-- `Client / Clients / client*`;
-- `Master / master*`;
-- профессий: парикмахер, стилист, барбер, врач, тренер и т. п.;
-- салонной или иной отраслевой роли.
+## Branch policy
+Only `staging` for development and validation; `main` for approved production changes. No automatic merge or overwrite of concurrent work. Validate the full Core API/Admin/landing regression before moving `staging` to `main`, then align branches. Current architecture and handoff constraints are in `PROJECT_STATE.md`.
 
-Канонические нейтральные понятия:
-- `Platform`;
-- `Tenant`;
-- `Account`;
-- `Profile`;
-- `Person`;
-- `UEI`;
-- `Workplace`;
-- конкретные доменные сущности.
-
-Профессия — только данные `Profile.profession`, никогда не архитектурная сущность.
-
-`Person` — рабочая запись человека внутри Tenant.
-`Account` — глобальная учётная запись человека.
-`UEI` — внутреннее связывание идентичности Person, не Account ID.
-
-Существующие `book.va-tools.ru` и `client.va-tools.ru` — временные legacy-имена до отдельного переименования. Они не дают разрешения создавать новые технические зависимости от слов `book` или `client`.
-
-Пользовательская подпись «Клиенты» допустима только как отображаемое название раздела People; это не имя системной сущности.
-
-## 3. Архитектурное правило
-
-Одна сущность → один владелец → одна реализация → один публичный контракт.
-
-Запрещены:
-- параллельные владельцы одной сущности;
-- compatibility bridges после завершения миграции;
-- локальные копии общих алгоритмов;
-- локальные UI/CSS-обходы вместо исправления Shared owner;
-- прямой доступ функционального экрана к внутренностям Core-домена.
-
-Сложный домен живёт в `core/<domain>/`.
-Его внешний контракт — `core/<domain>/index.js`.
-Внутренние `data/read/rules/service/events/state` не импортируются функциональными экранами напрямую.
-
-Бизнес-данные принадлежат серверу и PostgreSQL.
-Browser storage допустим только для технического/session/UI-состояния и не является владельцем бизнес-данных.
-
-## 4. Shared UI
-
-Один Shared UI-owner всегда выглядит и ведёт себя одинаково во всех контурах.
-Контекст может менять данные, доступные действия и состояние, но не геометрию, тип компонента, направление modal, жесты или CSS-owner.
-
-Функциональные папки не рисуют собственные версии существующего Shared UI и не создают локальный CSS для его исправления.
-
-### H / A / B / C / D / F / E / Z
-
-- `H` — фон навигации.
-- `A` — контекст профиля/пространства: фото, логотип или счётчик. Круг 48×48 с каноническим жёлтым контуром. Настройки — отдельный маленький ярлык на A, только когда они реально доступны.
-- `B` — заголовок текущего контекста.
-- `C` — одно контекстное действие. Обычное активное действие — чёрное; нейтральное состояние использует Shared variant, а не локальную отрисовку.
-- `D` — Chat/контекстное действие чата. Внутри Chat D может менять смысл на утверждённое действие, например вложение, без создания второго Header.
-- `F` — горизонтальная CardDeck-навигация.
-- `E` — вертикальная CardDeck-навигация на выбранной F.
-- F и E используют одну геометрию карты. E не является уменьшенной или отдельной картой.
-- FE не отрывается от правой кромки; слева остаётся H-зазор.
-- `Z` — рабочая поверхность. У неё один скруглённый угол — верхний левый.
-- Z сохраняет собственный вертикальный/горизонтальный scroll. Переход Z→F принадлежит единому Shared edge-owner, а не всему экрану.
-- Z2/Z3 закрываются по одному верхнему уровню.
-- Кнопка «Назад» в рабочем интерфейсе запрещена; навигация уровнями выполняется утверждёнными жестами/Shared navigation.
-
-### Modal
-
-- `Q` — большой рабочий modal поверх всех Z-уровней. Это не Z2/Z3. Пока Q открыт, нижние Z не реагируют.
-- Нижний action/select modal используется для быстрых действий, выбора и форм с кнопкой.
-- Верхний modal — информационный, без action-кнопок; закрывается жестом.
-- Select проявляется через Shared нижний modal.
-- Функциональный раздел не выбирает произвольное направление появления для уже существующего Shared типа.
-
-### Cards / Lists
-
-- `miniCard` — фиксированная Shared Mini Card 238×144 px. Не увеличивать локально.
-- Текст Mini Card переносится целыми словами; многоточие и разрыв слова запрещены.
-- Время и сумма не увеличиваются относительно основной типографики только из-за смысла данных.
-- `v2ListEntry()` — одна V2-запись.
-- `v2ListEntries()` — список V2-записей.
-- Градиентные списки запрещены.
-- Кликабельность не является основанием рисовать новый тип карточки.
-
-### Time / Calendar
-
-- Time picker — один Shared owner.
-- Диапазон времени: `С` и `До` стоят в одну строку, каждое поле открывает нижний Shared time modal.
-- Произвольное время допустимо; слот не является ограничением бизнес-времени.
-- Native `input[type=time]` не заменяет утверждённый Shared picker.
-
-Канонический календарь:
-- месяц: 16/700;
-- стрелки: 48×48, icon 24, radius 8;
-- ячейка: min 74, gap 2, border 1, radius 8;
-- число: 16/500;
-- выходные — красные;
-- сегодня: `#e3e0de` / `#b3aca8`;
-- выбранная дата — чёрная рамка 2 px;
-- индикатор-точка — 7×7.
-
-## 5. Documents
-
-Document — один канонический домен и одно Shared визуальное проявление во всех контурах: Admin, Profile, регистрация и конечный пользователь.
-
-Документ не перерисовывается как другой компонент из-за того, кто его смотрит.
-Различаются только данные, права, статус и доступное действие.
-
-Для согласия/подписания:
-- документ остаётся тем же документом;
-- состояние «да/нет» меняется отдельным Shared toggle;
-- изменение toggle не должно визуально превращать документ в другой тип карточки;
-- версии и факты согласия принадлежат серверному document-domain;
-- события согласия/отзыва должны сохранять точную версию и факт времени;
-- техническая история версий не подменяет пользовательскую историю действий.
-
-## 6. People / Account / UEI
-
-- Account глобален для платформы.
-- Person принадлежит конкретному Tenant.
-- Один Account может быть связан с Person в разных Tenant.
-- Совпадение контакта само по себе не является разрешением автоматически объединять Person.
-- UEI связывает Person только явно и не должен уничтожать историю Record, Finance, Documents или Communication.
-- Обратная запись Tenant Person → глобальный Account без отдельного правила запрещена.
-
-## 7. Record / Time / Finance
-
-Record — один домен записи независимо от канала создания.
-Journal, Online Booking и другие входы создают один и тот же Record через канонический owner.
-
-WorkPlan/Day определяет рабочее время.
-Time/Availability определяет доступность.
-UI не вычисляет доступность самостоятельно.
-
-Finance:
-- Settlement — начислено / скидка / к оплате / оплачено / возврат / долг по источнику;
-- Operation — одна экономическая операция;
-- Ledger/DDS — фактические денежные движения;
-- Wallet — метаданные кошелька; баланс и история являются проекцией Ledger;
-- Z-report — проекция Ledger;
-- Record не является владельцем денежного движения;
-- будущая Financial Model не должна подменять Settlement.
-
-## 8. Notifications / Messages
-
-Notification — бизнес-факт, delivery — канал доставки; это разные сущности.
-
-Каналы не создают собственную копию notification-логики.
-
-Назначение сообщения:
-- `SYSTEM`;
-- `SERVICE`;
-- `DIRECT`;
-- `MARKETING`.
-
-Purpose не является каналом и не является delivery status.
-MARKETING проверяет актуальное разрешение в Documents в момент отправки.
-
-## 9. Проверки
-
-Критические архитектурные запреты должны по возможности закрепляться guard/test, а не существовать только в этом файле.
-
-Минимальный выпускной цикл:
-1. изменить `staging`;
-2. выполнить `npm run check`;
-3. выполнить `npm test`;
-4. проверить затронутый runtime вручную;
-5. только после этого переносить проверенное состояние в `main`.
-
-Удаление старого кода, bridge, CSS или owner считается завершённым только после проверки всех его потребителей.
-
-## 10. Что не хранить в документации
-
-Не добавлять сюда:
-- историю PR/commit/SHA;
-- завершённые ТЗ;
-- временные планы миграций;
-- перечень «что сейчас сделано»;
-- старые ветки;
-- журнал исправлений;
-- дубли того, что однозначно видно из кода.
-
-Если правило перестало быть актуальным — оно изменяется здесь в том же изменении, которое меняет соответствующий архитектурный контракт.
-
-
-## 11. Юридические факты оператора
-
-Эти сведения не выводятся из runtime-кода и сохраняются как постоянные факты проекта:
-
-- уведомление Роскомнадзора: регистрационный номер `140141/77`;
-- код подачи: `100427372`.
-
-Юридические тексты приложения и их версии принадлежат каноническому реестру документов в коде. Этот раздел не является копией текстов документов.
+## Domains
+- Core API: `api.va-tools.ru`
+- Core Admin: `admin.va-tools.ru`
+- Core landing: `va-tools.ru`
+- Independent Professional: `prof.va-tools.ru`
+- Independent User: `user.va-tools.ru`
+- Retired `app.va-tools.ru`: browser redirect only, not a second app.
