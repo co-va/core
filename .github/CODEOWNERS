@@ -1,65 +1,25 @@
-# Architecture and project contracts
+# Platform and contract owners
 /README.md @co-tools
 /PROJECT_STATE.md @co-tools
-/UI_ALPHABET.md @co-tools
 /BUSINESS_ARCHITECTURE.md @co-tools
 /LOYALTY_*.md @co-tools
 
-# Protect the protection itself
+# Platform Admin, public landing and their shared presentation assets
+/admin/** @co-tools
+/landing/** @co-tools
+/core/** @co-tools
+/ui/** @co-tools
+/css/** @co-tools
+
+# Protect the guard, packaging and deployment contracts
 /.github/CODEOWNERS @co-tools
 /.github/workflows/** @co-tools
 /package.json @co-tools
 /scripts/** @co-tools
-
-# Shared UI owners from UI_ALPHABET.md
-/ui/accordion/** @co-tools
-/ui/auth/** @co-tools
-/ui/booking/** @co-tools
-/ui/buttons/** @co-tools
-/ui/calendar/** @co-tools
-/ui/cards/** @co-tools
-/ui/chat/** @co-tools
-/ui/colors/** @co-tools
-/ui/cost/** @co-tools
-/ui/documents/** @co-tools
-/ui/duration/** @co-tools
-/ui/forms/** @co-tools
-/ui/header/** @co-tools
-/ui/info/** @co-tools
-/ui/inputs/** @co-tools
-/ui/layout/** @co-tools
-/ui/links/** @co-tools
-/ui/lists/** @co-tools
-/ui/modals/** @co-tools
-/ui/page/** @co-tools
-/ui/payment/** @co-tools
-/ui/profile/** @co-tools
-/ui/receipt/** @co-tools
-/ui/record/** @co-tools
-/ui/repeated-fields/** @co-tools
-/ui/selection/** @co-tools
-/ui/selectors/** @co-tools
-/ui/settings/** @co-tools
-/ui/states/** @co-tools
-/ui/tags/** @co-tools
-/ui/time/** @co-tools
-/ui/uei/** @co-tools
-/ui/v2/** @co-tools
-/ui/view-navigation/** @co-tools
-/ui/workplaces/** @co-tools
-/ui/ui.js @co-tools
-/ui/utils/** @co-tools
-/ui/reference/** @co-tools
-/css/style.css @co-tools
-/core/chat/messenger-mode.js @co-tools
-
-# Deploy, server bootstrap and database structure
+/tests/** @co-tools
 /Dockerfile @co-tools
 /amvera.yml @co-tools
 /docker-compose.staging.yml @co-tools
-/server/package.json @co-tools
-/server/docker-compose.yml @co-tools
-/server/nest-cli.json @co-tools
-/server/tsconfig.json @co-tools
-/server/scripts/** @co-tools
-/server/prisma/** @co-tools
+
+# Server business owners and persistent data
+/server/** @co-tools
