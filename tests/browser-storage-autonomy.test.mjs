@@ -53,7 +53,7 @@ assert.match(auth, /sessionStorage\.getItem\(TOKEN_KEY\)/, 'legacy session token
 assert.match(auth, /sessionStorage\.removeItem\(TOKEN_KEY\)/, 'legacy session token must be cleaned after migration/logout');
 
 assert.match(rootIndex, /core\/password-reset-request\.js/, 'app and account entry must load password recovery');
-assert.match(adminIndex, /core\/password-reset-request\.js/, 'admin entry must load password recovery');
+assert.doesNotMatch(adminIndex, /core\/password-reset-request\.js/, 'admin sign-in must not expose redundant password recovery');
 assert.equal(existsSync(new URL('../reset-password.html', import.meta.url)), true, 'shared password reset page must exist');
 assert.equal(existsSync(new URL('../admin/reset-password.html', import.meta.url)), true, 'admin password reset page must exist');
 assert.match(resetRequest, /\/auth\/password-reset\/request/, 'professional password reset request endpoint must be wired');
