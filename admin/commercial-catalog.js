@@ -224,7 +224,7 @@ function readinessOptions(value) {
 function readinessSelect(readinessKey, byKey, className) {
   const value = readinessValue(byKey.get(readinessKey));
   const enforced = byKey.get(readinessKey)?.enforced === true;
-  return `<select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="${enforced ? 'Статус управляет доступом' : 'Для применения к доступу выберите новый статус'}">${readinessOptions(value)}</select>`;
+  return `<span class="admin-tool-readiness-editor"><select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="${enforced ? 'Статус управляет доступом' : 'Статус пока не применён'}">${readinessOptions(value)}</select><button class="admin-tool-readiness-apply" type="button" data-activate-readiness="${escapeHtml(readinessKey)}" title="Применить выбранный статус к доступу" aria-label="Применить статус" ${enforced ? 'hidden' : ''}>✓</button></span>`;
 }
 
 function aggregateKeys(item) {
@@ -301,7 +301,10 @@ function hydrateReadiness(root, items = []) {
     select.disabled = false;
     select.title = byKey.get(String(select.dataset.readinessKey || ''))?.enforced
       ? 'Статус управляет доступом'
-      : 'Для применения к доступу выберите новый статус';
+      : 'Статус пока не применён';
+  });
+  root.querySelectorAll('[data-activate-readiness]').forEach((button) => {
+    button.hidden = byKey.get(String(button.dataset.activateReadiness || ''))?.enforced === true;
   });
   root.querySelectorAll('[data-readiness-count]').forEach((node) => {
     const total = Number(node.dataset.readinessCount || 0);
@@ -329,6 +332,28 @@ function hydrateAccountTools(content, tools = []) {
 }
 
 function bindReadiness(content) {
+  content.querySelectorAll('[data-activate-readiness]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const key = String(button.dataset.activateReadiness || '');
+      const select = button.parentElement?.querySelector('[data-readiness-key]');
+      if (!key || !select) return;
+      button.disabled = true;
+      try {
+        const items = await toolReadinessRequest('/' + encodeURIComponent(key), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: select.value }),
+        });
+        toolReadinessCache = Array.isArray(items) ? items : [];
+        hydrateAllReadiness(content, toolReadinessCache);
+        document.dispatchEvent(new CustomEvent('admin:tool-readiness-changed'));
+      } catch (error) {
+        button.title = error instanceof Error ? error.message : 'Не удалось применить статус';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
   content.querySelectorAll('[data-readiness-key]').forEach((select) => {
     select.addEventListener('click', (event) => event.stopPropagation());
     select.addEventListener('change', async () => {
@@ -394,7 +419,7 @@ export function renderAdminTools(content) {
   if (!content) return;
 
   content.innerHTML = `<div class="admin-tool-areas">
-    <p class="admin-service-note">Ранее выставленные статусы остаются информационными до нового выбора. Новые сохранённые статусы управляют доступом. Это защищает действующие рабочие инструменты от массового отключения.</p>
+    <p class="admin-service-note">Статусы управляют доступом после сохранения. Для ранее выставленного статуса нажмите ✓ рядом с ним, чтобы применить его. До этого рабочие права сохраняются.</p>
     <details class="admin-tool-area">
       <summary class="admin-tool-area-summary"><strong>Кабинет</strong><span aria-hidden="true">⌄</span></summary>
       <div class="admin-tool-area-body" data-tool-area-body="cabinet">${renderArchitecture('cabinet', toolReadinessCache)}</div>
