@@ -42,6 +42,11 @@ export class AccountApiUnreadController extends AccountUnreadRoutes {
     return super.serviceUnseen(request);
   }
 
+  @Get('deleted-record-history')
+  deletedRecordHistory(@Req() request: AccountRequest) {
+    return this.unread.deletedRecordHistory(request.accountAuth!.accountId);
+  }
+
   @Post('service-unseen/seen')
   override markServiceSeen(
     @Req() request: AccountRequest,
