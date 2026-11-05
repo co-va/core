@@ -8,6 +8,7 @@ import { stagingPreviewMiddleware } from './staging-preview';
 const API_HOST = 'api.va-tools.ru';
 const ADMIN_HOST = 'admin.va-tools.ru';
 const APP_HOST = 'app.va-tools.ru';
+const PROF_HOST = 'prof.va-tools.ru';
 const USER_HOST = 'user.va-tools.ru';
 const LANDING_HOST = 'va-tools.ru';
 const LANDING_WWW_HOST = 'www.va-tools.ru';
@@ -33,6 +34,7 @@ function allowedOrigins() {
     return [
       `https://${ADMIN_HOST}`,
       `https://${APP_HOST}`,
+      `https://${PROF_HOST}`,
       `https://${USER_HOST}`,
       `https://${API_HOST}`,
       TEMP_USER_PREVIEW_ORIGIN,
