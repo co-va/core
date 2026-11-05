@@ -171,7 +171,8 @@ function accountContactFacts(account: {
   return facts;
 }
 
-function publicAccount(account: any) {
+function publicAccount(account: any, includePrivateJournal = false) {
+  const profile = normalizeProfileData(account.profileData);
   return {
     id: account.id,
     email: account.email,
@@ -179,7 +180,7 @@ function publicAccount(account: any) {
     surname: account.surname,
     phone: account.phone,
     telegramId: account.telegramId || '',
-    profileData: normalizeProfileData(account.profileData),
+    profileData: includePrivateJournal ? profile : { ...profile, journalHiddenRecords: undefined },
     discountPercent: percent(account.discountPercent),
     visits: Math.max(0, Math.floor(numeric(account.visits, 0))),
     totalSpent: Math.max(0, numeric(account.totalSpent, 0)),
