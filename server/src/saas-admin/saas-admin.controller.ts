@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { HistoryService } from '../history/history.service';
 import { TenantInvitationService } from '../tenant-invitation/tenant-invitation.service';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { SaasAdminService } from './saas-admin.service';
@@ -16,11 +17,20 @@ export class SaasAdminController {
   constructor(
     private readonly admin: SaasAdminService,
     private readonly invitations: TenantInvitationService,
+    private readonly historyService: HistoryService,
   ) {}
 
   @Get('me')
   me(@Req() request: AdminRequest) {
     return this.admin.me(request.platformAdminId!, request.auth!.platformAccountId);
+  }
+
+  @Get('history')
+  history(
+    @Query('tenantId') tenantId = '',
+    @Query('limit') limit = '100',
+  ) {
+    return this.historyService.listPlatform({ tenantId, limit: Number(limit) });
   }
 
   @Get('tenants')

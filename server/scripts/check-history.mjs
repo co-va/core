@@ -35,6 +35,25 @@ try {
         date: '2026-11-06', title: 'Account note',
       } });
 
+      // Technical login facts belong to PlatformActivityEvent only.
+      await tx.platformActivityEvent.create({ data: {
+        tenantId: null,
+        subjectAccountId: accountId,
+        platformAccountId: null,
+        eventType: 'AUTH_LOGIN_SUCCEEDED',
+        metadata: { scope: 'platform', entityType: 'authentication', result: 'success' },
+      } });
+      await tx.platformActivityEvent.create({ data: {
+        tenantId: null,
+        subjectAccountId: null,
+        eventType: 'AUTH_LOGIN_DENIED',
+        metadata: { scope: 'platform', entityType: 'authentication', result: 'denied' },
+      } });
+      const loginFacts = await tx.platformActivityEvent.findMany({
+        where: { subjectAccountId: accountId },
+      });
+      assert.equal(loginFacts.length, 1, 'known User login has one platform-owned fact');
+
       const tenantEvents = await tx.$queryRaw`
         SELECT "entityType" FROM "BusinessHistoryEvent"
         WHERE "tenantId"=${tenantId} AND "entityType" IN ('event','note')
