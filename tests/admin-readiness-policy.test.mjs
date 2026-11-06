@@ -30,7 +30,9 @@ for (const actor of actors) {
     false, 'readiness must not grant a previously revoked entitlement');
 }
 assert.equal(applyReadinessGate(cap('journal.day.access'), row('NOT_READY'), actors[0]).enabled,
-  true, 'unrelated readiness cannot hide an independent approved tool');
+  false, 'unregistered Journal readiness must be denied even if another tool has a status');
+assert.equal(applyReadinessGate(cap('journal.day.access'), row('READY', true, 'cabinet.journal.day'), actors[0]).enabled,
+  true, 'a separately approved Journal view must stay accessible');
 for (const [readinessKey, capabilityKey] of [
   ['cabinet.profile.data', 'profile.access'],
   ['cabinet.finance.cash', 'finance.investment.self.access'],
