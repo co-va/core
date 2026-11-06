@@ -240,6 +240,7 @@ model Account {
   contacts            AccountContact[]
   tenantLinks         AccountTenantLink[]
   requests            BookingRequest[]
+  journalHiddenRecords AccountJournalHiddenRecord[]
   calendarConnections AccountCalendarConnection[]
 
   @@index([createdViaTenantId])
@@ -329,6 +330,19 @@ model AccountTenantLink {
   @@unique([accountId, tenantId])
   @@index([tenantId, accountId])
   @@index([accountId, updatedAt])
+}
+
+// User-only dismissal is never a delete or cancellation of the source Record.
+model AccountJournalHiddenRecord {
+  accountId String
+  tenantId  String
+  recordId  String
+  hiddenAt  DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, tenantId, recordId])
+  @@index([accountId, hiddenAt])
 }
 
 model AccountContact {
