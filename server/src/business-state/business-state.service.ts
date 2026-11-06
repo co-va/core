@@ -289,70 +289,23 @@ export class BusinessStateService {
     return this.records.upsertFromOwner(tenantId, id, body);
   }
 
-  async deleteRecord(tenantId: string, recordId: string) {
+  async deleteRecord(
+    tenantId: string,
+    recordId: string,
+    actor: { platformAccountId: string; role: string } = { platformAccountId: '', role: '' },
+  ) {
     const id = text(recordId);
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.record.findUnique({
-        where: { tenantId_recordId: { tenantId, recordId: id } },
-      });
-      const financeOperations = await tx.financeOperation.deleteMany({
-        where: { tenantId, sourceType: 'record', sourceId: id },
-      });
-      const settlements = await tx.financeSettlement.deleteMany({
-        where: { tenantId, sourceType: 'record', sourceId: id },
-      });
+      // The existing BusinessRecord DELETE trigger captures the full OLD.data
+      // in BusinessHistoryEvent. Supply the authenticated actor to that trigger
+      // within this transaction instead of writing a second history system.
+      await tx.$executeRaw`SELECT set_config('co_va.history_actor_id', ${text(actor.platformAccountId)}, true)`;
+      await tx.$executeRaw`SELECT set_config('co_va.history_actor_role', ${text(actor.role)}, true)`;
+      const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
+      const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
       const record = await tx.record.deleteMany({ where: { tenantId, recordId: id } });
-
-      if (existing && record.count) {
-        const source = objectValue(existing.data);
-        const procedures = (Array.isArray(source.procedures) ? source.procedures : [])
-          .map((value) => {
-            const item = objectValue(value);
-            return {
-              id: text(item.id),
-              name: text(item.name),
-              duration: Math.max(0, Number(item.duration) || 0),
-            };
-          })
-          .filter((item) => Boolean(item.name));
-
-        // The one remaining RecordEvent is audit history, never an active
-        // Record. Preserve only display facts; exclude person, price and
-        // financial data so physical deletion keeps its intended semantics.
-        const eventId = randomUUID();
-        await tx.recordEvent.create({
-          data: {
-            tenantId,
-            eventId,
-            recordId: id,
-            position: 0,
-            data: json({
-              id: eventId,
-              recordId: id,
-              type: 'deleted',
-              category: 'action',
-              at: new Date().toISOString(),
-              payload: {
-                snapshot: {
-                  date: text(source.date).slice(0, 10),
-                  from: text(source.from),
-                  to: text(source.to),
-                  workplaceId: text(source.workplaceId),
-                  procedures,
-                },
-              },
-            }),
-          },
-        });
-      }
-
-      return {
-        deleted: record.count,
-        deletedEvents: events.count,
-        deletedFinanceOperations: financeOperations.count,
-        deletedSettlements: settlements.count,
-      };
+      return { deleted: record.count, deletedEvents: events.count, deletedFinanceOperations: financeOperations.count, deletedSettlements: settlements.count };
     });
   }
 
