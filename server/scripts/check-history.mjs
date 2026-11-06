@@ -3,11 +3,16 @@ import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 const require = createRequire(import.meta.url);
 const { PrismaClient } = require('@prisma/client');
+const { HistoryService } = require('../dist/history/history.service.js');
+const { HistoryMembershipGuard } = require('../dist/history/history-membership.guard.js');
 
 const prisma = new PrismaClient();
 const id = randomUUID();
 const tenantId = `history-tenant-${id}`;
 const accountId = `history-account-${id}`;
+const professionalId = `history-professional-${id}`;
+const peerId = `history-peer-${id}`;
+const revokedId = `history-revoked-${id}`;
 const rollback = new Error('history-smoke-rolled-back');
 try {
   try {
@@ -18,12 +23,34 @@ try {
         passwordHash: 'never-store-this-secret-in-history',
       } });
 
+      for (const [platformAccountId, suffix] of [
+        [professionalId,'owner'],[peerId,'peer'],[revokedId,'revoked'],
+      ]) {
+        await tx.platformAccount.create({ data: {
+          id: platformAccountId, email: `history-${suffix}-${id}@example.invalid`,
+          passwordHash: 'test-only',
+        } });
+      }
+      await tx.membership.create({ data: {
+        tenantId, platformAccountId: professionalId,
+      } });
+      await tx.membership.create({ data: {
+        tenantId, platformAccountId: peerId,
+      } });
+      const profile = await tx.profile.create({ data: {
+        tenantId, platformAccountId: professionalId,
+        phones: [], emails: [], telegrams: [], customProfessions: [],
+      } });
+      await tx.profile.create({ data: {
+        tenantId, platformAccountId: peerId,
+        phones: [], emails: [], telegrams: [], customProfessions: [],
+      } });
       await tx.event.create({ data: {
         id: `tenant-event-${id}`, tenantId, ownerType: 'tenant', ownerId: tenantId,
         date: '2026-11-06', from: '12:00', to: '13:00', title: 'Tenant event',
       } });
       await tx.note.create({ data: {
-        id: `tenant-note-${id}`, tenantId, ownerType: 'profile', ownerId: 'tenant-profile',
+        id: `tenant-note-${id}`, tenantId, ownerType: 'profile', ownerId: profile.id,
         date: '2026-11-06', title: 'Tenant note',
       } });
       await tx.event.create({ data: {
@@ -68,6 +95,33 @@ try {
       assert.ok(accountEvents.some(v => v.entityType === 'account'));
       assert.ok(accountEvents.some(v => v.entityType === 'event'));
       assert.ok(accountEvents.some(v => v.entityType === 'note'));
+
+      const history = new HistoryService(tx);
+      const visible = await history.list(tenantId, { entityType: 'note' }, professionalId);
+      const hidden = await history.list(tenantId, { entityType: 'note' }, peerId);
+      assert.equal(visible.length, 1, 'own Profile can see its Note History');
+      assert.equal(hidden.length, 0, 'other Professional cannot read a profile Note');
+      const future = new Date(Date.now() + 60000).toISOString();
+      assert.ok(await history.asOf(tenantId, 'note', `tenant-note-${id}`, future, professionalId));
+      assert.equal(await history.asOf(tenantId, 'note', `tenant-note-${id}`, future, peerId), null);
+
+      const guard = new HistoryMembershipGuard(tx);
+      const contextFor = platformAccountId => ({
+        switchToHttp: () => ({ getRequest: () => ({
+          auth: { platformAccountId, tenantId },
+        }) }),
+      });
+      assert.equal(await guard.canActivate(contextFor(professionalId)), true);
+      assert.equal(await guard.canActivate(contextFor(peerId)), true);
+      await assert.rejects(
+        () => guard.canActivate(contextFor(revokedId)),
+        /Нет доступа к истории пространства/,
+      );
+
+      const userHistory = await history.listAccount(accountId);
+      assert.ok(userHistory.some(fact => fact.scope === 'platform' && fact.entityType === 'authentication'));
+      assert.ok(userHistory.some(fact => fact.scope === 'account' && fact.entityType === 'note'));
+      assert.equal((await history.listAccount('another-account')).length, 0);
 
       await tx.event.delete({ where: { id: `tenant-event-${id}` } });
       await tx.note.delete({ where: { id: `account-note-${id}` } });
