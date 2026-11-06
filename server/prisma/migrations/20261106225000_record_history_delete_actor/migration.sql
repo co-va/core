@@ -44,7 +44,10 @@ BEGIN
       WHEN TG_OP = 'DELETE' THEN jsonb_build_object(
         'deleted', OLD."data",
         'actor', jsonb_build_object(
-          'type', 'platform-account',
+          'type', CASE
+            WHEN NULLIF(current_setting('co_va.history_actor_id', true), '') IS NULL THEN 'system'
+            ELSE 'platform-account'
+          END,
           'platformAccountId', COALESCE(current_setting('co_va.history_actor_id', true), ''),
           'role', COALESCE(current_setting('co_va.history_actor_role', true), '')
         )
