@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards 
 import type { Request } from 'express';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { EmailVerificationService } from '../email-verification/email-verification.service';
+import { HistoryService } from '../history/history.service';
 import { WebPushService } from '../notification/web-push.service';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
 import { AccountContactRecordService } from './account-contact-record.service';
@@ -19,6 +20,7 @@ export class AccountRuntimeController {
     private readonly accountDocuments: AccountDocumentService,
     private readonly emailVerification: EmailVerificationService,
     private readonly webPush: WebPushService,
+    private readonly history: HistoryService,
   ) {}
 
   @Get('terms')
@@ -39,6 +41,21 @@ export class AccountRuntimeController {
   @Post('login')
   login(@Body() body: { identifier?: unknown; email?: unknown; password?: unknown }) {
     return this.account.loginGlobalAccount(body?.identifier ?? body?.email ?? '', body?.password ?? '');
+  }
+
+  @UseGuards(AccountGuard)
+  @Get('history')
+  historyList(
+    @Req() request: AccountRequest,
+    @Query('entityType') entityType = '',
+    @Query('entityId') entityId = '',
+    @Query('limit') limit = '100',
+  ) {
+    return this.history.listAccount(request.accountAuth!.accountId, {
+      entityType,
+      entityId,
+      limit: Number(limit),
+    });
   }
 
   @UseGuards(AccountGuard)

@@ -246,6 +246,27 @@ model Account {
   @@index([createdViaTenantId])
 }
 
+// Private, account-owned actions. Never copies a tenant's source Record.
+model AccountHistoryEvent {
+  id         BigInt   @id @default(autoincrement())
+  accountId  String
+  eventId    String
+  entityType String
+  entityId   String
+  eventType  String
+  status     String   @default("active")
+  sourceType String   @default("")
+  sourceId   String   @default("")
+  occurredAt DateTime @default(now()) @db.Timestamp(3)
+  recordedAt DateTime @default(now()) @db.Timestamp(3)
+  relations  Json     @default("{}")
+  data       Json     @default("{}")
+
+  @@unique([accountId, eventId], map: "AccountHistoryEvent_owner_event_unique")
+  @@index([accountId, occurredAt(sort: Desc), id(sort: Desc)], map: "AccountHistoryEvent_owner_time_idx")
+  @@index([accountId, entityType, entityId, occurredAt(sort: Desc)], map: "AccountHistoryEvent_owner_entity_idx")
+}
+
 model AccountCalendarConnection {
   id                   String   @id @default(cuid())
   accountId            String

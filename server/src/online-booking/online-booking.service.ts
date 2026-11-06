@@ -658,6 +658,7 @@ export class OnlineBookingService {
     });
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('co_va.account_history_actor_id', ${accountId}, true)`;
       await this.replaceAccountContacts(tx, account.id, contacts);
       return tx.account.update({
         where: { id: account.id },

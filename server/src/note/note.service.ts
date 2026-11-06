@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { HistoryActor, withTenantHistoryActor } from '../history/history-actor';
+import { withAccountHistoryActor } from '../history/account-history-actor';
 
 const NOTE_DEFAULT_COLOR = '#CFC3FF';
 
@@ -314,9 +315,13 @@ export class NoteService {
       createdAt,
     };
 
-    const row = existingById
-      ? await this.prisma.note.update({ where: { id: noteId }, data })
-      : await this.prisma.note.create({ data: { id: noteId, ...data } });
+    const row = await withAccountHistoryActor(
+      this.prisma, ownerId,
+      tx => existingById
+        ? tx.note.update({ where: { id: noteId }, data })
+        : tx.note.create({ data: { id: noteId, ...data } }),
+      stringValue(source.reason),
+    );
     return notePayload(row);
   }
 
@@ -326,7 +331,7 @@ export class NoteService {
       select: { id: true },
     });
     if (!row) return { ok: true };
-    await this.prisma.note.delete({ where: { id: row.id } });
+    await withAccountHistoryActor(this.prisma, ownerId, tx => tx.note.delete({ where: { id: row.id } }));
     return { ok: true };
   }
 

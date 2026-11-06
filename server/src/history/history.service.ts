@@ -143,6 +143,50 @@ export class HistoryService {
     return rows.map(publicRow);
   }
 
+  // Account-owned facts only. Tenant source Records are never duplicated here.
+  async listAccount(accountId: string, filters: { entityType?: string; entityId?: string; limit?: number } = {}) {
+    const entityType = text(filters.entityType);
+    const entityId = text(filters.entityId);
+    const limit = Math.max(1, Math.min(200, Math.floor(Number(filters.limit) || 100)));
+    const rows = await this.prisma.$queryRaw<Array<{
+      eventId: string;
+      entityType: string;
+      entityId: string;
+      eventType: string;
+      status: string;
+      sourceType: string;
+      sourceId: string;
+      occurredAt: Date;
+      recordedAt: Date;
+      relations: unknown;
+      data: unknown;
+    }>>(Prisma.sql`
+      SELECT "eventId", "entityType", "entityId", "eventType", "status",
+             "sourceType", "sourceId", "occurredAt", "recordedAt", "relations", "data"
+      FROM "AccountHistoryEvent"
+      WHERE "accountId" = ${accountId}
+        AND (${entityType === ''} OR "entityType" = ${entityType})
+        AND (${entityId === ''} OR "entityId" = ${entityId})
+      ORDER BY "occurredAt" DESC, "id" DESC
+      LIMIT ${limit}
+    `);
+    return rows.map(row => ({
+      scope: 'account',
+      owner: { type: 'account', id: accountId },
+      eventId: row.eventId,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      action: row.eventType,
+      eventType: row.eventType,
+      status: row.status,
+      source: { type: row.sourceType, id: row.sourceId },
+      occurredAt: row.occurredAt.toISOString(),
+      recordedAt: row.recordedAt.toISOString(),
+      relations: row.relations,
+      data: row.data,
+    }));
+  }
+
   async asOf(tenantId: string, entityTypeValue: unknown, entityIdValue: unknown, atValue: unknown, platformAccountId = '') {
     const entityType = text(entityTypeValue);
     const entityId = text(entityIdValue);

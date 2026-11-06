@@ -847,6 +847,8 @@ jobs:
           echo "Platform-only API, Admin, landing, redirects and User isolation: PASS"
       - name: Verify canonical data transfer with PostgreSQL
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-data-transfer.mjs
+      - name: Verify owner-scoped History with PostgreSQL
+        run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-history.mjs
       - name: Stop isolated Core environment
         if: always()
         run: docker compose -f docker-compose.staging.yml down -v

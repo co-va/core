@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { HistoryActor, withTenantHistoryActor } from '../history/history-actor';
+import { withAccountHistoryActor } from '../history/account-history-actor';
 
 type EventInput = {
   id?: unknown;
@@ -190,9 +191,13 @@ export class EventService {
       createdAt,
     };
 
-    const row = existing
-      ? await this.prisma.event.update({ where: { id: eventId }, data })
-      : await this.prisma.event.create({ data: { id: eventId, ...data } });
+    const row = await withAccountHistoryActor(
+      this.prisma, ownerId,
+      tx => existing
+        ? tx.event.update({ where: { id: eventId }, data })
+        : tx.event.create({ data: { id: eventId, ...data } }),
+      text(source.reason),
+    );
     return eventPayload(row);
   }
 
@@ -201,7 +206,7 @@ export class EventService {
       where: { id, ownerType, ownerId, tenantId: null },
     });
     if (!row) return { ok: true };
-    await this.prisma.event.delete({ where: { id } });
+    await withAccountHistoryActor(this.prisma, ownerId, tx => tx.event.delete({ where: { id } }));
     return { ok: true };
   }
 }
