@@ -49,6 +49,11 @@ jobs:
           registration_phone="+79990007777"
           registration_password="Onboarding-${GITHUB_RUN_ID}-Pass!"
 
+          # The invitation token is base64url and may start with '-'.
+          # Prove the Node CLI option terminator handles that exact case.
+          cli_token=$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" -- "-eOptionLikeToken")
+          test "$cli_token" = '{"token":"-eOptionLikeToken"}'
+
           start_payload=$(curl -fsS \
             -H 'Content-Type: application/json' \
             -d "$(node -e "process.stdout.write(JSON.stringify({email:process.argv[1]}))" "$registration_email")" \
@@ -77,7 +82,7 @@ jobs:
 
           old_token_status=$(curl -sS -o /tmp/old-token.json -w '%{http_code}' \
             -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" "$first_token")" \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" -- "$first_token")" \
             http://localhost:3000/tenant-invitations/inspect)
           if [ "$old_token_status" -lt 400 ]; then
             echo "Old registration token remained valid after resume"
@@ -87,7 +92,7 @@ jobs:
 
           inspect_payload=$(curl -fsS \
             -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" "$token")" \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1]}))" -- "$token")" \
             http://localhost:3000/tenant-invitations/inspect)
 
           node -e "
@@ -108,7 +113,7 @@ jobs:
 
           accept_payload=$(curl -fsS \
             -H 'Content-Type: application/json' \
-            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1],password:process.argv[2],name:'Onboarding',surname:'Smoke',phone:process.argv[3],documents:JSON.parse(process.argv[4])}))" "$token" "$registration_password" "$registration_phone" "$document_facts")" \
+            -d "$(node -e "process.stdout.write(JSON.stringify({token:process.argv[1],password:process.argv[2],name:'Onboarding',surname:'Smoke',phone:process.argv[3],documents:JSON.parse(process.argv[4])}))" -- "$token" "$registration_password" "$registration_phone" "$document_facts")" \
             http://localhost:3000/tenant-invitations/accept)
 
           access_token=$(node -e "const p=JSON.parse(process.argv[1]); if(!p.accessToken) process.exit(1); process.stdout.write(p.accessToken)" "$accept_payload")
