@@ -88,7 +88,7 @@ export class HistoryService {
     return {BusinessHistoryEvent:rows.map(row=>row.value)};
   }
 
-  async list(tenantId: string, filters: HistoryFilters = {}) {
+  async list(tenantId: string, filters: HistoryFilters = {}, platformAccountId = '') {
     const personKeys = [...new Set([
       text(filters.personKey),
       ...(Array.isArray(filters.personKeys) ? filters.personKeys.map(text) : []),
@@ -113,6 +113,18 @@ export class HistoryService {
         "effectiveAt", "occurredAt", "recordedAt", "relations", "data", "provenance"
       FROM "BusinessHistoryEvent"
       WHERE "tenantId" = ${tenantId}
+        AND (
+          "entityType" <> 'note'
+          OR (
+            "relations"->>'ownerType' = 'profile'
+            AND EXISTS (
+              SELECT 1 FROM "Profile" p
+              WHERE p."tenantId" = ${tenantId}
+                AND p."platformAccountId" = ${platformAccountId}
+                AND p."id" = ("BusinessHistoryEvent"."relations"->>'ownerId')
+            )
+          )
+        )
         AND (${personKeys.length === 0} OR "personKey" IN (${Prisma.join(personKeys.length ? personKeys : [''])}))
         AND (${recordId === ''} OR "recordId" = ${recordId})
         AND (${workplaceKey === ''} OR "workplaceKey" = ${workplaceKey})
@@ -131,7 +143,7 @@ export class HistoryService {
     return rows.map(publicRow);
   }
 
-  async asOf(tenantId: string, entityTypeValue: unknown, entityIdValue: unknown, atValue: unknown) {
+  async asOf(tenantId: string, entityTypeValue: unknown, entityIdValue: unknown, atValue: unknown, platformAccountId = '') {
     const entityType = text(entityTypeValue);
     const entityId = text(entityIdValue);
     const at = dateValue(atValue);
@@ -145,6 +157,18 @@ export class HistoryService {
         "effectiveAt", "occurredAt", "recordedAt", "relations", "data", "provenance"
       FROM "BusinessHistoryEvent"
       WHERE "tenantId" = ${tenantId}
+        AND (
+          "entityType" <> 'note'
+          OR (
+            "relations"->>'ownerType' = 'profile'
+            AND EXISTS (
+              SELECT 1 FROM "Profile" p
+              WHERE p."tenantId" = ${tenantId}
+                AND p."platformAccountId" = ${platformAccountId}
+                AND p."id" = ("BusinessHistoryEvent"."relations"->>'ownerId')
+            )
+          )
+        )
         AND "entityType" = ${entityType}
         AND "entityId" = ${entityId}
         AND "effectiveAt" <= ${at}

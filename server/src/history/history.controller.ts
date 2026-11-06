@@ -24,7 +24,7 @@ export class HistoryController {
     @Query('entityId') entityId: string,
     @Query('at') at: string,
   ) {
-    return this.history.asOf(request.auth!.tenantId, entityType, entityId, at);
+    return this.history.asOf(request.auth!.tenantId, entityType, entityId, at, request.auth!.platformAccountId);
   }
 
   @Get()
@@ -58,6 +58,6 @@ export class HistoryController {
       from,
       to,
       limit: Number(limit),
-    });
+    }, request.auth!.platformAccountId);
   }
 }
