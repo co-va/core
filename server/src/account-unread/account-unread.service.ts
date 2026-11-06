@@ -185,12 +185,13 @@ export class AccountUnreadService {
        AND d."tenantId" = n."tenantId"
        AND d."channel" = 'IN_APP'
       LEFT JOIN LATERAL (
-        SELECT e."data"->'payload'->'snapshot' AS "data"
-        FROM "BusinessRecordEvent" e
-        WHERE e."tenantId" = n."tenantId"
-          AND e."recordId" = n."entityId"
-          AND e."data"->>'type' = 'deleted'
-        ORDER BY e."createdAt" DESC
+        SELECT h."data"->'deleted' AS "data"
+        FROM "BusinessHistoryEvent" h
+        WHERE h."tenantId" = n."tenantId"
+          AND h."recordId" = n."entityId"
+          AND h."entityType" = 'record'
+          AND h."eventType" = 'delete'
+        ORDER BY h."recordedAt" DESC, h."id" DESC
         LIMIT 1
       ) s ON TRUE
       INNER JOIN "AccountTenantLink" l
