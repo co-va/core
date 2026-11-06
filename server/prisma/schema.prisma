@@ -62,7 +62,6 @@ model Tenant {
   ueiState                 UeiState?
   records                  Record[]
   recordEvents             RecordEvent[]
-  deletedRecordSnapshots   DeletedRecordSnapshot[]
   events                   Event[]
   notes                    Note[]
   businessOperationalState BusinessOperationalState?
@@ -424,20 +423,6 @@ model UeiState {
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-}
-
-// Small, non-personal presentation snapshot retained when Professional
-// physically deletes a Record. Shown only to its original notification recipient.
-model DeletedRecordSnapshot {
-  tenantId  String
-  recordId  String
-  data      Json
-  deletedAt DateTime @default(now())
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@id([tenantId, recordId])
-  @@index([tenantId, deletedAt])
 }
 
 model Record {
