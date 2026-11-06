@@ -292,11 +292,20 @@ export class BusinessStateService {
   async deleteRecord(tenantId: string, recordId: string) {
     const id = text(recordId);
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
-      if (existing) {
+      const existing = await tx.record.findUnique({
+        where: { tenantId_recordId: { tenantId, recordId: id } },
+      });
+      const financeOperations = await tx.financeOperation.deleteMany({
+        where: { tenantId, sourceType: 'record', sourceId: id },
+      });
+      const settlements = await tx.financeSettlement.deleteMany({
+        where: { tenantId, sourceType: 'record', sourceId: id },
+      });
+      const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
+      const record = await tx.record.deleteMany({ where: { tenantId, recordId: id } });
+
+      if (existing && record.count) {
         const source = objectValue(existing.data);
-        // Preserve minimal display information in the SAME transaction as the
-        // physical deletion. No second live Record and no private person data.
         const procedures = (Array.isArray(source.procedures) ? source.procedures : [])
           .map((value) => {
             const item = objectValue(value);
@@ -307,48 +316,43 @@ export class BusinessStateService {
             };
           })
           .filter((item) => Boolean(item.name));
-        // The existing RecordEvent history owns the display snapshot.
-        // It is NOT a live Record and will not participate in analytics,
-        // finance or occupancy. Keep only these non-personal details.
-        const snapshot = {
-          date: text(source.date).slice(0, 10),
-          from: text(source.from),
-          to: text(source.to),
-          workplaceId: text(source.workplaceId),
-          procedures,
-        };
-        const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
-        const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
-        const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
-        const record = await tx.record.deleteMany({ where: { tenantId, recordId: id } });
-        // One terminal audit event rather than a second snapshot table.
-        // Insert only if physical deletion actually happened.
-        if (record.count) {
-          const eventId = randomUUID();
-          await tx.recordEvent.create({
-            data: {
-              tenantId,
-              eventId,
+
+        // The one remaining RecordEvent is audit history, never an active
+        // Record. Preserve only display facts; exclude person, price and
+        // financial data so physical deletion keeps its intended semantics.
+        const eventId = randomUUID();
+        await tx.recordEvent.create({
+          data: {
+            tenantId,
+            eventId,
+            recordId: id,
+            position: 0,
+            data: json({
+              id: eventId,
               recordId: id,
-              position: 0,
-              data: json({
-                id: eventId,
-                recordId: id,
-                type: 'deleted',
-                category: 'action',
-                at: new Date().toISOString(),
-                payload: { snapshot },
-              }),
-            },
-          });
-        }
-        return { deleted: record.count, deletedEvents: events.count, deletedFinanceOperations: financeOperations.count, deletedSettlements: settlements.count };
+              type: 'deleted',
+              category: 'action',
+              at: new Date().toISOString(),
+              payload: {
+                snapshot: {
+                  date: text(source.date).slice(0, 10),
+                  from: text(source.from),
+                  to: text(source.to),
+                  workplaceId: text(source.workplaceId),
+                  procedures,
+                },
+              },
+            }),
+          },
+        });
       }
-      const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
-      const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
-      const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
-      const record = await tx.record.deleteMany({ where: { tenantId, recordId: id } });
-      return { deleted: record.count, deletedEvents: events.count, deletedFinanceOperations: financeOperations.count, deletedSettlements: settlements.count };
+
+      return {
+        deleted: record.count,
+        deletedEvents: events.count,
+        deletedFinanceOperations: financeOperations.count,
+        deletedSettlements: settlements.count,
+      };
     });
   }
 
