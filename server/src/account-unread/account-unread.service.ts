@@ -27,6 +27,11 @@ function text(value: unknown) {
   return String(value ?? '').trim();
 }
 
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {};
+}
+
 @Injectable()
 export class AccountUnreadService {
   constructor(private readonly prisma: PrismaService) {}
@@ -163,6 +168,7 @@ export class AccountUnreadService {
       body: string;
       createdAt: Date;
       readAt: Date | null;
+      recordSnapshot: unknown;
     }>>`
       SELECT
         n."id" AS "notificationId",
@@ -171,12 +177,16 @@ export class AccountUnreadService {
         n."title",
         n."body",
         n."createdAt",
-        d."readAt"
+        d."readAt",
+        s."data" AS "recordSnapshot"
       FROM "Notification" n
       INNER JOIN "NotificationDelivery" d
         ON d."notificationId" = n."id"
        AND d."tenantId" = n."tenantId"
        AND d."channel" = 'IN_APP'
+      LEFT JOIN "DeletedRecordSnapshot" s
+        ON s."tenantId" = n."tenantId"
+       AND s."recordId" = n."entityId"
       INNER JOIN "AccountTenantLink" l
         ON l."accountId" = ${accountId}
        AND l."tenantId" = n."tenantId"
@@ -194,14 +204,28 @@ export class AccountUnreadService {
     return {
       items: rows.map((row) => {
         const body = text(row.body);
+        const snapshot = objectValue(row.recordSnapshot);
+        const procedures = (Array.isArray(snapshot.procedures) ? snapshot.procedures : [])
+          .map((value) => {
+            const procedure = objectValue(value);
+            return {
+              id: text(procedure.id),
+              name: text(procedure.name),
+              duration: Math.max(0, Number(procedure.duration) || 0),
+            };
+          })
+          .filter((procedure) => Boolean(procedure.name));
         return {
           id: text(row.notificationId),
           tenantId: text(row.tenantId),
           recordId: text(row.recordId),
           title: text(row.title),
           body,
-          date: body.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || '',
-          from: body.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '',
+          date: text(snapshot.date).slice(0, 10) || body.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || '',
+          from: text(snapshot.from) || body.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '',
+          to: text(snapshot.to),
+          workplaceId: text(snapshot.workplaceId),
+          procedures,
           removedAt: row.createdAt,
           read: Boolean(row.readAt),
         };
