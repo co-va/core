@@ -23,7 +23,7 @@ CREATE OR REPLACE FUNCTION "professional_history_write"(
   event_data JSONB DEFAULT '{}'::jsonb,
   fixed_event_id TEXT DEFAULT ''
 )
-RETURNS VOID AS $
+RETURNS VOID AS $$
 DECLARE
   actor_id TEXT;
   actor_role TEXT;

@@ -12,3 +12,13 @@ assert.match(sql,/current_setting\('co_va.history_reason', true\)/);
 assert.match(sql,/current_setting\('co_va.history_correlation_id',true\)/);
 assert.match(sql,/ON CONFLICT \("tenantId", "eventId"\) DO NOTHING/);
 console.log('PASS: History writer retains migration transfer provenance and time while adding attribution');
+
+const functionTag='RETURNS VOID AS '+String.fromCharCode(36,36);
+assert.ok(sql.includes(functionTag), 'PostgreSQL dollar-delimited function must use two dollar signs');
+assert.ok(!sql.includes('RETURNS VOID AS '+String.fromCharCode(36)+'\n'));
+const recovery=readFileSync('server/scripts/recover-failed-prelaunch-migration.mjs','utf8');
+const docker=readFileSync('Dockerfile','utf8');
+assert.match(recovery,/failedHistoryWriterMigration/);
+assert.match(recovery,/applied_steps_count/);
+assert.match(recovery,/definition\.includes\('enriched'\)/);
+assert.match(docker,/20261106235900_history_writer_preserve_transfer/);
