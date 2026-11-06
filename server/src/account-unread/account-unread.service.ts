@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 type UnreadRow = {
@@ -126,6 +126,33 @@ export class AccountUnreadService {
     return { total: items.length, items };
   }
 
+
+  async journalHiddenRecords(accountId: string) {
+    const items = await this.prisma.accountJournalHiddenRecord.findMany({
+      where: { accountId },
+      select: { tenantId: true, recordId: true },
+    });
+    return { items };
+  }
+
+  async hideJournalRecord(accountId: string, tenantIdValue: unknown, recordIdValue: unknown) {
+    const tenantId = text(tenantIdValue);
+    const recordId = text(recordIdValue);
+    if (!tenantId || !recordId || tenantId.length > 128 || recordId.length > 128) {
+      throw new BadRequestException('Не указана запись');
+    }
+    const link = await this.prisma.accountTenantLink.findUnique({
+      where: { accountId_tenantId: { accountId, tenantId } },
+      select: { id: true },
+    });
+    if (!link) throw new ForbiddenException('Запись недоступна');
+    await this.prisma.accountJournalHiddenRecord.upsert({
+      where: { accountId_tenantId_recordId: { accountId, tenantId, recordId } },
+      create: { accountId, tenantId, recordId },
+      update: {},
+    });
+    return { hidden: true, tenantId, recordId };
+  }
 
   async deletedRecordHistory(accountId: string) {
     const rows = await this.prisma.$queryRaw<Array<{
