@@ -41,3 +41,7 @@ Fields: server timestamp, outcome, known account identifier if resolved, IP from
 ## Regression gates
 
 `npm run check`, `npm test`, Prisma/Nest build, isolated PostgreSQL migration, `server/scripts/check-history.mjs`, existing Core integration/data transfer, onboarding and admin login probes. Tests verify source separation, real deletion snapshots, and no passwordHash persistence in Account History. `main` is not modified by staging development.
+
+## Audit matrix
+
+Full owner × entity × source × action × actor matrix: [HISTORY_MATRIX.md](HISTORY_MATRIX.md). The original 15 tenant triggers retain their storage and receive canonical metadata via their existing writer. UEI and User record-dismissal are newly covered.

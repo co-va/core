@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const sql=readFileSync('server/prisma/migrations/20261106235700_history_uei_and_dismissal/migration.sql','utf8');
+const profile=readFileSync('server/src/business-state/business-state.service.ts','utf8');
+const controller=readFileSync('server/src/business-state/business-state.controller.ts','utf8');
+assert.match(sql,/CREATE TRIGGER "BusinessHistory_uei"/);
+assert.match(sql,/CREATE TRIGGER "AccountHistory_record_dismissal"/);
+assert.match(sql,/referenceOnly', true/);
+assert.doesNotMatch(sql,/FROM "BusinessRecord"/);
+assert.match(profile,/withTenantHistoryActor\(this\.prisma, actor/);
+assert.match(controller,/updateUEI\(request\.auth!\.tenantId, body, request\.auth!\)/);
+console.log('PASS: UEI facts are tenant-owned and User dismissal records only the allowed pointer');

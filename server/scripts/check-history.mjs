@@ -45,6 +45,49 @@ try {
         tenantId, platformAccountId: peerId,
         phones: [], emails: [], telegrams: [], customProfessions: [],
       } });
+      await tx.person.create({ data: {
+        tenantId, key: `history-person-${id}`, data: { name: 'History person' },
+      } });
+      await tx.$queryRaw`
+        SELECT set_config('co_va.history_actor_id', ${professionalId}, true) AS actor,
+               set_config('co_va.history_reason', 'owner-edited-person', true) AS reason,
+               set_config('co_va.history_correlation_id', ${id}, true) AS correlation
+      `;
+      await tx.person.update({
+        where: { tenantId_key: {tenantId, key: `history-person-${id}`} },
+        data: { data: { name: 'Edited person' } },
+      });
+      const actorFacts = await tx.$queryRaw`
+        SELECT "data" FROM "BusinessHistoryEvent"
+        WHERE "tenantId"=${tenantId} AND "entityType"='person'
+          AND "eventType"='update'
+      `;
+      assert.equal(actorFacts.length, 1, 'all original person triggers share the canonical writer');
+      assert.equal(actorFacts[0].data.actor.platformAccountId, professionalId);
+      assert.equal(actorFacts[0].data.reason, 'owner-edited-person');
+      assert.equal(actorFacts[0].data.correlationId, id);
+
+      await tx.ueiState.create({ data: {
+        tenantId, data: {entities: {},relations: {}},
+      } });
+      const ueiFacts = await tx.$queryRaw`
+        SELECT "data" FROM "BusinessHistoryEvent"
+        WHERE "tenantId"=${tenantId} AND "entityType"='uei'
+      `;
+      assert.equal(ueiFacts.length, 1);
+      assert.equal(ueiFacts[0].data.actor.platformAccountId, professionalId);
+
+      await tx.accountJournalHiddenRecord.create({ data: {
+        accountId, tenantId, recordId: `referenced-record-${id}`,
+      } });
+      const dismissalFacts = await tx.$queryRaw`
+        SELECT "data","relations" FROM "AccountHistoryEvent"
+        WHERE "accountId"=${accountId} AND "entityType"='record-dismissal'
+      `;
+      assert.equal(dismissalFacts.length, 1, 'User Record dismissal is a private reference');
+      assert.equal(dismissalFacts[0].relations.referenceOnly, true);
+      assert.equal(dismissalFacts[0].data.after.hidden, true);
+
       await tx.event.create({ data: {
         id: `tenant-event-${id}`, tenantId, ownerType: 'tenant', ownerId: tenantId,
         date: '2026-11-06', from: '12:00', to: '13:00', title: 'Tenant event',
@@ -89,12 +132,13 @@ try {
         SELECT "entityType" FROM "AccountHistoryEvent" WHERE "accountId"=${accountId}
       `;
       assert.equal(tenantEvents.length, 2, 'tenant events and notes stay in tenant History');
-      assert.equal(accountEvents.length, 3, 'account signup, event and note stay in account History');
+      assert.equal(accountEvents.length, 4, 'account signup, event, note and dismissal stay in account History');
       assert.ok(tenantEvents.some(v => v.entityType === 'event'));
       assert.ok(tenantEvents.some(v => v.entityType === 'note'));
       assert.ok(accountEvents.some(v => v.entityType === 'account'));
       assert.ok(accountEvents.some(v => v.entityType === 'event'));
       assert.ok(accountEvents.some(v => v.entityType === 'note'));
+      assert.ok(accountEvents.some(v => v.entityType === 'record-dismissal'));
 
       const history = new HistoryService(tx);
       const visible = await history.list(tenantId, { entityType: 'note' }, professionalId);
@@ -137,6 +181,18 @@ try {
       assert.equal(deletedAccount.length, 1, 'account deleted note retains audit snapshot');
       assert.equal(deletedTenant[0].data.deleted.title, 'Tenant event');
       assert.equal(deletedAccount[0].data.deleted.title, 'Account note');
+
+      await tx.accountJournalHiddenRecord.delete({
+        where: { accountId_tenantId_recordId: {
+          accountId, tenantId, recordId: `referenced-record-${id}`,
+        } },
+      });
+      const unhidden = await tx.$queryRaw`
+        SELECT "data" FROM "AccountHistoryEvent"
+        WHERE "accountId"=${accountId} AND "entityType"='record-dismissal' AND "eventType"='unhide'
+      `;
+      assert.equal(unhidden.length, 1, 'unhide is independently audited without deleting history');
+      assert.equal(unhidden[0].data.after.hidden, false);
 
       const leak = await tx.$queryRaw`
         SELECT COUNT(*)::integer AS count FROM "AccountHistoryEvent"

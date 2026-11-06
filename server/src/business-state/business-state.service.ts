@@ -6,6 +6,7 @@ import { resolveTransferredPerson } from './person-transfer';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { HistoryActor, withTenantHistoryActor } from '../history/history-actor';
 import { ProcedureService } from '../procedure/procedure.service';
 import { RecordService } from '../record/record.service';
 
@@ -161,17 +162,17 @@ export class BusinessStateService {
     return this.bundle(tenantId);
   }
 
-  async upsertPerson(tenantId: string, key: string, body: unknown) {
+  async upsertPerson(tenantId: string, key: string, body: unknown, actor?: HistoryActor) {
     const source = objectValue(body);
     const person = clone(objectValue(source.person ?? source));
     const normalizedKey = text(key);
     if (!normalizedKey) throw new BadRequestException('У Person отсутствует key');
     person.key = normalizedKey;
-    await this.prisma.person.upsert({
+    await withTenantHistoryActor(this.prisma, actor, tx => tx.person.upsert({
       where: { tenantId_key: { tenantId, key: normalizedKey } },
       create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
       update: { position: positionValue(source.position), data: json(person) },
-    });
+    }));
     return person;
   }
 
@@ -266,20 +267,21 @@ export class BusinessStateService {
     return id;
   }
 
-  async deletePerson(tenantId: string, key: string) {
+  async deletePerson(tenantId: string, key: string, actor?: HistoryActor) {
     const normalizedKey = text(key);
-    const result = await this.prisma.person.deleteMany({ where: { tenantId, key: normalizedKey } });
+    const result = await withTenantHistoryActor(this.prisma, actor,
+      tx => tx.person.deleteMany({ where: { tenantId, key: normalizedKey } }));
     return { deleted: result.count };
   }
 
-  async updateUEI(tenantId: string, body: unknown) {
+  async updateUEI(tenantId: string, body: unknown, actor?: HistoryActor) {
     const source = objectValue(body);
     const uei = normalizeUEI(source.uei ?? source);
-    await this.prisma.ueiState.upsert({
+    await withTenantHistoryActor(this.prisma, actor, tx => tx.ueiState.upsert({
       where: { tenantId },
       create: { tenantId, data: json(uei) },
       update: { data: json(uei) },
-    });
+    }));
     return uei;
   }
 

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const sql=readFileSync('server/prisma/migrations/20261106235500_history_contract_metadata/migration.sql','utf8');
+const existing=readFileSync('server/prisma/migrations/20261019170000_professional_history/migration.sql','utf8');
+assert.equal((existing.match(/CREATE TRIGGER "BusinessHistory_/g)||[]).length, 15);
+assert.match(existing,/CREATE TRIGGER "BusinessHistory_consent"/);
+assert.match(sql,/CREATE OR REPLACE FUNCTION "professional_history_write"/);
+assert.match(sql,/current_setting\('co_va.history_actor_id', true\)/);
+assert.match(sql,/current_setting\('co_va.history_reason', true\)/);
+assert.match(sql,/current_setting\('co_va.history_correlation_id',true\)/);
+assert.match(sql,/THEN jsonb_build_object\('type','unknown'\)/);
+assert.match(sql,/COALESCE\(event_data,'\{\}'::jsonb\)/);
+assert.match(sql,/ON CONFLICT \("tenantId", "eventId"\) DO NOTHING/);
+assert.match(sql,/CREATE TRIGGER "AccountHistory_append_only"/);
+console.log('PASS: original 15 tenant trigger sources get canonical metadata and Account History is append-only');

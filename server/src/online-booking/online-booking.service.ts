@@ -20,6 +20,7 @@ import { RecordService } from '../record/record.service';
 import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { LoginRequestContext, recordLoginAttempt } from '../history/login-audit';
+import { withAccountHistoryActor } from '../history/account-history-actor';
 
 function objectValue(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -915,6 +916,7 @@ export class OnlineBookingService {
     const telegramId = text(body.telegramId) || account.telegramId;
     const contacts = accountContactFacts({ email: account.email, phone, telegramId, profileData });
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('co_va.account_history_actor_id', ${accountId}, true)`;
       await this.replaceAccountContacts(tx, account.id, contacts);
       return tx.account.update({
         where: { id: account.id },
@@ -954,6 +956,7 @@ export class OnlineBookingService {
 
     const deletedAt = new Date().toISOString();
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('co_va.account_history_actor_id', ${accountId}, true)`;
       await tx.accountContact.deleteMany({ where: { accountId: account.id } });
       await tx.accountTenantLink.deleteMany({ where: { accountId: account.id } });
       await tx.account.update({
@@ -981,7 +984,10 @@ export class OnlineBookingService {
     if (!account) throw new UnauthorizedException('Аккаунт не найден');
     if (!(await compare(current, account.passwordHash))) throw new BadRequestException('Текущий пароль указан неверно');
     if (await compare(next, account.passwordHash)) throw new BadRequestException('Новый пароль должен отличаться от текущего');
-    await this.prisma.account.update({ where: { id: account.id }, data: { passwordHash: await hash(next, 12) } });
+    const passwordHash = await hash(next, 12);
+    await withAccountHistoryActor(this.prisma, accountId,
+      tx => tx.account.update({ where: { id: account.id }, data: { passwordHash } }),
+      'credential-change');
     return { changed: true };
   }
 
