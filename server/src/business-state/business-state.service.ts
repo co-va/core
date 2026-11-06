@@ -307,20 +307,42 @@ export class BusinessStateService {
             };
           })
           .filter((item) => Boolean(item.name));
-        await tx.deletedRecordSnapshot.upsert({
-          where: { tenantId_recordId: { tenantId, recordId: id } },
-          create: {
-            tenantId, recordId: id,
-            data: json({
-              date: text(source.date).slice(0, 10),
-              from: text(source.from),
-              to: text(source.to),
-              workplaceId: text(source.workplaceId),
-              procedures,
-            }),
-          },
-          update: {},
-        });
+        // The existing RecordEvent history owns the display snapshot.
+        // It is NOT a live Record and will not participate in analytics,
+        // finance or occupancy. Keep only these non-personal details.
+        const snapshot = {
+          date: text(source.date).slice(0, 10),
+          from: text(source.from),
+          to: text(source.to),
+          workplaceId: text(source.workplaceId),
+          procedures,
+        };
+        const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
+        const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
+        const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
+        const record = await tx.record.deleteMany({ where: { tenantId, recordId: id } });
+        // One terminal audit event rather than a second snapshot table.
+        // Insert only if physical deletion actually happened.
+        if (record.count) {
+          const eventId = randomUUID();
+          await tx.recordEvent.create({
+            data: {
+              tenantId,
+              eventId,
+              recordId: id,
+              position: 0,
+              data: json({
+                id: eventId,
+                recordId: id,
+                type: 'deleted',
+                category: 'action',
+                at: new Date().toISOString(),
+                payload: { snapshot },
+              }),
+            },
+          });
+        }
+        return { deleted: record.count, deletedEvents: events.count, deletedFinanceOperations: financeOperations.count, deletedSettlements: settlements.count };
       }
       const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
