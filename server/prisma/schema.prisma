@@ -807,16 +807,18 @@ model TenantInvitation {
 
 model PlatformActivityEvent {
   id                String   @id @default(cuid())
-  tenantId          String
+  tenantId          String?
   platformAccountId String?
+  subjectAccountId  String?
   eventType         String
   metadata          Json     @default("{}")
   occurredAt        DateTime @default(now())
   createdAt         DateTime @default(now())
 
-  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant  Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   account PlatformAccount? @relation(fields: [platformAccountId], references: [id], onDelete: SetNull)
 
+  @@index([subjectAccountId, occurredAt(sort: Desc)], map: "PlatformActivityEvent_subjectAccountId_occurredAt_idx")
   @@index([tenantId, occurredAt])
   @@index([platformAccountId, occurredAt])
   @@index([eventType, occurredAt])

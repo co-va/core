@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { PrismaService } from '../prisma.service';
+import { LoginRequestContext, recordLoginAttempt } from '../history/login-audit';
 
 type PlatformPhoneRow = { platformAccountId: string };
 
@@ -60,19 +61,35 @@ export class AuthService {
     });
   }
 
-  async login(identifier: string, password: string) {
+  async login(identifier: string, password: string, context?: LoginRequestContext) {
     const account = await this.accountByIdentifier(identifier);
     if (!account || !(await compare(String(password || ''), account.passwordHash))) {
+      await recordLoginAttempt(this.prisma, {
+        surface: 'professional', result: 'denied', reason: 'invalid-credentials',
+        tenantId: account?.memberships[0]?.tenantId || null,
+        platformAccountId: account?.id || null, context,
+      });
       throw new UnauthorizedException('Неверный телефон, email или пароль');
     }
 
     const membership = account.memberships[0];
-    if (!membership) throw new UnauthorizedException('Учётная запись не привязана к пространству');
+    if (!membership) {
+      await recordLoginAttempt(this.prisma, {
+        surface: 'professional', result: 'denied', reason: 'missing-membership',
+        platformAccountId: account.id, context,
+      });
+      throw new UnauthorizedException('Учётная запись не привязана к пространству');
+    }
 
     const accessToken = await this.jwt.signAsync({
       sub: account.id,
       tenantId: membership.tenantId,
       role: membership.role,
+    });
+
+    await recordLoginAttempt(this.prisma, {
+      surface: 'professional', result: 'success', reason: 'authenticated',
+      tenantId: membership.tenantId, platformAccountId: account.id, context,
     });
 
     return {

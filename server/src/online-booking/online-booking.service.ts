@@ -19,6 +19,7 @@ import { TimeService } from '../time/time.service';
 import { RecordService } from '../record/record.service';
 import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
+import { LoginRequestContext, recordLoginAttempt } from '../history/login-audit';
 
 function objectValue(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -871,21 +872,32 @@ export class OnlineBookingService {
     };
   }
 
-  async loginGlobalAccount(identifierValue: unknown, password: unknown) {
+  async loginGlobalAccount(identifierValue: unknown, password: unknown, context?: LoginRequestContext) {
     const identifier = accountLoginContact(identifierValue);
-    if (!identifier) throw new BadRequestException('Введите телефон или email');
+    if (!identifier) {
+      await recordLoginAttempt(this.prisma, {
+        surface: 'user', result: 'denied', reason: 'invalid-identifier', context,
+      });
+      throw new BadRequestException('Введите телефон или email');
+    }
     const contact = await this.prisma.accountContact.findUnique({
       where: { type_value: { type: identifier.type, value: identifier.value } },
       include: { account: true },
     });
     const account = contact?.account || null;
     if (!account || !(await compare(text(password), account.passwordHash))) {
+      await recordLoginAttempt(this.prisma, {
+        surface: 'user', result: 'denied', reason: 'invalid-credentials',
+        accountId: account?.id || null, context,
+      });
       throw new UnauthorizedException('Неверный телефон, email или пароль');
     }
-    return {
-      accessToken: await this.issueAccountToken(account),
-      account: publicAccount(account),
-    };
+    const accessToken = await this.issueAccountToken(account);
+    await recordLoginAttempt(this.prisma, {
+      surface: 'user', result: 'success', reason: 'authenticated',
+      accountId: account.id, context,
+    });
+    return { accessToken, account: publicAccount(account) };
   }
 
   async getGlobalAccount(accountId: string) {

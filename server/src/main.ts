@@ -51,6 +51,16 @@ function allowedOrigins() {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  // Do not trust arbitrary forwarded IP headers. Configure the exact number
+  // of known reverse-proxy hops in Amvera via AUDIT_TRUST_PROXY_HOPS.
+  const configuredProxyHops = process.env.AUDIT_TRUST_PROXY_HOPS;
+  if (configuredProxyHops && configuredProxyHops !== '0') {
+    const hops = Number(configuredProxyHops);
+    if (!Number.isSafeInteger(hops) || hops < 1 || hops > 3) {
+      throw new Error('AUDIT_TRUST_PROXY_HOPS must be an integer between 1 and 3');
+    }
+    app.getHttpAdapter().getInstance().set('trust proxy', hops);
+  }
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 

@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { AccountDocumentService } from '../document-registry/account-document.service';
 import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { HistoryService } from '../history/history.service';
+import { loginContextFromRequest } from '../history/login-audit';
 import { WebPushService } from '../notification/web-push.service';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
 import { AccountContactRecordService } from './account-contact-record.service';
@@ -39,8 +40,11 @@ export class AccountRuntimeController {
   }
 
   @Post('login')
-  login(@Body() body: { identifier?: unknown; email?: unknown; password?: unknown }) {
-    return this.account.loginGlobalAccount(body?.identifier ?? body?.email ?? '', body?.password ?? '');
+  login(@Req() request: Request, @Body() body: { identifier?: unknown; email?: unknown; password?: unknown }) {
+    return this.account.loginGlobalAccount(
+      body?.identifier ?? body?.email ?? '', body?.password ?? '',
+      loginContextFromRequest(request),
+    );
   }
 
   @UseGuards(AccountGuard)
