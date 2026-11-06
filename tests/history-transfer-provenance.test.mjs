@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const path='server/prisma/migrations/20261106235900_history_writer_preserve_transfer/migration.sql';
+const sql=readFileSync(path,'utf8');
+assert.match(sql,/co_va\.transfer_provenance/);
+assert.match(sql,/co_va\.transfer_time/);
+assert.match(sql,/co_va\.suppress_history/);
+assert.match(sql,/"data", "provenance"/);
+assert.match(sql,/COALESCE\(NULLIF\(current_setting\('co_va.transfer_provenance', true\)/);
+assert.match(sql,/current_setting\('co_va.history_actor_id', true\)/);
+assert.match(sql,/current_setting\('co_va.history_reason', true\)/);
+assert.match(sql,/current_setting\('co_va.history_correlation_id',true\)/);
+assert.match(sql,/ON CONFLICT \("tenantId", "eventId"\) DO NOTHING/);
+console.log('PASS: History writer retains migration transfer provenance and time while adding attribution');
