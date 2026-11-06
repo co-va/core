@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Put, Req, UseGuards } from '@nestjs/common
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { loginContextFromRequest } from '../history/login-audit';
 
 type LoginBody = { identifier?: string; email?: string; password?: string };
 type AuthRequest = Request & { auth?: { platformAccountId: string; tenantId: string; role: string } };
@@ -11,8 +12,11 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('login')
-  login(@Body() body: LoginBody) {
-    return this.auth.login(body?.identifier || body?.email || '', body?.password || '');
+  login(@Req() request: Request, @Body() body: LoginBody) {
+    return this.auth.login(
+      body?.identifier || body?.email || '', body?.password || '',
+      loginContextFromRequest(request),
+    );
   }
 
   @UseGuards(JwtAuthGuard)

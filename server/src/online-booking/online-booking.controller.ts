@@ -10,6 +10,7 @@ import { AccountGuard } from './account.guard';
 import { BookingPdnConsentGuard } from './booking-pdn-consent.guard';
 import { PersonIdentityService } from './person-identity.service';
 import { OnlineBookingService } from './online-booking.service';
+import { loginContextFromRequest } from '../history/login-audit';
 
 type OwnerRequest = Request & { auth?: { platformAccountId: string; tenantId: string; role: string } };
 type AccountRequest = Request & { accountAuth?: { accountId: string; tenantId: string } };
@@ -70,8 +71,11 @@ export class OnlineBookingController {
   }
 
   @Post('account/login')
-  loginGlobalAccount(@Body() body: { identifier?: unknown; email?: unknown; password?: unknown }) {
-    return this.booking.loginGlobalAccount(body?.identifier ?? body?.email ?? '', body?.password ?? '');
+  loginGlobalAccount(@Req() request: Request, @Body() body: { identifier?: unknown; email?: unknown; password?: unknown }) {
+    return this.booking.loginGlobalAccount(
+      body?.identifier ?? body?.email ?? '', body?.password ?? '',
+      loginContextFromRequest(request),
+    );
   }
 
   @UseGuards(AccountGuard)

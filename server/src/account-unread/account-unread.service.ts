@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 type UnreadRow = {
@@ -25,6 +25,11 @@ function countValue(value: number | bigint | string | undefined) {
 
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {};
 }
 
 @Injectable()
@@ -127,6 +132,33 @@ export class AccountUnreadService {
   }
 
 
+  async journalHiddenRecords(accountId: string) {
+    const items = await this.prisma.accountJournalHiddenRecord.findMany({
+      where: { accountId },
+      select: { tenantId: true, recordId: true },
+    });
+    return { items };
+  }
+
+  async hideJournalRecord(accountId: string, tenantIdValue: unknown, recordIdValue: unknown) {
+    const tenantId = text(tenantIdValue);
+    const recordId = text(recordIdValue);
+    if (!tenantId || !recordId || tenantId.length > 128 || recordId.length > 128) {
+      throw new BadRequestException('Не указана запись');
+    }
+    const link = await this.prisma.accountTenantLink.findUnique({
+      where: { accountId_tenantId: { accountId, tenantId } },
+      select: { id: true },
+    });
+    if (!link) throw new ForbiddenException('Запись недоступна');
+    await this.prisma.accountJournalHiddenRecord.upsert({
+      where: { accountId_tenantId_recordId: { accountId, tenantId, recordId } },
+      create: { accountId, tenantId, recordId },
+      update: {},
+    });
+    return { hidden: true, tenantId, recordId };
+  }
+
   async deletedRecordHistory(accountId: string) {
     const rows = await this.prisma.$queryRaw<Array<{
       notificationId: string;
@@ -136,6 +168,7 @@ export class AccountUnreadService {
       body: string;
       createdAt: Date;
       readAt: Date | null;
+      recordSnapshot: unknown;
     }>>`
       SELECT
         n."id" AS "notificationId",
@@ -144,12 +177,23 @@ export class AccountUnreadService {
         n."title",
         n."body",
         n."createdAt",
-        d."readAt"
+        d."readAt",
+        s."data" AS "recordSnapshot"
       FROM "Notification" n
       INNER JOIN "NotificationDelivery" d
         ON d."notificationId" = n."id"
        AND d."tenantId" = n."tenantId"
        AND d."channel" = 'IN_APP'
+      LEFT JOIN LATERAL (
+        SELECT h."data"->'deleted' AS "data"
+        FROM "BusinessHistoryEvent" h
+        WHERE h."tenantId" = n."tenantId"
+          AND h."recordId" = n."entityId"
+          AND h."entityType" = 'record'
+          AND h."eventType" = 'delete'
+        ORDER BY h."recordedAt" DESC, h."id" DESC
+        LIMIT 1
+      ) s ON TRUE
       INNER JOIN "AccountTenantLink" l
         ON l."accountId" = ${accountId}
        AND l."tenantId" = n."tenantId"
@@ -167,14 +211,28 @@ export class AccountUnreadService {
     return {
       items: rows.map((row) => {
         const body = text(row.body);
+        const snapshot = objectValue(row.recordSnapshot);
+        const procedures = (Array.isArray(snapshot.procedures) ? snapshot.procedures : [])
+          .map((value) => {
+            const procedure = objectValue(value);
+            return {
+              id: text(procedure.id),
+              name: text(procedure.name),
+              duration: Math.max(0, Number(procedure.duration) || 0),
+            };
+          })
+          .filter((procedure) => Boolean(procedure.name));
         return {
           id: text(row.notificationId),
           tenantId: text(row.tenantId),
           recordId: text(row.recordId),
           title: text(row.title),
           body,
-          date: body.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || '',
-          from: body.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '',
+          date: text(snapshot.date).slice(0, 10) || body.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0] || '',
+          from: text(snapshot.from) || body.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '',
+          to: text(snapshot.to),
+          workplaceId: text(snapshot.workplaceId),
+          procedures,
           removedAt: row.createdAt,
           read: Boolean(row.readAt),
         };

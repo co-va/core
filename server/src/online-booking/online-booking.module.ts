@@ -9,6 +9,7 @@ import { CommunicationModule } from '../communication/communication.module';
 import { DocumentRegistryModule } from '../document-registry/document-registry.module';
 import { EmailVerificationModule } from '../email-verification/email-verification.module';
 import { EventModule } from '../event/event.module';
+import { HistoryModule } from '../history/history.module';
 import { NoteModule } from '../note/note.module';
 import { TenantDocumentArchiveModule } from '../tenant-document-archive/tenant-document-archive.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -43,7 +44,7 @@ import { OnlineBookingService } from './online-booking.service';
 import { SaasAccessModule } from '../saas-access/saas-access.module';
 
 @Module({
-  imports: [AuthModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EmailVerificationModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
+  imports: [AuthModule, HistoryModule, BusinessStateModule, CommunicationModule, DocumentRegistryModule, EmailVerificationModule, EventModule, NoteModule, TenantDocumentArchiveModule, NotificationModule, ProfileModule, TimeModule, RecordModule, ProcedureModule, FinanceModule, LoyaltyModule, SaasAccessModule],
   controllers: [AccountRuntimeController, OnlineBookingController, BookingFlowController, AccountBookingTargetsController, AccountCalendarController, AccountEmailVerificationController, AccountEventController, AccountNoteController, AccountMessengerController, BookingConsentController, AccountSettingsController, AccountDepositController, AccountPersonalAccountController, AccountPushController],
   providers: [OnlineBookingService, BookingFlowService, AccountRecordService, AccountContactRecordService, AccountCalendarService, AccountCalendarGoogleAdapter, AccountCalendarYandexAdapter, AccountGuard, CanonicalAccountGuard, BookingPdnConsentGuard, PersonIdentityService, PrismaService],
 })

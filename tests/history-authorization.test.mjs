@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read=path=>readFileSync(path,'utf8');
+const guard=read('server/src/history/history-membership.guard.ts');
+const controller=read('server/src/history/history.controller.ts');
+const module=read('server/src/history/history.module.ts');
+assert.match(guard,/membership\.findUnique/);
+assert.match(guard,/tenantId_platformAccountId/);
+assert.match(guard,/throw new ForbiddenException/);
+assert.match(controller,/@UseGuards\(JwtAuthGuard, HistoryMembershipGuard\)/);
+assert.match(module,/HistoryMembershipGuard/);
+console.log('PASS: tenant History requires current Professional membership, not just a signed JWT');

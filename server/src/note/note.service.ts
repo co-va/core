@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { HistoryActor, withTenantHistoryActor } from '../history/history-actor';
+import { withAccountHistoryActor } from '../history/account-history-actor';
 
 const NOTE_DEFAULT_COLOR = '#CFC3FF';
 
@@ -143,7 +145,7 @@ export class NoteService {
     return notePayload(row);
   }
 
-  async upsertProfile(tenantId: string, platformAccountId: string, id: string, body: unknown) {
+  async upsertProfile(tenantId: string, platformAccountId: string, id: string, body: unknown, actor?: HistoryActor) {
     const ownerId = await this.profileOwnerId(tenantId, platformAccountId);
     const source = objectValue(body);
     const input = objectValue(source.note) as NoteInput;
@@ -213,21 +215,25 @@ export class NoteService {
       createdAt,
     };
 
-    const row = existingById
-      ? await this.prisma.note.update({ where: { id: noteId }, data })
-      : await this.prisma.note.create({ data: { id: noteId, ...data } });
+    const row = await withTenantHistoryActor(this.prisma, {
+      platformAccountId: actor?.platformAccountId || '',
+      role: actor?.role || '',
+      reason: stringValue(source.reason),
+    }, tx => existingById
+      ? tx.note.update({ where: { id: noteId }, data })
+      : tx.note.create({ data: { id: noteId, ...data } }));
 
     return notePayload(row);
   }
 
-  async removeProfile(tenantId: string, platformAccountId: string, id: string) {
+  async removeProfile(tenantId: string, platformAccountId: string, id: string, actor?: HistoryActor) {
     const ownerId = await this.profileOwnerId(tenantId, platformAccountId);
     const row = await this.prisma.note.findFirst({
       where: { id, tenantId, ownerType: 'profile', ownerId },
       select: { id: true },
     });
     if (!row) return { ok: true };
-    await this.prisma.note.delete({ where: { id: row.id } });
+    await withTenantHistoryActor(this.prisma, actor, tx => tx.note.delete({ where: { id: row.id } }));
     return { ok: true };
   }
 
@@ -309,9 +315,13 @@ export class NoteService {
       createdAt,
     };
 
-    const row = existingById
-      ? await this.prisma.note.update({ where: { id: noteId }, data })
-      : await this.prisma.note.create({ data: { id: noteId, ...data } });
+    const row = await withAccountHistoryActor(
+      this.prisma, ownerId,
+      tx => existingById
+        ? tx.note.update({ where: { id: noteId }, data })
+        : tx.note.create({ data: { id: noteId, ...data } }),
+      stringValue(source.reason),
+    );
     return notePayload(row);
   }
 
@@ -321,7 +331,7 @@ export class NoteService {
       select: { id: true },
     });
     if (!row) return { ok: true };
-    await this.prisma.note.delete({ where: { id: row.id } });
+    await withAccountHistoryActor(this.prisma, ownerId, tx => tx.note.delete({ where: { id: row.id } }));
     return { ok: true };
   }
 

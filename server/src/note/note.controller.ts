@@ -24,11 +24,11 @@ export class NoteController {
 
   @Put(':id')
   upsert(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: unknown) {
-    return this.notes.upsertProfile(request.auth!.tenantId, request.auth!.platformAccountId, id, body);
+    return this.notes.upsertProfile(request.auth!.tenantId, request.auth!.platformAccountId, id, body, request.auth!);
   }
 
   @Delete(':id')
   remove(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
-    return this.notes.removeProfile(request.auth!.tenantId, request.auth!.platformAccountId, id);
+    return this.notes.removeProfile(request.auth!.tenantId, request.auth!.platformAccountId, id, request.auth!);
   }
 }

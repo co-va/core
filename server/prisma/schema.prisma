@@ -240,9 +240,31 @@ model Account {
   contacts            AccountContact[]
   tenantLinks         AccountTenantLink[]
   requests            BookingRequest[]
+  journalHiddenRecords AccountJournalHiddenRecord[]
   calendarConnections AccountCalendarConnection[]
 
   @@index([createdViaTenantId])
+}
+
+// Private, account-owned actions. Never copies a tenant's source Record.
+model AccountHistoryEvent {
+  id         BigInt   @id @default(autoincrement())
+  accountId  String
+  eventId    String
+  entityType String
+  entityId   String
+  eventType  String
+  status     String   @default("active")
+  sourceType String   @default("")
+  sourceId   String   @default("")
+  occurredAt DateTime @default(now()) @db.Timestamp(3)
+  recordedAt DateTime @default(now()) @db.Timestamp(3)
+  relations  Json     @default("{}")
+  data       Json     @default("{}")
+
+  @@unique([accountId, eventId], map: "AccountHistoryEvent_owner_event_unique")
+  @@index([accountId, occurredAt(sort: Desc), id(sort: Desc)], map: "AccountHistoryEvent_owner_time_idx")
+  @@index([accountId, entityType, entityId, occurredAt(sort: Desc)], map: "AccountHistoryEvent_owner_entity_idx")
 }
 
 model AccountCalendarConnection {
@@ -329,6 +351,19 @@ model AccountTenantLink {
   @@unique([accountId, tenantId])
   @@index([tenantId, accountId])
   @@index([accountId, updatedAt])
+}
+
+// User-only dismissal is never a delete or cancellation of the source Record.
+model AccountJournalHiddenRecord {
+  accountId String
+  tenantId  String
+  recordId  String
+  hiddenAt  DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, tenantId, recordId])
+  @@index([accountId, hiddenAt])
 }
 
 model AccountContact {
@@ -772,16 +807,18 @@ model TenantInvitation {
 
 model PlatformActivityEvent {
   id                String   @id @default(cuid())
-  tenantId          String
+  tenantId          String?
   platformAccountId String?
+  subjectAccountId  String?
   eventType         String
   metadata          Json     @default("{}")
   occurredAt        DateTime @default(now())
   createdAt         DateTime @default(now())
 
-  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant  Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   account PlatformAccount? @relation(fields: [platformAccountId], references: [id], onDelete: SetNull)
 
+  @@index([subjectAccountId, occurredAt(sort: Desc)], map: "PlatformActivityEvent_subjectAccountId_occurredAt_idx")
   @@index([tenantId, occurredAt])
   @@index([platformAccountId, occurredAt])
   @@index([eventType, occurredAt])

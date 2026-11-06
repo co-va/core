@@ -5,6 +5,7 @@ const prelaunchMigration = '20260922075500_prelaunch_hard_delete_clean_start';
 const firstRunCleanupMigration = '20260930143000_remove_first_run_runtime';
 const depositBenefitMigration = '20261008214500_deposit_benefit_balances';
 const pricePercentGuardMigration = '20261009014500_loyalty_price_percent_guard';
+const failedHistoryWriterMigration = '20261106235900_history_writer_preserve_transfer';
 
 async function tableExists(name) {
   const rows = await prisma.$queryRawUnsafe(
@@ -154,6 +155,29 @@ async function main() {
       console.warn('[prelaunch-recovery] stored price guard migration error:', String(failedPriceGuard.logs).slice(0, 2000));
     }
     return 45;
+  }
+
+  // Only the named, fully rolled-back SQL delimiter failure is recoverable.
+  const failedWriter = await failedMigration(failedHistoryWriterMigration);
+  if (failedWriter) {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT pg_get_functiondef(p.oid) AS "definition"
+       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='professional_history_write'
+       LIMIT 1`,
+    );
+    const definition = String(rows[0]?.definition || '');
+    const logs = String(failedWriter.logs || '');
+    const safeState = Number(failedWriter.applied_steps_count || 0) === 0
+      && definition.includes('enriched')
+      && !definition.includes('co_va.transfer_provenance')
+      && (logs.includes('42601') || logs.includes('syntax error') || !logs.trim());
+    if (!safeState) {
+      console.error('[history-writer-recovery] unexpected DB state; refusing automatic recovery');
+      return 2;
+    }
+    console.warn('[history-writer-recovery] failed migration fully rolled back; safe to retry');
+    return 46;
   }
 
   console.log('[prelaunch-recovery] no active failed recoverable migration');

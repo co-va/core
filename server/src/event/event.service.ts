@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { HistoryActor, withTenantHistoryActor } from '../history/history-actor';
+import { withAccountHistoryActor } from '../history/account-history-actor';
 
 type EventInput = {
   id?: unknown;
@@ -85,7 +87,7 @@ export class EventService {
     return eventPayload(row);
   }
 
-  async upsert(tenantId: string, id: string, body: unknown) {
+  async upsert(tenantId: string, id: string, body: unknown, actor?: HistoryActor) {
     const source = objectValue(body);
     const input = objectValue(source.event) as EventInput;
     const eventId = text(id);
@@ -120,16 +122,20 @@ export class EventService {
       createdAt,
     };
 
-    const row = existing
-      ? await this.prisma.event.update({ where: { id: eventId }, data })
-      : await this.prisma.event.create({ data: { id: eventId, ...data } });
+    const row = await withTenantHistoryActor(this.prisma, {
+      platformAccountId: actor?.platformAccountId || '',
+      role: actor?.role || '',
+      reason: text(source.reason),
+    }, tx => existing
+      ? tx.event.update({ where: { id: eventId }, data })
+      : tx.event.create({ data: { id: eventId, ...data } }));
     return eventPayload(row);
   }
 
-  async remove(tenantId: string, id: string) {
+  async remove(tenantId: string, id: string, actor?: HistoryActor) {
     const row = await this.prisma.event.findFirst({ where: { id, tenantId } });
     if (!row) return { ok: true };
-    await this.prisma.event.delete({ where: { id } });
+    await withTenantHistoryActor(this.prisma, actor, tx => tx.event.delete({ where: { id } }));
     return { ok: true };
   }
 
@@ -185,9 +191,13 @@ export class EventService {
       createdAt,
     };
 
-    const row = existing
-      ? await this.prisma.event.update({ where: { id: eventId }, data })
-      : await this.prisma.event.create({ data: { id: eventId, ...data } });
+    const row = await withAccountHistoryActor(
+      this.prisma, ownerId,
+      tx => existing
+        ? tx.event.update({ where: { id: eventId }, data })
+        : tx.event.create({ data: { id: eventId, ...data } }),
+      text(source.reason),
+    );
     return eventPayload(row);
   }
 
@@ -196,7 +206,7 @@ export class EventService {
       where: { id, ownerType, ownerId, tenantId: null },
     });
     if (!row) return { ok: true };
-    await this.prisma.event.delete({ where: { id } });
+    await withAccountHistoryActor(this.prisma, ownerId, tx => tx.event.delete({ where: { id } }));
     return { ok: true };
   }
 }

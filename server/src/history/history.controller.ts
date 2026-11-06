@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { HistoryService } from './history.service';
+import { HistoryMembershipGuard } from './history-membership.guard';
 
 type AuthenticatedRequest = Request & {
   auth?: { platformAccountId: string; tenantId: string; role: string };
@@ -13,7 +14,7 @@ function values(value: unknown) {
 }
 
 @Controller('history')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, HistoryMembershipGuard)
 export class HistoryController {
   constructor(private readonly history: HistoryService) {}
 
@@ -24,7 +25,7 @@ export class HistoryController {
     @Query('entityId') entityId: string,
     @Query('at') at: string,
   ) {
-    return this.history.asOf(request.auth!.tenantId, entityType, entityId, at);
+    return this.history.asOf(request.auth!.tenantId, entityType, entityId, at, request.auth!.platformAccountId);
   }
 
   @Get()
@@ -58,6 +59,6 @@ export class HistoryController {
       from,
       to,
       limit: Number(limit),
-    });
+    }, request.auth!.platformAccountId);
   }
 }

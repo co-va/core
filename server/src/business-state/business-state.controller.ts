@@ -179,17 +179,17 @@ export class BusinessStateController {
 
   @Put('people/:key')
   upsertPerson(@Req() request: AuthenticatedRequest, @Param('key') key: string, @Body() body: unknown) {
-    return this.businessState.upsertPerson(request.auth!.tenantId, key, body);
+    return this.businessState.upsertPerson(request.auth!.tenantId, key, body, request.auth!);
   }
 
   @Delete('people/:key')
   deletePerson(@Req() request: AuthenticatedRequest, @Param('key') key: string) {
-    return this.businessState.deletePerson(request.auth!.tenantId, key);
+    return this.businessState.deletePerson(request.auth!.tenantId, key, request.auth!);
   }
 
   @Put('uei')
   updateUEI(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    return this.businessState.updateUEI(request.auth!.tenantId, body);
+    return this.businessState.updateUEI(request.auth!.tenantId, body, request.auth!);
   }
 
   @Put('records/:recordId')
@@ -210,7 +210,10 @@ export class BusinessStateController {
   async deleteRecord(@Req() request: AuthenticatedRequest, @Param('recordId') recordId: string) {
     const tenantId = request.auth!.tenantId;
     const existing = await this.prisma.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId } } });
-    const result = await this.businessState.deleteRecord(tenantId, recordId);
+    const result = await this.businessState.deleteRecord(tenantId, recordId, {
+      platformAccountId: request.auth!.platformAccountId,
+      role: request.auth!.role,
+    });
     if (existing) await this.notifyRecordEvent(tenantId, 'booking.deleted', existing.data).catch(() => null);
     return result;
   }

@@ -47,6 +47,19 @@ export class AccountApiUnreadController extends AccountUnreadRoutes {
     return this.unread.deletedRecordHistory(request.accountAuth!.accountId);
   }
 
+  @Get('journal-hidden-records')
+  journalHiddenRecords(@Req() request: AccountRequest) {
+    return this.unread.journalHiddenRecords(request.accountAuth!.accountId);
+  }
+
+  @Post('journal-hidden-records')
+  hideJournalRecord(
+    @Req() request: AccountRequest,
+    @Body() body: { tenantId?: unknown; recordId?: unknown },
+  ) {
+    return this.unread.hideJournalRecord(request.accountAuth!.accountId, body?.tenantId, body?.recordId);
+  }
+
   @Post('service-unseen/seen')
   override markServiceSeen(
     @Req() request: AccountRequest,

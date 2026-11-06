@@ -19,6 +19,8 @@ import { TimeService } from '../time/time.service';
 import { RecordService } from '../record/record.service';
 import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
+import { LoginRequestContext, recordLoginAttempt } from '../history/login-audit';
+import { withAccountHistoryActor } from '../history/account-history-actor';
 
 function objectValue(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -658,6 +660,7 @@ export class OnlineBookingService {
     });
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('co_va.account_history_actor_id', ${accountId}, true)`;
       await this.replaceAccountContacts(tx, account.id, contacts);
       return tx.account.update({
         where: { id: account.id },
@@ -870,21 +873,32 @@ export class OnlineBookingService {
     };
   }
 
-  async loginGlobalAccount(identifierValue: unknown, password: unknown) {
+  async loginGlobalAccount(identifierValue: unknown, password: unknown, context?: LoginRequestContext) {
     const identifier = accountLoginContact(identifierValue);
-    if (!identifier) throw new BadRequestException('Введите телефон или email');
+    if (!identifier) {
+      await recordLoginAttempt(this.prisma, {
+        surface: 'user', result: 'denied', reason: 'invalid-identifier', context,
+      });
+      throw new BadRequestException('Введите телефон или email');
+    }
     const contact = await this.prisma.accountContact.findUnique({
       where: { type_value: { type: identifier.type, value: identifier.value } },
       include: { account: true },
     });
     const account = contact?.account || null;
     if (!account || !(await compare(text(password), account.passwordHash))) {
+      await recordLoginAttempt(this.prisma, {
+        surface: 'user', result: 'denied', reason: 'invalid-credentials',
+        accountId: account?.id || null, context,
+      });
       throw new UnauthorizedException('Неверный телефон, email или пароль');
     }
-    return {
-      accessToken: await this.issueAccountToken(account),
-      account: publicAccount(account),
-    };
+    const accessToken = await this.issueAccountToken(account);
+    await recordLoginAttempt(this.prisma, {
+      surface: 'user', result: 'success', reason: 'authenticated',
+      accountId: account.id, context,
+    });
+    return { accessToken, account: publicAccount(account) };
   }
 
   async getGlobalAccount(accountId: string) {
@@ -902,6 +916,7 @@ export class OnlineBookingService {
     const telegramId = text(body.telegramId) || account.telegramId;
     const contacts = accountContactFacts({ email: account.email, phone, telegramId, profileData });
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('co_va.account_history_actor_id', ${accountId}, true)`;
       await this.replaceAccountContacts(tx, account.id, contacts);
       return tx.account.update({
         where: { id: account.id },
@@ -941,6 +956,7 @@ export class OnlineBookingService {
 
     const deletedAt = new Date().toISOString();
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('co_va.account_history_actor_id', ${accountId}, true)`;
       await tx.accountContact.deleteMany({ where: { accountId: account.id } });
       await tx.accountTenantLink.deleteMany({ where: { accountId: account.id } });
       await tx.account.update({
@@ -968,7 +984,10 @@ export class OnlineBookingService {
     if (!account) throw new UnauthorizedException('Аккаунт не найден');
     if (!(await compare(current, account.passwordHash))) throw new BadRequestException('Текущий пароль указан неверно');
     if (await compare(next, account.passwordHash)) throw new BadRequestException('Новый пароль должен отличаться от текущего');
-    await this.prisma.account.update({ where: { id: account.id }, data: { passwordHash: await hash(next, 12) } });
+    const passwordHash = await hash(next, 12);
+    await withAccountHistoryActor(this.prisma, accountId,
+      tx => tx.account.update({ where: { id: account.id }, data: { passwordHash } }),
+      'credential-change');
     return { changed: true };
   }
 

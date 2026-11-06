@@ -22,11 +22,11 @@ export class EventController {
 
   @Put(':id')
   upsert(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: unknown) {
-    return this.events.upsert(request.auth!.tenantId, id, body);
+    return this.events.upsert(request.auth!.tenantId, id, body, request.auth!);
   }
 
   @Delete(':id')
   remove(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
-    return this.events.remove(request.auth!.tenantId, id);
+    return this.events.remove(request.auth!.tenantId, id, request.auth!);
   }
 }

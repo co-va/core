@@ -6,6 +6,7 @@ import { resolveTransferredPerson } from './person-transfer';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { HistoryActor, withTenantHistoryActor } from '../history/history-actor';
 import { ProcedureService } from '../procedure/procedure.service';
 import { RecordService } from '../record/record.service';
 
@@ -161,17 +162,17 @@ export class BusinessStateService {
     return this.bundle(tenantId);
   }
 
-  async upsertPerson(tenantId: string, key: string, body: unknown) {
+  async upsertPerson(tenantId: string, key: string, body: unknown, actor?: HistoryActor) {
     const source = objectValue(body);
     const person = clone(objectValue(source.person ?? source));
     const normalizedKey = text(key);
     if (!normalizedKey) throw new BadRequestException('У Person отсутствует key');
     person.key = normalizedKey;
-    await this.prisma.person.upsert({
+    await withTenantHistoryActor(this.prisma, actor, tx => tx.person.upsert({
       where: { tenantId_key: { tenantId, key: normalizedKey } },
       create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
       update: { position: positionValue(source.position), data: json(person) },
-    });
+    }));
     return person;
   }
 
@@ -266,20 +267,21 @@ export class BusinessStateService {
     return id;
   }
 
-  async deletePerson(tenantId: string, key: string) {
+  async deletePerson(tenantId: string, key: string, actor?: HistoryActor) {
     const normalizedKey = text(key);
-    const result = await this.prisma.person.deleteMany({ where: { tenantId, key: normalizedKey } });
+    const result = await withTenantHistoryActor(this.prisma, actor,
+      tx => tx.person.deleteMany({ where: { tenantId, key: normalizedKey } }));
     return { deleted: result.count };
   }
 
-  async updateUEI(tenantId: string, body: unknown) {
+  async updateUEI(tenantId: string, body: unknown, actor?: HistoryActor) {
     const source = objectValue(body);
     const uei = normalizeUEI(source.uei ?? source);
-    await this.prisma.ueiState.upsert({
+    await withTenantHistoryActor(this.prisma, actor, tx => tx.ueiState.upsert({
       where: { tenantId },
       create: { tenantId, data: json(uei) },
       update: { data: json(uei) },
-    });
+    }));
     return uei;
   }
 
@@ -289,9 +291,18 @@ export class BusinessStateService {
     return this.records.upsertFromOwner(tenantId, id, body);
   }
 
-  async deleteRecord(tenantId: string, recordId: string) {
+  async deleteRecord(
+    tenantId: string,
+    recordId: string,
+    actor: { platformAccountId: string; role: string } = { platformAccountId: '', role: '' },
+  ) {
     const id = text(recordId);
     return this.prisma.$transaction(async (tx) => {
+      // The existing BusinessRecord DELETE trigger captures the full OLD.data
+      // in BusinessHistoryEvent. Supply the authenticated actor to that trigger
+      // within this transaction instead of writing a second history system.
+      await tx.$queryRaw`SELECT set_config('co_va.history_actor_id', ${text(actor.platformAccountId)}, true)`;
+      await tx.$queryRaw`SELECT set_config('co_va.history_actor_role', ${text(actor.role)}, true)`;
       const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
