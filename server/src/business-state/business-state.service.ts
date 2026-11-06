@@ -292,6 +292,36 @@ export class BusinessStateService {
   async deleteRecord(tenantId: string, recordId: string) {
     const id = text(recordId);
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
+      if (existing) {
+        const source = objectValue(existing.data);
+        // Preserve minimal display information in the SAME transaction as the
+        // physical deletion. No second live Record and no private person data.
+        const procedures = (Array.isArray(source.procedures) ? source.procedures : [])
+          .map((value) => {
+            const item = objectValue(value);
+            return {
+              id: text(item.id),
+              name: text(item.name),
+              duration: Math.max(0, Number(item.duration) || 0),
+            };
+          })
+          .filter((item) => Boolean(item.name));
+        await tx.deletedRecordSnapshot.upsert({
+          where: { tenantId_recordId: { tenantId, recordId: id } },
+          create: {
+            tenantId, recordId: id,
+            data: json({
+              date: text(source.date).slice(0, 10),
+              from: text(source.from),
+              to: text(source.to),
+              workplaceId: text(source.workplaceId),
+              procedures,
+            }),
+          },
+          update: {},
+        });
+      }
       const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
