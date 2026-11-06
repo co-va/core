@@ -184,9 +184,15 @@ export class AccountUnreadService {
         ON d."notificationId" = n."id"
        AND d."tenantId" = n."tenantId"
        AND d."channel" = 'IN_APP'
-      LEFT JOIN "DeletedRecordSnapshot" s
-        ON s."tenantId" = n."tenantId"
-       AND s."recordId" = n."entityId"
+      LEFT JOIN LATERAL (
+        SELECT e."data"->'payload'->'snapshot' AS "data"
+        FROM "BusinessRecordEvent" e
+        WHERE e."tenantId" = n."tenantId"
+          AND e."recordId" = n."entityId"
+          AND e."data"->>'type' = 'deleted'
+        ORDER BY e."createdAt" DESC
+        LIMIT 1
+      ) s ON TRUE
       INNER JOIN "AccountTenantLink" l
         ON l."accountId" = ${accountId}
        AND l."tenantId" = n."tenantId"
