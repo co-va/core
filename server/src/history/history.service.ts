@@ -67,13 +67,14 @@ function platformMetadata(value: unknown) {
   const permitted = [
     'from','to','before','after','status','commercialMode','discountPercent',
     'freeForever','freeUntil','productKeys','amountMinor','currency','provider',
-    'paidAt','receiptSent','capabilitiesApplied','enabled','isTester',
+    'paidAt','receiptSent','capabilitiesApplied','enabled','enforced','isTester',
     'reason','correlationId','result','action','entityType','entityId',
   ];
   return Object.fromEntries(permitted
     .filter(key => Object.hasOwn(original,key))
     .filter(key => original[key] === null || ['string','number','boolean'].includes(typeof original[key])
-      || (key === 'productKeys' && Array.isArray(original[key]) &&
+      || ((key === 'productKeys' || key === 'before' || key === 'after') &&
+        Array.isArray(original[key]) && original[key].length <= 100 &&
         original[key].every((item: unknown) => typeof item === 'string')))
     .map(key => [key,original[key]]));
 }

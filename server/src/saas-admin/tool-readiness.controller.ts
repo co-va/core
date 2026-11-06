@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { ToolReadinessService } from './tool-readiness.service';
@@ -14,7 +15,8 @@ export class ToolReadinessController {
   }
 
   @Put(':key')
-  update(@Param('key') key: string, @Body() body: Record<string, unknown>) {
-    return this.readiness.update(key, body || {});
+  update(@Req() request: Request & { auth?: { platformAccountId: string } },
+         @Param('key') key: string, @Body() body: Record<string, unknown>) {
+    return this.readiness.update(key, body || {}, request.auth!.platformAccountId);
   }
 }

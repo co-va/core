@@ -73,13 +73,29 @@ export class ToolReadinessService {
     return READINESS_KEYS.map((key) => ({ key, status: byKey.get(key)?.status || 'NOT_READY', enforced: byKey.get(key)?.enforced === true }));
   }
 
-  async update(key: string, input: Record<string, unknown>) {
+  async update(key: string, input: Record<string, unknown>, actorPlatformAccountId = '') {
     if (!READINESS_KEY_SET.has(key)) throw new NotFoundException('Элемент карты инструментов не найден');
     const status = statusValue(input.status);
-    await this.prisma.adminToolReadiness.upsert({
-      where: { key },
-      update: { status, enforced: true },
-      create: { key, status, enforced: true },
+    await this.prisma.$transaction(async tx => {
+      const before = await tx.adminToolReadiness.findUnique({ where: { key } });
+      await tx.adminToolReadiness.upsert({
+        where: { key },
+        update: { status, enforced: true },
+        create: { key, status, enforced: true },
+      });
+      if (!before || before.status !== status || !before.enforced) {
+        await tx.platformActivityEvent.create({
+          data: {
+            tenantId: null,
+            platformAccountId: actorPlatformAccountId || null,
+            eventType: 'TOOL_READINESS_CHANGED',
+            metadata: {
+              entityType: 'tool-readiness', entityId: key, action: 'update',
+              before: before?.status || null, after: status, enforced: true,
+            },
+          },
+        });
+      }
     });
     return this.list();
   }

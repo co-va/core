@@ -99,10 +99,11 @@ export class SaasAdminController {
 
   @Put('tenants/:tenantId/access')
   updateTenantAccess(
+    @Req() request: AdminRequest,
     @Param('tenantId') tenantId: string,
     @Body() body: { status?: unknown; capabilities?: unknown; isTester?: unknown },
   ) {
-    return this.admin.updateTenantAccess(tenantId, body || {});
+    return this.admin.updateTenantAccess(tenantId, body || {}, request.auth!.platformAccountId);
   }
 
   @Put('tenants/:tenantId/commercial-mode')
@@ -115,7 +116,7 @@ export class SaasAdminController {
   }
 
   @Put('tenants/:tenantId/capability-order')
-  updateCapabilityOrder(@Param('tenantId') tenantId: string, @Body() body: { keys?: unknown }) {
-    return this.admin.updateCapabilityOrder(tenantId, body?.keys);
+  updateCapabilityOrder(@Req() request: AdminRequest, @Param('tenantId') tenantId: string, @Body() body: { keys?: unknown }) {
+    return this.admin.updateCapabilityOrder(tenantId, body?.keys, request.auth!.platformAccountId);
   }
 }

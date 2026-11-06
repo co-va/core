@@ -175,7 +175,7 @@ export class SaasAdminService {
     status?: unknown;
     capabilities?: unknown;
     isTester?: unknown;
-  }) {
+  }, actorPlatformAccountId = '') {
     const tenantAccess = await this.prisma.tenantAccess.findUnique({
       where: { tenantId },
       include: {
@@ -226,20 +226,23 @@ export class SaasAdminService {
         throw new BadRequestException('Неизвестный статус рабочего пространства');
       }
       if (statusText !== tenantAccess.status) {
-        await this.prisma.tenantAccess.update({
-          where: { tenantId },
-          data: { status: statusText as TenantAccessStatus },
-        });
-        await this.prisma.platformActivityEvent.create({
-          data: {
-            tenantId,
-            eventType: 'ACCESS_STATUS_CHANGED',
-            metadata: {
-              from: tenantAccess.status,
-              to: statusText,
+        await this.prisma.$transaction([
+          this.prisma.tenantAccess.update({
+            where: { tenantId },
+            data: { status: statusText as TenantAccessStatus },
+          }),
+          this.prisma.platformActivityEvent.create({
+            data: {
+              tenantId,
+              platformAccountId: actorPlatformAccountId || null,
+              eventType: 'ACCESS_STATUS_CHANGED',
+              metadata: {
+                entityType: 'tenant-access', entityId: tenantId,
+                action: 'update', from: tenantAccess.status, to: statusText,
+              },
             },
-          },
-        });
+          }),
+        ]);
         await this.notices.createForTenantOwner(tenantId, {
           type: 'ACCESS_STATUS_CHANGED',
           title: statusText === TenantAccessStatus.SUSPENDED
@@ -262,17 +265,23 @@ export class SaasAdminService {
         throw new BadRequestException('Статус тестировщика нельзя менять для пространства администратора');
       }
       if (input.isTester !== tenantAccess.isTester) {
-        await this.prisma.tenantAccess.update({
-          where: { tenantId },
-          data: { isTester: input.isTester },
-        });
-        await this.prisma.platformActivityEvent.create({
-          data: {
-            tenantId,
-            eventType: 'TESTER_STATUS_CHANGED',
-            metadata: { before: tenantAccess.isTester, after: input.isTester },
-          },
-        });
+        await this.prisma.$transaction([
+          this.prisma.tenantAccess.update({
+            where: { tenantId },
+            data: { isTester: input.isTester },
+          }),
+          this.prisma.platformActivityEvent.create({
+            data: {
+              tenantId,
+              platformAccountId: actorPlatformAccountId || null,
+              eventType: 'TESTER_STATUS_CHANGED',
+              metadata: {
+                entityType: 'tenant-access', entityId: tenantId,
+                action: 'update', before: tenantAccess.isTester, after: input.isTester,
+              },
+            },
+          }),
+        ]);
       }
     }
 
@@ -290,50 +299,54 @@ export class SaasAdminService {
       if (!capability || !capability.isActive) throw new BadRequestException(`Неизвестная возможность: ${key}`);
       const before = currentValue(capability);
 
-      if (value.inherit === true) {
-        await this.prisma.tenantCapabilityOverride.deleteMany({
-          where: { tenantId, capabilityId: capability.id },
-        });
-        overrideValues.delete(capability.id);
-      } else if (capability.valueType === CapabilityValueType.BOOLEAN) {
-        if (typeof value.enabled !== 'boolean') throw new BadRequestException(`Для ${key} требуется ON/OFF`);
-        const saved = await this.prisma.tenantCapabilityOverride.upsert({
-          where: { tenantId_capabilityId: { tenantId, capabilityId: capability.id } },
-          create: { tenantId, capabilityId: capability.id, enabled: value.enabled, limit: null },
-          update: { enabled: value.enabled, limit: null },
-        });
-        overrideValues.set(capability.id, saved);
-      } else {
-        const limit = value.limit === null ? null : Number(value.limit);
-        if (limit !== null && (!Number.isInteger(limit) || limit < 0)) {
-          throw new BadRequestException(`Для ${key} требуется целый лимит или без ограничения`);
+      // Each capability change and audit fact commit or roll back together.
+      const after = await this.prisma.$transaction(async tx => {
+        if (value.inherit === true) {
+          await tx.tenantCapabilityOverride.deleteMany({
+            where: { tenantId, capabilityId: capability.id },
+          });
+          overrideValues.delete(capability.id);
+        } else if (capability.valueType === CapabilityValueType.BOOLEAN) {
+          if (typeof value.enabled !== 'boolean') throw new BadRequestException(`Для ${key} требуется ON/OFF`);
+          const saved = await tx.tenantCapabilityOverride.upsert({
+            where: { tenantId_capabilityId: { tenantId, capabilityId: capability.id } },
+            create: { tenantId, capabilityId: capability.id, enabled: value.enabled, limit: null },
+            update: { enabled: value.enabled, limit: null },
+          });
+          overrideValues.set(capability.id, saved);
+        } else {
+          const limit = value.limit === null ? null : Number(value.limit);
+          if (limit !== null && (!Number.isInteger(limit) || limit < 0)) {
+            throw new BadRequestException(`Для ${key} требуется целый лимит или без ограничения`);
+          }
+          const saved = await tx.tenantCapabilityOverride.upsert({
+            where: { tenantId_capabilityId: { tenantId, capabilityId: capability.id } },
+            create: { tenantId, capabilityId: capability.id, enabled: null, limit },
+            update: { enabled: null, limit },
+          });
+          overrideValues.set(capability.id, saved);
         }
-        const saved = await this.prisma.tenantCapabilityOverride.upsert({
-          where: { tenantId_capabilityId: { tenantId, capabilityId: capability.id } },
-          create: { tenantId, capabilityId: capability.id, enabled: null, limit },
-          update: { enabled: null, limit },
-        });
-        overrideValues.set(capability.id, saved);
-      }
 
-      const after = currentValue(capability);
+        const updatedValue = currentValue(capability);
+        if (before !== updatedValue) {
+          await tx.platformActivityEvent.create({
+            data: {
+              tenantId,
+              platformAccountId: actorPlatformAccountId || null,
+              eventType: 'CAPABILITY_CHANGED',
+              metadata: {
+                entityType: 'capability', entityId: capability.key, action: 'update',
+                before: before ?? null, after: updatedValue ?? null,
+              },
+            },
+          });
+        }
+        return updatedValue;
+      });
       if (before === after) continue;
 
       const booleanChange = capability.valueType === CapabilityValueType.BOOLEAN;
       const enabled = booleanChange ? after === true : null;
-      await this.prisma.platformActivityEvent.create({
-        data: {
-          tenantId,
-          eventType: 'CAPABILITY_CHANGED',
-          metadata: {
-            key: capability.key,
-            name: capability.name,
-            valueType: capability.valueType,
-            before,
-            after,
-          },
-        },
-      });
       await this.notices.createForTenantOwner(tenantId, {
         type: 'CAPABILITY_CHANGED',
         title: booleanChange
@@ -433,7 +446,7 @@ export class SaasAdminService {
     return this.access.extendDemo(tenantId, days);
   }
 
-  async updateCapabilityOrder(tenantId: string, keysValue: unknown) {
+  async updateCapabilityOrder(tenantId: string, keysValue: unknown, actorPlatformAccountId = '') {
     const keys = (Array.isArray(keysValue) ? keysValue : [])
       .map((value) => String(value || '').trim())
       .filter(Boolean);
@@ -451,6 +464,13 @@ export class SaasAdminService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.tenantCapabilityOrder.findMany({
+        where: { tenantId }, orderBy: { position: 'asc' },
+        select: { capabilityId: true },
+      });
+      const beforeKeys = previous
+        .map(item => capabilities.find(capability => capability.id === item.capabilityId)?.key || '')
+        .filter(Boolean);
       await tx.tenantCapabilityOrder.deleteMany({ where: { tenantId } });
       for (const [index, key] of keys.entries()) {
         const capability = byKey.get(key)!;
@@ -459,6 +479,18 @@ export class SaasAdminService {
             tenantId,
             capabilityId: capability.id,
             position: (index + 1) * 10,
+          },
+        });
+      }
+      if (JSON.stringify(beforeKeys) !== JSON.stringify(keys)) {
+        await tx.platformActivityEvent.create({
+          data: {
+            tenantId, platformAccountId: actorPlatformAccountId || null,
+            eventType: 'CAPABILITY_ORDER_CHANGED',
+            metadata: {
+              entityType: 'capability-order', entityId: tenantId,
+              action: 'update', before: beforeKeys, after: keys,
+            },
           },
         });
       }
