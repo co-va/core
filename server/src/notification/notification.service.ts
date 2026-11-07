@@ -357,34 +357,6 @@ export class NotificationService {
     return true;
   }
 
-  async getAccountNotificationSettings(accountId: string) {
-    const rows = await this.prisma.$queryRaw<Array<{ emailVerified: boolean; emailEnabled: boolean }>>`
-      SELECT (a."emailVerifiedAt" IS NOT NULL) AS "emailVerified",
-             COALESCE(p."emailEnabled", true) AS "emailEnabled"
-      FROM "Account" a
-      LEFT JOIN "AccountNotificationPreference" p ON p."accountId" = a."id"
-      WHERE a."id" = ${accountId}
-      LIMIT 1
-    `;
-    if (!rows.length) throw new NotFoundException('Аккаунт не найден');
-    return { emailVerified: rows[0].emailVerified, emailEnabled: rows[0].emailEnabled };
-  }
-
-  async setAccountNotificationSettings(accountId: string, input: unknown) {
-    const email = input && typeof input === 'object' && !Array.isArray(input)
-      ? (input as Record<string, unknown>).email
-      : undefined;
-    if (typeof email !== 'boolean') throw new BadRequestException('Укажите настройку Email');
-    // Preference is editable before verification; delivery is gated separately.
-    await this.getAccountNotificationSettings(accountId);
-    await this.prisma.accountNotificationPreference.upsert({
-      where: { accountId },
-      create: { accountId, emailEnabled: email },
-      update: { emailEnabled: email },
-    });
-    return this.getAccountNotificationSettings(accountId);
-  }
-
   private async externalAllowed(
     tenantId: string,
     identity: AccountIdentity,
@@ -393,10 +365,6 @@ export class NotificationService {
   ) {
     const purpose = normalizeMessagePurpose(purposeValue);
     if (!purpose) return false;
-    if (channel === 'EMAIL') {
-      const settings = await this.getAccountNotificationSettings(identity.accountId);
-      if (!settings.emailVerified || !settings.emailEnabled) return false;
-    }
     if (purpose !== 'MARKETING') return true;
     if (channel === 'PUSH') return false;
     const recipient = this.recipientForChannel(identity, channel);
@@ -440,14 +408,7 @@ export class NotificationService {
     const routed: RoutedDelivery[] = [];
     routed.push(...await this.queueChannel(tenantId, notificationId, 'PUSH', purpose, identity));
 
-    // User's SERVICE Email preference means an independent copy of the in-app
-    // notification, regardless of the tenant's external fallback routing.
-    if (purpose === 'SERVICE') {
-      routed.push(...await this.queueChannel(tenantId, notificationId, 'EMAIL', purpose, identity));
-    }
-
-    const externalChannels = policy.channels.filter((channel) =>
-      ACTIVE_EXTERNAL_CHANNELS.has(channel) && !(purpose === 'SERVICE' && channel === 'EMAIL'));
+    const externalChannels = policy.channels.filter((channel) => ACTIVE_EXTERNAL_CHANNELS.has(channel));
     if (policy.mode === 'fallback') {
       for (const channel of externalChannels) {
         const external = await this.queueChannel(tenantId, notificationId, channel, purpose, identity);
@@ -477,8 +438,7 @@ export class NotificationService {
     if (!purpose || !ACTIVE_EXTERNAL_CHANNELS.has(failedChannel)) return [];
     const policy = await this.getDeliveryPolicy(tenantId);
     if (policy.mode !== 'fallback') return [];
-    const externalChannels = policy.channels.filter((channel) =>
-      ACTIVE_EXTERNAL_CHANNELS.has(channel) && !(purpose === 'SERVICE' && channel === 'EMAIL'));
+    const externalChannels = policy.channels.filter((channel) => ACTIVE_EXTERNAL_CHANNELS.has(channel));
     const failedIndex = externalChannels.indexOf(failedChannel);
     if (failedIndex < 0) return [];
     for (const channel of externalChannels.slice(failedIndex + 1)) {

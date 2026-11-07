@@ -5,7 +5,6 @@ import { EmailVerificationService } from '../email-verification/email-verificati
 import { HistoryService } from '../history/history.service';
 import { loginContextFromRequest } from '../history/login-audit';
 import { WebPushService } from '../notification/web-push.service';
-import { NotificationService } from '../notification/notification.service';
 import { OnlineBookingService } from '../online-booking/online-booking.service';
 import { AccountContactRecordService } from './account-contact-record.service';
 import { AccountGuard } from './account.guard';
@@ -23,7 +22,6 @@ export class AccountRuntimeController {
     private readonly emailVerification: EmailVerificationService,
     private readonly webPush: WebPushService,
     private readonly history: HistoryService,
-    private readonly notifications: NotificationService,
   ) {}
 
   @Get('terms')
@@ -139,18 +137,6 @@ export class AccountRuntimeController {
   @Post('email-verification/change')
   changeEmail(@Req() request: AccountRequest, @Body() body: { email?: unknown }) {
     return this.emailVerification.changeAccount(request.accountAuth!.accountId, body?.email);
-  }
-
-  @UseGuards(AccountGuard)
-  @Get('notification-settings')
-  notificationSettings(@Req() request: AccountRequest) {
-    return this.notifications.getAccountNotificationSettings(request.accountAuth!.accountId);
-  }
-
-  @UseGuards(AccountGuard)
-  @Put('notification-settings')
-  saveNotificationSettings(@Req() request: AccountRequest, @Body() body: unknown) {
-    return this.notifications.setAccountNotificationSettings(request.accountAuth!.accountId, body);
   }
 
   @UseGuards(AccountGuard)
