@@ -1,5 +1,6 @@
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+import { postboxSmtpPassword } from './postbox-smtp-password';
 
 type TransactionalEmailAttachment = {
   filename: string;
@@ -88,7 +89,7 @@ export class TransactionalEmailService {
       socketTimeout: 15000,
       auth: {
         user: apiKeyId,
-        pass: apiKeySecret,
+        pass: postboxSmtpPassword(apiKeyId, apiKeySecret),
       },
     });
   }
