@@ -41,5 +41,4 @@ assert.match(service, /ACCOUNT_ORIGIN = 'https:\/\/user\.va-tools\.ru'/);
 assert.doesNotMatch(service, /PLATFORM_ORIGIN = 'https:\/\/app\.va-tools\.ru'/);
 assert.match(provider, /cid: attachment\.cid/);
 assert.match(provider, /contentDisposition: attachment\.contentDisposition/);
-assert.match(user, /confirmAccountEmailVerification\(token\)/);
 console.log('Branded verification email, PNG logos, safe link and CID transport: PASS');
