@@ -51,3 +51,20 @@ assert.equal((service.match(/const readiness = await this.prisma.adminToolReadin
 const admin = readFileSync('admin/commercial-catalog.js', 'utf8');
 assert.ok(!admin.includes('data-activate-readiness='), 'admin must save selection directly, no duplicate apply step');
 console.log('Readiness: DEMO, LIVE user, LIVE tester, owner and NOT_READY matrix PASS');
+
+// Workplace creation is core DEMO setup; readiness does not apply to it.
+assert.equal(CABINET_READINESS_CAPABILITIES['cabinet.profile.workspaces'], undefined);
+const workspace = cap('workplaces.access');
+for (const actor of actors) {
+  assert.equal(applyReadinessGate(workspace, row('NOT_READY', true, 'cabinet.profile.workspaces'), actor).enabled,
+    true, actor.name + ': workplace access is governed by account grant, not readiness');
+}
+const demoService = readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
+assert.equal((demoService.match(/if \(capability.key === 'workplaces.access'\) \{/g) || []).length, 2,
+  'both single-capability and bulk DEMO access must ignore false invitation overrides');
+const workplaceGuard = readFileSync('server/src/profile/workplace-limit.guard.ts', 'utf8');
+assert.match(workplaceGuard, /resolveCapability\(tenantId, 'workplaces.access'\)/,
+  'server must reject creation when LIVE access was revoked');
+assert.match(workplaceGuard, /resolveCapability\(tenantId, 'workplaces.max'\)/,
+  'LIVE creation must still respect assigned limit');
+console.log('DEMO unlimited workplaces and LIVE grant/limit PASS');
