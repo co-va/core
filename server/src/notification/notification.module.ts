@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ProfessionalPushModule } from '../push/professional-push.module';
+import { TransactionalEmailModule } from '../transactional-email/transactional-email.module';
 import { TenantDocumentArchiveModule } from '../tenant-document-archive/tenant-document-archive.module';
 import { PrismaService } from '../prisma.service';
 import { NotificationController } from './notification.controller';
@@ -8,16 +9,18 @@ import { NotificationEventService } from './notification-event.service';
 import { NotificationReminderService } from './notification-reminder.service';
 import { NotificationService } from './notification.service';
 import { ProfessionalServiceNoticeService } from './professional-service-notice.service';
+import { ProfessionalServiceEmailOutboxWorker } from './professional-service-email-outbox.worker';
 import { WebPushService } from './web-push.service';
 
 @Module({
-  imports: [AuthModule, ProfessionalPushModule, TenantDocumentArchiveModule],
+  imports: [AuthModule, ProfessionalPushModule, TenantDocumentArchiveModule, TransactionalEmailModule],
   controllers: [NotificationController],
   providers: [
     NotificationService,
     NotificationEventService,
     NotificationReminderService,
     ProfessionalServiceNoticeService,
+    ProfessionalServiceEmailOutboxWorker,
     WebPushService,
     PrismaService,
   ],

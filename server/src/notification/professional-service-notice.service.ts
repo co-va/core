@@ -110,13 +110,23 @@ export class ProfessionalServiceNoticeService {
     const body = text(input.body);
     const type = text(input.type);
 
+    // The notice and its Email job are committed atomically. A crash after
+    // this statement cannot lose a service Email without losing its notice.
     const rows = await this.prisma.$queryRaw<ServiceNoticeRow[]>`
-      INSERT INTO "ProfessionalServiceNotice" (
-        "id", "tenantId", "platformAccountId", "type", "title", "body", "metadata", "createdAt"
-      ) VALUES (
-        ${id}, ${tenantId}, ${membership.platformAccountId}, ${type}, ${title}, ${body}, ${JSON.stringify(metadata)}::jsonb, CURRENT_TIMESTAMP
+      WITH notice AS (
+        INSERT INTO "ProfessionalServiceNotice" (
+          "id", "tenantId", "platformAccountId", "type", "title", "body", "metadata", "createdAt"
+        ) VALUES (
+          ${id}, ${tenantId}, ${membership.platformAccountId}, ${type}, ${title}, ${body}, ${JSON.stringify(metadata)}::jsonb, CURRENT_TIMESTAMP
+        )
+        RETURNING "id", "tenantId", "platformAccountId", "type", "title", "body", "metadata", "readAt", "createdAt"
+      ),
+      queued AS (
+        INSERT INTO "ProfessionalServiceEmailOutbox" ("noticeId")
+        SELECT "id" FROM notice
+        RETURNING "noticeId"
       )
-      RETURNING "id", "tenantId", "platformAccountId", "type", "title", "body", "metadata", "readAt", "createdAt"
+      SELECT notice.* FROM notice JOIN queued ON queued."noticeId" = notice."id"
     `;
     const notice = rows[0];
     if (!notice) return null;

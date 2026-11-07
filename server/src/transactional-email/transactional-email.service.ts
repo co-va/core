@@ -15,6 +15,7 @@ type TransactionalEmailInput = {
   html: string;
   text?: string;
   tag?: string;
+  idempotencyKey?: string;
   attachments?: TransactionalEmailAttachment[];
 };
 
@@ -108,6 +109,11 @@ export class TransactionalEmailService {
           ? { address: String(input.to || '').trim().toLowerCase(), name: input.toName }
           : String(input.to || '').trim().toLowerCase(),
         subject: input.subject,
+        // Preserve a deterministic Message-ID across retries. This is a client
+        // deduplication aid, not an exactly-once SMTP guarantee.
+        messageId: input.idempotencyKey && /^[a-z0-9-]{1,128}$/i.test(input.idempotencyKey)
+          ? `<service-${input.idempotencyKey}@${configuration.fromEmail.split('@')[1]}>`
+          : undefined,
         html: input.html,
         text: input.text,
         headers: input.tag ? { 'X-Message-Tag': input.tag } : undefined,
