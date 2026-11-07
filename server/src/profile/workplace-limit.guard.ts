@@ -21,6 +21,16 @@ export class WorkplaceLimitGuard implements CanActivate {
     const key = String(request.params?.key || '').trim();
     if (!tenantId || !key) return true;
 
+    // A LIVE grant may be revoked independently of the numeric capacity limit.
+    // DEMO uses the same server-resolved grant, ignoring invitation tool toggles.
+    const workplaceAccess = await this.access.resolveCapability(tenantId, 'workplaces.access');
+    if (workplaceAccess.enabled !== true) {
+      throw new ForbiddenException({
+        code: 'WORKPLACES_ACCESS_DENIED',
+        message: 'Добавление рабочих пространств недоступно',
+      });
+    }
+
     const existing = await this.prisma.workplace.findUnique({
       where: { tenantId_key: { tenantId, key } },
       select: { id: true, deletedAt: true },

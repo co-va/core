@@ -365,6 +365,11 @@ export class SaasAccessService {
     const planValue = access.plan?.capabilityValues[0];
 
     if (this.demoActive(access)) {
+      // Workplace creation is a core DEMO setup function, not an optional tool.
+      // Ignore false invitation overrides while DEMO is active; LIVE keeps them.
+      if (capability.key === 'workplaces.access') {
+        return this.demoValue(capability.key, capability.valueType);
+      }
       if (capability.valueType === CapabilityValueType.BOOLEAN && override && override.enabled !== null) {
         return {
           key: capability.key,
@@ -496,6 +501,11 @@ export class SaasAccessService {
       const planValue = planValues.get(capability.id);
 
       if (this.demoActive(access)) {
+        // Workplace creation is a core DEMO setup function, not an optional tool.
+        // Ignore false invitation overrides while DEMO is active; LIVE keeps them.
+        if (capability.key === 'workplaces.access') {
+          return this.demoValue(capability.key, capability.valueType);
+        }
         if (capability.valueType === CapabilityValueType.BOOLEAN && override && override.enabled !== null) {
           return {
             key: capability.key,

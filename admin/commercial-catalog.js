@@ -26,7 +26,7 @@ export const TOOL_MAP = Object.freeze({
     {
       id: 'profile', label: 'Профиль', nesting: 'composition', items: [
         { label: 'Данные профиля', kind: 'composition', readinessKey: 'cabinet.profile.data' },
-        { label: 'Рабочие пространства', kind: 'composition', readinessKey: 'cabinet.profile.workspaces' },
+        { label: 'Рабочие пространства', kind: 'capacity' },
       ],
     },
     { id: 'service', label: 'Сервис', readinessKey: 'cabinet.service' },
@@ -103,7 +103,6 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.journal.month': ['journal.month.access'],
   'cabinet.timetable': ['timetable.access'],
   'cabinet.journal.list': ['journal.list.access'],
-  'cabinet.profile.workspaces': ['workplaces.access', 'workplaces.max'],
   'cabinet.loyalty.deposit': ['loyalty.deposit.access'],
   'cabinet.loyalty.personal-account': ['loyalty.personal_account.access'],
   'cabinet.loyalty.certificate': ['loyalty.certificate.access'],
@@ -213,6 +212,7 @@ function structureLabel(item) {
 function childKindLabel(item) {
   if (item.kind === 'e') return 'E';
   if (item.kind === 'mode') return 'Режим';
+  if (item.kind === 'capacity') return 'Лимит';
   return '';
 }
 
@@ -245,7 +245,9 @@ function childRow(child, byKey) {
     <span class="admin-tool-child-mark">${escapeHtml(childKindLabel(child))}</span>
     <span class="admin-tool-child-name">${escapeHtml(child.label)}</span>
     <span class="admin-tool-child-type">${availability}</span>
-    ${readinessSelect(child.readinessKey, byKey, 'admin-tool-child-status')}
+    ${child.kind === 'capacity'
+      ? '<span class="admin-tool-child-status">DEMO — без лимита; LIVE — по разрешению</span>'
+      : readinessSelect(child.readinessKey, byKey, 'admin-tool-child-status')}
     <span class="admin-tool-child-arrow"></span>
   </div>`;
 }

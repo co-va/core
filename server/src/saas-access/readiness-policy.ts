@@ -15,7 +15,6 @@ export const CABINET_READINESS_CAPABILITIES: Readonly<Record<string, readonly st
   'cabinet.journal.list': ['journal.list.access'],
   'cabinet.profile.data': ['profile.access'],
   'cabinet.timetable': ['timetable.access'],
-  'cabinet.profile.workspaces': ['workplaces.access'],
   'cabinet.service': ['services.access'],
   'cabinet.chat': ['chat.access'],
   'cabinet.loyalty.deposit': ['loyalty.deposit.access'],
