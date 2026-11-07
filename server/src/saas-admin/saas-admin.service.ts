@@ -344,6 +344,9 @@ export class SaasAdminService {
         return updatedValue;
       });
       if (before === after) continue;
+      if (capability.key === 'workplaces.max') {
+        await this.access.enforceLiveWorkplaceCapacity(tenantId);
+      }
 
       const booleanChange = capability.valueType === CapabilityValueType.BOOLEAN;
       const enabled = booleanChange ? after === true : null;

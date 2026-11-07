@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { CapabilityValueType, TenantAccessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { applyReadinessGate } from './readiness-policy';
+import { excessWorkplaceIds } from './workplace-capacity';
 
 const DEMO_DAYS = 14;
 
@@ -231,7 +232,36 @@ export class SaasAccessService {
     throw new BadRequestException('DEMO всегда длится 14 дней и не продлевается');
   }
 
+  // Hide surplus DEMO workspaces on LIVE activation or when an administrator
+  // reduces a LIVE limit. Keep rows and their identifiers for audit/recovery;
+  // deletedAt is the existing visibility boundary throughout the application.
+  async enforceLiveWorkplaceCapacity(tenantId: string) {
+    const mode = await this.prisma.tenantAccess.findUnique({
+      where: { tenantId },
+      select: { commercialMode: true },
+    });
+    if (mode?.commercialMode !== 'LIVE') return 0;
+    const capacity = await this.resolveCapability(tenantId, 'workplaces.max');
+    if (capacity.limit === null) return 0;
+
+    return this.prisma.$transaction(async (tx) => {
+      const active = await tx.workplace.findMany({
+        where: { tenantId, deletedAt: null },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      });
+      const surplus = excessWorkplaceIds(active, capacity.limit);
+      if (!surplus.length) return 0;
+      const updated = await tx.workplace.updateMany({
+        where: { tenantId, deletedAt: null, id: { in: surplus } },
+        data: { deletedAt: new Date() },
+      });
+      return updated.count;
+    });
+  }
+
   private async cleanupDemoOperationalData(tenantId: string) {
+    await this.enforceLiveWorkplaceCapacity(tenantId);
     await this.prisma.$transaction(async (tx) => {
       await tx.financeSettlement.deleteMany({ where: { tenantId } });
       await tx.financeOperation.deleteMany({ where: { tenantId } });
