@@ -13,16 +13,18 @@ export const CABINET_READINESS_CAPABILITIES: Readonly<Record<string, readonly st
   'cabinet.journal.day': ['journal.day.access'],
   'cabinet.journal.month': ['journal.month.access'],
   'cabinet.journal.list': ['journal.list.access'],
+  'cabinet.profile.data': ['profile.access'],
   'cabinet.timetable': ['timetable.access'],
   'cabinet.profile.workspaces': ['workplaces.access'],
   'cabinet.service': ['services.access'],
+  'cabinet.chat': ['chat.access'],
   'cabinet.loyalty.deposit': ['loyalty.deposit.access'],
   'cabinet.loyalty.personal-account': ['loyalty.personal_account.access'],
   'cabinet.loyalty.certificate': ['loyalty.certificate.access'],
   'cabinet.loyalty.subscription': ['loyalty.subscription.access'],
   'cabinet.loyalty.referral': ['loyalty.referral.access'],
   'cabinet.loyalty.bonus': ['loyalty.bonus.access'],
-  'cabinet.finance.cash': ['finance.cash.access'],
+  'cabinet.finance.cash': ['finance.cash.access', 'finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
   'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
   'cabinet.finance.z-report': ['finance.z_report.access'],
   'cabinet.inventory.stock': ['inventory.stock.access'],
@@ -48,13 +50,16 @@ for (const [key, capabilityKeys] of Object.entries(CABINET_READINESS_CAPABILITIE
 export function applyReadinessGate(
   capability: ResolvedCapability,
   rows: readonly ReadinessGateRow[],
-  actor: { isTester: boolean; isOwnerBook: boolean },
+  actor: { isTester: boolean; isOwnerBook: boolean; commercialMode?: string },
 ): ResolvedCapability {
   if (capability.valueType !== 'BOOLEAN' || capability.enabled !== true) return capability;
   const key = capabilityToReadinessKey.get(capability.key);
   if (!key) return capability;
-  const row = rows.find((item) => item.key === key && item.enforced === true);
-  if (!row) return capability; // unconfigured statuses cannot cut off existing LIVE access
-  if (row.status === 'READY' || (row.status === 'TESTING' && (actor.isTester || actor.isOwnerBook))) return capability;
-  return { ...capability, enabled: false, source: 'READINESS' };
+  // Readiness is the authoritative visibility policy for all commercial modes.
+  // Old "enforced" markers are intentionally ignored: NOT_READY must never leak.
+  const row = rows.find((item) => item.key === key);
+  const allowed = row?.status === 'READY'
+    || (row?.status === 'TESTING'
+      && (actor.commercialMode === 'DEMO' || actor.isTester || actor.isOwnerBook));
+  return allowed ? capability : { ...capability, enabled: false, source: 'READINESS' };
 }

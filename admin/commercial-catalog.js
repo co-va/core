@@ -30,6 +30,7 @@ export const TOOL_MAP = Object.freeze({
       ],
     },
     { id: 'service', label: 'Сервис', readinessKey: 'cabinet.service' },
+    { id: 'chat', label: 'Чат', readinessKey: 'cabinet.chat' },
     {
       id: 'loyalty', label: 'Лояльность', nesting: 'e', items: [
         { label: 'Депозит', kind: 'e', readinessKey: 'cabinet.loyalty.deposit' },
@@ -223,8 +224,7 @@ function readinessOptions(value) {
 
 function readinessSelect(readinessKey, byKey, className) {
   const value = readinessValue(byKey.get(readinessKey));
-  const enforced = byKey.get(readinessKey)?.enforced === true;
-  return `<span class="admin-tool-readiness-editor"><select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="${enforced ? 'Статус управляет доступом' : 'Статус пока не применён'}">${readinessOptions(value)}</select><button class="admin-tool-readiness-apply" type="button" data-activate-readiness="${escapeHtml(readinessKey)}" title="Применить выбранный статус к доступу" aria-label="Применить статус" ${enforced ? 'hidden' : ''}>✓</button></span>`;
+  return `<span class="admin-tool-readiness-editor"><select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="Статус управляет доступом">${readinessOptions(value)}</select></span>`;
 }
 
 function aggregateKeys(item) {
@@ -299,12 +299,7 @@ function hydrateReadiness(root, items = []) {
     select.value = value;
     select.dataset.previous = value;
     select.disabled = false;
-    select.title = byKey.get(String(select.dataset.readinessKey || ''))?.enforced
-      ? 'Статус управляет доступом'
-      : 'Статус пока не применён';
-  });
-  root.querySelectorAll('[data-activate-readiness]').forEach((button) => {
-    button.hidden = byKey.get(String(button.dataset.activateReadiness || ''))?.enforced === true;
+    select.title = 'Статус управляет доступом';
   });
   root.querySelectorAll('[data-readiness-count]').forEach((node) => {
     const total = Number(node.dataset.readinessCount || 0);
@@ -332,28 +327,6 @@ function hydrateAccountTools(content, tools = []) {
 }
 
 function bindReadiness(content) {
-  content.querySelectorAll('[data-activate-readiness]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.stopPropagation();
-      const key = String(button.dataset.activateReadiness || '');
-      const select = button.parentElement?.querySelector('[data-readiness-key]');
-      if (!key || !select) return;
-      button.disabled = true;
-      try {
-        const items = await toolReadinessRequest('/' + encodeURIComponent(key), {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: select.value }),
-        });
-        toolReadinessCache = Array.isArray(items) ? items : [];
-        hydrateAllReadiness(content, toolReadinessCache);
-        document.dispatchEvent(new CustomEvent('admin:tool-readiness-changed'));
-      } catch (error) {
-        button.title = error instanceof Error ? error.message : 'Не удалось применить статус';
-      } finally {
-        button.disabled = false;
-      }
-    });
-  });
   content.querySelectorAll('[data-readiness-key]').forEach((select) => {
     select.addEventListener('click', (event) => event.stopPropagation());
     select.addEventListener('change', async () => {

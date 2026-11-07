@@ -12,6 +12,7 @@ export const READINESS_KEYS = [
   'cabinet.profile.data',
   'cabinet.profile.workspaces',
   'cabinet.service',
+  'cabinet.chat',
   'cabinet.loyalty.deposit',
   'cabinet.loyalty.personal-account',
   'cabinet.loyalty.certificate',
