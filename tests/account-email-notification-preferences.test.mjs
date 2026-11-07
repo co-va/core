@@ -14,9 +14,14 @@ assert.match(migration, /FOREIGN KEY \("accountId"\) REFERENCES "Account"/);
 assert.match(controller, /@UseGuards\(AccountGuard\)\s*@Get\('notification-settings'\)/);
 assert.match(controller, /@UseGuards\(AccountGuard\)\s*@Put\('notification-settings'\)/);
 assert.match(notifications, /typeof email !== 'boolean'/, 'server accepts only boolean preferences');
-assert.match(notifications, /if \(email && !current\.emailVerified\)/, 'unverified email cannot be enabled');
+assert.doesNotMatch(notifications, /if \(email && !current\.emailVerified\)/,
+  'email preference is editable before verification');
 assert.match(notifications, /if \(channel === 'EMAIL'\) \{\s*const settings = await this\.getAccountNotificationSettings\(identity\.accountId\);\s*if \(!settings\.emailVerified \|\| !settings\.emailEnabled\) return false;/,
   'outbound delivery must honor verification and preference');
 assert.match(notifications, /async canSendEmailDelivery\([\s\S]*?this\.canSendDelivery\(tenantId, notificationId, 'EMAIL'\)/,
   'already queued email must be rechecked at send time');
+assert.match(notifications, /if \(purpose === 'SERVICE'\) \{\s*routed\.push\(\.\.\.await this\.queueChannel\(tenantId, notificationId, 'EMAIL', purpose, identity\)\);\s*\}/,
+  'service email must be duplicated independently of tenant routing');
+assert.match(notifications, /purpose === 'SERVICE' && channel === 'EMAIL'/,
+  'service email is excluded from external fallback routing to prevent duplicate queues');
 console.log('Account email notification preference: API, schema, migration, delivery policy: PASS');

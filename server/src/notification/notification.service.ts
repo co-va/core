@@ -375,8 +375,8 @@ export class NotificationService {
       ? (input as Record<string, unknown>).email
       : undefined;
     if (typeof email !== 'boolean') throw new BadRequestException('Укажите настройку Email');
-    const current = await this.getAccountNotificationSettings(accountId);
-    if (email && !current.emailVerified) throw new BadRequestException('Сначала подтвердите email');
+    // Preference is editable before verification; delivery is gated separately.
+    await this.getAccountNotificationSettings(accountId);
     await this.prisma.accountNotificationPreference.upsert({
       where: { accountId },
       create: { accountId, emailEnabled: email },
@@ -440,7 +440,14 @@ export class NotificationService {
     const routed: RoutedDelivery[] = [];
     routed.push(...await this.queueChannel(tenantId, notificationId, 'PUSH', purpose, identity));
 
-    const externalChannels = policy.channels.filter((channel) => ACTIVE_EXTERNAL_CHANNELS.has(channel));
+    // User's SERVICE Email preference means an independent copy of the in-app
+    // notification, regardless of the tenant's external fallback routing.
+    if (purpose === 'SERVICE') {
+      routed.push(...await this.queueChannel(tenantId, notificationId, 'EMAIL', purpose, identity));
+    }
+
+    const externalChannels = policy.channels.filter((channel) =>
+      ACTIVE_EXTERNAL_CHANNELS.has(channel) && !(purpose === 'SERVICE' && channel === 'EMAIL'));
     if (policy.mode === 'fallback') {
       for (const channel of externalChannels) {
         const external = await this.queueChannel(tenantId, notificationId, channel, purpose, identity);
@@ -470,7 +477,8 @@ export class NotificationService {
     if (!purpose || !ACTIVE_EXTERNAL_CHANNELS.has(failedChannel)) return [];
     const policy = await this.getDeliveryPolicy(tenantId);
     if (policy.mode !== 'fallback') return [];
-    const externalChannels = policy.channels.filter((channel) => ACTIVE_EXTERNAL_CHANNELS.has(channel));
+    const externalChannels = policy.channels.filter((channel) =>
+      ACTIVE_EXTERNAL_CHANNELS.has(channel) && !(purpose === 'SERVICE' && channel === 'EMAIL'));
     const failedIndex = externalChannels.indexOf(failedChannel);
     if (failedIndex < 0) return [];
     for (const channel of externalChannels.slice(failedIndex + 1)) {
