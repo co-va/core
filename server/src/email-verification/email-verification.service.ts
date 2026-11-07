@@ -2,10 +2,11 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
+import { verificationEmail } from './verification-email-template';
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
-const PLATFORM_ORIGIN = 'https://app.va-tools.ru';
+const PLATFORM_ORIGIN = 'https://prof.va-tools.ru';
 const ACCOUNT_ORIGIN = 'https://user.va-tools.ru';
 
 type Kind = 'PLATFORM' | 'ACCOUNT';
@@ -30,12 +31,6 @@ function validEmail(value: string) {
 
 function tokenHash(token: string) {
   return createHash('sha256').update(token).digest('hex');
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
-  })[char] || char);
 }
 
 @Injectable()
@@ -74,10 +69,9 @@ export class EmailVerificationService {
   }
 
   private origin(kind: Kind) {
-    const configured = kind === 'PLATFORM'
-      ? String(process.env.FRONTEND_ORIGIN || '').trim()
-      : String(process.env.ACCOUNT_APP_URL || '').trim();
-    return (configured || (kind === 'PLATFORM' ? PLATFORM_ORIGIN : ACCOUNT_ORIGIN)).replace(/\/+$/, '');
+    // Verification must return to the actual standalone app, not the retired
+    // FRONTEND_ORIGIN (which still points to the historical shared frontend).
+    return kind === 'PLATFORM' ? PLATFORM_ORIGIN : ACCOUNT_ORIGIN;
   }
 
   private verifyUrl(kind: Kind, token: string) {
@@ -130,10 +124,8 @@ export class EmailVerificationService {
     const url = this.verifyUrl(kind, token);
     await this.email.send({
       to: email,
-      subject: 'Подтвердите email VA Tools',
       tag: 'email-verification',
-      text: `Подтвердите email: ${url}\nСсылка действует 24 часа.`,
-      html: `<p>Подтвердите email <strong>${escapeHtml(email)}</strong>.</p><p><a href="${escapeHtml(url)}">Подтвердить email</a></p><p>Ссылка действует 24 часа.</p>`,
+      ...verificationEmail(kind, email, url),
     });
     return { accepted: true, sent: true, throttled: false };
   }

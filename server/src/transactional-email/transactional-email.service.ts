@@ -6,6 +6,8 @@ type TransactionalEmailAttachment = {
   filename: string;
   content: Buffer;
   contentType?: string;
+  cid?: string;
+  contentDisposition?: 'inline' | 'attachment';
 };
 
 type TransactionalEmailInput = {
@@ -121,6 +123,8 @@ export class TransactionalEmailService {
           filename: attachment.filename,
           content: attachment.content,
           contentType: attachment.contentType,
+          cid: attachment.cid,
+          contentDisposition: attachment.contentDisposition,
         })),
       });
 
