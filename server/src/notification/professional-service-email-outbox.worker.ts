@@ -95,7 +95,7 @@ export class ProfessionalServiceEmailOutboxWorker implements OnModuleInit, OnMod
 
   private async notice(noticeId: string): Promise<OwnerNoticeEmail | null> {
     // Recheck verified current account email and preference for *every* attempt.
-    // Profile.emails is intentionally not consulted.
+    // Additional profile contact addresses must not receive these notices.
     const rows = await this.prisma.$queryRaw<OwnerNoticeEmail[]>`
       SELECT notice."id", notice."title", notice."body",
              account."email", account."emailVerifiedAt",
