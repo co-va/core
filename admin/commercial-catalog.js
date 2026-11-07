@@ -26,7 +26,7 @@ export const TOOL_MAP = Object.freeze({
     {
       id: 'profile', label: 'Профиль', nesting: 'composition', items: [
         { label: 'Данные профиля', kind: 'composition', readinessKey: 'cabinet.profile.data' },
-        { label: 'Рабочие пространства', kind: 'capacity' },
+        { label: 'Рабочие пространства', kind: 'composition', readinessKey: 'cabinet.profile.workspaces' },
       ],
     },
     { id: 'service', label: 'Сервис', readinessKey: 'cabinet.service' },
@@ -103,6 +103,7 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.journal.month': ['journal.month.access'],
   'cabinet.timetable': ['timetable.access'],
   'cabinet.journal.list': ['journal.list.access'],
+  'cabinet.profile.workspaces': ['workplaces.access', 'workplaces.max'],
   'cabinet.loyalty.deposit': ['loyalty.deposit.access'],
   'cabinet.loyalty.personal-account': ['loyalty.personal_account.access'],
   'cabinet.loyalty.certificate': ['loyalty.certificate.access'],
@@ -212,7 +213,6 @@ function structureLabel(item) {
 function childKindLabel(item) {
   if (item.kind === 'e') return 'E';
   if (item.kind === 'mode') return 'Режим';
-  if (item.kind === 'capacity') return 'Лимит';
   return '';
 }
 
@@ -245,9 +245,7 @@ function childRow(child, byKey) {
     <span class="admin-tool-child-mark">${escapeHtml(childKindLabel(child))}</span>
     <span class="admin-tool-child-name">${escapeHtml(child.label)}</span>
     <span class="admin-tool-child-type">${availability}</span>
-    ${child.kind === 'capacity'
-      ? '<span class="admin-tool-child-status">DEMO — без лимита; LIVE — по разрешению</span>'
-      : readinessSelect(child.readinessKey, byKey, 'admin-tool-child-status')}
+    ${readinessSelect(child.readinessKey, byKey, 'admin-tool-child-status')}
     <span class="admin-tool-child-arrow"></span>
   </div>`;
 }
@@ -394,7 +392,7 @@ export function renderAdminTools(content) {
   if (!content) return;
 
   content.innerHTML = `<div class="admin-tool-areas">
-    <p class="admin-service-note">Статусы управляют доступом после сохранения. Для ранее выставленного статуса нажмите ✓ рядом с ним, чтобы применить его. До этого рабочие права сохраняются.</p>
+    <p class="admin-service-note">Выберите статус инструмента. Изменение сохраняется автоматически.</p>
     <details class="admin-tool-area">
       <summary class="admin-tool-area-summary"><strong>Кабинет</strong><span aria-hidden="true">⌄</span></summary>
       <div class="admin-tool-area-body" data-tool-area-body="cabinet">${renderArchitecture('cabinet', toolReadinessCache)}</div>
