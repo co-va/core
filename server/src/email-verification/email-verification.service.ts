@@ -78,7 +78,7 @@ export class EmailVerificationService {
     return `${this.origin(kind)}/verify-email.html?kind=${kind === 'PLATFORM' ? 'platform' : 'account'}&token=${encodeURIComponent(token)}`;
   }
 
-  private async createAndSend(kind: Kind, id: string, targetEmail: string) {
+  private async createAndSend(kind: Kind, id: string, targetEmail: string, replacePending = false) {
     const email = normalizeEmail(targetEmail);
     if (!validEmail(email)) throw new BadRequestException('Укажите корректный email');
     await this.emailAvailable(kind, id, email);
@@ -102,12 +102,16 @@ export class EmailVerificationService {
     const expiresAt = new Date(Date.now() + VERIFY_TTL_MS);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `UPDATE "EmailVerificationTicket" SET "usedAt"=NOW()
-         WHERE "subjectKind"=$1 AND "${ownerField}"=$2 AND "usedAt" IS NULL`,
-        kind,
-        id,
-      );
+      // A manual resend must not invalidate an earlier still-valid link.
+      // Only an explicit address change supersedes outstanding tickets.
+      if (replacePending) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "EmailVerificationTicket" SET "usedAt"=NOW()
+           WHERE "subjectKind"=$1 AND "${ownerField}"=$2 AND "usedAt" IS NULL`,
+          kind,
+          id,
+        );
+      }
       await tx.$executeRawUnsafe(
         `INSERT INTO "EmailVerificationTicket"
           ("id","subjectKind","${ownerField}","email","tokenHash","expiresAt","createdAt")
@@ -178,7 +182,7 @@ export class EmailVerificationService {
     if (normalizeEmail(subject.email) === candidate && subject.emailVerifiedAt) {
       return { accepted: true, alreadyVerified: true };
     }
-    return this.createAndSend(kind, id, candidate);
+    return this.createAndSend(kind, id, candidate, true);
   }
 
   async confirmPlatform(value: unknown) {

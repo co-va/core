@@ -1,6 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { PrismaService } from '../prisma.service';
 import type { Request } from 'express';
 
@@ -14,7 +13,6 @@ export class AccountGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
-    private readonly emailVerification: EmailVerificationService,
   ) {}
 
   async canActivate(context: ExecutionContext) {
@@ -37,7 +35,7 @@ export class AccountGuard implements CanActivate {
     try {
       account = await this.prisma.account.findUnique({
         where: { id: payload.sub },
-        select: { profileData: true, createdAt: true },
+        select: { profileData: true },
       });
     } catch {
       throw new ServiceUnavailableException('Не удалось проверить аккаунт. Повторите попытку');
@@ -54,9 +52,6 @@ export class AccountGuard implements CanActivate {
       accountId: payload.sub,
       tenantId: String(request.params?.tenantId || '').trim(),
     };
-    if (Date.now() - account.createdAt.getTime() <= 30 * 60 * 1000) {
-      void this.emailVerification.requestAccount(payload.sub).catch(() => undefined);
-    }
     return true;
   }
 }
