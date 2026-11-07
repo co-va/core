@@ -11,7 +11,7 @@ if (ui.includes('admin-tool-child-status">—')) throw new Error('Admin architec
 
 const childLines = ui.split('\n').filter((line) => line.includes("kind: '") && line.includes('label:'));
 for (const line of childLines) {
-  if (!line.includes('readinessKey:') && !line.includes("kind: 'capacity'")) throw new Error(`Child without readinessKey: ${line.trim()}`);
+  if (!line.includes('readinessKey:')) throw new Error(`Child without readinessKey: ${line.trim()}`);
 }
 
 const uiKeys = [...ui.matchAll(/readinessKey:\s*'([^']+)'/g)].map((match) => match[1]);
@@ -32,6 +32,7 @@ if (policy.includes('item.enforced === true')) throw new Error('NOT_READY must n
 if (ui.includes('data-activate-readiness=')) throw new Error('Readiness must apply as soon as the status is saved');
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
 
-if (ui.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace capacity is not a readiness-controlled instrument');
-if (service.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace capacity must not be in readiness registry');
-if (policy.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace capacity must not be subject to readiness');
+if (!ui.includes("readinessKey: 'cabinet.profile.workspaces'")) throw new Error('Workplace readiness dropdown must be present');
+if (!service.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace readiness status must be saved in the registry');
+if (ui.includes('DEMO — без лимита; LIVE — по разрешению')) throw new Error('Do not replace a readiness status with technical text');
+if (policy.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace access/quota must remain separate from readiness status');

@@ -10,6 +10,7 @@ export const READINESS_KEYS = [
   'cabinet.journal.list',
   'cabinet.timetable',
   'cabinet.profile.data',
+  'cabinet.profile.workspaces',
   'cabinet.service',
   'cabinet.chat',
   'cabinet.loyalty.deposit',

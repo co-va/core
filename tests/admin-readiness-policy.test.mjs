@@ -68,3 +68,13 @@ assert.match(workplaceGuard, /resolveCapability\(tenantId, 'workplaces.access'\)
 assert.match(workplaceGuard, /resolveCapability\(tenantId, 'workplaces.max'\)/,
   'LIVE creation must still respect assigned limit');
 console.log('DEMO unlimited workplaces and LIVE grant/limit PASS');
+
+// The admin tool map must keep the ordinary readiness selector even when DEMO
+// and LIVE workplace capacity are governed by a separate entitlement model.
+const workplaceUi = readFileSync('admin/commercial-catalog.js', 'utf8');
+const workplaceRegistry = readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
+assert.match(workplaceUi, /readinessKey: 'cabinet\.profile\.workspaces'/);
+assert.match(workplaceUi, /\$\{readinessSelect\(child\.readinessKey, byKey, 'admin-tool-child-status'\)\}/);
+assert.doesNotMatch(workplaceUi, /DEMO — без лимита; LIVE — по разрешению/);
+assert.match(workplaceRegistry, /'cabinet\.profile\.workspaces'/);
+console.log('Admin workplace readiness selector restored independently from DEMO/LIVE quotas: PASS');
