@@ -12,7 +12,7 @@ for (const fixture of cases) {
   const msg = verificationEmail(fixture.kind, address, fixture.url);
   assert.equal(msg.subject, 'Подтвердите email — ' + fixture.label);
   assert.ok(msg.text.includes(fixture.url), 'text/plain version must contain the confirmation URL');
-  assert.ok(msg.html.includes('href="' + fixture.url + '"'), 'email button must use the actual signed confirmation link');
+  assert.ok(msg.html.includes('href="' + fixture.url.replaceAll('&', '&amp;') + '"'), 'email button must use the safely encoded signed confirmation link');
   assert.ok(msg.html.includes('Подтвердить email'), 'confirmation CTA must be present');
   assert.ok(msg.html.includes('Ссылка действует 24 часа'), 'expiry notice must be present');
   assert.ok(msg.html.includes('max-width:640px'), 'card must be narrow and responsive');
