@@ -9,6 +9,7 @@ import { NotificationEventService } from './notification-event.service';
 import { NotificationReminderService } from './notification-reminder.service';
 import { NotificationService } from './notification.service';
 import { ProfessionalServiceNoticeService } from './professional-service-notice.service';
+import { ProfessionalServiceEmailOutboxWorker } from './professional-service-email-outbox.worker';
 import { WebPushService } from './web-push.service';
 
 @Module({
@@ -19,6 +20,7 @@ import { WebPushService } from './web-push.service';
     NotificationEventService,
     NotificationReminderService,
     ProfessionalServiceNoticeService,
+    ProfessionalServiceEmailOutboxWorker,
     WebPushService,
     PrismaService,
   ],
