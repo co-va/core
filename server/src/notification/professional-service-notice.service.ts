@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ProfessionalPushService } from '../push/professional-push.service';
+import { TransactionalEmailService } from '../transactional-email/transactional-email.service';
 
 type ServiceNoticeRow = {
   id: string;
@@ -18,6 +19,12 @@ type ServiceNoticeRow = {
 
 function text(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+  })[character] || character);
 }
 
 function json(value: unknown): Prisma.InputJsonValue {
@@ -38,10 +45,44 @@ function project(row: ServiceNoticeRow) {
 
 @Injectable()
 export class ProfessionalServiceNoticeService {
+  private readonly logger = new Logger(ProfessionalServiceNoticeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly push: ProfessionalPushService,
+    private readonly email: TransactionalEmailService,
   ) {}
+
+  private async sendServiceEmail(tenantId: string, platformAccountId: string, notice: ServiceNoticeRow) {
+    // PlatformAccount is the sole owner of the confirmed login email.
+    // Additional Profile.emails are contacts, never notification recipients.
+    const [accounts, preference] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ email: string; emailVerifiedAt: Date | null }>>`
+        SELECT "email", "emailVerifiedAt"
+        FROM "PlatformAccount"
+        WHERE "id" = ${platformAccountId}
+        LIMIT 1
+      `,
+      this.prisma.platformNotificationPreference.findUnique({
+        where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
+        select: { emailEnabled: true },
+      }),
+    ]);
+
+    const account = accounts[0];
+    const recipient = text(account?.email).toLowerCase();
+    if (!account?.emailVerifiedAt || preference?.emailEnabled === false || !recipient) return;
+
+    const title = text(notice.title) || 'Уведомление';
+    const body = text(notice.body) || title;
+    await this.email.send({
+      to: recipient,
+      subject: title,
+      text: body,
+      html: `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111"><h2>${escapeHtml(title)}</h2><p style="white-space:pre-wrap">${escapeHtml(body)}</p></div>`,
+      tag: 'professional-service-notice',
+    });
+  }
 
   private async owner(tenantId: string) {
     return this.prisma.membership.findFirst({
@@ -121,6 +162,13 @@ export class ProfessionalServiceNoticeService {
     const notice = rows[0];
     if (!notice) return null;
     const badgeCount = await this.unreadCount(tenantId, membership.platformAccountId);
+    // A failing mail provider must never undo the saved notice or delay booking.
+    // Only the confirmed PlatformAccount email is eligible, and only while enabled.
+    void this.sendServiceEmail(tenantId, membership.platformAccountId, notice).catch((error) => {
+      const reason = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.error(`Professional service email failed for notice ${notice.id}: ${reason}`);
+    });
+
     await this.push.send(membership.platformAccountId, {
       id: notice.id,
       type: notice.type,
