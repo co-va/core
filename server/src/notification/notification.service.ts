@@ -357,6 +357,34 @@ export class NotificationService {
     return true;
   }
 
+  async getAccountNotificationSettings(accountId: string) {
+    const rows = await this.prisma.$queryRaw<Array<{ emailVerified: boolean; emailEnabled: boolean }>>`
+      SELECT (a."emailVerifiedAt" IS NOT NULL) AS "emailVerified",
+             COALESCE(p."emailEnabled", true) AS "emailEnabled"
+      FROM "Account" a
+      LEFT JOIN "AccountNotificationPreference" p ON p."accountId" = a."id"
+      WHERE a."id" = ${accountId}
+      LIMIT 1
+    `;
+    if (!rows.length) throw new NotFoundException('Аккаунт не найден');
+    return { emailVerified: rows[0].emailVerified, emailEnabled: rows[0].emailEnabled };
+  }
+
+  async setAccountNotificationSettings(accountId: string, input: unknown) {
+    const email = input && typeof input === 'object' && !Array.isArray(input)
+      ? (input as Record<string, unknown>).email
+      : undefined;
+    if (typeof email !== 'boolean') throw new BadRequestException('Укажите настройку Email');
+    const current = await this.getAccountNotificationSettings(accountId);
+    if (email && !current.emailVerified) throw new BadRequestException('Сначала подтвердите email');
+    await this.prisma.accountNotificationPreference.upsert({
+      where: { accountId },
+      create: { accountId, emailEnabled: email },
+      update: { emailEnabled: email },
+    });
+    return this.getAccountNotificationSettings(accountId);
+  }
+
   private async externalAllowed(
     tenantId: string,
     identity: AccountIdentity,
@@ -365,6 +393,10 @@ export class NotificationService {
   ) {
     const purpose = normalizeMessagePurpose(purposeValue);
     if (!purpose) return false;
+    if (channel === 'EMAIL') {
+      const settings = await this.getAccountNotificationSettings(identity.accountId);
+      if (!settings.emailVerified || !settings.emailEnabled) return false;
+    }
     if (purpose !== 'MARKETING') return true;
     if (channel === 'PUSH') return false;
     const recipient = this.recipientForChannel(identity, channel);

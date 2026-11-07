@@ -242,11 +242,22 @@ model Account {
   requests            BookingRequest[]
   journalHiddenRecords AccountJournalHiddenRecord[]
   calendarConnections AccountCalendarConnection[]
+  notificationPreference AccountNotificationPreference?
 
   @@index([createdViaTenantId])
 }
 
 // Private, account-owned actions. Never copies a tenant's source Record.
+// Account-owned notification opt-in; independent of tenant and Professional settings.
+model AccountNotificationPreference {
+  accountId    String   @id
+  emailEnabled Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
 model AccountHistoryEvent {
   id         BigInt   @id @default(autoincrement())
   accountId  String
