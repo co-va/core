@@ -8,3 +8,14 @@
 .admin-tool-readiness-apply[hidden]{display:none}
 .admin-tool-readiness-apply:disabled{opacity:.5;cursor:wait}
 @media(max-width:820px){.admin-tool-readiness-editor .admin-tool-readiness-select{width:79px;padding:0 20px 0 5px;font-size:11px}.admin-tool-readiness-apply{width:20px}}
+
+/* Nested Cash composition uses existing tool-row grid and readiness selectors. */
+.admin-tool-child-composition{display:block;min-width:0;border-top:1px solid #f0f0ee}
+.admin-tool-child-composition:first-child{border-top:0}
+.admin-tool-child--summary{cursor:pointer;list-style:none}
+.admin-tool-child--summary::-webkit-details-marker{display:none}
+.admin-tool-child--summary::marker{content:""}
+.admin-tool-child-composition[open]>.admin-tool-child--summary .admin-tool-child-arrow{transform:rotate(180deg)}
+.admin-tool-grandchildren{display:grid;padding:0 0 8px 24px;border-left:2px solid #e6e6e3;margin-left:12px}
+.admin-tool-grandchildren>.admin-tool-child:first-child{border-top:0}
+@media(max-width:820px){.admin-tool-grandchildren{padding-left:10px;margin-left:5px}}
