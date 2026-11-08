@@ -23,8 +23,10 @@ export const CABINET_READINESS_CAPABILITIES: Readonly<Record<string, readonly st
   'cabinet.loyalty.subscription': ['loyalty.subscription.access'],
   'cabinet.loyalty.referral': ['loyalty.referral.access'],
   'cabinet.loyalty.bonus': ['loyalty.bonus.access'],
-  'cabinet.finance.cash': ['finance.cash.access', 'finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
-  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
+  'cabinet.finance.cash.wallets': ['finance.cash.access'],
+  'cabinet.finance.cash.loans': ['finance.special.access'],
+  'cabinet.finance.cash.investments': ['finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
+  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access'],
   'cabinet.finance.z-report': ['finance.z_report.access'],
   'cabinet.inventory.stock': ['inventory.stock.access'],
   'cabinet.inventory.movements': ['inventory.movements.access'],
@@ -63,24 +65,3 @@ export function applyReadinessGate(
   return allowed ? capability : { ...capability, enabled: false, source: 'READINESS' };
 }
 
-const INVESTMENT_PRODUCT_CAPABILITIES = new Set([
-  'finance.investment.self.access',
-  'finance.investment.raise.access',
-  'finance.investment.external.access',
-]);
-
-// The platform has a separate commercial product status for Investments.
-// It must never grant access, only further restrict an already-granted role.
-// Unlike the Cash E-card, this status belongs specifically to Investments.
-export function applyInvestmentProductReadinessGate(
-  capability: ResolvedCapability,
-  product: { readiness: string; isActive: boolean } | null,
-  actor: { isTester: boolean; isOwnerBook: boolean; commercialMode?: string },
-): ResolvedCapability {
-  if (!INVESTMENT_PRODUCT_CAPABILITIES.has(capability.key)
-    || capability.valueType !== 'BOOLEAN' || capability.enabled !== true) return capability;
-  const allowed = product?.isActive === true && (product.readiness === 'READY'
-    || (product.readiness === 'TESTING'
-      && (actor.commercialMode === 'DEMO' || actor.isTester || actor.isOwnerBook)));
-  return allowed ? capability : { ...capability, enabled: false, source: 'READINESS' };
-}
