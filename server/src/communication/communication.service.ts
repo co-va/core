@@ -124,6 +124,23 @@ export class CommunicationService {
     return rows[0] || null;
   }
 
+  // Resolve contact-facing names by stable Telegram ID, scoped to this tenant's
+  // actual contacts. A username may be absent until the person messages the bot.
+  async telegramContactUsernames(tenantId: string, idsValue: unknown) {
+    const ids = [...new Set(text(idsValue).split(',').map(text)
+      .filter((id) => /^-?\\d{5,20}$/.test(id)))].slice(0, 40);
+    if (!ids.length) return { usernames: [] };
+    const state = await this.businessState.get(tenantId);
+    const allowed = new Set((Array.isArray(state.people) ? state.people : [])
+      .flatMap((person) => Array.isArray(person.telegrams) ? person.telegrams.map(text) : []));
+    const matched = ids.filter((id) => allowed.has(id));
+    const identities = await Promise.all(matched.map((id) => this.telegramThreadIdentity(tenantId, id)));
+    return {
+      usernames: matched.map((id, index) => ({ id, username: text(identities[index]?.display) }))
+        .filter(({ username }) => /^@[A-Za-z0-9_]{5,32}$/.test(username)),
+    };
+  }
+
   async emailIdentity(tenantId: string, input: { phone?: unknown; uei?: unknown }) {
     const personPhone = canonicalPhone(input?.phone);
     const requestedUei = text(input?.uei);
