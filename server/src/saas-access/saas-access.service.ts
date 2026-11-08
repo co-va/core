@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CapabilityValueType, TenantAccessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { applyInvestmentProductReadinessGate, applyReadinessGate } from './readiness-policy';
+import { applyReadinessGate } from './readiness-policy';
 import { excessWorkplaceIds } from './workplace-capacity';
 
 const DEMO_DAYS = 14;
@@ -347,24 +347,13 @@ export class SaasAccessService {
     };
   }
 
-  private async investmentProductReadiness() {
-    // Source: the same platform CommercialProduct used by Admin catalog.
-    // Missing/inactive product is fail-closed, never an automatic grant.
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ readiness: string; isActive: boolean }>>(
-      `SELECT "readiness","isActive" FROM "CommercialProduct" WHERE "key"='tool.finance.investment' LIMIT 1`,
-    );
-    return rows[0] || null;
-  }
-
   async resolveCapability(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {
     const resolved = await this.resolveCapabilityWithoutReadiness(tenantId, capabilityKey);
     if (resolved.valueType !== CapabilityValueType.BOOLEAN || resolved.enabled !== true) return resolved;
     const access = await this.prisma.tenantAccess.findUnique({ where: { tenantId } });
     if (!access) throw new NotFoundException('Состояние рабочего пространства не настроено');
     const readiness = await this.prisma.adminToolReadiness.findMany();
-    const gated = applyReadinessGate(resolved, readiness, access);
-    if (!gated.key.startsWith('finance.investment.') || gated.enabled !== true) return gated;
-    return applyInvestmentProductReadinessGate(gated, await this.investmentProductReadiness(), access);
+    return applyReadinessGate(resolved, readiness, access);
   }
 
   private async resolveCapabilityWithoutReadiness(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {
@@ -625,13 +614,8 @@ export class SaasAccessService {
       };
     });
 
-    const [readiness, investmentProduct] = await Promise.all([
-      this.prisma.adminToolReadiness.findMany(),
-      this.investmentProductReadiness(),
-    ]);
-    const effectiveCapabilities = resolved.map((capability) => applyInvestmentProductReadinessGate(
-      applyReadinessGate(capability, readiness, access), investmentProduct, access,
-    ));
+    const readiness = await this.prisma.adminToolReadiness.findMany();
+    const effectiveCapabilities = resolved.map((capability) => applyReadinessGate(capability, readiness, access));
 
     return {
       tenantId,
