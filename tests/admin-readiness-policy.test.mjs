@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { applyReadinessGate, CABINET_READINESS_CAPABILITIES } from '../server/src/saas-access/readiness-policy.ts';
+import { applyInvestmentProductReadinessGate, applyReadinessGate, CABINET_READINESS_CAPABILITIES } from '../server/src/saas-access/readiness-policy.ts';
 
 const cap = (key = 'loyalty.bonus.access', enabled = true) => ({
   key, valueType: 'BOOLEAN', enabled, limit: null, source: 'TENANT_OVERRIDE',
@@ -47,7 +47,44 @@ for (const [readinessKey, capabilityKey] of [
 }
 const service = readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
 assert.equal((service.match(/const readiness = await this.prisma.adminToolReadiness.findMany\(\);/g) || []).length,
-  2, 'single-capability and entire tenant access must both inspect every readiness row');
+  1, 'single-capability resolution must inspect readiness rows');
+assert.match(service, /const \[readiness, investmentProduct\] = await Promise\.all/,
+  'entire tenant access must inspect tool readiness and investment product readiness');
+assert.match(service, /applyInvestmentProductReadinessGate\(gated, await this\.investmentProductReadiness\(\), access\)/,
+  'single capability guard must enforce investment product readiness');
+assert.match(service, /applyInvestmentProductReadinessGate\(\s*applyReadinessGate\(capability, readiness, access\)/,
+  'bulk access must enforce both readiness sources');
+
+const investmentRoles = [
+  'finance.investment.self.access',
+  'finance.investment.raise.access',
+  'finance.investment.external.access',
+];
+for (const actor of actors) {
+  for (const key of investmentRoles) {
+    for (const status of ['NOT_READY', 'TESTING', 'READY']) {
+      const allowed = status === 'READY' || (status === 'TESTING' && actor.testing);
+      const output = applyInvestmentProductReadinessGate(cap(key),
+        { readiness: status, isActive: true }, actor);
+      assert.equal(output.enabled, allowed, `${actor.name}: ${key}: ${status}`);
+    }
+    assert.equal(applyInvestmentProductReadinessGate(cap(key), null, actor).enabled, false,
+      'Unknown investment product is fail-closed');
+    assert.equal(applyInvestmentProductReadinessGate(cap(key),
+      { readiness: 'READY', isActive: false }, actor).enabled, false,
+      'Inactive investment product is always hidden');
+    assert.equal(applyInvestmentProductReadinessGate(cap(key, false),
+      { readiness: 'READY', isActive: true }, actor).enabled, false,
+      'Product status cannot grant revoked investment entitlement');
+  }
+  for (const key of ['finance.cash.access', 'finance.special.access', 'finance.dds.access']) {
+    assert.equal(applyInvestmentProductReadinessGate(cap(key),
+      { readiness: 'NOT_READY', isActive: true }, actor).enabled, true,
+      'Investment product must not hide wallets, loans or DDS: ' + key);
+  }
+}
+console.log('Investment: commercial NOT_READY/TESTING/READY across all roles and actor types PASS');
+
 const admin = readFileSync('admin/commercial-catalog.js', 'utf8');
 assert.ok(!admin.includes('data-activate-readiness='), 'admin must save selection directly, no duplicate apply step');
 console.log('Readiness: DEMO, LIVE user, LIVE tester, owner and NOT_READY matrix PASS');
