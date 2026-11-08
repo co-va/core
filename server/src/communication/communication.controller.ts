@@ -7,6 +7,7 @@ import { CommunicationHistoryService } from './communication-history.service';
 import { MessengerCoreService } from './messenger-core.service';
 import { ProfessionalEmailService } from './professional-email.service';
 import { TelegramBotService } from './telegram-bot.service';
+import { CommunicationService } from './communication.service';
 
 type OwnerRequest = Request & { auth?: { platformAccountId: string; tenantId: string; role: string } };
 
@@ -36,6 +37,7 @@ export class CommunicationController {
     private readonly dispatch: CommunicationDispatchService,
     private readonly messenger: MessengerCoreService,
     private readonly broadcasts: CommunicationBroadcastService,
+    private readonly communications: CommunicationService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -171,6 +173,12 @@ export class CommunicationController {
       success = true;
     } catch {}
     response.status(success ? 200 : 400).type('html').send(emailOAuthPage(success));
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('telegram/contact-usernames')
+  telegramContactUsernames(@Req() request: OwnerRequest, @Query('ids') ids = '') {
+    return this.communications.telegramContactUsernames(request.auth!.tenantId, ids);
   }
 
   @UseGuards(JwtAuthGuard)
