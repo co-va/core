@@ -288,7 +288,7 @@ export class AuxiliaryStateService {
       const [sessions, transfers, operations, ledger] = await Promise.all([
         tx.dataTransferSession.findMany({
           where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100,
-          select: { before: true, after: true },
+          select: { before: true, after: true, createdAt: true },
         }),
         tx.dataTransferFact.findMany({
           where: { tenantId, domain: 'wallets' }, select: { targetId: true, input: true },
