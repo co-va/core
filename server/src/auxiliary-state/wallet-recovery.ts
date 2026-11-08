@@ -10,6 +10,7 @@ const arr = (value: unknown): any[] => Array.isArray(value) ? value : [];
 export function mergeWalletCatalog(current: Wallet[], incoming: Wallet[]): Wallet[] {
   const existing = arr(current);
   const requested = arr(incoming);
+  const existingById = new Map(existing.map((row) => [text(row?.id), row]));
   const seen = new Set<string>();
   for (const row of requested) {
     const id = text(row?.id);
@@ -19,7 +20,14 @@ export function mergeWalletCatalog(current: Wallet[], incoming: Wallet[]): Walle
   // Wallet removal is never implicit in a PUT containing a partial catalog.
   // A soft delete must preserve the row with deletedAt; permanent deletion has
   // its own authorized endpoint and transaction.
-  return [...requested, ...existing.filter((row) => !seen.has(text(row?.id)))];
+  return [
+    ...requested.map((row) => {
+      const before = existingById.get(text(row?.id));
+      // No generic PUT can silently undo a prior soft deletion.
+      return before?.deletedAt && !row?.deletedAt ? { ...row, deletedAt: before.deletedAt } : row;
+    }),
+    ...existing.filter((row) => !seen.has(text(row?.id))),
+  ];
 }
 
 export function recoverWalletCandidates(input: {
@@ -28,13 +36,16 @@ export function recoverWalletCandidates(input: {
   transfers: Array<{ targetId: string; input: unknown }>;
   operations: Array<{ occurredAt: Date | string; data: unknown }>;
   ledger: Array<{ walletId: string; data: unknown; occurredAt: Date | string }>;
+  excludedIds?: string[];
 }): { recovered: Wallet[]; unresolvedIds: string[] } {
   const existing = new Set(arr(input.wallets).map((row) => text(row?.id)));
   const archived = new Map<string, Wallet>();
   const intentionallyDeleted = new Set<string>();
   const recordedNames = new Map<string, string>();
   const observed = new Set<string>();
-  const eligible = (id: string) => id && id !== 'cash' && id !== 'cashless' && !existing.has(id);
+  const excluded = new Set(arr(input.excludedIds).map(text));
+  const eligible = (id: string) => Boolean(id) && id !== 'cash' && id !== 'cashless'
+    && !existing.has(id) && !excluded.has(id);
   const saveName = (idValue: unknown, nameValue: unknown) => {
     const id = text(idValue), name = text(nameValue);
     if (!eligible(id)) return;
