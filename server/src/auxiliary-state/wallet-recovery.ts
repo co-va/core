@@ -24,7 +24,7 @@ export function mergeWalletCatalog(current: Wallet[], incoming: Wallet[]): Walle
 
 export function recoverWalletCandidates(input: {
   wallets: Wallet[];
-  sessions: Array<{ before: unknown; after: unknown }>;
+  sessions: Array<{ before: unknown; after: unknown; createdAt?: Date | string }>;
   transfers: Array<{ targetId: string; input: unknown }>;
   operations: Array<{ occurredAt: Date | string; data: unknown }>;
   ledger: Array<{ walletId: string; data: unknown; occurredAt: Date | string }>;
@@ -54,7 +54,11 @@ export function recoverWalletCandidates(input: {
   };
   // DataTransferSession has full copies of BusinessAuxiliaryState before
   // and after each import. Preserve the most recent ORIGINAL metadata.
-  for (const session of [...arr(input.sessions)].reverse()) {
+  for (const session of [...arr(input.sessions)].sort((a, b) => {
+    const left = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const right = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return left - right;
+  })) {
     for (const phase of ['before', 'after']) {
       const state = obj(session?.[phase]);
       for (const row of arr(state.BusinessAuxiliaryState)) {
