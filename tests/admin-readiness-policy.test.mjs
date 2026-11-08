@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { applyInvestmentProductReadinessGate, applyReadinessGate, CABINET_READINESS_CAPABILITIES } from '../server/src/saas-access/readiness-policy.ts';
+import { applyReadinessGate, CABINET_READINESS_CAPABILITIES } from '../server/src/saas-access/readiness-policy.ts';
 
 const cap = (key = 'loyalty.bonus.access', enabled = true) => ({
   key, valueType: 'BOOLEAN', enabled, limit: null, source: 'TENANT_OVERRIDE',
@@ -35,9 +35,11 @@ assert.equal(applyReadinessGate(cap('journal.day.access'), row('READY', true, 'c
   true, 'a separately approved Journal view must stay accessible');
 for (const [readinessKey, capabilityKey] of [
   ['cabinet.profile.data', 'profile.access'],
-  ['cabinet.finance.cash', 'finance.investment.self.access'],
-  ['cabinet.finance.cash', 'finance.investment.raise.access'],
-  ['cabinet.finance.cash', 'finance.investment.external.access'],
+  ['cabinet.finance.cash.wallets', 'finance.cash.access'],
+  ['cabinet.finance.cash.loans', 'finance.special.access'],
+  ['cabinet.finance.cash.investments', 'finance.investment.self.access'],
+  ['cabinet.finance.cash.investments', 'finance.investment.raise.access'],
+  ['cabinet.finance.cash.investments', 'finance.investment.external.access'],
   ['cabinet.chat', 'chat.access'],
 ]) {
   assert.ok(CABINET_READINESS_CAPABILITIES[readinessKey]?.includes(capabilityKey),
@@ -46,44 +48,51 @@ for (const [readinessKey, capabilityKey] of [
     false, readinessKey + ' must hide the entry even before legacy enforcement');
 }
 const service = readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
-assert.equal((service.match(/const readiness = await this.prisma.adminToolReadiness.findMany\(\);/g) || []).length,
-  1, 'single-capability resolution must inspect readiness rows');
-assert.match(service, /const \[readiness, investmentProduct\] = await Promise\.all/,
-  'entire tenant access must inspect tool readiness and investment product readiness');
-assert.match(service, /applyInvestmentProductReadinessGate\(gated, await this\.investmentProductReadiness\(\), access\)/,
-  'single capability guard must enforce investment product readiness');
-assert.match(service, /applyInvestmentProductReadinessGate\(\s*applyReadinessGate\(capability, readiness, access\)/,
-  'bulk access must enforce both readiness sources');
+assert.equal((service.match(/const readiness = await this.prisma.adminToolReadiness.findMany\\(\\);/g) || []).length,
+  2, 'single capability and full account access must both read the same Tools readiness');
+assert.doesNotMatch(service, /investmentProductReadiness|applyInvestmentProductReadinessGate/,
+  'commercial-product status must not affect instrument readiness');
+const readinessPolicy = readFileSync('server/src/saas-access/readiness-policy.ts', 'utf8');
+assert.doesNotMatch(readinessPolicy, /InvestmentProductReadiness|CommercialProduct/,
+  'only AdminToolReadiness may govern investment visibility');
 
-const investmentRoles = [
-  'finance.investment.self.access',
-  'finance.investment.raise.access',
-  'finance.investment.external.access',
+const cashItems = [
+  ['cabinet.finance.cash.wallets', 'finance.cash.access'],
+  ['cabinet.finance.cash.loans', 'finance.special.access'],
+  ['cabinet.finance.cash.investments', 'finance.investment.self.access'],
+  ['cabinet.finance.cash.investments', 'finance.investment.raise.access'],
+  ['cabinet.finance.cash.investments', 'finance.investment.external.access'],
 ];
 for (const actor of actors) {
-  for (const key of investmentRoles) {
+  for (const [readinessKey, capabilityKey] of cashItems) {
     for (const status of ['NOT_READY', 'TESTING', 'READY']) {
-      const allowed = status === 'READY' || (status === 'TESTING' && actor.testing);
-      const output = applyInvestmentProductReadinessGate(cap(key),
-        { readiness: status, isActive: true }, actor);
-      assert.equal(output.enabled, allowed, `${actor.name}: ${key}: ${status}`);
+      const result = applyReadinessGate(cap(capabilityKey), row(status, true, readinessKey), actor);
+      const expected = status === 'READY' || (status === 'TESTING' && actor.testing);
+      assert.equal(result.enabled, expected, `${actor.name}: ${readinessKey}: ${status}`);
     }
-    assert.equal(applyInvestmentProductReadinessGate(cap(key), null, actor).enabled, false,
-      'Unknown investment product is fail-closed');
-    assert.equal(applyInvestmentProductReadinessGate(cap(key),
-      { readiness: 'READY', isActive: false }, actor).enabled, false,
-      'Inactive investment product is always hidden');
-    assert.equal(applyInvestmentProductReadinessGate(cap(key, false),
-      { readiness: 'READY', isActive: true }, actor).enabled, false,
-      'Product status cannot grant revoked investment entitlement');
   }
-  for (const key of ['finance.cash.access', 'finance.special.access', 'finance.dds.access']) {
-    assert.equal(applyInvestmentProductReadinessGate(cap(key),
-      { readiness: 'NOT_READY', isActive: true }, actor).enabled, true,
-      'Investment product must not hide wallets, loans or DDS: ' + key);
-  }
+  const rows = [
+    { key: 'cabinet.finance.cash.wallets', status: 'READY', enforced: true },
+    { key: 'cabinet.finance.cash.loans', status: 'NOT_READY', enforced: true },
+    { key: 'cabinet.finance.cash.investments', status: 'NOT_READY', enforced: true },
+  ];
+  assert.equal(applyReadinessGate(cap('finance.cash.access'), rows, actor).enabled, true,
+    'wallets remain available independently from loans and investments');
+  assert.equal(applyReadinessGate(cap('finance.special.access'), rows, actor).enabled, false,
+    'loans stay hidden until explicitly ready');
+  assert.equal(applyReadinessGate(cap('finance.investment.self.access'), rows, actor).enabled, false,
+    'investments stay hidden until explicitly ready');
 }
-console.log('Investment: commercial NOT_READY/TESTING/READY across all roles and actor types PASS');
+assert.equal(CABINET_READINESS_CAPABILITIES['cabinet.finance.cash'], undefined,
+  'legacy parent Cash status is not a second gate');
+assert.ok(!CABINET_READINESS_CAPABILITIES['cabinet.finance.dds']?.includes('finance.special.access'),
+  'loans may not inherit DDS readiness');
+const migration = readFileSync('server/prisma/migrations/20261108210000_cash_composition_readiness/migration.sql', 'utf8');
+assert.match(migration, /'cabinet.finance.cash.wallets'[\s\S]*?FROM "AdminToolReadiness"/,
+  'old Cash readiness must carry over to wallets');
+assert.match(migration, /'cabinet.finance.cash.loans', 'NOT_READY'/);
+assert.match(migration, /'cabinet.finance.cash.investments', 'NOT_READY'/);
+console.log('Cash composition: wallets / loans / investments have independent readiness PASS');
 
 const admin = readFileSync('admin/commercial-catalog.js', 'utf8');
 assert.ok(!admin.includes('data-activate-readiness='), 'admin must save selection directly, no duplicate apply step');
@@ -115,3 +124,20 @@ assert.match(workplaceUi, /\$\{readinessSelect\(child\.readinessKey, byKey, 'adm
 assert.doesNotMatch(workplaceUi, /DEMO — без лимита; LIVE — по разрешению/);
 assert.match(workplaceRegistry, /'cabinet\.profile\.workspaces'/);
 console.log('Admin workplace readiness selector restored independently from DEMO/LIVE quotas: PASS');
+
+const registry = readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
+const adminMap = readFileSync('admin/commercial-catalog.js', 'utf8');
+const financeMap = adminMap.slice(adminMap.indexOf("id: 'finance'"), adminMap.indexOf("id: 'inventory'"));
+assert.match(financeMap, /label: 'Касса', kind: 'e', nesting: 'composition'/);
+for (const [key, title] of [
+  ['cabinet.finance.cash.wallets', 'Кошельки'],
+  ['cabinet.finance.cash.loans', 'Займы'],
+  ['cabinet.finance.cash.investments', 'Инвестиции'],
+]) {
+  assert.ok(registry.includes(`'${key}'`), key + ' must be stored in Tools registry');
+  assert.ok(financeMap.includes(`label: '${title}', kind: 'composition', readinessKey: '${key}'`),
+    title + ' must have its own readiness selector inside Cash');
+}
+assert.ok(adminMap.includes('admin-tool-grandchildren'), 'Cash nested composition must be rendered');
+console.log('Admin tool map: nested Cash E composition PASS');
+
