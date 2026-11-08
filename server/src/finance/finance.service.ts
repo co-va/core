@@ -1257,6 +1257,8 @@ export class FinanceService {
     const admin = await this.prisma.platformAdmin.findUnique({ where: { platformAccountId: accountId }, select: { id: true } });
     if (!admin) throw new ForbiddenException('Полное удаление доступно только администратору платформы');
     await this.serializable(async (tx) => {
+      // Share wallet catalog lock with AuxiliaryStateService wallet mutations.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))::text`;
       const direct = await tx.financeOperation.findMany({ where: { tenantId, ledgerEntries: { some: { walletId: id } } }, select: { operationId: true } });
       const operationIds = new Set(direct.map((row) => row.operationId));
       let frontier = [...operationIds];
@@ -1272,6 +1274,24 @@ export class FinanceService {
           throw new BadRequestException('Касса содержит связанные факты Депозита. Сначала закройте или перенесите их штатными действиями.');
         }
         await tx.financeOperation.deleteMany({ where: { tenantId, operationId: { in: [...operationIds] } } });
+      }
+      // Permanent wallet removal is a server-owned explicit action. Generic
+      // auxiliary PUT is now a merge and may never delete wallet rows.
+      const auxiliary = await tx.businessAuxiliaryState.findUnique({ where: { tenantId } });
+      if (auxiliary) {
+        const data = objectValue(auxiliary.data);
+        const wallets = Array.isArray(data.wallets) ? data.wallets : [];
+        const next = wallets.filter((wallet: any) => text(wallet?.id) !== id);
+        const removedIds = Array.isArray(data.walletDeletedIds) ? data.walletDeletedIds.map(text) : [];
+        // Explicit platform-admin hard delete permanently excludes the original
+        // ID from any future snapshot/ledger-driven recovery.
+        await tx.businessAuxiliaryState.update({
+          where: { tenantId }, data: { data: json({
+            ...data,
+            wallets: next,
+            walletDeletedIds: [...new Set([...removedIds, id])],
+          }) },
+        });
       }
     });
     return this.snapshot(tenantId);

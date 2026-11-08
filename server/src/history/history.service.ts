@@ -35,6 +35,7 @@ type HistoryFilters = {
   inventoryItemId?: string;
   financeOperationId?: string;
   entityType?: string;
+  entityTypes?: string[];
   entityId?: string;
   from?: string;
   to?: string;
@@ -137,6 +138,7 @@ export class HistoryService {
     const inventoryItemId = text(filters.inventoryItemId);
     const financeOperationId = text(filters.financeOperationId);
     const entityType = text(filters.entityType);
+    const entityTypes = [...new Set((Array.isArray(filters.entityTypes) ? filters.entityTypes : []).map(text).filter(Boolean))];
     const entityId = text(filters.entityId);
     const from = dateValue(filters.from);
     const to = dateValue(filters.to);
@@ -150,6 +152,8 @@ export class HistoryService {
         "effectiveAt", "occurredAt", "recordedAt", "relations", "data", "provenance"
       FROM "BusinessHistoryEvent"
       WHERE "tenantId" = ${tenantId}
+        ${personKeys.length ? Prisma.sql`AND "personKey" IN (${Prisma.join(personKeys)})` : Prisma.empty}
+        ${entityTypes.length ? Prisma.sql`AND "entityType" IN (${Prisma.join(entityTypes)})` : Prisma.empty}
         AND (
           "entityType" <> 'note'
           OR (
@@ -162,7 +166,6 @@ export class HistoryService {
             )
           )
         )
-        AND (${personKeys.length === 0} OR "personKey" IN (${Prisma.join(personKeys.length ? personKeys : [''])}))
         AND (${recordId === ''} OR "recordId" = ${recordId})
         AND (${workplaceKey === ''} OR "workplaceKey" = ${workplaceKey})
         AND (${procedureId === ''} OR "procedureId" = ${procedureId})

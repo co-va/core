@@ -4,10 +4,12 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
+import { mergeWalletCatalog, recoverWalletCandidates } from './wallet-recovery';
 
 type JsonObject = Record<string, any>;
 type AuxiliaryBundle = {
   wallets: JsonObject[];
+  walletDeletedIds: string[];
   investments: JsonObject[];
   loans: JsonObject[];
   tags: JsonObject[];
@@ -35,6 +37,7 @@ function normalize(value: unknown): AuxiliaryBundle {
   const source = objectValue(value);
   return {
     wallets: (Array.isArray(source.wallets) ? source.wallets : []).map((item) => clone(objectValue(item))),
+    walletDeletedIds: (Array.isArray(source.walletDeletedIds) ? source.walletDeletedIds : []).map(text).filter(Boolean),
     investments: (Array.isArray(source.investments) ? source.investments : []).map((item) => clone(objectValue(item))),
     loans: (Array.isArray(source.loans) ? source.loans : []).map((item) => clone(objectValue(item))),
     tags: (Array.isArray(source.tags) ? source.tags : []).map((item) => clone(objectValue(item))),
@@ -276,12 +279,73 @@ export class AuxiliaryStateService {
     return this.get(tenantId);
   }
 
+  async recoverWallets(tenantId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize recovery with all ordinary catalog writes for this tenant.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))::text`;
+      const stored = await tx.businessAuxiliaryState.upsert({
+        where: { tenantId }, create: { tenantId, data: json(normalize({})) }, update: {},
+      });
+      const current = normalize(stored.data);
+      const [sessions, transfers, operations, ledger] = await Promise.all([
+        tx.dataTransferSession.findMany({
+          where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100,
+          select: { before: true, after: true, createdAt: true },
+        }),
+        tx.dataTransferFact.findMany({
+          where: { tenantId, domain: 'wallets' }, select: { targetId: true, input: true },
+        }),
+        tx.financeOperation.findMany({
+          where: { tenantId }, orderBy: { occurredAt: 'asc' }, select: { occurredAt: true, data: true },
+        }),
+        tx.financeLedgerEntry.findMany({
+          where: { tenantId, walletId: { not: '' } }, orderBy: { occurredAt: 'asc' },
+          select: { walletId: true, data: true, occurredAt: true },
+        }),
+      ]);
+      const { recovered, unresolvedIds } = recoverWalletCandidates({
+        wallets: current.wallets, sessions, transfers, operations, ledger,
+        excludedIds: current.walletDeletedIds,
+      });
+      if (recovered.length) {
+        const next = mergeWalletCatalog(current.wallets, [...current.wallets, ...recovered]);
+        const persisted = { ...current, wallets: next } as JsonObject;
+        delete persisted.depositPrograms;
+        await tx.businessAuxiliaryState.update({
+          where: { tenantId }, data: { data: json(persisted) },
+        });
+        return { wallets: next, recovered: recovered.map(({ id, name }) => ({ id, name })),
+          unresolvedIds };
+      }
+      return { wallets: current.wallets, recovered: [], unresolvedIds };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000, maxWait: 10000 });
+  }
+
   async updateDataset(tenantId: string, dataset: string, body: unknown) {
     const key = text(dataset);
     if (!DATASETS.has(key)) throw new BadRequestException('Неизвестный набор связанных данных');
     const value = objectValue(body).value;
     const requested = Array.isArray(value) ? clone(value) : [];
     if (key === 'depositPrograms') return this.updateDepositPrograms(tenantId, requested);
+
+    // Wallet PUT is a merge, never a replacement that can delete unseen IDs.
+    // Soft deletion preserves deletedAt; hard deletion has its own endpoint.
+    if (key === 'wallets') {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))::text`;
+        const stored = await tx.businessAuxiliaryState.upsert({
+          where: { tenantId }, create: { tenantId, data: json(normalize({})) }, update: {},
+        });
+        const current = normalize(stored.data);
+        let combined: JsonObject[];
+        try { combined = mergeWalletCatalog(current.wallets, requested); }
+        catch (error) { throw new BadRequestException(String((error as Error)?.message || 'Некорректный список кошельков')); }
+        const persisted = { ...current, wallets: combined } as JsonObject;
+        delete persisted.depositPrograms;
+        await tx.businessAuxiliaryState.update({ where: { tenantId }, data: { data: json(persisted) } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      return this.get(tenantId);
+    }
 
     const row = await this.ensureState(tenantId);
     const current = normalize(row.data);

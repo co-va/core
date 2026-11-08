@@ -75,3 +75,25 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - The canonical Postbox SMTP transport is reused, with a stable Message-ID across retries. SMTP acceptance followed by worker crash can still cause a duplicate: **at-least-once attempts, not exactly-once final delivery**.
 - No historical notification backfill, so this migration never sends old events. No Postbox secrets are added to the repo. Actual provider acceptance requires a deployed environment with credentials and a confirmed recipient.
 - **Release constraint:** staging-only until owner approval; `main` remains unchanged.
+
+## Telegram username in Professional Contacts — 2026-11-08
+
+- В `server/src/communication/communication.controller.ts` добавлен `GET /communications/telegram/contact-usernames?ids=...` под `JwtAuthGuard` и tenant из auth, без изменения основного обмена Telegram.
+- В `CommunicationService.telegramContactUsernames` выдаётся только `@username` из `CommunicationIdentity.display` по стабильному Telegram ID, который уже привязан к контакту текущего tenant в BusinessState. Идентификаторы другого tenant/неизвестные, некорректные username и нечисловые ID исключаются, лимит 40 уникальных ID.
+- Это presentation-only lookup: ID хранится по прежнему контракту, пользователь видит никнейм; Telegram-бэкенд сам получает username из сообщений, если он присутствует. Если username Telegram не предоставил, API не выдумывает его.
+- Изолированная проверка scoped-метода и контроллера (посторонний ID, дубликат, некорректный ввод, отсутствие username, JwtAuthGuard) — PASS. Изменения только в `staging`. Без деплоя/живого e2e и без изменения `main`.
+
+## History: selective entityTypes and indexed Person filter — 2026-11-08
+
+- `server/src/history/history.controller.ts` добавляет **необязательный** Query `entityTypes`, передаваемый как массив в `HistoryService.list`. Существующий `entityType` и доступ к tenant под `JwtAuthGuard,HistoryMembershipGuard` не менялись.
+- `server/src/history/history.service.ts` формирует SQL `AND personKey IN(...)` только при запросе `personKeys` вместо необязательного OR-предиката; использует существующий индекс `BusinessHistoryEvent_tenant_person_idx`. Необязательный параметризованный `entityType IN(...)` применяется лишь при переданном `entityTypes`. Остальные запросы History не ограничиваются.
+- Professional/Контакты/История запрашивает четыре используемых типа фактов. Цель — уменьшить лишнюю нагрузку и объём ответа, а не просто увеличивать тайм-аут. В реальном окружении сокращение времени ответа пока не измерялось.
+- Статические контрактные проверки tenant/auth, параметризации Prisma, сохранения лимитов и совместимости прежних запросов — PASS. `main` не тронут.
+
+## Wallet catalog incident / recovery — 2026-11-08
+
+- Canonical owner is Core `BusinessAuxiliaryState.data.wallets`, not Professional. Previous frontend `getWallets()` could enqueue `PUT /auxiliary-state/wallets` with system-only defaults on cold/partial load, overwriting full catalog. Frontend cold-read is now read-only (in `professional/staging`).
+- Core `PUT /auxiliary-state/wallets` is a **non-destructive merge by stable ID** under tenant-scoped advisory lock + serializable transaction; a partial list cannot erase existing IDs. Intentional soft-delete must set `deletedAt`, which stale PUT cannot clear; intentional platform-admin hard-delete uses `FinanceService.hardDeleteWallet()`, which removes the catalog ID in the same transaction and records `walletDeletedIds` tombstone to exclude later recovery. No changes to ledger/payment records unless the already-existing hard-delete action is invoked.
+- Authorized `POST /auxiliary-state/wallets/recover` invokes `AuxiliaryStateService.recoverWallets(tenantId)` in one tenant-locked serializable transaction. Sources: complete historical wallet objects from `DataTransferSession.before/after.BusinessAuxiliaryState.data.wallets` (restores unused/test wallets with original appearance and IDs), imported wallet facts `DataTransferFact`, and recorded `walletId+walletName` in `FinanceOperation` / `FinanceLedgerEntry` (for actual payments). Existing and deleted wallet IDs never duplicated; no ID/name inventions; no modifications to financial operations. Returns `wallets`, `recovered` and `unresolvedIds`.
+- Professional `Касса` sends POST and hydrates server result; it does not send a synthesized full-list PUT. Server deployment is required before the repair can run on live data. If no snapshot/import/finance evidence exists for an unused wallet, its original ID can only be recovered from an actual DB backup.
+- Added `tests/wallet-recovery.test.mjs` to normal `npm test`, covering partial-list merge, original IDs from snapshots, ledger names, imported names, duplicate avoidance, deletedAt and hard-delete exclusions, no fabricated identities. Both repos changed on **staging only**; neither main was touched.
