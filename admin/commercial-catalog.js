@@ -43,7 +43,11 @@ export const TOOL_MAP = Object.freeze({
     },
     {
       id: 'finance', label: 'Финансы', nesting: 'e', items: [
-        { label: 'Касса', kind: 'e', readinessKey: 'cabinet.finance.cash' },
+        { label: 'Касса', kind: 'e', nesting: 'composition', items: [
+          { label: 'Кошельки', kind: 'composition', readinessKey: 'cabinet.finance.cash.wallets' },
+          { label: 'Займы', kind: 'composition', readinessKey: 'cabinet.finance.cash.loans' },
+          { label: 'Инвестиции', kind: 'composition', readinessKey: 'cabinet.finance.cash.investments' },
+        ] },
         { label: 'ДДС', kind: 'e', readinessKey: 'cabinet.finance.dds' },
         { label: 'Z-отчёт', kind: 'e', readinessKey: 'cabinet.finance.z-report' },
       ],
@@ -116,8 +120,10 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.inventory.stocktake': ['inventory.stocktake.access'],
   'cabinet.settings.data-transfer': ['data_transfer.access'],
   'cabinet.service': ['services.access'],
-  'cabinet.finance.cash': ['finance.cash.access'],
-  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
+  'cabinet.finance.cash.wallets': ['finance.cash.access'],
+  'cabinet.finance.cash.loans': ['finance.special.access'],
+  'cabinet.finance.cash.investments': ['finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
+  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access'],
   'cabinet.finance.z-report': ['finance.z_report.access'],
   'cabinet.settings.online-booking': ['online_booking.access'],
   'cabinet.settings.notifications': ['notifications.access'],
@@ -228,7 +234,9 @@ function readinessSelect(readinessKey, byKey, className) {
 }
 
 function aggregateKeys(item) {
-  return (item.items || []).map((child) => child.readinessKey).filter(Boolean);
+  return (item.items || []).flatMap((child) => child.items?.length
+    ? aggregateKeys(child)
+    : (child.readinessKey ? [child.readinessKey] : []));
 }
 
 function aggregateStatus(item, byKey) {
@@ -238,6 +246,19 @@ function aggregateStatus(item, byKey) {
 }
 
 function childRow(child, byKey) {
+  if (Array.isArray(child.items) && child.items.length) {
+    const count = aggregateStatus(child, byKey);
+    return `<details class="admin-tool-child-composition">
+      <summary class="admin-tool-child admin-tool-child--summary">
+        <span class="admin-tool-child-mark">${escapeHtml(childKindLabel(child))}</span>
+        <span class="admin-tool-child-name">${escapeHtml(child.label)}</span>
+        <span class="admin-tool-child-type">${escapeHtml(structureLabel(child))}</span>
+        <span class="admin-tool-readiness" data-readiness-count="${count.total}" data-readiness-keys="${escapeHtml(count.keys.join('|'))}">${count.ready}/${count.total} готово</span>
+        <span class="admin-tool-child-arrow" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="admin-tool-grandchildren">${child.items.map((nested) => childRow(nested, byKey)).join('')}</div>
+    </details>`;
+  }
   const availability = child.accountToolKey
     ? `<label class="admin-tool-account-control"><input type="checkbox" data-account-tool="${escapeHtml(child.accountToolKey)}" disabled><span data-account-tool-state>—</span></label>`
     : '';
