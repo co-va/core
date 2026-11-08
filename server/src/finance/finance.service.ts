@@ -1282,11 +1282,16 @@ export class FinanceService {
         const data = objectValue(auxiliary.data);
         const wallets = Array.isArray(data.wallets) ? data.wallets : [];
         const next = wallets.filter((wallet: any) => text(wallet?.id) !== id);
-        if (next.length !== wallets.length) {
-          await tx.businessAuxiliaryState.update({
-            where: { tenantId }, data: { data: json({ ...data, wallets: next }) },
-          });
-        }
+        const removedIds = Array.isArray(data.walletDeletedIds) ? data.walletDeletedIds.map(text) : [];
+        // Explicit platform-admin hard delete permanently excludes the original
+        // ID from any future snapshot/ledger-driven recovery.
+        await tx.businessAuxiliaryState.update({
+          where: { tenantId }, data: { data: json({
+            ...data,
+            wallets: next,
+            walletDeletedIds: [...new Set([...removedIds, id])],
+          }) },
+        });
       }
     });
     return this.snapshot(tenantId);
