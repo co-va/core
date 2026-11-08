@@ -23,8 +23,10 @@ export const CABINET_READINESS_CAPABILITIES: Readonly<Record<string, readonly st
   'cabinet.loyalty.subscription': ['loyalty.subscription.access'],
   'cabinet.loyalty.referral': ['loyalty.referral.access'],
   'cabinet.loyalty.bonus': ['loyalty.bonus.access'],
-  'cabinet.finance.cash': ['finance.cash.access', 'finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
-  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'],
+  'cabinet.finance.cash.wallets': ['finance.cash.access'],
+  'cabinet.finance.cash.loans': ['finance.special.access'],
+  'cabinet.finance.cash.investments': ['finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
+  'cabinet.finance.dds': ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access'],
   'cabinet.finance.z-report': ['finance.z_report.access'],
   'cabinet.inventory.stock': ['inventory.stock.access'],
   'cabinet.inventory.movements': ['inventory.movements.access'],
@@ -62,3 +64,4 @@ export function applyReadinessGate(
       && (actor.commercialMode === 'DEMO' || actor.isTester || actor.isOwnerBook));
   return allowed ? capability : { ...capability, enabled: false, source: 'READINESS' };
 }
+

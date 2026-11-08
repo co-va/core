@@ -11,7 +11,22 @@ if (ui.includes('admin-tool-child-status">—')) throw new Error('Admin architec
 
 const childLines = ui.split('\n').filter((line) => line.includes("kind: '") && line.includes('label:'));
 for (const line of childLines) {
-  if (!line.includes('readinessKey:')) throw new Error(`Child without readinessKey: ${line.trim()}`);
+  // Cash is an E-card containing independent composition entries. The E
+  // has no extra readiness selector; every leaf inside it does.
+  if (!line.includes('readinessKey:') && !line.includes("nesting: 'composition'")) {
+    throw new Error(`Child without readinessKey: ${line.trim()}`);
+  }
+}
+if (!ui.includes("label: 'Касса', kind: 'e', nesting: 'composition'")) {
+  throw new Error('Cash E must expose composition, not a parent readiness switch');
+}
+if (!ui.includes('admin-tool-grandchildren')) {
+  throw new Error('Nested Cash composition controls must be rendered');
+}
+for (const key of ['cabinet.finance.cash.wallets', 'cabinet.finance.cash.loans', 'cabinet.finance.cash.investments']) {
+  if (!ui.includes(`readinessKey: '${key}'`) || !service.includes(`'${key}'`)) {
+    throw new Error(`Missing Cash composition status: ${key}`);
+  }
 }
 
 const uiKeys = [...ui.matchAll(/readinessKey:\s*'([^']+)'/g)].map((match) => match[1]);
