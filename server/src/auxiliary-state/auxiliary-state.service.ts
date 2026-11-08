@@ -9,6 +9,7 @@ import { mergeWalletCatalog, recoverWalletCandidates } from './wallet-recovery';
 type JsonObject = Record<string, any>;
 type AuxiliaryBundle = {
   wallets: JsonObject[];
+  walletDeletedIds: string[];
   investments: JsonObject[];
   loans: JsonObject[];
   tags: JsonObject[];
@@ -36,6 +37,7 @@ function normalize(value: unknown): AuxiliaryBundle {
   const source = objectValue(value);
   return {
     wallets: (Array.isArray(source.wallets) ? source.wallets : []).map((item) => clone(objectValue(item))),
+    walletDeletedIds: (Array.isArray(source.walletDeletedIds) ? source.walletDeletedIds : []).map(text).filter(Boolean),
     investments: (Array.isArray(source.investments) ? source.investments : []).map((item) => clone(objectValue(item))),
     loans: (Array.isArray(source.loans) ? source.loans : []).map((item) => clone(objectValue(item))),
     tags: (Array.isArray(source.tags) ? source.tags : []).map((item) => clone(objectValue(item))),
@@ -303,6 +305,7 @@ export class AuxiliaryStateService {
       ]);
       const { recovered, unresolvedIds } = recoverWalletCandidates({
         wallets: current.wallets, sessions, transfers, operations, ledger,
+        excludedIds: current.walletDeletedIds,
       });
       if (recovered.length) {
         const next = mergeWalletCatalog(current.wallets, [...current.wallets, ...recovered]);
