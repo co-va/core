@@ -132,7 +132,10 @@ export class CommunicationService {
     if (!ids.length) return { usernames: [] };
     const state = await this.businessState.get(tenantId);
     const allowed = new Set((Array.isArray(state.people) ? state.people : [])
-      .flatMap((person) => Array.isArray(person.telegrams) ? person.telegrams.map(text) : []));
+      .flatMap((person) => {
+        const telegrams = objectValue(person).telegrams;
+        return Array.isArray(telegrams) ? telegrams.map(text) : [];
+      }));
     const matched = ids.filter((id) => allowed.has(id));
     const identities = await Promise.all(matched.map((id) => this.telegramThreadIdentity(tenantId, id)));
     return {
