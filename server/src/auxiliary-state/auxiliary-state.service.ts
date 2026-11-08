@@ -321,67 +321,6 @@ export class AuxiliaryStateService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000, maxWait: 10000 });
   }
 
-  /**
-   * Restore missing wallet catalog rows from immutable historical Finance facts.
-   * Server-side, transactional, idempotent and tenant-scoped. Never creates
-   * guessed IDs or touches operations, entries, investments or other datasets.
-   */
-  async recoverWalletsFromFinanceHistory(tenantId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const state = await tx.businessAuxiliaryState.findUnique({ where: { tenantId } });
-      const original = objectValue(state?.data);
-      const wallets = Array.isArray(original.wallets) ? clone(original.wallets) as JsonObject[] : [];
-      const known = new Set(wallets.map((item) => text(item.id)).filter(Boolean));
-      const names = new Map<string, string>();
-      const collect = (idValue: unknown, nameValue: unknown) => {
-        const id = text(idValue);
-        const name = text(nameValue);
-        if (!id || !name || id === 'cash' || id === 'cashless' || known.has(id)) return;
-        names.set(id, name);
-      };
-      const operations = await tx.financeOperation.findMany({
-        where: { tenantId },
-        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
-        select: { data: true },
-      });
-      for (const operation of operations) {
-        const data = objectValue(operation.data);
-        collect(data.walletId, data.walletName);
-        collect(data.fromWalletId, data.fromWalletName);
-        collect(data.toWalletId, data.toWalletName);
-        for (const item of Array.isArray(data.allocations) ? data.allocations : []) {
-          collect(objectValue(item).walletId, objectValue(item).walletName);
-        }
-        for (const item of Array.isArray(data.walletAllocations) ? data.walletAllocations : []) {
-          collect(objectValue(item).walletId, objectValue(item).walletName);
-        }
-      }
-      const entries = await tx.financeLedgerEntry.findMany({
-        where: { tenantId, walletId: { not: '' } },
-        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
-        select: { walletId: true, data: true },
-      });
-      const referenced = new Set<string>();
-      for (const entry of entries) {
-        const id = text(entry.walletId);
-        if (id && id !== 'cash' && id !== 'cashless') referenced.add(id);
-        collect(id, objectValue(entry.data).walletName);
-      }
-      const recovered = [...names.entries()].map(([id, name]) => ({
-        id, name, photo: '', system: false,
-      }));
-      const unresolved = [...referenced].filter((id) => !known.has(id) && !names.has(id));
-      if (!recovered.length) return { wallets, recovered, unresolved };
-      const next = { ...original, wallets: [...wallets, ...recovered] };
-      await tx.businessAuxiliaryState.upsert({
-        where: { tenantId },
-        create: { tenantId, data: json(next) },
-        update: { data: json(next) },
-      });
-      return { wallets: next.wallets as JsonObject[], recovered, unresolved };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  }
-
   async updateDataset(tenantId: string, dataset: string, body: unknown) {
     const key = text(dataset);
     if (!DATASETS.has(key)) throw new BadRequestException('Неизвестный набор связанных данных');
