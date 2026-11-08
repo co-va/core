@@ -48,7 +48,7 @@ for (const [readinessKey, capabilityKey] of [
     false, readinessKey + ' must hide the entry even before legacy enforcement');
 }
 const service = readFileSync('server/src/saas-access/saas-access.service.ts', 'utf8');
-assert.equal((service.match(/const readiness = await this.prisma.adminToolReadiness.findMany\\(\\);/g) || []).length,
+assert.equal(service.split('const readiness = await this.prisma.adminToolReadiness.findMany();').length - 1,
   2, 'single capability and full account access must both read the same Tools readiness');
 assert.doesNotMatch(service, /investmentProductReadiness|applyInvestmentProductReadinessGate/,
   'commercial-product status must not affect instrument readiness');
