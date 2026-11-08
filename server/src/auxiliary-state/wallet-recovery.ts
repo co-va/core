@@ -31,6 +31,7 @@ export function recoverWalletCandidates(input: {
 }): { recovered: Wallet[]; unresolvedIds: string[] } {
   const existing = new Set(arr(input.wallets).map((row) => text(row?.id)));
   const archived = new Map<string, Wallet>();
+  const intentionallyDeleted = new Set<string>();
   const recordedNames = new Map<string, string>();
   const observed = new Set<string>();
   const eligible = (id: string) => id && id !== 'cash' && id !== 'cashless' && !existing.has(id);
@@ -45,8 +46,10 @@ export function recoverWalletCandidates(input: {
     if (!eligible(id)) return;
     if (value.deletedAt) {
       archived.delete(id);
+      intentionallyDeleted.add(id);
       return;
     }
+    intentionallyDeleted.delete(id);
     if (name) archived.set(id, { ...value, id, name });
   };
   // DataTransferSession has full copies of BusinessAuxiliaryState before
@@ -81,11 +84,11 @@ export function recoverWalletCandidates(input: {
   const candidates = new Map<string, Wallet>();
   // Historical full snapshots outrank partial transaction labels.
   for (const [id, row] of archived) candidates.set(id, row);
-  for (const [id, name] of recordedNames) if (!candidates.has(id)) {
+  for (const [id, name] of recordedNames) if (!candidates.has(id) && !intentionallyDeleted.has(id)) {
     candidates.set(id, { id, name, photo: '', system: false });
   }
   return {
     recovered: [...candidates.values()],
-    unresolvedIds: [...observed].filter((id) => !candidates.has(id)),
+    unresolvedIds: [...observed].filter((id) => !candidates.has(id) && !intentionallyDeleted.has(id)),
   };
 }
