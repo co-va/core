@@ -234,14 +234,20 @@ function readinessSelect(readinessKey, byKey, className) {
 }
 
 function aggregateKeys(item) {
-  return (item.items || []).flatMap((child) => child.items?.length
-    ? aggregateKeys(child)
-    : (child.readinessKey ? [child.readinessKey] : []));
+  // Parent count follows its immediate children: Finance is E × 3, whereas
+  // Cash is Composition × 3. A nested E counts ready when any member is ready.
+  return (item.items || []).map((child) => child.items?.length
+    ? aggregateKeys(child).join(',')
+    : child.readinessKey).filter(Boolean);
+}
+
+function isReadinessGroupReady(keyGroup, byKey) {
+  return String(keyGroup).split(',').some((key) => readinessValue(byKey.get(key)) === 'READY');
 }
 
 function aggregateStatus(item, byKey) {
   const keys = aggregateKeys(item);
-  const ready = keys.filter((key) => readinessValue(byKey.get(key)) === 'READY').length;
+  const ready = keys.filter((key) => isReadinessGroupReady(key, byKey)).length;
   return { ready, total: keys.length, keys };
 }
 
@@ -325,7 +331,7 @@ function hydrateReadiness(root, items = []) {
   root.querySelectorAll('[data-readiness-count]').forEach((node) => {
     const total = Number(node.dataset.readinessCount || 0);
     const keys = String(node.dataset.readinessKeys || '').split('|').filter(Boolean);
-    const ready = keys.filter((key) => readinessValue(byKey.get(key)) === 'READY').length;
+    const ready = keys.filter((key) => isReadinessGroupReady(key, byKey)).length;
     node.textContent = `${ready}/${total} готово`;
   });
 }
