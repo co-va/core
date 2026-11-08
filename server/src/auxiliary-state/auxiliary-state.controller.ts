@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { NotificationEventService } from '../notification/notification-event.service';
@@ -51,6 +51,11 @@ export class AuxiliaryStateController {
   async getScope(@Req() request: AuthenticatedRequest, @Param('scope') scope: string) {
     const bundle = await this.auxiliaryState.get(request.auth!.tenantId);
     return scopedBundle(bundle as AuxiliaryBundle, String(scope || '').trim());
+  }
+
+  @Post('wallets/recover')
+  recoverWallets(@Req() request: AuthenticatedRequest) {
+    return this.auxiliaryState.recoverWallets(request.auth!.tenantId);
   }
 
   @Put(':dataset')
