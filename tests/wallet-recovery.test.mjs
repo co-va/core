@@ -60,6 +60,15 @@ const unresolved = recoverWalletCandidates(args({
 assert.deepEqual(unresolved.recovered, []);
 assert.deepEqual(unresolved.unresolvedIds, ['unknown-id'], 'never invent a wallet name');
 
+assert.deepEqual(recoverWalletCandidates(args({
+  sessions: [{ before: snapshot([former]), after: snapshot([former]) }],
+  excludedIds: [former.id],
+})).recovered, [], 'platform hard-deleted ID never restored');
+
+const notUndeleted = mergeWalletCatalog([...system, { ...former, deletedAt: '2026-11-08' }], [...system, former]);
+assert.equal(notUndeleted.find((row) => row.id === former.id).deletedAt, '2026-11-08',
+  'partial PUT may not undo a soft delete');
+
 assert.deepEqual(recoverWalletCandidates(args()).recovered, [], 'no evidence -> no invented wallets');
 assert.deepEqual(recoverWalletCandidates(args({ wallets: [...system, former], sessions: [{ before: snapshot([former]), after: snapshot([former]) }] })).recovered, [], 'already present -> no duplication');
 
