@@ -242,3 +242,21 @@ button,input,select,textarea{font:inherit}
 .admin-delete-x .admin-delete-copy{font-size:14px}
 .admin-delete-x .admin-delete-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .admin-delete-x .admin-delete-actions .admin-button{min-width:0;font-size:14px}
+
+/* Mobile tool registry: names and actual controls only, no technical F/E letters. */
+@media(max-width:760px){
+  .admin-mobile-app .admin-tool-mark,.admin-mobile-app .admin-tool-child-mark{display:none}
+  .admin-mobile-app .admin-tool-row--leaf,
+  .admin-mobile-app .admin-tool-summary,
+  .admin-mobile-app .admin-tool-child{
+    grid-template-columns:minmax(0,1fr) minmax(90px,max-content) 18px;
+    gap:6px;min-width:0
+  }
+  .admin-mobile-app .admin-tool-name,.admin-mobile-app .admin-tool-child-name{grid-column:1}
+  .admin-mobile-app .admin-tool-readiness,
+  .admin-mobile-app .admin-tool-readiness-editor{grid-column:2}
+  .admin-mobile-app .admin-tool-arrow,.admin-mobile-app .admin-tool-child-arrow{grid-column:3}
+  .admin-mobile-app .admin-tool-child-type:has(.admin-tool-account-control){
+    grid-column:1/-1;grid-row:auto
+  }
+}
