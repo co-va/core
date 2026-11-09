@@ -709,8 +709,14 @@ function renderRegistryLeaf(item, resolved, readonly = false) {
 function renderRegistrySection(item, resolved, readonly = false) {
   const children = Array.isArray(item.items) ? item.items : [];
   if (!children.length) return renderRegistryLeaf(item, resolved, readonly);
+  const sharedKey = readonly ? '' : String(item.capabilityKey || '');
+  const shared = sharedKey ? state.capabilities.find((capability) => capability.key === sharedKey) : null;
+  const sharedControl = shared
+    ? '<div class="admin-capability-order-row">' + capabilityEditor(shared, resolved.get(shared.key)) + '</div>'
+    : '';
   return '<details class="admin-section"><summary><strong>' + escapeHtml(item.label) +
     '</strong> · ' + children.length + '</summary>' +
+    sharedControl +
     children.map((child) => renderRegistryLeaf(child, resolved, readonly)).join('') +
     '</details>';
 }
