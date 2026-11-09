@@ -54,8 +54,9 @@ export class ProcedureService {
     const assignment = this.assignmentFor(procedure, workplaceId);
     const assigned = assignment?.cost;
     const base = procedure?.cost;
-    const hasAssigned = assigned && typeof assigned === 'object' && !assigned.free && (
-      hasPriceValue(assigned.amount)
+    const hasAssigned = assigned && typeof assigned === 'object' && (
+      assigned.free === true
+      || hasPriceValue(assigned.amount)
       || hasPriceValue(assigned.from)
       || hasPriceValue(assigned.to)
     );
@@ -89,6 +90,7 @@ export class ProcedureService {
     const result: JsonObject[] = [];
     for (const value of arrayValue(proceduresValue)) {
       const procedure = objectValue(value);
+      if (procedure.deletedAt) continue;
       const workplaces = arrayValue(procedure.workplaces)
         .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id)))
         .map((assignment) => {
@@ -195,7 +197,7 @@ export class ProcedureService {
 
     return ids.map((id) => {
       const procedure = catalog.find((item) => text(item?.id) === id);
-      if (!procedure || !this.assignmentFor(procedure, workplaceId)) {
+      if (!procedure || procedure.deletedAt || !this.assignmentFor(procedure, workplaceId)) {
         throw new BadRequestException('Одна из процедур недоступна в этом рабочем пространстве на выбранную дату');
       }
       const groupEnabled = procedure?.groupBooking?.enabled === true;
