@@ -62,7 +62,9 @@ button,input,select,textarea{font:inherit}
 @media(max-width:900px){.admin-invite-tools-head{display:grid}.admin-invite-tool-group{grid-template-columns:1fr}.admin-invite-primary-actions{justify-content:stretch}.admin-invite-primary-actions .admin-button{width:100%}}
 
 /* Platform Admin: responsive navigation and accessible control hierarchy. */
-.admin-button:hover:not(:disabled){background:#41484f;border-color:#41484f}
+.admin-button:not(.secondary):not(.danger):hover:not(:disabled){background:#41484f;border-color:#41484f}
+.admin-button.danger:hover:not(:disabled){background:#f8eeee;border-color:#c78d89;color:#943e37}
+.admin-delete-actions .admin-button.danger:hover:not(:disabled){background:#8b302c;border-color:#8b302c;color:#fff}
 .admin-button.secondary:hover:not(:disabled){background:#f1f3f4;border-color:#bec6cb}
 .admin-nav button:focus-visible,.admin-button:focus-visible,.admin-field :is(input,select,textarea):focus-visible{outline:2px solid #737f88;outline-offset:3px}
 .admin-nav .admin-tool-subnav button.is-active{background:#555e66;color:#fff}
