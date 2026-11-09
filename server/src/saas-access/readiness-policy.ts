@@ -58,10 +58,18 @@ export function applyReadinessGate(
   if (!key) return capability;
   // Readiness is the authoritative visibility policy for all commercial modes.
   // Old "enforced" markers are intentionally ignored: NOT_READY must never leak.
-  const row = rows.find((item) => item.key === key);
-  const allowed = row?.status === 'READY'
-    || (row?.status === 'TESTING'
-      && (actor.commercialMode === 'DEMO' || actor.isTester || actor.isOwnerBook));
+  // The Service is a shared entrypoint for Procedures and Products. Keep its
+  // existing services.access entitlement, but open the entrypoint when at
+  // least one existing mode is ready for this actor. Individual mode tabs
+  // remain owned by Professional; Core must not introduce a second service.
+  const serviceModes = ['cabinet.service.procedures', 'cabinet.service.products'];
+  const modeRows = key === 'cabinet.service'
+    ? rows.filter((item) => serviceModes.includes(item.key))
+    : [];
+  const applicable = modeRows.length ? modeRows : rows.filter((item) => item.key === key);
+  const allowed = applicable.some((row) => row.status === 'READY'
+    || (row.status === 'TESTING'
+      && (actor.commercialMode === 'DEMO' || actor.isTester || actor.isOwnerBook)));
   return allowed ? capability : { ...capability, enabled: false, source: 'READINESS' };
 }
 

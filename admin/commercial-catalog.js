@@ -29,7 +29,12 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Рабочие пространства', kind: 'composition', readinessKey: 'cabinet.profile.workspaces' },
       ],
     },
-    { id: 'service', label: 'Сервис', readinessKey: 'cabinet.service' },
+    {
+      id: 'service', label: 'Сервис', nesting: 'modes', capabilityKey: 'services.access', items: [
+        { label: 'Процедуры', kind: 'mode', readinessKey: 'cabinet.service.procedures' },
+        { label: 'Товары', kind: 'mode', readinessKey: 'cabinet.service.products' },
+      ],
+    },
     { id: 'chat', label: 'Чат', readinessKey: 'cabinet.chat' },
     {
       id: 'loyalty', label: 'Лояльность', nesting: 'e', items: [
