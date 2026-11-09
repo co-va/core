@@ -31,6 +31,14 @@ The `server/src/**`, `server/prisma/**`, server migrations and database schema r
 
 Do not remove server routes, DB columns, notifications, records or migrations as part of frontend cleanup. Do not migrate production data during this cleanup.
 
+## Permanent staging Admin preview — 2026-11-09
+- Restored the original read-only gateway from PR #820/#821 after it was removed during platform-only cleanup on 2026-11-05.
+- Amvera default host `va-app-volokovykh.msk1.amvera.tech` is the **preview hostname**, not the legacy `va-app-temp-volokovykh.msk1.amvera.tech` redirect.
+- On this exact hostname, `/` redirects to `/admin/`. Admin and landing browser assets (and direct browser dependencies) are fetched from `co-va/core/staging` with no-store. Backend API calls continue to use the deployed Core backend.
+- Preview is read-only for mutations except the existing login bootstrap; Admin document registry sync is an explicit no-op. Production host routing, data model, and the separate Professional/User apps are not changed.
+- The gateway must be part of the **deployed Core runtime** before the temporary hostname works; a `staging` Git commit alone cannot alter a Core runtime deployed from `main`. After the infrastructure gateway is deployed once, later frontend edits in `staging` can be previewed without each design change reaching `main`.
+- No release/merge to `main` without owner authorization. Do not remove this gateway during future platform-only cleanup; it does not restore detached application frontends.
+
 ## Core frontend surface
 Only platform Admin (`admin/**`), public platform landing (`landing/**`) and the strict direct frontend dependencies in `core/**`, `ui/**` and `css/style.css` may be served by Core.
 `scripts/build-pages.mjs` uses an explicit allowlist; it must never package a Professional/User app bundle, Journal, guest Booking UI or PWA.

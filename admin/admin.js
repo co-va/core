@@ -221,7 +221,7 @@ function renderShell() {
   app.innerHTML = `
     <div class="admin-shell">
       <aside class="admin-sidebar">
-        <div class="admin-brand">Панель <span>управления</span></div>
+        <div class="admin-brand">ACVERO<span>Администратор</span></div>
         <nav class="admin-nav">
           <button data-section="overview">Обзор</button>
           <button data-section="owner" class="owner-link">Моё пространство</button>
@@ -232,7 +232,7 @@ function renderShell() {
         <div class="admin-sidebar-foot">Управление системой</div>
       </aside>
       <header class="admin-toolbar">
-        <h1 data-toolbar-title>Пользователи</h1>
+        <div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>
         <div class="admin-toolbar-user"><span>${escapeHtml(state.admin?.account?.email || '')}</span><button class="admin-button secondary" data-enable-admin-push>Включить PUSH</button><button class="admin-button secondary" data-logout>Выйти</button></div>
       </header>
       <main class="admin-main"><div class="admin-content" data-content></div></main>
@@ -325,7 +325,7 @@ function renderOwnerBook() {
     <div class="admin-heading"><div><h2>Моё пространство</h2><p>Личное рабочее пространство администратора остаётся отдельным от списка пользователей.</p></div></div>
     <div class="admin-card" style="padding:20px">
       <strong>${escapeHtml(owner.ownerProfile?.name || owner.tenantName)}</strong>
-      <p style="color:#817a74">${escapeHtml(owner.ownerProfile?.email || '')}</p>
+      <p style="color:var(--muted)">${escapeHtml(owner.ownerProfile?.email || '')}</p>
       <button class="admin-button" data-edit-owner>Настроить доступы</button>
     </div>`;
   content.querySelector('[data-edit-owner]').addEventListener('click', () => openAccessDrawer(owner.tenantId));
