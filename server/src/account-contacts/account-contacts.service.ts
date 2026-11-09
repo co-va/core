@@ -33,7 +33,84 @@ function profilePhones(profile: any) {
   ].map(canonicalPhone).filter(Boolean))];
 }
 
-function profileCard(profile: any) {
+
+function publicContactCard(appearanceValue: unknown, fieldValues: Array<{ value: string; label: string; text: string }>, photo: unknown, position: string) {
+  const saved = objectValue(appearanceValue);
+  const allowed = new Set(fieldValues.map((field) => field.value));
+  const appearance = {
+    ...saved,
+    ...(Array.isArray(saved.lines) ? {
+      lines: saved.lines.map((item: unknown) => {
+        const line = objectValue(item);
+        return { ...line, field: allowed.has(text(line.field)) ? text(line.field) : '' };
+      }),
+    } : {}),
+  };
+  const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
+  return { appearance, fields: fieldValues.filter((field) => visible.has(field.value)), photo: text(photo), photoPosition: position };
+}
+
+function publicDiscountText(value: unknown) {
+  const percent = Number(objectValue(value).percent);
+  return Number.isFinite(percent) && percent > 0 ? String(percent) + '%' : '';
+}
+
+function publicContactField(value: string, label: string, content: unknown) {
+  return { value, label, text: text(content) };
+}
+
+function publicWorkTime(workplace: any) {
+  const from = text(workplace?.from), to = text(workplace?.to);
+  return from || to ? (from || '—') + ' - ' + (to || '—') : '';
+}
+
+function publicProfileFields(profile: any, workplaces: any[] = [], discount: unknown = null) {
+  const first = workplaces[0] || {};
+  const name = [text(profile?.name), text(profile?.surname)].filter(Boolean).join(' ');
+  return [
+    publicContactField('workTime', 'График', publicWorkTime(first)),
+    publicContactField('workplaceName', 'Рабочее пространство', first.name),
+    publicContactField('name', 'Имя и фамилия', name),
+    publicContactField('firstName', 'Имя', profile?.name),
+    publicContactField('surname', 'Фамилия', profile?.surname),
+    publicContactField('profession', 'Профессия', profile?.profession),
+    publicContactField('discount', 'Скидка', publicDiscountText(discount)),
+    publicContactField('phone', 'Телефон', arrayValue(profile?.phones)[0] || profile?.phone),
+    publicContactField('email', 'Email', arrayValue(profile?.emails)[0]),
+    publicContactField('telegram', 'Telegram', arrayValue(profile?.telegrams)[0]),
+    publicContactField('experience', 'Опыт', profile?.experience),
+    publicContactField('about', 'О себе', profile?.about),
+    publicContactField('professionAbout', 'О профессии', profile?.professionAbout),
+    publicContactField('workplaceCount', 'Количество пространств', workplaces.length ? String(workplaces.length) : ''),
+  ];
+}
+
+function publicWorkplaceFields(workplace: any, profile: any, discount: unknown = null) {
+  const name = [text(profile?.name), text(profile?.surname)].filter(Boolean).join(' ');
+  return [
+    publicContactField('workTime', 'График', publicWorkTime(workplace)),
+    publicContactField('workplaceName', 'Рабочее пространство', workplace?.name),
+    publicContactField('city', 'Город', workplace?.city),
+    publicContactField('address', 'Адрес', workplace?.address),
+    publicContactField('workplacePhone', 'Телефон пространства', workplace?.phone),
+    publicContactField('currency', 'Валюта', workplace?.currency),
+    publicContactField('workplaceAbout', 'О рабочем пространстве', workplace?.about),
+    publicContactField('discount', 'Скидка', publicDiscountText(discount)),
+    publicContactField('profileName', 'Имя и фамилия', name),
+    publicContactField('profileFirstName', 'Имя', profile?.name),
+    publicContactField('profileSurname', 'Фамилия', profile?.surname),
+    publicContactField('profession', 'Профессия', profile?.profession),
+    publicContactField('profilePhone', 'Телефон профиля', arrayValue(profile?.phones)[0] || profile?.phone),
+    publicContactField('profileEmail', 'Email', arrayValue(profile?.emails)[0]),
+    publicContactField('profileTelegram', 'Telegram', arrayValue(profile?.telegrams)[0]),
+    publicContactField('profileExperience', 'Опыт', profile?.experience),
+    publicContactField('profileAbout', 'О себе', profile?.about),
+    publicContactField('profileProfessionAbout', 'О профессии', profile?.professionAbout),
+  ];
+}
+
+function profileCard(profile: any, workplaces: any[] = [], discount: unknown = null) {
+  const position = String(Number(profile?.photoCropX ?? 50)) + '% ' + String(Number(profile?.photoCropY ?? 50)) + '%';
   return {
     tenantId: text(profile?.tenantId),
     profile: {
@@ -46,6 +123,7 @@ function profileCard(profile: any) {
       profession: text(profile?.profession),
       about: text(profile?.about),
       cardAppearance: objectValue(profile?.cardAppearance),
+      card: publicContactCard(profile?.cardAppearance, publicProfileFields(profile, workplaces, discount), profile?.photo, position),
     },
   };
 }
@@ -67,7 +145,9 @@ function recordMatchesAccount(dataValue: unknown, accountId: string, accountPhon
   return participants.some((person) => participantMatchesAccount(person, accountId, accountPhone));
 }
 
-function workplaceCard(workplace: any) {
+
+function workplaceCard(workplace: any, profile: any = {}, discount: unknown = null) {
+  const position = String(Number(workplace?.photoCropX ?? 50)) + '% ' + String(Number(workplace?.photoCropY ?? 50)) + '%';
   return {
     key: text(workplace?.key),
     name: text(workplace?.name),
@@ -80,6 +160,7 @@ function workplaceCard(workplace: any) {
     links: arrayValue(workplace?.links),
     about: text(workplace?.about),
     cardAppearance: objectValue(workplace?.cardAppearance),
+    card: publicContactCard(workplace?.cardAppearance, publicWorkplaceFields(workplace, profile, discount), workplace?.photo, position),
   };
 }
 
@@ -507,10 +588,26 @@ export class AccountContactsService {
     for (const profile of profiles) {
       if (!byTenant.has(profile.tenantId)) byTenant.set(profile.tenantId, profile);
     }
-    const discounts = await this.accountDiscounts(account.id, account.phone, visible);
+    const [discounts, workplaces] = await Promise.all([
+      this.accountDiscounts(account.id, account.phone, visible),
+      this.prisma.workplace.findMany({
+        where: { tenantId: { in: visible }, deletedAt: null },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      }),
+    ]);
+    const byWorkplaceTenant = new Map<string, any[]>();
+    for (const workplace of workplaces) {
+      const items = byWorkplaceTenant.get(workplace.tenantId) || [];
+      items.push(workplace);
+      byWorkplaceTenant.set(workplace.tenantId, items);
+    }
     return visible.map((tenantId) => {
       const profile = byTenant.get(tenantId);
-      return profile ? { ...profileCard(profile), discount: discounts.get(tenantId) || null } : null;
+      const discount = discounts.get(tenantId) || null;
+      return profile ? {
+        ...profileCard(profile, byWorkplaceTenant.get(tenantId) || [], discount),
+        discount,
+      } : null;
     }).filter(Boolean);
   }
 
@@ -549,24 +646,23 @@ export class AccountContactsService {
         return text(data.workplaceId || data.workplaceKey);
       })
       .filter(Boolean))];
-    const [workplaces, programs] = await Promise.all([
-      workplaceKeys.length
-        ? this.prisma.workplace.findMany({
-            where: { tenantId: context.tenantId, key: { in: workplaceKeys }, deletedAt: null },
-            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-          })
-        : [],
+    const [allWorkplaces, programs, discounts] = await Promise.all([
+      this.prisma.workplace.findMany({
+        where: { tenantId: context.tenantId, deletedAt: null },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      }),
       this.programSummaries(context.tenantId, context.person),
+      this.accountDiscounts(context.account.id, context.account.phone, [context.tenantId]),
     ]);
-
-    const discounts = await this.accountDiscounts(
-      context.account.id, context.account.phone, [context.tenantId],
-    );
+    const discount = discounts.get(context.tenantId) || null;
+    const connectedKeys = new Set(workplaceKeys);
     return {
-      ...profileCard(context.profile),
+      ...profileCard(context.profile, allWorkplaces, discount),
       connected: true,
-      discount: discounts.get(context.tenantId) || null,
-      workplaces: workplaces.map(workplaceCard),
+      discount,
+      workplaces: allWorkplaces
+        .filter((workplace) => connectedKeys.has(text(workplace.key)))
+        .map((workplace) => workplaceCard(workplace, context.profile, discount)),
       programs,
     };
   }
