@@ -95,19 +95,15 @@ function startAdminPolling() {
 }
 
 function renderConnectionFailure(message = 'Не удалось связаться с сервером.') {
-  app.innerHTML = `
-    <main class="admin-login">
-      <section class="admin-login-card">
-        <h1>Нет соединения с сервером</h1>
-        <p>Сохранённый вход не удалён. Повтори проверку, когда сервер ответит.</p>
-        <p class="admin-error" data-connection-error>${escapeHtml(message)}</p>
-        <div class="admin-form">
-          <button class="admin-button" type="button" data-retry-session>Повторить соединение</button>
-          <button class="admin-button secondary" type="button" data-other-account>Войти заново</button>
-        </div>
-      </section>
-    </main>`;
-
+  cleanupMobileShell?.();
+  app.innerHTML = v2Sticker({
+    title: 'Нет соединения с сервером',
+    body: '<p>Сохранённый вход не удалён. Повторите соединение.</p>'
+      + '<p class="auth-error" data-connection-error role="alert">' + escapeHtml(message) + '</p>'
+      + '<button type="button" class="v2-sticker-link" data-other-account>Войти заново</button>',
+    action: '<button class="ui-button" type="button" data-retry-session>Повторить соединение</button>',
+    className: 'v2-sticker-screen--auth admin-auth-screen shared-login-screen',
+  });
   const button = app.querySelector('[data-retry-session]');
   const error = app.querySelector('[data-connection-error]');
   button.addEventListener('click', async () => {
