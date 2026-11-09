@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma.service';
 
 type JsonObject = Record<string, any>;
 type HistoryProcedureRow = { entityId: string; status: string; data: unknown };
-type BookingPrice = { minimum: number; variable: boolean; free: boolean };
+type BookingPrice = { minimum: number; variable: boolean; free: boolean; display: string };
 
 function objectValue(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -64,25 +64,34 @@ export class ProcedureService {
   }
 
   private costFor(procedure: JsonObject, workplaceId: string) {
-    const cost = this.costSourceFor(procedure, workplaceId);
-    if (cost == null || cost?.free) return '';
-    if (typeof cost === 'number' || typeof cost === 'string') return cost;
-    return cost.amount ?? cost.from ?? '';
+    const price = this.bookingPriceFor(procedure, workplaceId);
+    return price.free ? '' : price.minimum;
   }
 
+  // Canonical price for all booking contexts. Display is prepared by the server,
+  // never inferred from a number in a booking frontend.
   private bookingPriceFor(procedure: JsonObject, workplaceId: string): BookingPrice {
     const cost = this.costSourceFor(procedure, workplaceId);
-    if (cost == null || cost?.free) return { minimum: 0, variable: false, free: true };
-    if (typeof cost === 'number' || typeof cost === 'string') {
-      return { minimum: priceNumber(cost), variable: false, free: false };
+    if (cost == null || cost?.free) {
+      return { minimum: 0, variable: false, free: true, display: 'Бесплатно' };
     }
-    if (hasPriceValue(cost.amount)) {
-      return { minimum: priceNumber(cost.amount), variable: false, free: false };
+
+    const source = typeof cost === 'object' ? cost : { mode: 'amount', amount: cost };
+    const mode = text(source.mode);
+    const hasAmount = hasPriceValue(source.amount);
+    const hasFrom = hasPriceValue(source.from);
+    const hasTo = hasPriceValue(source.to);
+    const explicitFrom = mode === 'from' || mode === 'from-to';
+    const variable = explicitFrom || (mode !== 'amount' && (hasTo || (!hasAmount && hasFrom)));
+    const minimum = priceNumber(explicitFrom
+      ? (hasFrom ? source.from : source.amount)
+      : (hasAmount ? source.amount : source.from));
+
+    if (variable && minimum === 0) {
+      return { minimum, variable, free: false, display: 'Цена уточняется' };
     }
-    if (hasPriceValue(cost.from)) {
-      return { minimum: priceNumber(cost.from), variable: true, free: false };
-    }
-    return { minimum: 0, variable: hasPriceValue(cost.to), free: false };
+    const formatted = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(minimum);
+    return { minimum, variable, free: false, display: `${variable ? 'от ' : ''}${formatted} ₽` };
   }
 
   publicBookingCatalog(proceduresValue: unknown, workplaceIds: string[]): JsonObject[] {
@@ -201,11 +210,13 @@ export class ProcedureService {
         throw new BadRequestException('Одна из процедур недоступна в этом рабочем пространстве на выбранную дату');
       }
       const groupEnabled = procedure?.groupBooking?.enabled === true;
+      const price = this.bookingPriceFor(procedure, workplaceId);
       return {
         id,
         name: text(procedure?.name),
         duration: Math.max(0, Number(procedure?.duration || 0)),
-        cost: this.costFor(procedure, workplaceId),
+        cost: price.free ? '' : price.minimum,
+        priceText: price.display,
         groupBooking: {
           enabled: groupEnabled,
           capacity: groupEnabled ? Math.max(2, Math.min(999, Math.floor(Number(procedure?.groupBooking?.capacity) || 2))) : 1,
