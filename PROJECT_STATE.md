@@ -115,3 +115,12 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - `NOT_READY` скрывает элемент у всех; `TESTING` показывает DEMO/тестировщикам/owner; `READY` показывает при наличии существующего разрешения. Проверка едина в `/saas-access/me` и серверном `resolveCapability`.
 - В Professional `Касса` остаётся доступной при любом разрешённом вложении, включая ситуацию «разрешены только Займы», и не подменяется названием «Инвестиции». Остальные экраны `ДДС` и `Z-отчёт` не перестраиваются.
 - Всё работается в `core/staging` и `professional/staging`. До зелёных CI и выпуска в `core/main` новая карта не считается опубликованной.
+
+## Procedure / services: deleted booking and per-workplace free price — 2026-11-10
+
+- The backend keeps the canonical technical domain `Procedure`, `BusinessOperationalState.procedures`, `ProcedureService.snapshots` and immutable Record history. Professional UI uses the display label «Услуги»; no data-key or schema migration.
+- `server/src/procedure/procedure.service.ts::publicBookingCatalog` now excludes any current procedure with `deletedAt`. Such a service cannot appear in the public booking catalog.
+- `ProcedureService.snapshots` rejects current deleted procedures even when an outdated guest/client attempts booking with their ID; historical catalog snapshots predating deletion remain available for past Record workflows.
+- `costSourceFor` prioritizes the workspace's explicit `cost.free === true` over a nonzero global/base price, including when the workspace cost has no numeric fields. Other workspaces preserve their prices; missing workspace overrides still inherit the base price.
+- Regression test: `tests/procedure-booking-contract.test.mjs`, integrated into the existing root `npm test` (no new CI workflow). Checks deleted filtering, booking rejection, free vs paid workplace, inherited base price, missing assignment, historical snapshot.
+- Only `co-va/core/staging` changed. No changes to the Professional/User frontend, `main`, DB/Prisma, historical Record rows or external APIs. Live API/Amvera execution still requires deployed Core release; isolated contract tests do not prove production behavior.
