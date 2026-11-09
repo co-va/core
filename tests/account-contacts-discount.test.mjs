@@ -242,6 +242,100 @@ assert.equal(assigned[0].discountPercent, 0, 'Closed program cannot advertise an
 assert.match(service, /depositPriceSourcesFromRows\(rows, personKey, new Date\(\)\)/,
   'Program discount and Person discount use one existing canonical source');
 
+
+const profileProjection = between(service, 'function publicContactCard(', 'function participantMatchesAccount(');
+const workplaceProjection = between(service, 'function workplaceCard(', '// A card is a projection of a SAVED Professional appearance');
+const cardRuntime = runInNewContext(
+  stripTypeScriptTypes(accountHelpers + '\n' + profileProjection + '\n' + workplaceProjection, { mode: 'strip' })
+    + '\n({ profileCard, workplaceCard, publicContactCard })',
+);
+const publicProfile = {
+  tenantId: 'pro-a', name: 'Вера', surname: 'Петрова', phone: '79990000111',
+  phones: ['79990000111'], emails: ['owner@example.test'], telegrams: ['@owner'],
+  profession: 'Парикмахер', about: 'Работаю с цветом', professionAbout: 'Колористика',
+  experience: 'Более 20 лет', photo: 'owner.jpg', photoCropX: 33, photoCropY: 61,
+  internalRevenue: 900000,
+  cardAppearance: {
+    gradient: { from: '#111111', to: '#999999', angle: 30 },
+    lines: [
+      { field: 'discount', zone: 'right', size: 'xl', bold: true },
+      { field: 'name', zone: 'full', size: 'l' },
+      { field: 'email', zone: 'left', color: 'white' },
+      { field: 'professionAbout', zone: 'full' },
+      { field: 'internalRevenue', zone: 'full' },
+    ],
+  },
+};
+const publicWorkplace = {
+  tenantId: 'pro-a', key: 'space-a', name: 'Кабинет', city: 'Москва',
+  address: 'Тверская, 7', phone: '+79990000222', currency: 'RUB',
+  from: '10:00', to: '19:00', about: 'Тихое пространство',
+  photo: 'room.jpg', photoCropX: 40, photoCropY: 55,
+  privateCost: 200000,
+  cardAppearance: {
+    lines: [
+      { field: 'discount', zone: 'right', size: 'l' },
+      { field: 'address', zone: 'full', size: 'm' },
+      { field: 'profileEmail', zone: 'left' },
+      { field: 'workTime', zone: 'full' },
+      { field: 'privateCost', zone: 'left' },
+    ],
+  },
+};
+const ownDiscount = { percent: 17.5, source: 'personal', programName: '' };
+const projectedProfile = plain(cardRuntime.profileCard(publicProfile, [publicWorkplace], ownDiscount));
+const projectedWorkplace = plain(cardRuntime.workplaceCard(publicWorkplace, publicProfile, ownDiscount));
+assert.equal(projectedProfile.profile.card.fields.find((f) => f.value === 'discount').text, '17.5%');
+assert.equal(projectedWorkplace.card.fields.find((f) => f.value === 'discount').text, '17.5%');
+assert.equal(projectedProfile.profile.card.photoPosition, '33% 61%');
+assert.equal(projectedWorkplace.card.photoPosition, '40% 55%');
+assert.deepEqual(projectedProfile.profile.card.appearance.lines.slice(0, 2), publicProfile.cardAppearance.lines.slice(0, 2),
+  'Public profile preserves exact saved placement and style');
+assert.deepEqual(projectedWorkplace.card.appearance.lines.slice(0, 2), publicWorkplace.cardAppearance.lines.slice(0, 2),
+  'Workplace preserves exact saved placement and style');
+assert.equal(projectedProfile.profile.card.fields.find((f) => f.value === 'email').text, 'owner@example.test');
+assert.equal(projectedProfile.profile.card.fields.find((f) => f.value === 'professionAbout').text, 'Колористика');
+assert.equal(projectedWorkplace.card.fields.find((f) => f.value === 'address').text, 'Тверская, 7');
+assert.equal(projectedWorkplace.card.fields.find((f) => f.value === 'profileEmail').text, 'owner@example.test');
+assert.equal(projectedWorkplace.card.fields.find((f) => f.value === 'workTime').text, '10:00 - 19:00');
+assert.equal(projectedProfile.profile.card.appearance.lines[4].field, '', 'Unknown private field is blanked');
+assert.equal(projectedWorkplace.card.appearance.lines[4].field, '', 'Unknown workplace field is blanked');
+assert.doesNotMatch(JSON.stringify(projectedProfile.profile.card), /internalRevenue|900000|privateCost/i);
+assert.doesNotMatch(JSON.stringify(projectedWorkplace.card), /privateCost|200000|internalRevenue/i);
+assert.equal(plain(cardRuntime.profileCard(publicProfile, [publicWorkplace], null)).profile.card.fields
+  .find((f) => f.value === 'discount').text, '', 'Missing discount remains empty on profile');
+assert.equal(plain(cardRuntime.workplaceCard(publicWorkplace, publicProfile, null)).card.fields
+  .find((f) => f.value === 'discount').text, '', 'Missing discount remains empty on workplace');
+
+// The field registries match every public value the Professional layout editor can select.
+const profileKeys = [
+  'workTime', 'workplaceName', 'name', 'firstName', 'surname', 'profession',
+  'discount', 'phone', 'email', 'telegram', 'experience', 'about',
+  'professionAbout', 'workplaceCount',
+];
+const workplaceKeys = [
+  'workTime', 'workplaceName', 'city', 'address', 'workplacePhone', 'currency',
+  'workplaceAbout', 'discount', 'profileName', 'profileFirstName',
+  'profileSurname', 'profession', 'profilePhone', 'profileEmail',
+  'profileTelegram', 'profileExperience', 'profileAbout', 'profileProfessionAbout',
+];
+const fullAppearance = (keys) => ({ lines: keys.map((field) => ({ field })) });
+const fullyVisibleProfile = plain(cardRuntime.profileCard(
+  { ...publicProfile, cardAppearance: fullAppearance(profileKeys) }, [publicWorkplace], ownDiscount,
+));
+const fullyVisibleWorkplace = plain(cardRuntime.workplaceCard(
+  { ...publicWorkplace, cardAppearance: fullAppearance(workplaceKeys) }, publicProfile, ownDiscount,
+));
+assert.deepEqual(fullyVisibleProfile.profile.card.fields.map((f) => f.value), profileKeys);
+assert.deepEqual(fullyVisibleWorkplace.card.fields.map((f) => f.value), workplaceKeys);
+assert.equal(fullyVisibleProfile.profile.card.fields.find((f) => f.value === 'workplaceCount').text, '1');
+assert.match(service, /profileCard\(profile, byWorkplaceTenant\.get\(tenantId\) \|\| \[\], discount\)/,
+  'Contact list must project own discount in saved Profile card');
+assert.match(service, /profileCard\(context\.profile, allWorkplaces, discount\)/,
+  'Contact detail must project own discount in saved Profile card');
+assert.match(service, /workplaceCard\(workplace, context\.profile, discount\)/,
+  'Contact detail must project own discount in saved Workplace cards');
+
 // Both existing endpoints must return the same shape; program assignment
 // and existing program nominal/amount fields are not modified.
 assert.match(controller, /@Get\(\)\s*list\(/);
