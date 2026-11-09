@@ -296,8 +296,7 @@ button,input,select,textarea{font:inherit}
 .admin-access-q .admin-actions{background:var(--admin-surface)}
 @media (max-width:760px){
   .admin-mobile-app{--app-bg:var(--admin-paper)}
-  .admin-mobile-app .v2-z-surface,
-  .admin-mobile-app .v2-z-layer,
+  .admin-mobile-app .v2-z,
   .admin-access-q .modal-sheet{
     background:var(--admin-surface);
   }
