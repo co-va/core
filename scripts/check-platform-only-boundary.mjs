@@ -23,7 +23,12 @@ const allowedUI = new Set([
   'inputs/inputs.css', 'inputs/index.js', 'lists/list-entry.css',
   'modals/modal.css', 'modals/index.js', 'receipt/receipt.css',
   'selectors/index.js', 'utils/escape-html.js',
-  'v2/geometry.js', 'v2/html.js', 'v2/lifecycle.js',
+  'v2/geometry.js',
+  'v2/shell.js',
+  'v2/header.js',
+  'v2/card-deck.js',
+  'v2/z-stack.js',
+  'v2/workspace-navigation.js', 'v2/html.js', 'v2/lifecycle.js',
   'v2/modal-portal.js', 'v2/sticker.js', 'v2/swipe.js',
   'v2/v2.css', 'v2/z-affordance.js', 'v2/z-layout.js',
 ]);
