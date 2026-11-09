@@ -110,6 +110,57 @@ personRows = [
 result = await listDiscounts();
 assert.equal(result.get('pro-a'), null, 'Ambiguous identity must not disclose any discount');
 
+// The already-assigned program must expose its actual active discount as
+// a numeric field without changing the original nominal or balance.
+const visibleMethod = between(service, '  private async visibleDepositSummaries(', '  private async programSummaries(')
+  .replace('  private async visibleDepositSummaries(', 'async function visibleDepositSummaries(');
+const summariesMethod = between(service, '  private async programSummaries(', '  // Both list and detail')
+  .replace('  private async programSummaries(', 'async function programSummaries(');
+const programRuntime = runInNewContext(
+  stripTypeScriptTypes(accountHelpers + '\n' + visibleMethod + '\n' + summariesMethod, { mode: 'strip' })
+    + '\n({ visibleDepositSummaries, programSummaries })',
+  {
+    depositPriceSourcesFromRows: runtime.depositPriceSourcesFromRows,
+    expireDepositInstances: async () => {},
+  },
+);
+let assignedRows = [{
+  ...program, initialAmount: 15000, balance: 12000,
+}];
+const context = {
+  prisma: {
+    loyaltyDepositInstance: { findMany: async () => assignedRows },
+    loyaltyDepositProgram: {
+      findMany: async () => [{ programId: program.programId, data: { showToAll: true } }],
+    },
+  },
+  personalAccounts: { endUserSummary: async () => null },
+};
+context.visibleDepositSummaries = programRuntime.visibleDepositSummaries.bind(context);
+const assignedPrograms = () => programRuntime.programSummaries.call(context, 'pro-a', { key: me.key });
+
+let assigned = await assignedPrograms();
+assert.equal(assigned.length, 1);
+assert.equal(assigned[0].discountPercent, 20, 'Program card receives numeric active discount');
+assert.equal(assigned[0].fundedAmount, 15000, 'Original program nominal is unchanged');
+assert.equal(assigned[0].balance, 12000, 'Original program balance is unchanged');
+assert.equal(assigned[0].terms.benefit, '', 'Existing program terms remain as before');
+
+assignedRows = [{
+  ...assignedRows[0],
+  terms: { ...program.terms, termEndDate: '2000-01-01' },
+}];
+assigned = await assignedPrograms();
+assert.equal(assigned[0].discountPercent, 0, 'Expired program cannot advertise an active percent');
+assert.equal(assigned[0].fundedAmount, 15000, 'Expiry does not rewrite nominal');
+
+assignedRows = [{ ...assignedRows[0], status: 'closed', terms: program.terms }];
+assigned = await assignedPrograms();
+assert.equal(assigned[0].discountPercent, 0, 'Closed program cannot advertise an active percent');
+
+assert.match(service, /depositPriceSourcesFromRows\(rows, personKey, new Date\(\)\)/,
+  'Program discount and Person discount use one existing canonical source');
+
 // Both existing endpoints must return the same shape; program assignment
 // and existing program nominal/amount fields are not modified.
 assert.match(controller, /@Get\(\)\s*list\(/);
