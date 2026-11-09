@@ -131,8 +131,8 @@ function cardMoney(value: unknown) {
 
 function depositCardStatus(value: unknown) {
   const status = text(value);
-  return status === 'paused' ? 'Приостановлена'
-    : status === 'closed' || status === 'ended' ? 'Завершена' : 'Активна';
+  return status === 'expired' ? 'Срок завершён'
+    : status === 'closed' || status === 'ended' ? 'Закрыт' : 'Активен';
 }
 
 // A discount may be shown only for the authenticated Account's own Person
@@ -402,7 +402,7 @@ export class AccountContactsService {
       } : null,
       ...deposits.map((deposit: Record<string, any>) => {
         const program = objectValue(deposit.cardProgram);
-        const amount = Number(program.amount || 0);
+        const terms = objectValue(deposit.terms);
         return {
           type: 'deposit',
           depositId: text(deposit.depositId),
@@ -417,11 +417,11 @@ export class AccountContactsService {
           },
           card: publicProgramCard(templates, 'loyalty-deposit', {
             uei: relations[`loyalty-deposit-program:${text(deposit.programId)}`],
-            title: program.name || deposit.programName || 'Депозит',
-            subtitle: program.termRule || objectValue(deposit.terms).termRule || 'Бессрочно',
-            status: depositCardStatus(program.status),
-            metaLeft: program.benefit || objectValue(deposit.terms).benefit || 'Без дополнительной выгоды',
-            metaRight: amount > 0 ? cardMoney(amount) : 'Свободная сумма',
+            title: deposit.programName || program.name || 'Депозит',
+            subtitle: terms.termRule || program.termRule || 'Бессрочно',
+            status: depositCardStatus(deposit.status),
+            metaLeft: terms.benefit || program.benefit || 'Без дополнительной выгоды',
+            metaRight: cardMoney(deposit.fundedAmount),
           }),
         };
       }),
