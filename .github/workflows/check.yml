@@ -844,6 +844,8 @@ jobs:
           expect_redirect "app.va-tools.ru" "/" "https://prof.va-tools.ru/"
           expect_redirect "app.va-tools.ru" "/?booking=smoke" "https://prof.va-tools.ru/booking?booking=smoke"
           expect_redirect "va-app-temp-volokovykh.msk1.amvera.tech" "/" "https://prof.va-tools.ru/"
+          expect_status "va-app-volokovykh.msk1.amvera.tech" "/" "302"
+          expect_status "va-app-volokovykh.msk1.amvera.tech" "/health" "200"
           echo "Platform-only API, Admin, landing, redirects and User isolation: PASS"
       - name: Verify durable owner service Email with PostgreSQL and fake Postbox
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-service-email-outbox.mjs
