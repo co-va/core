@@ -4,6 +4,10 @@ import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
 import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
+import { v2Shell } from '../ui/v2/shell.js';
+import { v2Header } from '../ui/v2/header.js';
+import { v2CardDeck } from '../ui/v2/card-deck.js';
+import { initV2WorkspaceInteraction, setV2DeckOpen } from '../ui/v2/workspace-navigation.js';
 
 const app = document.querySelector('#admin-app');
 const state = {
@@ -263,98 +267,35 @@ async function refreshData() {
   state.toolReadiness = Array.isArray(toolReadiness) ? toolReadiness : [];
 }
 
-function setupMobileShell() {
-  const sidebar = app.querySelector('.admin-sidebar');
-  const menuButton = app.querySelector('[data-admin-mobile-menu]');
-  const closeButton = app.querySelector('[data-admin-mobile-close]');
-  const backdrop = app.querySelector('[data-admin-mobile-backdrop]');
-  const accountControls = app.querySelector('.admin-toolbar-user');
-  const accountSlot = app.querySelector('[data-admin-mobile-account]');
-  const toolbar = app.querySelector('.admin-toolbar');
-  const mobile = window.matchMedia('(max-width: 760px)');
+const ADMIN_SECTIONS = [
+  { id: 'overview', label: 'Обзор', icon: 'home' },
+  { id: 'owner', label: 'Моё пространство', icon: 'profile' },
+  { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
+  { id: 'tenants', label: 'Пользователи', icon: 'people' },
+  { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
+];
 
-  const setOpen = (open) => {
-    const visible = Boolean(open && mobile.matches);
-    sidebar.classList.toggle('is-mobile-open', visible);
-    menuButton.setAttribute('aria-expanded', String(visible));
-    backdrop.hidden = !visible;
-    document.body.classList.toggle('admin-mobile-menu-open', visible);
-  };
-  const close = () => setOpen(false);
-  const syncLayout = () => {
-    (mobile.matches ? accountSlot : toolbar).append(accountControls);
-    if (!mobile.matches) close();
-  };
-  const onKeydown = (event) => {
-    if (event.key === 'Escape' && sidebar.classList.contains('is-mobile-open')) {
-      close();
-      menuButton.focus();
-    }
-  };
-
-  menuButton.addEventListener('click', () => setOpen(!sidebar.classList.contains('is-mobile-open')));
-  closeButton.addEventListener('click', close);
-  backdrop.addEventListener('click', close);
-  window.addEventListener('keydown', onKeydown);
-  mobile.addEventListener('change', syncLayout);
-  syncLayout();
-  cleanupMobileShell = () => {
-    mobile.removeEventListener('change', syncLayout);
-    window.removeEventListener('keydown', onKeydown);
-    document.body.classList.remove('admin-mobile-menu-open');
-    cleanupMobileShell = null;
-  };
-  return close;
+function adminSectionLabel() {
+  return ADMIN_SECTIONS.find((item) => item.id === state.section)?.label || 'Пользователи';
 }
 
-function renderShell() {
-  cleanupMobileShell?.();
-  app.innerHTML = `
-    <div class="admin-shell">
-      <aside class="admin-sidebar" id="admin-mobile-navigation">
-        <div class="admin-sidebar-head">
-          <div class="admin-brand">ACVERO<span>Администратор</span></div>
-          <button class="admin-mobile-menu-close" type="button" data-admin-mobile-close aria-label="Закрыть меню">×</button>
-        </div>
-        <nav class="admin-nav" aria-label="Разделы администратора">
-          <button data-section="overview">Обзор</button>
-          <button data-section="owner" class="owner-link">Моё пространство</button>
-          <button data-section="document-registry">Реестр документов</button>
-          <button data-section="tenants">Пользователи</button>
-          <button data-section="capabilities">Инструменты</button>
-        </nav>
-        <div class="admin-sidebar-foot">Управление системой</div>
-        <div class="admin-sidebar-account" data-admin-mobile-account></div>
-      </aside>
-      <div class="admin-mobile-nav-backdrop" data-admin-mobile-backdrop hidden></div>
-      <header class="admin-toolbar">
-        <div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>
-        <button type="button" class="admin-mobile-menu-button" data-admin-mobile-menu aria-label="Открыть меню разделов" aria-controls="admin-mobile-navigation" aria-expanded="false">
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-        </button>
-        <div class="admin-toolbar-user"><span>${escapeHtml(state.admin?.account?.email || '')}</span><button class="admin-button secondary" data-enable-admin-push>Включить PUSH</button><button class="admin-button secondary" data-logout>Выйти</button></div>
-      </header>
-      <main class="admin-main"><div class="admin-content" data-content></div></main>
-    </div>`;
+function watchAdminBreakpoint(dispose = () => {}) {
+  const breakpoint = window.matchMedia('(max-width: 760px)');
+  const changed = () => { if (state.admin) renderShell(); };
+  breakpoint.addEventListener('change', changed);
+  cleanupMobileShell = () => {
+    breakpoint.removeEventListener('change', changed);
+    dispose();
+    cleanupMobileShell = null;
+  };
+}
 
-  const closeMobileMenu = setupMobileShell();
-  app.querySelectorAll('[data-section]').forEach((button) => {
-    button.addEventListener('click', () => {
-      closeMobileMenu();
-      state.section = button.dataset.section;
-      renderCurrentSection();
-      window.scrollTo(0, 0);
-    });
-  });
-
+function bindAdminSessionControls() {
   const pushButton = app.querySelector('[data-enable-admin-push]');
   const syncPushButton = (enabled = false) => {
     if (!pushButton) return;
     const supported = typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
-    if (!supported) {
-      pushButton.hidden = true;
-      return;
-    }
+    if (!supported) { pushButton.hidden = true; return; }
     const active = enabled || Notification.permission === 'granted';
     pushButton.textContent = active ? 'PUSH включён' : 'Включить PUSH';
     pushButton.disabled = active;
@@ -367,8 +308,7 @@ function renderShell() {
     syncPushButton(enabled);
     if (!enabled && Notification.permission !== 'granted') pushButton.disabled = false;
   });
-
-  app.querySelector('[data-logout]').addEventListener('click', () => {
+  app.querySelector('[data-logout]')?.addEventListener('click', () => {
     cleanupMobileShell?.();
     if (adminPollTimer) window.clearInterval(adminPollTimer);
     adminPollTimer = null;
@@ -377,11 +317,90 @@ function renderShell() {
     state.admin = null;
     renderLogin();
   });
+}
+
+function renderMobileShell() {
+  const deck = v2CardDeck(ADMIN_SECTIONS, { active: state.section, data: 'data-section' })
+    + '<div class="admin-mobile-deck-footer"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
+    + '<button class="ui-button ui-button--secondary" type="button" data-enable-admin-push>Включить PUSH</button>'
+    + '<button class="ui-button ui-button--secondary" type="button" data-logout>Выйти</button></div>';
+  const header = v2Header({
+    b: { label: adminSectionLabel(), subtitle: 'Администратор' },
+    c: { kind: 'mode', data: 'data-admin-deck-toggle', aria: 'Разделы' },
+  });
+  app.innerHTML = v2Shell({
+    header, deck,
+    body: '<div class="admin-content" data-content></div>',
+    className: 'admin-mobile-app',
+  });
+  const root = app.querySelector('[data-v2-app]');
+  const toggle = app.querySelector('[data-admin-deck-toggle]');
+  const deckNode = app.querySelector('[data-v2-card-deck][data-v2-deck-level="f"]');
+  const toggleDeck = (open) => {
+    const value = setV2DeckOpen(root, open);
+    toggle.setAttribute('aria-expanded', String(value));
+    if (value) {
+      const active = deckNode?.querySelector('.is-active');
+      if (active && deckNode) {
+        deckNode.scrollLeft = Math.max(0, active.offsetLeft + active.offsetWidth / 2 - deckNode.clientWidth / 2);
+        deckNode.dispatchEvent(new Event('scroll'));
+      }
+    }
+  };
+  const stopNavigation = initV2WorkspaceInteraction(root, {
+    activeId: state.section,
+    onRootSelect: (id) => {
+      if (!ADMIN_SECTIONS.some((item) => item.id === id)) return;
+      toggleDeck(false);
+      state.section = id;
+      renderCurrentSection();
+    },
+    onDeckOpenChange: (open) => toggle.setAttribute('aria-expanded', String(open)),
+  });
+  toggle.addEventListener('click', () => toggleDeck(!root.classList.contains('is-deck-open')));
+  const keydown = (event) => { if (event.key === 'Escape') toggleDeck(false); };
+  window.addEventListener('keydown', keydown);
+  watchAdminBreakpoint(() => {
+    stopNavigation();
+    window.removeEventListener('keydown', keydown);
+  });
+  bindAdminSessionControls();
+  renderCurrentSection();
+}
+
+function renderShell() {
+  cleanupMobileShell?.();
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    renderMobileShell();
+    return;
+  }
+  app.innerHTML = '<div class="admin-shell">'
+    + '<aside class="admin-sidebar">'
+    + '<div class="admin-brand">ACVERO<span>Администратор</span></div>'
+    + '<nav class="admin-nav" aria-label="Разделы администратора">'
+    + ADMIN_SECTIONS.map((item) => '<button type="button" data-section="' + item.id + '">' + escapeHtml(item.label) + '</button>').join('')
+    + '</nav><div class="admin-sidebar-foot">Управление системой</div></aside>'
+    + '<header class="admin-toolbar">'
+    + '<div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>'
+    + '<div class="admin-toolbar-user"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
+    + '<button class="admin-button secondary" data-enable-admin-push>Включить PUSH</button>'
+    + '<button class="admin-button secondary" data-logout>Выйти</button></div></header>'
+    + '<main class="admin-main"><div class="admin-content" data-content></div></main>'
+    + '</div>';
+  app.querySelectorAll('[data-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.section = button.dataset.section;
+      renderCurrentSection();
+    });
+  });
+  watchAdminBreakpoint();
+  bindAdminSessionControls();
   renderCurrentSection();
 }
 
 function setActiveSection(title) {
-  app.querySelector('[data-toolbar-title]').textContent = title;
+  const titleNode = app.querySelector('[data-toolbar-title], .admin-mobile-app .v2-header__title-label');
+  if (titleNode) titleNode.textContent = title;
   app.querySelectorAll('[data-section]').forEach((button) => {
     button.classList.toggle('is-active', button.dataset.section === state.section);
   });
