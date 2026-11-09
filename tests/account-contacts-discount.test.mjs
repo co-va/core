@@ -340,8 +340,8 @@ assert.match(service, /workplaceCard\(workplace, context\.profile, discount\)/,
 // and existing program nominal/amount fields are not modified.
 assert.match(controller, /@Get\(\)\s*list\(/);
 assert.match(controller, /@Get\(':tenantId'\)\s*detail\(/);
-assert.match(service, /discount: discounts\.get\(tenantId\) \|\| null/);
-assert.match(service, /discount: discounts\.get\(context\.tenantId\) \|\| null/);
+assert.match(service, /const discount = discounts\.get\(tenantId\) \|\| null/);
+assert.match(service, /const discount = discounts\.get\(context\.tenantId\) \|\| null/);
 assert.match(service, /programs,\s*\};/);
 assert.match(service, /fundedAmount: Number\(deposit\.fundedAmount \|\| 0\)/);
 assert.match(service, /card: publicProgramCard\(templates, 'loyalty-deposit'/);
