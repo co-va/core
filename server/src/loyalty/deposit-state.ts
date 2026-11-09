@@ -134,15 +134,19 @@ export async function createDepositInstance(db: Db, tenantId: string, input: {
   });
 }
 
-export async function activeDepositPriceSources(db: Db, tenantId: string, personKey: string, at: Date) {
+// One canonical projection of an active deposit into its price-condition source.
+// Shared by settlement and batched /account/contacts reads; never use visibility
+// flags here because a price condition is independent of deposit-card visibility.
+export function depositPriceSourcesFromRows(
+  rows: Array<{ personKey: string; status: string; terms: unknown; depositId: string; programId: string; programName: string }>,
+  personKey: string,
+  at: Date,
+) {
   if (!personKey) return [];
-  await expireDepositInstances(db, tenantId);
-  const rows = await db.loyaltyDepositInstance.findMany({
-    where: { tenantId, personKey, status: 'active' },
-    orderBy: [{ fundedAt: 'asc' }, { createdAt: 'asc' }],
-  });
   return rows
-    .filter((row) => depositTermActiveAt(row.terms, at)
+    .filter((row) => row.personKey === personKey
+      && row.status === 'active'
+      && depositTermActiveAt(row.terms, at)
       && depositBenefitMode(row.terms) === 'discount'
       && depositBenefitRate(row.terms) > 0)
     .map((row) => ({
@@ -153,6 +157,16 @@ export async function activeDepositPriceSources(db: Db, tenantId: string, person
       name: row.programName || 'Депозит',
       percent: depositBenefitRate(row.terms),
     }));
+}
+
+export async function activeDepositPriceSources(db: Db, tenantId: string, personKey: string, at: Date) {
+  if (!personKey) return [];
+  await expireDepositInstances(db, tenantId);
+  const rows = await db.loyaltyDepositInstance.findMany({
+    where: { tenantId, personKey, status: 'active' },
+    orderBy: [{ fundedAt: 'asc' }, { createdAt: 'asc' }],
+  });
+  return depositPriceSourcesFromRows(rows, personKey, at);
 }
 
 export async function selectedDepositPriceSource(
