@@ -7,7 +7,7 @@ const frontEntries = [
   'index.html', 'core.js', 'booking.html', 'reset-password.html',
   'verify-email.html', 'manifest.webmanifest', 'service-worker.js',
   'app-icon.svg', 'chat', 'journal', 'settings', 'timetable',
-  'invite', 'online-booking', 'server/src/staging-preview.ts',
+  'invite', 'online-booking',
 ];
 const allowedCore = new Set([
   'auth.js', 'environment.js', 'password-reset-page.js',
@@ -52,7 +52,11 @@ assert.match(main, /host === ADMIN_HOST/);
 assert.match(main, /host === LANDING_HOST/);
 assert.match(main, /host === USER_HOST/);
 assert.match(main, /host === TEMP_APP_HOST \|\| host === APP_HOST/);
-assert.doesNotMatch(main, /stagingPreviewMiddleware|landingPreviewPath|booking\.html|publicBookingPath/);
+assert.match(main, /app\.use\(stagingPreviewMiddleware\)/);
+assert.doesNotMatch(main, /landingPreviewPath|booking\.html|publicBookingPath/);
+const preview = readFileSync(join(root, 'server/src/staging-preview.ts'), 'utf8');
+assert.match(preview, /va-app-volokovykh\.msk1\.amvera\.tech/);
+assert.match(preview, /status\(405\)/, 'Staging browser preview must remain read-only');
 const builder = readFileSync(join(root, 'scripts/build-pages.mjs'), 'utf8');
 assert.match(builder, /platformFiles/);
 assert.doesNotMatch(builder, /copyTree\(root, out\)|renderPwaIcons/);
