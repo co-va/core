@@ -96,7 +96,7 @@ function personBelongsToAccount(personValue: unknown, accountId: string, account
 
 // Presentation contract only: percent and source are resolved by Core's existing
 // shared loyalty price rules; no separate discount calculation is performed here.
-function effectiveDiscountForPerson(tenantId: string, personValue: unknown, depositRows: any[], at: Date) {
+function effectiveDiscountForPerson(personValue: unknown, depositRows: any[], at: Date) {
   const person = objectValue(personValue);
   const personKey = text(person.key || person.id);
   if (!personKey) return null;
@@ -108,11 +108,7 @@ function effectiveDiscountForPerson(tenantId: string, personValue: unknown, depo
   return {
     percent: condition.percent,
     source: source.type,
-    sourceName: text(source.name),
-    programId: source.type === 'program' ? text(source.programId) || null : null,
-    depositId: source.type === 'program' ? text(source.depositId) || null : null,
-    // No workplace-specific rule exists in Person/deposit price sources today.
-    scope: { type: 'professional', tenantId, workplaceId: null },
+    programName: source.type === 'program' ? text(source.name) : '',
   };
 }
 
@@ -386,7 +382,7 @@ export class AccountContactsService {
       // An ambiguous identity must not leak a percentage from someone else.
       const person = matches.length === 1 ? matches[0].person : null;
       result.set(tenantId, effectiveDiscountForPerson(
-        tenantId, person, byTenant.get(tenantId) || [], now,
+        person, byTenant.get(tenantId) || [], now,
       ));
     }
     return result;
