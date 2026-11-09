@@ -83,6 +83,46 @@ function workplaceCard(workplace: any) {
   };
 }
 
+// A card is a projection of a SAVED Professional appearance, never a new
+// User template. Only the six public loyalty-card fields may carry values.
+// Other configured lines render empty rather than exposing private Person data.
+function publicProgramCard(
+  templates: unknown, scope: string,
+  values: { uei?: unknown; title?: unknown; subtitle?: unknown; status?: unknown; metaLeft?: unknown; metaRight?: unknown },
+) {
+  const template = arrayValue(templates)
+    .map(objectValue).find((item) => text(item.scope) === scope) || {};
+  const appearance = objectValue(template.appearance);
+  const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
+  const fields = [
+    { value: 'uei', label: 'UEI', text: text(values.uei) },
+    { value: 'title', label: 'Название', text: text(values.title) },
+    { value: 'subtitle', label: 'Подпись', text: text(values.subtitle) },
+    { value: 'status', label: 'Статус', text: text(values.status) },
+    { value: 'metaLeft', label: 'Данные слева', text: text(values.metaLeft) },
+    { value: 'metaRight', label: 'Данные справа', text: text(values.metaRight) },
+  ].filter((item) => visible.has(item.value));
+  return {
+    appearance,
+    fields,
+    photo: text(template.photo),
+    photoPosition: text(template.photoPosition) || '50% 50%',
+  };
+}
+
+// This is formatting only; the nominal and balances are taken from their
+// existing sources. No new pricing/discount calculation takes place here.
+function cardMoney(value: unknown) {
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+    .format(Number(value || 0)).replaceAll('\\u00a0', ' ')} ₽`;
+}
+
+function depositCardStatus(value: unknown) {
+  const status = text(value);
+  return status === 'paused' ? 'Приостановлена'
+    : status === 'closed' || status === 'ended' ? 'Завершена' : 'Активна';
+}
+
 // A discount may be shown only for the authenticated Account's own Person
 // within a connected tenant. An explicit link to another account is never
 // overridden by a coincidentally matching telephone number.
@@ -305,6 +345,7 @@ export class AccountContactsService {
         balance: Number(row.balance || 0),
         status: text(row.status),
         discountPercent: activePrices.get(text(row.depositId)) || 0,
+        cardProgram: objectValue(programs.get(row.programId)),
         terms,
         visibleToPersonOverride: typeof presentation.visibleToPerson === 'boolean' ? presentation.visibleToPerson : null,
       };
@@ -318,30 +359,60 @@ export class AccountContactsService {
     const person = objectValue(personValue);
     const personKey = text(person.key || person.id);
     if (!personKey) return [];
-    const [personalAccount, deposits] = await Promise.all([
+    const [personalAccount, deposits, auxiliary, ueiState] = await Promise.all([
       this.personalAccounts.endUserSummary(tenantId, personKey).catch(() => null),
       this.visibleDepositSummaries(tenantId, personKey).catch(() => []),
+      this.prisma.businessAuxiliaryState.findUnique({
+        where: { tenantId }, select: { data: true },
+      }),
+      this.prisma.ueiState.findUnique({
+        where: { tenantId }, select: { data: true },
+      }),
     ]);
+    const templates = objectValue(auxiliary?.data).cardAppearanceTemplates;
+    const relations = objectValue(objectValue(ueiState?.data).relations);
+    const name = [text(person.name), text(person.surname)].filter(Boolean).join(' ') || 'Без имени';
     return [
       personalAccount ? {
         type: 'personal-account',
         title: 'Личный счёт',
         balance: Number(personalAccount.balance || 0),
         debtTotal: Number(personalAccount.debtTotal || 0),
+        card: publicProgramCard(templates, 'loyalty-personal-account', {
+          title: name,
+          subtitle: 'Личный счёт',
+          status: Number(personalAccount.debtTotal || 0) > .009 ? 'Есть задолженность'
+            : Number(personalAccount.balance || 0) > .009 ? 'Есть остаток' : 'Нулевой остаток',
+          metaLeft: Number(personalAccount.debtTotal || 0) > .009 ? 'Задолженность' : 'Денежный остаток',
+          metaRight: cardMoney(Number(personalAccount.debtTotal || 0) > .009
+            ? personalAccount.debtTotal : personalAccount.balance),
+        }),
       } : null,
-      ...deposits.map((deposit: Record<string, any>) => ({
-        type: 'deposit',
-        depositId: text(deposit.depositId),
-        title: text(deposit.programName) || 'Депозит',
-        balance: Number(deposit.balance || 0),
-        fundedAmount: Number(deposit.fundedAmount || 0),
-        status: text(deposit.status),
-        discountPercent: Number(deposit.discountPercent || 0),
-        terms: {
-          termRule: text(objectValue(deposit.terms).termRule),
-          benefit: text(objectValue(deposit.terms).benefit),
-        },
-      })),
+      ...deposits.map((deposit: Record<string, any>) => {
+        const program = objectValue(deposit.cardProgram);
+        const amount = Number(program.amount || 0);
+        return {
+          type: 'deposit',
+          depositId: text(deposit.depositId),
+          title: text(deposit.programName) || 'Депозит',
+          balance: Number(deposit.balance || 0),
+          fundedAmount: Number(deposit.fundedAmount || 0),
+          status: text(deposit.status),
+          discountPercent: Number(deposit.discountPercent || 0),
+          terms: {
+            termRule: text(objectValue(deposit.terms).termRule),
+            benefit: text(objectValue(deposit.terms).benefit),
+          },
+          card: publicProgramCard(templates, 'loyalty-deposit', {
+            uei: relations[`loyalty-deposit-program:${text(deposit.programId)}`],
+            title: program.name || deposit.programName || 'Депозит',
+            subtitle: program.termRule || objectValue(deposit.terms).termRule || 'Бессрочно',
+            status: depositCardStatus(program.status),
+            metaLeft: program.benefit || objectValue(deposit.terms).benefit || 'Без дополнительной выгоды',
+            metaRight: amount > 0 ? cardMoney(amount) : 'Свободная сумма',
+          }),
+        };
+      }),
     ].filter(Boolean);
   }
 
