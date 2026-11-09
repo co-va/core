@@ -8,6 +8,7 @@ import {
 import { NotificationEventService } from '../notification/notification-event.service';
 import { PersonIdentityService } from '../online-booking/person-identity.service';
 import { PrismaService } from '../prisma.service';
+import { ProcedureService } from '../procedure/procedure.service';
 import { RecordService } from '../record/record.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { TimeService } from '../time/time.service';
@@ -25,37 +26,6 @@ function arrayValue(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-function priceNumber(value: unknown) {
-  const number = Number(String(value ?? '').replace(',', '.'));
-  return Number.isFinite(number) ? Math.max(0, number) : 0;
-}
-
-function hasPriceValue(value: unknown) {
-  return value !== '' && value != null;
-}
-
-function procedurePrice(procedure: Record<string, any>, assignment: Record<string, any>) {
-  const assigned = assignment?.cost;
-  const base = procedure?.cost;
-  const hasAssigned = assigned && typeof assigned === 'object' && !assigned.free && (
-    hasPriceValue(assigned.amount)
-    || hasPriceValue(assigned.from)
-    || hasPriceValue(assigned.to)
-  );
-  const cost = hasAssigned ? assigned : base;
-  if (cost == null || cost?.free) return { minimum: 0, variable: false, free: true };
-  if (typeof cost === 'number' || typeof cost === 'string') {
-    return { minimum: priceNumber(cost), variable: false, free: false };
-  }
-  if (hasPriceValue(cost.amount)) {
-    return { minimum: priceNumber(cost.amount), variable: false, free: false };
-  }
-  if (hasPriceValue(cost.from)) {
-    return { minimum: priceNumber(cost.from), variable: true, free: false };
-  }
-  return { minimum: 0, variable: hasPriceValue(cost.to), free: false };
-}
-
 @Injectable()
 export class AccountContactRecordService {
   constructor(
@@ -63,6 +33,7 @@ export class AccountContactRecordService {
     private readonly notificationEvents: NotificationEventService,
     private readonly prisma: PrismaService,
     private readonly records: RecordService,
+    private readonly procedures: ProcedureService,
     private readonly time: TimeService,
     private readonly access: SaasAccessService,
     private readonly personIdentity: PersonIdentityService,
@@ -108,23 +79,18 @@ export class AccountContactRecordService {
     const allowedKeys = new Set(workplaces.map((item) => text(item.key)).filter(Boolean));
     const operational = objectValue(operationalRow?.data);
 
-    const procedures = arrayValue(operational.procedures).flatMap((rawProcedure) => {
-      const procedure = objectValue(rawProcedure);
-      const assignments = arrayValue(procedure.workplaces)
-        .map((rawAssignment) => objectValue(rawAssignment))
-        .filter((assignment) => allowedKeys.has(text(assignment.workplaceId ?? assignment.key ?? assignment.id)))
-        .map((assignment) => {
-          const workplaceId = text(assignment.workplaceId ?? assignment.key ?? assignment.id);
-          return { workplaceId, price: procedurePrice(procedure, assignment) };
-        });
-      if (!assignments.length) return [];
-      return [{
+    // The same tenant-scoped catalog and display-ready prices as public booking.
+    // No duplicate pricing or deleted-service policy in the Account path.
+    const procedures = this.procedures.publicBookingCatalog(operational.procedures, [...allowedKeys])
+      .map((procedure) => ({
         id: text(procedure.id),
         name: text(procedure.name),
         duration: Math.max(0, Number(procedure.duration) || 0),
-        workplaces: assignments,
-      }];
-    });
+        workplaces: arrayValue(procedure.workplaces).map((assignment) => ({
+          workplaceId: text(assignment.workplaceId ?? assignment.key ?? assignment.id),
+          price: assignment.bookingPrice,
+        })),
+      }));
 
     const days = arrayValue(operational.days)
       .filter((day) => allowedKeys.has(text(day?.workplaceId)))

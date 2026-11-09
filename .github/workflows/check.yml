@@ -1,4 +1,4 @@
-name: Check Book
+name: Check Core
 
 on:
   push:
