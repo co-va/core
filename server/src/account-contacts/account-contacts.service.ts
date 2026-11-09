@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { DepositService } from '../loyalty/deposit.service';
-import { depositBenefitMode, depositBenefitRate, depositTermActiveAt, expireDepositInstances } from '../loyalty/deposit-state';
+import { depositPriceSourcesFromRows, expireDepositInstances } from '../loyalty/deposit-state';
 import { resolvePersonPriceCondition } from '../../../core/loyalty/price-condition.js';
 import { PersonalAccountService } from '../loyalty/personal-account.service';
 import { PrismaService } from '../prisma.service';
@@ -83,42 +83,36 @@ function workplaceCard(workplace: any) {
   };
 }
 
-// A signed-in account sees only the price condition assigned to its own
-// Person in this tenant; never a tenant-wide/public discount.
+// A discount may be shown only for the authenticated Account's own Person
+// within a connected tenant. An explicit link to another account is never
+// overridden by a coincidentally matching telephone number.
 function personBelongsToAccount(personValue: unknown, accountId: string, accountPhone: string) {
   const person = objectValue(personValue);
-  const phones = [person.phone, ...arrayValue(person.phones)].map(canonicalPhone).filter(Boolean);
-  return arrayValue(person.accounts).some((value) => text(value) === accountId)
-    || text(person.accountId) === accountId
-    || Boolean(accountPhone && phones.includes(canonicalPhone(accountPhone)));
+  const linkedAccounts = [...arrayValue(person.accounts).map(text), text(person.accountId)].filter(Boolean);
+  if (linkedAccounts.length) return linkedAccounts.includes(accountId);
+  const phone = canonicalPhone(accountPhone);
+  return Boolean(phone && [person.phone, ...arrayValue(person.phones)].map(canonicalPhone).includes(phone));
 }
 
-function effectiveDiscountForPerson(personValue: unknown, depositRows: any[], at: Date) {
+// Presentation contract only: percent and source are resolved by Core's existing
+// shared loyalty price rules; no separate discount calculation is performed here.
+function effectiveDiscountForPerson(tenantId: string, personValue: unknown, depositRows: any[], at: Date) {
   const person = objectValue(personValue);
-  const key = text(person.key || person.id);
-  if (!key) return null;
-  const programSources = depositRows
-    .filter((row) => text(row.personKey) === key
-      && text(row.status) === 'active'
-      && depositTermActiveAt(row.terms, at)
-      && depositBenefitMode(row.terms) === 'discount'
-      && depositBenefitRate(row.terms) > 0)
-    .map((row) => ({
-      type: 'program',
-      programType: 'deposit',
-      depositId: row.depositId,
-      programId: row.programId,
-      name: row.programName || 'Депозит',
-      percent: depositBenefitRate(row.terms),
-    }));
-  // The same canonical resolver used by Professional; do not write a second
-  // percent to the Person or calculate any discount on the client.
-  const condition = resolvePersonPriceCondition(person, programSources);
+  const personKey = text(person.key || person.id);
+  if (!personKey) return null;
+  const condition = resolvePersonPriceCondition(
+    person, depositPriceSourcesFromRows(depositRows, personKey, at),
+  );
   if (condition.conflict || !condition.source || condition.percent <= 0) return null;
+  const source = condition.source;
   return {
     percent: condition.percent,
-    source: condition.source.type,
-    programName: condition.source.type === 'program' ? text(condition.source.name) : '',
+    source: source.type,
+    sourceName: text(source.name),
+    programId: source.type === 'program' ? text(source.programId) || null : null,
+    depositId: source.type === 'program' ? text(source.depositId) || null : null,
+    // No workplace-specific rule exists in Person/deposit price sources today.
+    scope: { type: 'professional', tenantId, workplaceId: null },
   };
 }
 
@@ -350,46 +344,50 @@ export class AccountContactsService {
     ].filter(Boolean);
   }
 
-  // One batched read for Contacts rather than a query per visible card.
-  // Program benefit and expiration rules are read from authoritative Core data.
-  private async accountDiscounts(
-    accountId: string,
-    accountPhone: string,
-    tenantIds: string[],
-    knownPersons: Map<string, any> = new Map(),
-  ) {
+  // Both list and detail use one batched read of canonical Person and deposit
+  // sources. This does not expose another contact's discount by phone collision.
+  private async accountDiscounts(accountId: string, accountPhone: string, tenantIds: string[]) {
     const result = new Map<string, ReturnType<typeof effectiveDiscountForPerson>>();
     if (!tenantIds.length) return result;
     const [rows, deposits] = await Promise.all([
-      knownPersons.size ? Promise.resolve([]) : this.prisma.person.findMany({
+      this.prisma.person.findMany({
         where: { tenantId: { in: tenantIds } },
         select: { tenantId: true, key: true, data: true },
       }),
       this.prisma.loyaltyDepositInstance.findMany({
         where: { tenantId: { in: tenantIds }, status: 'active' },
-        select: { tenantId: true, personKey: true, status: true, terms: true,
-          depositId: true, programId: true, programName: true },
+        select: {
+          tenantId: true, personKey: true, status: true, terms: true,
+          depositId: true, programId: true, programName: true,
+        },
       }),
     ]);
-    const people = new Map(knownPersons);
+    const candidates = new Map<string, Array<{ person: Record<string, any>; linked: boolean }>>();
     for (const row of rows) {
-      const person = { ...objectValue(row.data), key: text(row.key) };
+      const person: Record<string, any> = { ...objectValue(row.data), key: text(row.key) };
       if (!personBelongsToAccount(person, accountId, accountPhone)) continue;
-      // An explicit linked account outranks a phone-only match.
-      const existing = people.get(row.tenantId);
-      const linked = arrayValue(person.accounts).some((id) => text(id) === accountId)
-        || text(person.accountId) === accountId;
-      if (!existing || linked) people.set(row.tenantId, person);
+      const linked = [...arrayValue(person.accounts).map(text), text(person.accountId)]
+        .includes(accountId);
+      const set = candidates.get(row.tenantId) || [];
+      set.push({ person, linked });
+      candidates.set(row.tenantId, set);
     }
     const byTenant = new Map<string, any[]>();
     for (const deposit of deposits) {
-      const list = byTenant.get(deposit.tenantId) || [];
-      list.push(deposit);
-      byTenant.set(deposit.tenantId, list);
+      const set = byTenant.get(deposit.tenantId) || [];
+      set.push(deposit);
+      byTenant.set(deposit.tenantId, set);
     }
     const now = new Date();
     for (const tenantId of tenantIds) {
-      result.set(tenantId, effectiveDiscountForPerson(people.get(tenantId), byTenant.get(tenantId) || [], now));
+      const people = candidates.get(tenantId) || [];
+      const linked = people.filter((item) => item.linked);
+      const matches = linked.length ? linked : people;
+      // An ambiguous identity must not leak a percentage from someone else.
+      const person = matches.length === 1 ? matches[0].person : null;
+      result.set(tenantId, effectiveDiscountForPerson(
+        tenantId, person, byTenant.get(tenantId) || [], now,
+      ));
     }
     return result;
   }
@@ -479,7 +477,6 @@ export class AccountContactsService {
 
     const discounts = await this.accountDiscounts(
       context.account.id, context.account.phone, [context.tenantId],
-      new Map([[context.tenantId, context.person]]),
     );
     return {
       ...profileCard(context.profile),
