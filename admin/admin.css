@@ -281,17 +281,6 @@ html{background:var(--app-bg)}
     box-shadow:0 1px 5px rgba(17,17,17,.035)
   }
   .admin-mobile-app .admin-card{border-radius:var(--radius-card)}
-  /* F cards: keep Shared geometry; replace graphite/gray-on-gray with
-     canonical white surface and quiet border, without black outlining. */
-  .admin-mobile-app .v2-card-deck__card{
-    background:var(--white);color:var(--text);
-    border:1px solid var(--border);
-    box-shadow:8px 12px 24px rgba(17,17,17,.09),inset 0 0 0 1px rgba(255,255,255,.35)
-  }
-  .admin-mobile-app .v2-card-deck__card.is-active{
-    border:2px solid var(--v2-yellow);
-    box-shadow:0 0 0 1px rgba(255,255,0,.12),10px 14px 26px rgba(17,17,17,.12)
-  }
   .admin-mobile-app .admin-tool-mark{border-color:var(--border)}
   .admin-access-q .modal-sheet{background:var(--white)}
 }
