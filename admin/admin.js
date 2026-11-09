@@ -2,6 +2,8 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
 import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
+import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
+import { v2Sticker } from '../ui/v2/sticker.js';
 
 const app = document.querySelector('#admin-app');
 const state = {
@@ -144,35 +146,40 @@ async function loginWithOneRetry(identifier, password, onRetry) {
 }
 
 function renderLogin(message = '') {
-  app.innerHTML = `
-    <main class="admin-login">
-      <section class="admin-login-card">
-        <h1>Администрирование</h1>
-        <p>Управление пользователями и рабочими пространствами</p>
-        <form class="admin-form" data-login-form>
-          <label class="admin-field"><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
-          <label class="admin-field"><span>Пароль</span><input name="password" type="password" autocomplete="current-password" required></label>
-          <p class="admin-error" data-login-error>${escapeHtml(message)}</p>
-          <button class="admin-button" type="submit">Войти</button>
-        </form>
-      </section>
-    </main>`;
-
+  cleanupMobileShell?.();
+  const formBody = '<form class="auth-form shared-login-form" id="admin-auth-form" data-login-form>'
+    + field({ label: 'Телефон или email', name: 'identifier', type: 'text', required: true, autocomplete: 'username' })
+    + passwordField({ label: 'Пароль', name: 'password', required: true, autocomplete: 'current-password' })
+    + '<p class="auth-error" data-login-error role="alert">' + escapeHtml(message) + '</p>'
+    + '<button type="button" class="v2-sticker-link" data-admin-forgot>Забыли пароль?</button>'
+    + '</form>';
+  app.innerHTML = v2Sticker({
+    title: 'Вход в Администратор',
+    body: formBody,
+    action: '<button class="ui-button" type="submit" form="admin-auth-form">Войти</button>',
+    className: 'v2-sticker-screen--auth admin-auth-screen shared-login-screen',
+  });
+  initPasswordFields(app);
   const form = app.querySelector('[data-login-form]');
   const error = app.querySelector('[data-login-error]');
-  const button = form.querySelector('button[type="submit"]');
+  const button = app.querySelector('[type="submit"][form="admin-auth-form"]');
+  app.querySelector('[data-admin-forgot]')?.addEventListener('click', () => {
+    renderAdminPasswordResetRequest(form.elements.identifier.value);
+  });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     error.textContent = '';
     button.disabled = true;
+    button.textContent = 'Входим…';
     const data = new FormData(form);
     try {
-      state.account = await loginWithOneRetry(data.get('email'), data.get('password'), () => {
+      state.account = await loginWithOneRetry(data.get('identifier'), data.get('password'), () => {
         error.textContent = 'Сервер не ответил. Пробуем ещё раз…';
       });
     } catch (loginError) {
       error.textContent = loginError instanceof Error ? loginError.message : 'Не удалось войти';
       button.disabled = false;
+      button.textContent = 'Войти';
       return;
     }
     try {
@@ -184,6 +191,48 @@ function renderLogin(message = '') {
       } else {
         renderConnectionFailure(loadError instanceof Error ? loadError.message : 'Сервер недоступен');
       }
+    }
+  });
+}
+
+function renderAdminPasswordResetRequest(identifier = '') {
+  const body = '<form class="auth-form shared-login-form" id="admin-reset-form">'
+    + field({ label: 'Телефон или email', name: 'identifier', value: identifier, type: 'text', required: true, autocomplete: 'username' })
+    + '<p class="auth-error" data-reset-error role="alert"></p>'
+    + '<button type="button" class="v2-sticker-link" data-reset-back>Вернуться ко входу</button>'
+    + '</form>';
+  app.innerHTML = v2Sticker({
+    title: 'Восстановление пароля',
+    body,
+    action: '<button class="ui-button" type="submit" form="admin-reset-form">Отправить ссылку</button>',
+    className: 'v2-sticker-screen--auth admin-auth-screen shared-login-screen',
+  });
+  app.querySelector('[data-reset-back]')?.addEventListener('click', () => renderLogin());
+  const form = app.querySelector('#admin-reset-form');
+  const error = app.querySelector('[data-reset-error]');
+  const button = app.querySelector('[form="admin-reset-form"][type="submit"]');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    button.disabled = true;
+    const requested = String(new FormData(form).get('identifier') || '').trim();
+    try {
+      const response = await apiRequest('/auth/password-reset/request', {
+        method: 'POST',
+        body: JSON.stringify({ identifier: requested, email: requested, surface: 'admin' }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.message || 'Не удалось отправить ссылку');
+      app.innerHTML = v2Sticker({
+        title: 'Проверьте почту',
+        body: '<p>Если подтверждённый email существует, на него отправлена ссылка для изменения пароля.</p>',
+        action: '<button type="button" class="ui-button" data-return-to-admin>Вернуться ко входу</button>',
+        className: 'v2-sticker-screen--auth admin-auth-screen shared-login-screen',
+      });
+      app.querySelector('[data-return-to-admin]')?.addEventListener('click', () => renderLogin());
+    } catch (requestError) {
+      error.textContent = requestError instanceof Error ? requestError.message : 'Не удалось отправить ссылку';
+      button.disabled = false;
     }
   });
 }
