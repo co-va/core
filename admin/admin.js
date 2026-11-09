@@ -14,6 +14,7 @@ const state = {
 };
 
 let adminPollTimer = null;
+let cleanupMobileShell = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -217,12 +218,60 @@ async function refreshData() {
   state.toolReadiness = Array.isArray(toolReadiness) ? toolReadiness : [];
 }
 
+function setupMobileShell() {
+  const sidebar = app.querySelector('.admin-sidebar');
+  const menuButton = app.querySelector('[data-admin-mobile-menu]');
+  const closeButton = app.querySelector('[data-admin-mobile-close]');
+  const backdrop = app.querySelector('[data-admin-mobile-backdrop]');
+  const accountControls = app.querySelector('.admin-toolbar-user');
+  const accountSlot = app.querySelector('[data-admin-mobile-account]');
+  const toolbar = app.querySelector('.admin-toolbar');
+  const mobile = window.matchMedia('(max-width: 760px)');
+
+  const setOpen = (open) => {
+    const visible = Boolean(open && mobile.matches);
+    sidebar.classList.toggle('is-mobile-open', visible);
+    menuButton.setAttribute('aria-expanded', String(visible));
+    backdrop.hidden = !visible;
+    document.body.classList.toggle('admin-mobile-menu-open', visible);
+  };
+  const close = () => setOpen(false);
+  const syncLayout = () => {
+    (mobile.matches ? accountSlot : toolbar).append(accountControls);
+    if (!mobile.matches) close();
+  };
+  const onKeydown = (event) => {
+    if (event.key === 'Escape' && sidebar.classList.contains('is-mobile-open')) {
+      close();
+      menuButton.focus();
+    }
+  };
+
+  menuButton.addEventListener('click', () => setOpen(!sidebar.classList.contains('is-mobile-open')));
+  closeButton.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+  window.addEventListener('keydown', onKeydown);
+  mobile.addEventListener('change', syncLayout);
+  syncLayout();
+  cleanupMobileShell = () => {
+    mobile.removeEventListener('change', syncLayout);
+    window.removeEventListener('keydown', onKeydown);
+    document.body.classList.remove('admin-mobile-menu-open');
+    cleanupMobileShell = null;
+  };
+  return close;
+}
+
 function renderShell() {
+  cleanupMobileShell?.();
   app.innerHTML = `
     <div class="admin-shell">
-      <aside class="admin-sidebar">
-        <div class="admin-brand">ACVERO<span>Администратор</span></div>
-        <nav class="admin-nav">
+      <aside class="admin-sidebar" id="admin-mobile-navigation">
+        <div class="admin-sidebar-head">
+          <div class="admin-brand">ACVERO<span>Администратор</span></div>
+          <button class="admin-mobile-menu-close" type="button" data-admin-mobile-close aria-label="Закрыть меню">×</button>
+        </div>
+        <nav class="admin-nav" aria-label="Разделы администратора">
           <button data-section="overview">Обзор</button>
           <button data-section="owner" class="owner-link">Моё пространство</button>
           <button data-section="document-registry">Реестр документов</button>
@@ -230,18 +279,26 @@ function renderShell() {
           <button data-section="capabilities">Инструменты</button>
         </nav>
         <div class="admin-sidebar-foot">Управление системой</div>
+        <div class="admin-sidebar-account" data-admin-mobile-account></div>
       </aside>
+      <div class="admin-mobile-nav-backdrop" data-admin-mobile-backdrop hidden></div>
       <header class="admin-toolbar">
         <div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>
+        <button type="button" class="admin-mobile-menu-button" data-admin-mobile-menu aria-label="Открыть меню разделов" aria-controls="admin-mobile-navigation" aria-expanded="false">
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
         <div class="admin-toolbar-user"><span>${escapeHtml(state.admin?.account?.email || '')}</span><button class="admin-button secondary" data-enable-admin-push>Включить PUSH</button><button class="admin-button secondary" data-logout>Выйти</button></div>
       </header>
       <main class="admin-main"><div class="admin-content" data-content></div></main>
     </div>`;
 
+  const closeMobileMenu = setupMobileShell();
   app.querySelectorAll('[data-section]').forEach((button) => {
     button.addEventListener('click', () => {
+      closeMobileMenu();
       state.section = button.dataset.section;
       renderCurrentSection();
+      window.scrollTo(0, 0);
     });
   });
 
@@ -267,6 +324,7 @@ function renderShell() {
   });
 
   app.querySelector('[data-logout]').addEventListener('click', () => {
+    cleanupMobileShell?.();
     if (adminPollTimer) window.clearInterval(adminPollTimer);
     adminPollTimer = null;
     clearAuthToken();
