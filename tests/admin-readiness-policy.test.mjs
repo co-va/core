@@ -145,6 +145,14 @@ for (const key of ['cabinet.service.procedures', 'cabinet.service.products']) {
 }
 assert.match(serviceMigration, /previous\."status"[\s\S]*?previous\."key" = 'cabinet\.service'/,
   'Both modes inherit previous Service readiness on upgrade');
+const testingMigration = readFileSync('server/prisma/migrations/20261109180000_service_modes_testing/migration.sql', 'utf8');
+for (const key of ['cabinet.service.procedures', 'cabinet.service.products']) {
+  assert.ok(testingMigration.includes(key), key + ' must transition from NOT_READY to TESTING');
+}
+assert.match(testingMigration, /ON CONFLICT \("key"\) DO UPDATE/);
+assert.match(testingMigration, /SET "status" = 'TESTING'/);
+assert.match(testingMigration, /WHERE "AdminToolReadiness"\."status" = 'NOT_READY'/,
+  'Release must not demote already READY Service modes');
 const adminRegistryUi = readFileSync('admin/admin.js', 'utf8');
 assert.match(adminRegistryUi, /const sharedKey = readonly \? '' : String\(item\.capabilityKey \|\| ''\)/,
   'Shared Service access must remain editable in tenant profile, not duplicated into modes');
