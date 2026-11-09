@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { DepositService } from '../loyalty/deposit.service';
-import { expireDepositInstances } from '../loyalty/deposit-state';
+import { depositPriceSourcesFromRows, expireDepositInstances } from '../loyalty/deposit-state';
+import { resolvePersonPriceCondition } from '../../../core/loyalty/price-condition.js';
 import { PersonalAccountService } from '../loyalty/personal-account.service';
 import { PrismaService } from '../prisma.service';
 import { RecordService } from '../record/record.service';
@@ -32,7 +33,84 @@ function profilePhones(profile: any) {
   ].map(canonicalPhone).filter(Boolean))];
 }
 
-function profileCard(profile: any) {
+
+function publicContactCard(appearanceValue: unknown, fieldValues: Array<{ value: string; label: string; text: string }>, photo: unknown, position: string) {
+  const saved = objectValue(appearanceValue);
+  const allowed = new Set(fieldValues.map((field) => field.value));
+  const appearance = {
+    ...saved,
+    ...(Array.isArray(saved.lines) ? {
+      lines: saved.lines.map((item: unknown) => {
+        const line = objectValue(item);
+        return { ...line, field: allowed.has(text(line.field)) ? text(line.field) : '' };
+      }),
+    } : {}),
+  };
+  const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
+  return { appearance, fields: fieldValues.filter((field) => visible.has(field.value)), photo: text(photo), photoPosition: position };
+}
+
+function publicDiscountText(value: unknown) {
+  const percent = Number(objectValue(value).percent);
+  return Number.isFinite(percent) && percent > 0 ? String(percent) + '%' : '';
+}
+
+function publicContactField(value: string, label: string, content: unknown) {
+  return { value, label, text: text(content) };
+}
+
+function publicWorkTime(workplace: any) {
+  const from = text(workplace?.from), to = text(workplace?.to);
+  return from || to ? (from || '—') + ' - ' + (to || '—') : '';
+}
+
+function publicProfileFields(profile: any, workplaces: any[] = [], discount: unknown = null) {
+  const first = workplaces[0] || {};
+  const name = [text(profile?.name), text(profile?.surname)].filter(Boolean).join(' ');
+  return [
+    publicContactField('workTime', 'График', publicWorkTime(first)),
+    publicContactField('workplaceName', 'Рабочее пространство', first.name),
+    publicContactField('name', 'Имя и фамилия', name),
+    publicContactField('firstName', 'Имя', profile?.name),
+    publicContactField('surname', 'Фамилия', profile?.surname),
+    publicContactField('profession', 'Профессия', profile?.profession),
+    publicContactField('discount', 'Скидка', publicDiscountText(discount)),
+    publicContactField('phone', 'Телефон', arrayValue(profile?.phones)[0] || profile?.phone),
+    publicContactField('email', 'Email', arrayValue(profile?.emails)[0]),
+    publicContactField('telegram', 'Telegram', arrayValue(profile?.telegrams)[0]),
+    publicContactField('experience', 'Опыт', profile?.experience),
+    publicContactField('about', 'О себе', profile?.about),
+    publicContactField('professionAbout', 'О профессии', profile?.professionAbout),
+    publicContactField('workplaceCount', 'Количество пространств', workplaces.length ? String(workplaces.length) : ''),
+  ];
+}
+
+function publicWorkplaceFields(workplace: any, profile: any, discount: unknown = null) {
+  const name = [text(profile?.name), text(profile?.surname)].filter(Boolean).join(' ');
+  return [
+    publicContactField('workTime', 'График', publicWorkTime(workplace)),
+    publicContactField('workplaceName', 'Рабочее пространство', workplace?.name),
+    publicContactField('city', 'Город', workplace?.city),
+    publicContactField('address', 'Адрес', workplace?.address),
+    publicContactField('workplacePhone', 'Телефон пространства', workplace?.phone),
+    publicContactField('currency', 'Валюта', workplace?.currency),
+    publicContactField('workplaceAbout', 'О рабочем пространстве', workplace?.about),
+    publicContactField('discount', 'Скидка', publicDiscountText(discount)),
+    publicContactField('profileName', 'Имя и фамилия', name),
+    publicContactField('profileFirstName', 'Имя', profile?.name),
+    publicContactField('profileSurname', 'Фамилия', profile?.surname),
+    publicContactField('profession', 'Профессия', profile?.profession),
+    publicContactField('profilePhone', 'Телефон профиля', arrayValue(profile?.phones)[0] || profile?.phone),
+    publicContactField('profileEmail', 'Email', arrayValue(profile?.emails)[0]),
+    publicContactField('profileTelegram', 'Telegram', arrayValue(profile?.telegrams)[0]),
+    publicContactField('profileExperience', 'Опыт', profile?.experience),
+    publicContactField('profileAbout', 'О себе', profile?.about),
+    publicContactField('profileProfessionAbout', 'О профессии', profile?.professionAbout),
+  ];
+}
+
+function profileCard(profile: any, workplaces: any[] = [], discount: unknown = null) {
+  const position = String(Number(profile?.photoCropX ?? 50)) + '% ' + String(Number(profile?.photoCropY ?? 50)) + '%';
   return {
     tenantId: text(profile?.tenantId),
     profile: {
@@ -45,6 +123,7 @@ function profileCard(profile: any) {
       profession: text(profile?.profession),
       about: text(profile?.about),
       cardAppearance: objectValue(profile?.cardAppearance),
+      card: publicContactCard(profile?.cardAppearance, publicProfileFields(profile, workplaces, discount), profile?.photo, position),
     },
   };
 }
@@ -66,7 +145,9 @@ function recordMatchesAccount(dataValue: unknown, accountId: string, accountPhon
   return participants.some((person) => participantMatchesAccount(person, accountId, accountPhone));
 }
 
-function workplaceCard(workplace: any) {
+
+function workplaceCard(workplace: any, profile: any = {}, discount: unknown = null) {
+  const position = String(Number(workplace?.photoCropX ?? 50)) + '% ' + String(Number(workplace?.photoCropY ?? 50)) + '%';
   return {
     key: text(workplace?.key),
     name: text(workplace?.name),
@@ -79,6 +160,88 @@ function workplaceCard(workplace: any) {
     links: arrayValue(workplace?.links),
     about: text(workplace?.about),
     cardAppearance: objectValue(workplace?.cardAppearance),
+    card: publicContactCard(workplace?.cardAppearance, publicWorkplaceFields(workplace, profile, discount), workplace?.photo, position),
+  };
+}
+
+// A card is a projection of a SAVED Professional appearance, never a new
+// User template. Only the six public loyalty-card fields may carry values.
+// Other configured lines render empty rather than exposing private Person data.
+function publicProgramCard(
+  templates: unknown, scope: string,
+  values: { uei?: unknown; title?: unknown; subtitle?: unknown; status?: unknown; metaLeft?: unknown; metaRight?: unknown },
+) {
+  const template = arrayValue(templates)
+    .map(objectValue).find((item) => text(item.scope) === scope) || {};
+  const saved = objectValue(template.appearance);
+  const allowed = new Set(['uei', 'title', 'subtitle', 'status', 'metaLeft', 'metaRight']);
+  // Preserve the saved geometry and styling; never send internal field keys.
+  const appearance = {
+    ...saved,
+    ...(Array.isArray(saved.lines) ? {
+      lines: saved.lines.map((item: unknown) => {
+        const line = objectValue(item);
+        const key = text(line.field);
+        return { ...line, field: allowed.has(key) ? key : '' };
+      }),
+    } : {}),
+  };
+  const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
+  const fields = [
+    { value: 'uei', label: 'UEI', text: text(values.uei) },
+    { value: 'title', label: 'Название', text: text(values.title) },
+    { value: 'subtitle', label: 'Подпись', text: text(values.subtitle) },
+    { value: 'status', label: 'Статус', text: text(values.status) },
+    { value: 'metaLeft', label: 'Данные слева', text: text(values.metaLeft) },
+    { value: 'metaRight', label: 'Данные справа', text: text(values.metaRight) },
+  ].filter((item) => visible.has(item.value));
+  return {
+    appearance,
+    fields,
+    photo: text(template.photo),
+    photoPosition: text(template.photoPosition) || '50% 50%',
+  };
+}
+
+// This is formatting only; the nominal and balances are taken from their
+// existing sources. No new pricing/discount calculation takes place here.
+function cardMoney(value: unknown) {
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+    .format(Number(value || 0)).replaceAll(String.fromCharCode(160), ' ')} ₽`;
+}
+
+function depositCardStatus(value: unknown) {
+  const status = text(value);
+  return status === 'expired' ? 'Срок завершён'
+    : status === 'closed' || status === 'ended' ? 'Закрыт' : 'Активен';
+}
+
+// A discount may be shown only for the authenticated Account's own Person
+// within a connected tenant. An explicit link to another account is never
+// overridden by a coincidentally matching telephone number.
+function personBelongsToAccount(personValue: unknown, accountId: string, accountPhone: string) {
+  const person = objectValue(personValue);
+  const linkedAccounts = [...arrayValue(person.accounts).map(text), text(person.accountId)].filter(Boolean);
+  if (linkedAccounts.length) return linkedAccounts.includes(accountId);
+  const phone = canonicalPhone(accountPhone);
+  return Boolean(phone && [person.phone, ...arrayValue(person.phones)].map(canonicalPhone).includes(phone));
+}
+
+// Presentation contract only: percent and source are resolved by Core's existing
+// shared loyalty price rules; no separate discount calculation is performed here.
+function effectiveDiscountForPerson(personValue: unknown, depositRows: any[], at: Date) {
+  const person = objectValue(personValue);
+  const personKey = text(person.key || person.id);
+  if (!personKey) return null;
+  const condition = resolvePersonPriceCondition(
+    person, depositPriceSourcesFromRows(depositRows, personKey, at),
+  );
+  if (condition.conflict || !condition.source || condition.percent <= 0) return null;
+  const source = condition.source;
+  return {
+    percent: condition.percent,
+    source: source.type,
+    programName: source.type === 'program' ? text(source.name) : '',
   };
 }
 
@@ -261,6 +424,9 @@ export class AccountContactsService {
       this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
     ]);
     const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
+    // Price percentage comes from the same active-program source as the Person discount.
+    const activePrices = new Map(depositPriceSourcesFromRows(rows, personKey, new Date())
+      .map((source) => [text(source.depositId), source.percent]));
     return rows.map((row) => {
       const terms = objectValue(row.terms);
       const presentation = objectValue(terms.presentation);
@@ -271,6 +437,8 @@ export class AccountContactsService {
         fundedAmount: Number(row.initialAmount || 0),
         balance: Number(row.balance || 0),
         status: text(row.status),
+        discountPercent: activePrices.get(text(row.depositId)) || 0,
+        cardProgram: objectValue(programs.get(row.programId)),
         terms,
         visibleToPersonOverride: typeof presentation.visibleToPerson === 'boolean' ? presentation.visibleToPerson : null,
       };
@@ -284,30 +452,109 @@ export class AccountContactsService {
     const person = objectValue(personValue);
     const personKey = text(person.key || person.id);
     if (!personKey) return [];
-    const [personalAccount, deposits] = await Promise.all([
+    const [personalAccount, deposits, auxiliary, ueiState] = await Promise.all([
       this.personalAccounts.endUserSummary(tenantId, personKey).catch(() => null),
       this.visibleDepositSummaries(tenantId, personKey).catch(() => []),
+      this.prisma.businessAuxiliaryState.findUnique({
+        where: { tenantId }, select: { data: true },
+      }),
+      this.prisma.ueiState.findUnique({
+        where: { tenantId }, select: { data: true },
+      }),
     ]);
+    const templates = objectValue(auxiliary?.data).cardAppearanceTemplates;
+    const relations = objectValue(objectValue(ueiState?.data).relations);
+    const name = [text(person.name), text(person.surname)].filter(Boolean).join(' ') || 'Без имени';
     return [
       personalAccount ? {
         type: 'personal-account',
         title: 'Личный счёт',
         balance: Number(personalAccount.balance || 0),
         debtTotal: Number(personalAccount.debtTotal || 0),
+        card: publicProgramCard(templates, 'loyalty-personal-account', {
+          title: name,
+          subtitle: 'Личный счёт',
+          status: Number(personalAccount.debtTotal || 0) > .009 ? 'Есть задолженность'
+            : Number(personalAccount.balance || 0) > .009 ? 'Есть остаток' : 'Нулевой остаток',
+          metaLeft: Number(personalAccount.debtTotal || 0) > .009 ? 'Задолженность' : 'Денежный остаток',
+          metaRight: cardMoney(Number(personalAccount.debtTotal || 0) > .009
+            ? personalAccount.debtTotal : personalAccount.balance),
+        }),
       } : null,
-      ...deposits.map((deposit: Record<string, any>) => ({
-        type: 'deposit',
-        depositId: text(deposit.depositId),
-        title: text(deposit.programName) || 'Депозит',
-        balance: Number(deposit.balance || 0),
-        fundedAmount: Number(deposit.fundedAmount || 0),
-        status: text(deposit.status),
-        terms: {
-          termRule: text(objectValue(deposit.terms).termRule),
-          benefit: text(objectValue(deposit.terms).benefit),
-        },
-      })),
+      ...deposits.map((deposit: Record<string, any>) => {
+        const program = objectValue(deposit.cardProgram);
+        const terms = objectValue(deposit.terms);
+        return {
+          type: 'deposit',
+          depositId: text(deposit.depositId),
+          title: text(deposit.programName) || 'Депозит',
+          balance: Number(deposit.balance || 0),
+          fundedAmount: Number(deposit.fundedAmount || 0),
+          status: text(deposit.status),
+          discountPercent: Number(deposit.discountPercent || 0),
+          terms: {
+            termRule: text(objectValue(deposit.terms).termRule),
+            benefit: text(objectValue(deposit.terms).benefit),
+          },
+          card: publicProgramCard(templates, 'loyalty-deposit', {
+            uei: relations[`loyalty-deposit-program:${text(deposit.programId)}`],
+            title: deposit.programName || program.name || 'Депозит',
+            subtitle: terms.termRule || program.termRule || 'Бессрочно',
+            status: depositCardStatus(deposit.status),
+            metaLeft: terms.benefit || program.benefit || 'Без дополнительной выгоды',
+            metaRight: cardMoney(deposit.fundedAmount),
+          }),
+        };
+      }),
     ].filter(Boolean);
+  }
+
+  // Both list and detail use one batched read of canonical Person and deposit
+  // sources. This does not expose another contact's discount by phone collision.
+  private async accountDiscounts(accountId: string, accountPhone: string, tenantIds: string[]) {
+    const result = new Map<string, ReturnType<typeof effectiveDiscountForPerson>>();
+    if (!tenantIds.length) return result;
+    const [rows, deposits] = await Promise.all([
+      this.prisma.person.findMany({
+        where: { tenantId: { in: tenantIds } },
+        select: { tenantId: true, key: true, data: true },
+      }),
+      this.prisma.loyaltyDepositInstance.findMany({
+        where: { tenantId: { in: tenantIds }, status: 'active' },
+        select: {
+          tenantId: true, personKey: true, status: true, terms: true,
+          depositId: true, programId: true, programName: true,
+        },
+      }),
+    ]);
+    const candidates = new Map<string, Array<{ person: Record<string, any>; linked: boolean }>>();
+    for (const row of rows) {
+      const person: Record<string, any> = { ...objectValue(row.data), key: text(row.key) };
+      if (!personBelongsToAccount(person, accountId, accountPhone)) continue;
+      const linked = [...arrayValue(person.accounts).map(text), text(person.accountId)]
+        .includes(accountId);
+      const set = candidates.get(row.tenantId) || [];
+      set.push({ person, linked });
+      candidates.set(row.tenantId, set);
+    }
+    const byTenant = new Map<string, any[]>();
+    for (const deposit of deposits) {
+      const set = byTenant.get(deposit.tenantId) || [];
+      set.push(deposit);
+      byTenant.set(deposit.tenantId, set);
+    }
+    const now = new Date();
+    for (const tenantId of tenantIds) {
+      const people = candidates.get(tenantId) || [];
+      const linked = people.filter((item) => item.linked);
+      const matches = linked.length ? linked : people;
+      // An ambiguous identity must not leak a percentage from someone else.
+      const person = matches.length === 1 ? matches[0].person : null;
+      result.set(tenantId, effectiveDiscountForPerson(
+        person, byTenant.get(tenantId) || [], now,
+      ));
+    }
+    return result;
   }
 
   private async projectedRecords(context: Awaited<ReturnType<AccountContactsService['contactContext']>>) {
@@ -341,7 +588,27 @@ export class AccountContactsService {
     for (const profile of profiles) {
       if (!byTenant.has(profile.tenantId)) byTenant.set(profile.tenantId, profile);
     }
-    return visible.map((tenantId) => byTenant.get(tenantId)).filter(Boolean).map(profileCard);
+    const [discounts, workplaces] = await Promise.all([
+      this.accountDiscounts(account.id, account.phone, visible),
+      this.prisma.workplace.findMany({
+        where: { tenantId: { in: visible }, deletedAt: null },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      }),
+    ]);
+    const byWorkplaceTenant = new Map<string, any[]>();
+    for (const workplace of workplaces) {
+      const items = byWorkplaceTenant.get(workplace.tenantId) || [];
+      items.push(workplace);
+      byWorkplaceTenant.set(workplace.tenantId, items);
+    }
+    return visible.map((tenantId) => {
+      const profile = byTenant.get(tenantId);
+      const discount = discounts.get(tenantId) || null;
+      return profile ? {
+        ...profileCard(profile, byWorkplaceTenant.get(tenantId) || [], discount),
+        discount,
+      } : null;
+    }).filter(Boolean);
   }
 
   async searchByPhone(accountId: string, phoneValue: unknown) {
@@ -379,20 +646,23 @@ export class AccountContactsService {
         return text(data.workplaceId || data.workplaceKey);
       })
       .filter(Boolean))];
-    const [workplaces, programs] = await Promise.all([
-      workplaceKeys.length
-        ? this.prisma.workplace.findMany({
-            where: { tenantId: context.tenantId, key: { in: workplaceKeys }, deletedAt: null },
-            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
-          })
-        : [],
+    const [allWorkplaces, programs, discounts] = await Promise.all([
+      this.prisma.workplace.findMany({
+        where: { tenantId: context.tenantId, deletedAt: null },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      }),
       this.programSummaries(context.tenantId, context.person),
+      this.accountDiscounts(context.account.id, context.account.phone, [context.tenantId]),
     ]);
-
+    const discount = discounts.get(context.tenantId) || null;
+    const connectedKeys = new Set(workplaceKeys);
     return {
-      ...profileCard(context.profile),
+      ...profileCard(context.profile, allWorkplaces, discount),
       connected: true,
-      workplaces: workplaces.map(workplaceCard),
+      discount,
+      workplaces: allWorkplaces
+        .filter((workplace) => connectedKeys.has(text(workplace.key)))
+        .map((workplace) => workplaceCard(workplace, context.profile, discount)),
       programs,
     };
   }
