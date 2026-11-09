@@ -116,8 +116,10 @@ const visibleMethod = between(service, '  private async visibleDepositSummaries(
   .replace('  private async visibleDepositSummaries(', 'async function visibleDepositSummaries(');
 const summariesMethod = between(service, '  private async programSummaries(', '  // Both list and detail')
   .replace('  private async programSummaries(', 'async function programSummaries(');
+const presentationHelpers = between(service, 'function publicProgramCard(', '// A discount may be shown');
 const programRuntime = runInNewContext(
-  stripTypeScriptTypes(accountHelpers + '\n' + visibleMethod + '\n' + summariesMethod, { mode: 'strip' })
+  stripTypeScriptTypes(accountHelpers + '\n' + presentationHelpers + '\n'
+    + visibleMethod + '\n' + summariesMethod, { mode: 'strip' })
     + '\n({ visibleDepositSummaries, programSummaries })',
   {
     depositPriceSourcesFromRows: runtime.depositPriceSourcesFromRows,
@@ -127,20 +129,99 @@ const programRuntime = runInNewContext(
 let assignedRows = [{
   ...program, initialAmount: 15000, balance: 12000,
 }];
+let programData = {
+  name: 'Сезонная программа', amount: 30000, termRule: '12 месяцев',
+  benefit: 'Скидка 20%', status: 'active', showToAll: true,
+};
+const depositAppearance = {
+  gradient: { from: '#2C2A28', mid: '#817A73', to: '#D7D1CA', angle: 125 },
+  lines: [
+    { field: 'uei', zone: 'left', size: 's' },
+    { field: 'title', zone: 'full', size: 'xl', bold: true },
+    { field: 'metaLeft', zone: 'left', size: 'm' },
+    { field: 'metaRight', zone: 'right', size: 'l' },
+    { field: 'totalSpent', zone: 'right', size: 'm' },
+  ],
+};
+const personalAppearance = {
+  lines: [
+    { field: 'title', zone: 'full', bold: true },
+    { field: 'metaRight', zone: 'right', size: 'l' },
+  ],
+};
+let templates = [
+  { scope: 'loyalty-deposit', appearance: depositAppearance, photo: 'https://example.test/deposit.jpg', photoPosition: '25% 70%' },
+  { scope: 'loyalty-personal-account', appearance: personalAppearance, photo: 'https://example.test/account.jpg', photoPosition: '30% 60%' },
+];
+let personalAccountView = null;
 const context = {
   prisma: {
     loyaltyDepositInstance: { findMany: async () => assignedRows },
     loyaltyDepositProgram: {
-      findMany: async () => [{ programId: program.programId, data: { showToAll: true } }],
+      findMany: async () => [{ programId: program.programId, data: programData }],
+    },
+    businessAuxiliaryState: {
+      findUnique: async () => ({ data: { cardAppearanceTemplates: templates } }),
+    },
+    ueiState: {
+      findUnique: async () => ({ data: { relations: { ['loyalty-deposit-program:' + program.programId]: '0025' } } }),
     },
   },
-  personalAccounts: { endUserSummary: async () => null },
+  personalAccounts: { endUserSummary: async () => personalAccountView },
 };
 context.visibleDepositSummaries = programRuntime.visibleDepositSummaries.bind(context);
-const assignedPrograms = () => programRuntime.programSummaries.call(context, 'pro-a', { key: me.key });
+const assignedPrograms = () => programRuntime.programSummaries.call(
+  context, 'pro-a', { key: me.key, name: 'Анна', surname: 'Тестовая', totalSpent: 1000000 },
+);
 
 let assigned = await assignedPrograms();
 assert.equal(assigned.length, 1);
+assert.deepEqual(plain(assigned[0].card.appearance.gradient), depositAppearance.gradient);
+assert.deepEqual(plain(assigned[0].card.appearance.lines.slice(0, 4)), depositAppearance.lines.slice(0, 4),
+  'Saved Professional card rows and positions are preserved');
+assert.equal(assigned[0].card.appearance.lines[4].field, '',
+  'Internal Person field keys must not reach User');
+assert.equal(assigned[0].card.photo, 'https://example.test/deposit.jpg');
+assert.equal(assigned[0].card.photoPosition, '25% 70%');
+assert.deepEqual(plain(assigned[0].card.fields), [
+  { value: 'uei', label: 'UEI', text: '0025' },
+  { value: 'title', label: 'Название', text: 'Сезонная программа' },
+  { value: 'metaLeft', label: 'Данные слева', text: 'Скидка 20%' },
+  { value: 'metaRight', label: 'Данные справа', text: '30 000 ₽' },
+], 'Card fields are projected from the assigned program, not invented User layout');
+assert.doesNotMatch(JSON.stringify(assigned[0].card), /totalSpent|1000000|private/i,
+  'Never serialize internal customer spend to User');
+
+personalAccountView = { balance: 1800, debtTotal: 0 };
+assigned = await assignedPrograms();
+assert.equal(assigned.length, 2, 'Visible Personal Account also has a program card');
+assert.equal(assigned[0].type, 'personal-account');
+assert.deepEqual(plain(assigned[0].card.fields), [
+  { value: 'title', label: 'Название', text: 'Анна Тестовая' },
+  { value: 'metaRight', label: 'Данные справа', text: '1 800 ₽' },
+]);
+assert.equal(assigned[0].card.photoPosition, '30% 60%');
+personalAccountView = null;
+assigned = await assignedPrograms();
+assert.equal(assigned.length, 1, 'Hidden Personal Account is not transferred to User');
+
+programData = { ...programData, showToAll: false };
+assigned = await assignedPrograms();
+assert.equal(assigned.length, 0, 'Existing program visibility setting remains authoritative');
+assignedRows = [{ ...assignedRows[0], terms: {
+  ...program.terms, presentation: { visibleToPerson: true },
+} }];
+assigned = await assignedPrograms();
+assert.equal(assigned.length, 1, 'Existing person-specific visibility override is respected');
+programData = { ...programData, showToAll: true };
+assignedRows = [{ ...assignedRows[0], terms: program.terms }];
+
+templates = [];
+assigned = await assignedPrograms();
+assert.deepEqual(plain(assigned[0].card), {
+  appearance: {}, fields: [], photo: '', photoPosition: '50% 50%',
+}, 'Missing Professional template is not replaced by an invented Core template');
+templates = [{ scope: 'loyalty-deposit', appearance: depositAppearance, photo: 'https://example.test/deposit.jpg', photoPosition: '25% 70%' }];
 assert.equal(assigned[0].discountPercent, 20, 'Program card receives numeric active discount');
 assert.equal(assigned[0].fundedAmount, 15000, 'Original program nominal is unchanged');
 assert.equal(assigned[0].balance, 12000, 'Original program balance is unchanged');
@@ -169,6 +250,10 @@ assert.match(service, /discount: discounts\.get\(tenantId\) \|\| null/);
 assert.match(service, /discount: discounts\.get\(context\.tenantId\) \|\| null/);
 assert.match(service, /programs,\s*\};/);
 assert.match(service, /fundedAmount: Number\(deposit\.fundedAmount \|\| 0\)/);
+assert.match(service, /card: publicProgramCard\(templates, 'loyalty-deposit'/);
+assert.match(service, /card: publicProgramCard\(templates, 'loyalty-personal-account'/);
+assert.match(service, /businessAuxiliaryState\.findUnique\(/);
+assert.match(service, /ueiState\.findUnique\(/);
 assert.doesNotMatch(contactProjection, /workplace|scope:/i, 'Discount does not depend on a workplace');
 
 console.log('Account contacts discount: personal, active program, expiry, no discount, identity and API contract PASS');
