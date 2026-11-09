@@ -187,8 +187,8 @@ assert.deepEqual(plain(assigned[0].card.fields), [
   { value: 'uei', label: 'UEI', text: '0025' },
   { value: 'title', label: 'Название', text: 'Сезонная программа' },
   { value: 'metaLeft', label: 'Данные слева', text: 'Скидка 20%' },
-  { value: 'metaRight', label: 'Данные справа', text: '30 000 ₽' },
-], 'Card fields are projected from the assigned program, not invented User layout');
+  { value: 'metaRight', label: 'Данные справа', text: '15 000 ₽' },
+], 'Saved layout uses the amount assigned to this person, not the catalog nominal');
 assert.doesNotMatch(JSON.stringify(assigned[0].card), /totalSpent|1000000|private/i,
   'Never serialize internal customer spend to User');
 
