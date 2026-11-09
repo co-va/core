@@ -480,12 +480,12 @@ function renderTenants() {
   const content = app.querySelector('[data-content]');
   const tenants = state.tenants.filter((item) => !item.isOwnerBook);
   content.innerHTML = `
-    <div class="admin-heading"><div><h2>Пользователи</h2><p>Здесь только люди, их режим и доступ. Регистрацию больше не нужно вести через email.</p></div></div>
+    <div class="admin-heading"><div><h2>Пользователи</h2><p>Режимы и доступ пользователей.</p></div></div>
     <section class="admin-invite-panel">
       <div class="admin-invite-head">
         <div>
           <h3>Регистрационная ссылка</h3>
-          <p class="admin-service-note">Имя и email заранее не нужны. Настрой доступ, создай одноразовую ссылку и отправь её человеку любым способом.</p>
+          <p class="admin-service-note">Настрой доступ и создай одноразовую ссылку.</p>
         </div>
       </div>
       <details class="admin-invite-access">
