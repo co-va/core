@@ -114,7 +114,7 @@ function publicProgramCard(
 // existing sources. No new pricing/discount calculation takes place here.
 function cardMoney(value: unknown) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
-    .format(Number(value || 0)).replaceAll('\\u00a0', ' ')} ₽`;
+    .format(Number(value || 0)).replaceAll(String.fromCharCode(160), ' ')} ₽`;
 }
 
 function depositCardStatus(value: unknown) {
