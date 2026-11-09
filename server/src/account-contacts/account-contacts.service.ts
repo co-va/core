@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { DepositService } from '../loyalty/deposit.service';
-import { expireDepositInstances } from '../loyalty/deposit-state';
+import { depositBenefitMode, depositBenefitRate, depositTermActiveAt, expireDepositInstances } from '../loyalty/deposit-state';
+import { resolvePersonPriceCondition } from '../../../core/loyalty/price-condition.js';
 import { PersonalAccountService } from '../loyalty/personal-account.service';
 import { PrismaService } from '../prisma.service';
 import { RecordService } from '../record/record.service';
@@ -79,6 +80,45 @@ function workplaceCard(workplace: any) {
     links: arrayValue(workplace?.links),
     about: text(workplace?.about),
     cardAppearance: objectValue(workplace?.cardAppearance),
+  };
+}
+
+// A signed-in account sees only the price condition assigned to its own
+// Person in this tenant; never a tenant-wide/public discount.
+function personBelongsToAccount(personValue: unknown, accountId: string, accountPhone: string) {
+  const person = objectValue(personValue);
+  const phones = [person.phone, ...arrayValue(person.phones)].map(canonicalPhone).filter(Boolean);
+  return arrayValue(person.accounts).some((value) => text(value) === accountId)
+    || text(person.accountId) === accountId
+    || Boolean(accountPhone && phones.includes(canonicalPhone(accountPhone)));
+}
+
+function effectiveDiscountForPerson(personValue: unknown, depositRows: any[], at: Date) {
+  const person = objectValue(personValue);
+  const key = text(person.key || person.id);
+  if (!key) return null;
+  const programSources = depositRows
+    .filter((row) => text(row.personKey) === key
+      && text(row.status) === 'active'
+      && depositTermActiveAt(row.terms, at)
+      && depositBenefitMode(row.terms) === 'discount'
+      && depositBenefitRate(row.terms) > 0)
+    .map((row) => ({
+      type: 'program',
+      programType: 'deposit',
+      depositId: row.depositId,
+      programId: row.programId,
+      name: row.programName || 'Депозит',
+      percent: depositBenefitRate(row.terms),
+    }));
+  // The same canonical resolver used by Professional; do not write a second
+  // percent to the Person or calculate any discount on the client.
+  const condition = resolvePersonPriceCondition(person, programSources);
+  if (condition.conflict || !condition.source || condition.percent <= 0) return null;
+  return {
+    percent: condition.percent,
+    source: condition.source.type,
+    programName: condition.source.type === 'program' ? text(condition.source.name) : '',
   };
 }
 
@@ -310,6 +350,50 @@ export class AccountContactsService {
     ].filter(Boolean);
   }
 
+  // One batched read for Contacts rather than a query per visible card.
+  // Program benefit and expiration rules are read from authoritative Core data.
+  private async accountDiscounts(
+    accountId: string,
+    accountPhone: string,
+    tenantIds: string[],
+    knownPersons: Map<string, any> = new Map(),
+  ) {
+    const result = new Map<string, ReturnType<typeof effectiveDiscountForPerson>>();
+    if (!tenantIds.length) return result;
+    const [rows, deposits] = await Promise.all([
+      knownPersons.size ? Promise.resolve([]) : this.prisma.person.findMany({
+        where: { tenantId: { in: tenantIds } },
+        select: { tenantId: true, key: true, data: true },
+      }),
+      this.prisma.loyaltyDepositInstance.findMany({
+        where: { tenantId: { in: tenantIds }, status: 'active' },
+        select: { tenantId: true, personKey: true, status: true, terms: true,
+          depositId: true, programId: true, programName: true },
+      }),
+    ]);
+    const people = new Map(knownPersons);
+    for (const row of rows) {
+      const person = { ...objectValue(row.data), key: text(row.key) };
+      if (!personBelongsToAccount(person, accountId, accountPhone)) continue;
+      // An explicit linked account outranks a phone-only match.
+      const existing = people.get(row.tenantId);
+      const linked = arrayValue(person.accounts).some((id) => text(id) === accountId)
+        || text(person.accountId) === accountId;
+      if (!existing || linked) people.set(row.tenantId, person);
+    }
+    const byTenant = new Map<string, any[]>();
+    for (const deposit of deposits) {
+      const list = byTenant.get(deposit.tenantId) || [];
+      list.push(deposit);
+      byTenant.set(deposit.tenantId, list);
+    }
+    const now = new Date();
+    for (const tenantId of tenantIds) {
+      result.set(tenantId, effectiveDiscountForPerson(people.get(tenantId), byTenant.get(tenantId) || [], now));
+    }
+    return result;
+  }
+
   private async projectedRecords(context: Awaited<ReturnType<AccountContactsService['contactContext']>>) {
     const people = this.matchingParticipants(context.records, context.account.id, context.account.phone);
     if (context.person) people.push(objectValue(context.person));
@@ -341,7 +425,11 @@ export class AccountContactsService {
     for (const profile of profiles) {
       if (!byTenant.has(profile.tenantId)) byTenant.set(profile.tenantId, profile);
     }
-    return visible.map((tenantId) => byTenant.get(tenantId)).filter(Boolean).map(profileCard);
+    const discounts = await this.accountDiscounts(account.id, account.phone, visible);
+    return visible.map((tenantId) => {
+      const profile = byTenant.get(tenantId);
+      return profile ? { ...profileCard(profile), discount: discounts.get(tenantId) || null } : null;
+    }).filter(Boolean);
   }
 
   async searchByPhone(accountId: string, phoneValue: unknown) {
@@ -389,9 +477,14 @@ export class AccountContactsService {
       this.programSummaries(context.tenantId, context.person),
     ]);
 
+    const discounts = await this.accountDiscounts(
+      context.account.id, context.account.phone, [context.tenantId],
+      new Map([[context.tenantId, context.person]]),
+    );
     return {
       ...profileCard(context.profile),
       connected: true,
+      discount: discounts.get(context.tenantId) || null,
       workplaces: workplaces.map(workplaceCard),
       programs,
     };
