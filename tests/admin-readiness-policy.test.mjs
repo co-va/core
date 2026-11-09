@@ -98,6 +98,58 @@ const admin = readFileSync('admin/commercial-catalog.js', 'utf8');
 assert.ok(!admin.includes('data-activate-readiness='), 'admin must save selection directly, no duplicate apply step');
 console.log('Readiness: DEMO, LIVE user, LIVE tester, owner and NOT_READY matrix PASS');
 
+// Service F is two independent existing Professional modes, not one readiness leaf.
+const serviceModeRows = (procedures, products) => [
+  { key: 'cabinet.service.procedures', status: procedures, enforced: true },
+  { key: 'cabinet.service.products', status: products, enforced: true },
+];
+const serviceCap = cap('services.access');
+const liveProfessional = actors.find((actor) => actor.name === 'LIVE regular');
+const liveTester = actors.find((actor) => actor.name === 'LIVE tester');
+assert.ok(liveProfessional && liveTester, 'Service test actors available');
+assert.equal(applyReadinessGate(serviceCap, serviceModeRows('NOT_READY', 'NOT_READY'), liveProfessional).enabled, false,
+  'Service is hidden when both modes are NOT_READY');
+assert.equal(applyReadinessGate(serviceCap, serviceModeRows('READY', 'NOT_READY'), liveProfessional).enabled, true,
+  'Procedures alone can keep the shared Service entry available');
+assert.equal(applyReadinessGate(serviceCap, serviceModeRows('NOT_READY', 'READY'), liveProfessional).enabled, true,
+  'Products alone can keep the shared Service entry available');
+assert.equal(applyReadinessGate(serviceCap, serviceModeRows('TESTING', 'NOT_READY'), liveProfessional).enabled, false,
+  'Service TESTING mode stays hidden to ordinary LIVE accounts');
+assert.equal(applyReadinessGate(serviceCap, serviceModeRows('TESTING', 'NOT_READY'), liveTester).enabled, true,
+  'Service TESTING mode is available to testers');
+assert.equal(applyReadinessGate(serviceCap, row('READY', true, 'cabinet.service'), liveProfessional).enabled, true,
+  'Legacy Service readiness still works before migrating mode rows');
+assert.equal(applyReadinessGate(serviceCap, row('NOT_READY', true, 'cabinet.service'), liveProfessional).enabled, false);
+assert.equal(applyReadinessGate(cap('services.access', false), serviceModeRows('READY', 'READY'), liveProfessional).enabled, false,
+  'Readiness must not grant Service entitlement');
+assert.deepEqual(CABINET_READINESS_CAPABILITIES['cabinet.service'], ['services.access'],
+  'Keep canonical Services capability, do not create duplicated grants');
+
+const serviceRegistry = readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
+const serviceCatalog = readFileSync('admin/commercial-catalog.js', 'utf8');
+const serviceSubtree = serviceCatalog.slice(serviceCatalog.indexOf("id: 'service'"), serviceCatalog.indexOf("id: 'chat'"));
+assert.match(serviceSubtree, /nesting: 'modes', capabilityKey: 'services\.access'/);
+for (const [key, name] of [
+  ['cabinet.service.procedures', 'Процедуры'],
+  ['cabinet.service.products', 'Товары'],
+]) {
+  assert.ok(serviceRegistry.includes("'" + key + "'"), 'Admin server must persist mode ' + key);
+  assert.ok(serviceSubtree.includes("label: '" + name + "', kind: 'mode', readinessKey: '" + key + "'"),
+    'Service mode must have its own readiness dropdown: ' + name);
+}
+assert.ok(!serviceSubtree.includes("readinessKey: 'cabinet.service'"),
+  'Service parent must show aggregate status rather than legacy dropdown');
+const serviceMigration = readFileSync('server/prisma/migrations/20261109170000_service_modes_readiness/migration.sql', 'utf8');
+for (const key of ['cabinet.service.procedures', 'cabinet.service.products']) {
+  assert.ok(serviceMigration.includes(key), 'Missing Service readiness migration ' + key);
+}
+assert.match(serviceMigration, /previous\."status"[\s\S]*?previous\."key" = 'cabinet\.service'/,
+  'Both modes inherit previous Service readiness on upgrade');
+const adminRegistryUi = readFileSync('admin/admin.js', 'utf8');
+assert.match(adminRegistryUi, /const sharedKey = readonly \? '' : String\(item\.capabilityKey \|\| ''\)/,
+  'Shared Service access must remain editable in tenant profile, not duplicated into modes');
+console.log('Service modes: Procedures/Products, independent statuses, legacy access and migration PASS');
+
 // Workplace creation is core DEMO setup; readiness does not apply to it.
 assert.equal(CABINET_READINESS_CAPABILITIES['cabinet.profile.workspaces'], undefined);
 const workspace = cap('workplaces.access');
