@@ -8,6 +8,7 @@ import { v2Shell } from '../ui/v2/shell.js';
 import { v2Header } from '../ui/v2/header.js';
 import { v2CardDeck } from '../ui/v2/card-deck.js';
 import { initV2WorkspaceInteraction, setV2DeckOpen } from '../ui/v2/workspace-navigation.js';
+import { modal, mountModal } from '../ui/modals/index.js';
 
 const app = document.querySelector('#admin-app');
 const state = {
@@ -459,7 +460,7 @@ function openDeleteTenantModal(tenantId) {
 
   const name = tenant.ownerProfile?.name || tenant.invitation?.name || tenant.tenantName || 'Пользователь';
   const email = tenant.ownerProfile?.email || tenant.invitation?.email || '';
-  const backdrop = document.createElement('div');
+  let backdrop = document.createElement('div');
   backdrop.className = 'admin-delete-backdrop';
   backdrop.innerHTML = `
     <section class="admin-delete-modal" role="dialog" aria-modal="true" aria-labelledby="admin-delete-title">
@@ -472,9 +473,15 @@ function openDeleteTenantModal(tenantId) {
         <button type="button" class="admin-button danger" data-delete-confirm>Удалить</button>
       </div>
     </section>`;
-  document.body.append(backdrop);
+  const sharedX = Boolean(app.querySelector('.admin-mobile-app'));
+  if (sharedX) {
+    const html = modal(backdrop.innerHTML, { title: 'Удалить пользователя?', variant: 'x', xRole: 'action', className: 'admin-delete-x' });
+    const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
+    if (!mounted) return;
+    backdrop = mounted;
+  } else document.body.append(backdrop);
 
-  const close = () => backdrop.remove();
+  const close = () => { if (sharedX) backdrop.v2Close?.(); else backdrop.remove(); };
   backdrop.querySelector('[data-delete-cancel]')?.addEventListener('click', close);
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
   backdrop.querySelector('[data-delete-confirm]')?.addEventListener('click', async (event) => {
@@ -723,7 +730,7 @@ function openAccessDrawer(tenantId) {
   const mode = String(tenant.access?.commercialMode || 'DEMO');
   const demoActivated = tenant.access?.demoActivatedAt || tenant.invitation?.activatedAt || '';
   const demoExpires = tenant.access?.demoExpiresAt || tenant.invitation?.demoExpiresAt || '';
-  const backdrop = document.createElement('div');
+  let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop';
   backdrop.innerHTML = `
     <aside class="admin-drawer">
@@ -781,9 +788,15 @@ function openAccessDrawer(tenantId) {
       <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить изменения</button></div>
       <p class="admin-inline-message" data-save-message></p>
     </aside>`;
-  document.body.append(backdrop);
+  const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
+  if (sharedQ) {
+    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
+    if (!mounted) return;
+    backdrop = mounted;
+  } else document.body.append(backdrop);
 
-  const close = () => backdrop.remove();
+  const close = () => { if (sharedQ) backdrop.v2Close?.(); else backdrop.remove(); };
   backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
 
