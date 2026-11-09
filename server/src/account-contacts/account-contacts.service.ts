@@ -92,7 +92,19 @@ function publicProgramCard(
 ) {
   const template = arrayValue(templates)
     .map(objectValue).find((item) => text(item.scope) === scope) || {};
-  const appearance = objectValue(template.appearance);
+  const saved = objectValue(template.appearance);
+  const allowed = new Set(['uei', 'title', 'subtitle', 'status', 'metaLeft', 'metaRight']);
+  // Preserve the saved geometry and styling; never send internal field keys.
+  const appearance = {
+    ...saved,
+    ...(Array.isArray(saved.lines) ? {
+      lines: saved.lines.map((item: unknown) => {
+        const line = objectValue(item);
+        const key = text(line.field);
+        return { ...line, field: allowed.has(key) ? key : '' };
+      }),
+    } : {}),
+  };
   const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
   const fields = [
     { value: 'uei', label: 'UEI', text: text(values.uei) },
