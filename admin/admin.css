@@ -201,3 +201,44 @@ button,input,select,textarea{font:inherit}
   .admin-mobile-app .admin-table td:nth-child(3),.admin-mobile-app .admin-table td:nth-child(4){grid-column:1}
   .admin-mobile-app .admin-table td:nth-child(4){justify-content:space-between}
 }
+
+
+/* Canonical Shared Q and X own mobile overlays; nested Admin dialogs are content only. */
+.admin-access-q,.admin-delete-x{
+  --text:#111;--text-secondary:#777a7d;--border:#d7d7d7;
+  --white:#fff;--v2-ink:#111;--surface-soft:#f2f2f2;
+  --button-secondary:#d8d3cf
+}
+.admin-access-q .admin-drawer{
+  width:100%;max-width:none;height:auto;min-height:0;max-height:none;
+  padding:0;border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent
+}
+.admin-access-q .admin-drawer-head{margin:0 0 14px}
+.admin-access-q .admin-drawer-head h3{font-size:20px}
+.admin-access-q .admin-drawer-head p{font-size:12px;overflow-wrap:anywhere}
+.admin-access-q .admin-section{padding-top:17px;margin-top:17px}
+.admin-access-q .admin-capability{grid-template-columns:minmax(0,1fr) auto}
+.admin-access-q .admin-actions{
+  position:sticky;bottom:0;z-index:4;
+  display:grid;grid-template-columns:minmax(0,1fr);gap:8px;
+  margin-top:22px;padding:12px 0 calc(4px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--border);background:#fff
+}
+.admin-access-q .admin-actions [data-save]{order:-1}
+.admin-access-q .admin-actions .admin-button{width:100%;min-height:48px}
+.admin-access-q .admin-admin-field,.admin-access-q .admin-field{min-width:0}
+.admin-access-q .admin-field :is(input,textarea,select){max-width:100%;min-width:0;font-size:16px;border-radius:0}
+.admin-delete-x.modal-sheet.v2-layer--bottom{
+  box-sizing:border-box;height:auto;min-height:0;max-height:75%;
+  padding:26px 18px calc(22px + env(safe-area-inset-bottom))
+}
+.admin-delete-x .admin-delete-modal{
+  display:block;width:100%;max-width:none;max-height:none;
+  padding:0;border:0;border-radius:0;box-shadow:none;background:transparent
+}
+.admin-delete-x .admin-delete-modal h2{font-size:22px;margin:0 0 15px}
+.admin-delete-x .admin-delete-person{font-size:16px;margin:0 0 12px}
+.admin-delete-x .admin-delete-person span{font-size:13px}
+.admin-delete-x .admin-delete-copy{font-size:14px}
+.admin-delete-x .admin-delete-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.admin-delete-x .admin-delete-actions .admin-button{min-width:0;font-size:14px}
