@@ -52,7 +52,7 @@ No separate `frontend` service may run in `docker-compose.staging.yml`; Core tes
 - Platform-only tree after cleanup: 382 tracked files before documentation changes.
 - Old UI-only test suites were retired from Core; the remaining platform/API tests and isolated database smoke are executed by CI.
 - Professional and User repositories were not modified.
-- Completion requires fresh Check Book and Onboarding Smoke PASS plus platform Admin and API domain integration, not just an asserted build.
+- Completion requires fresh Check Core and Onboarding Smoke PASS plus platform Admin and API domain integration, not just an asserted build.
 
 ## Release and process
 - All changes occur on `staging`; `main` stays production until an approved PR.
@@ -115,3 +115,13 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - `NOT_READY` скрывает элемент у всех; `TESTING` показывает DEMO/тестировщикам/owner; `READY` показывает при наличии существующего разрешения. Проверка едина в `/saas-access/me` и серверном `resolveCapability`.
 - В Professional `Касса` остаётся доступной при любом разрешённом вложении, включая ситуацию «разрешены только Займы», и не подменяется названием «Инвестиции». Остальные экраны `ДДС` и `Z-отчёт` не перестраиваются.
 - Всё работается в `core/staging` и `professional/staging`. До зелёных CI и выпуска в `core/main` новая карта не считается опубликованной.
+
+## Core service pricing release — 2026-11-10
+
+- Scope: only the NestJS Core API, not a Professional/User frontend. The active `server/src/online-booking/**` is the canonical booking API; legacy browser `booking.html` and old application entrypoints are prohibited by `scripts/check-platform-only-boundary.mjs`.
+- `ProcedureService` is the single owner for workplace-specific price selection and ready-to-render `bookingPrice.display`. `amount` emits a fixed price; `from` and `from-to` emit the first price with the «от» prefix, including when a stale secondary `amount` exists; `free` emits «Бесплатно». Numeric minima remain separate for Finance and aggregate quotes.
+- Public booking, authenticated account/contact booking and new Record snapshots reuse that server owner. The redundant account price implementation was removed. Deleted services are excluded from new bookings while historically dated Record snapshots remain available.
+- Regression test: `tests/procedure-booking-contract.test.mjs`, included in root `npm test`. No new database schema or data migration.
+- Removed unused legacy-brand metadata: CI workflow title `Check Core` and NestJS package name `co-va-core-api`. Historical migration names, PostgreSQL role/database identifiers and live env credentials MUST NOT be renamed during this release; they are storage compatibility identifiers, not a duplicate Book app.
+- The release branch is based on current `main` to retain the independent Profile/loyalty API and readiness features from PR #860/#861. Unapproved Admin UI work still in `staging` is intentionally not included. Professional and User repos are not changed by this release.
+- GitHub passing checks verify source/isolated backend only; the active Core runtime requires its normal Amvera deployment before these API changes are live.
