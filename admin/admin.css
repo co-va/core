@@ -74,9 +74,7 @@ button,input,select,textarea{font:inherit}
 #admin-app:has(.admin-auth-screen){background:var(--surface-dark)}
 .admin-auth-screen{
   --app-max-width:390px;--v2-base:var(--surface-dark);--v2-ink:var(--text);
-  --text:var(--text);--text-secondary:var(--text-secondary);--border:var(--border);
-  --white:var(--white);--danger:var(--danger);--surface-soft:var(--surface-soft);
-  --button-secondary:var(--button-secondary);width:min(100%,390px)
+  width:min(100%,390px)
 }
 .admin-auth-screen .v2-sticker{border-radius:0}
 .admin-auth-screen .field,.admin-auth-screen .password-field{min-width:0}
@@ -93,12 +91,9 @@ button,input,select,textarea{font:inherit}
   }
   #admin-app:has(.admin-mobile-app){position:fixed;inset:0;overflow:hidden;background:var(--surface-dark)}
   .admin-mobile-app{
-    --app-max-width:390px;--surface-dark:var(--surface-dark);
+    --app-max-width:390px;
     --v2-base:var(--surface-dark);--v2-ink:var(--text);--v2-white:var(--white);
-    --text:var(--text);--text-secondary:var(--text-secondary);--text-muted:var(--text-muted);
-    --border:var(--border);--white:var(--white);--surface-soft:var(--surface-soft);
-    --button-secondary:var(--button-secondary);--danger:var(--danger);
-    --app-bg:var(--app-bg);--v2-z-radius:34px;
+    --v2-z-radius:34px;
     min-width:0;max-width:min(100%,390px);margin:0 auto
   }
   .admin-mobile-app .v2-header{
@@ -205,9 +200,9 @@ button,input,select,textarea{font:inherit}
 
 /* Canonical Shared Q and X own mobile overlays; nested Admin dialogs are content only. */
 .admin-access-q,.admin-delete-x{
-  --text:var(--text);--text-secondary:var(--text-secondary);--border:var(--border);
-  --white:var(--white);--v2-ink:var(--text);--surface-soft:var(--surface-soft);
-  --button-secondary:var(--button-secondary)
+  
+  --v2-ink:var(--text);
+  
 }
 .admin-access-q .admin-drawer{
   width:100%;max-width:none;height:auto;min-height:0;max-height:none;
@@ -276,10 +271,6 @@ html{background:var(--app-bg)}
   background:var(--white);border-color:var(--border)
 }
 .admin-drawer .admin-actions,.admin-access-q .admin-actions{background:var(--white)}
-.admin-access-q,.admin-delete-x{
-  --text: #111111; --text-secondary:#777A7D; --border:#D7D7D7;
-  --white:#FFFFFF; --surface-soft:#F2F2F2; --button-secondary:#D8D3CF
-}
 @media(max-width:760px){
   .admin-mobile-app .v2-z{background:var(--app-bg)}
   .admin-mobile-app .admin-content{background:transparent}
