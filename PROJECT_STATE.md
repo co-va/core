@@ -52,7 +52,7 @@ No separate `frontend` service may run in `docker-compose.staging.yml`; Core tes
 - Platform-only tree after cleanup: 382 tracked files before documentation changes.
 - Old UI-only test suites were retired from Core; the remaining platform/API tests and isolated database smoke are executed by CI.
 - Professional and User repositories were not modified.
-- Completion requires fresh Check Book and Onboarding Smoke PASS plus platform Admin and API domain integration, not just an asserted build.
+- Completion requires fresh Check Core and Onboarding Smoke PASS plus platform Admin and API domain integration, not just an asserted build.
 
 ## Release and process
 - All changes occur on `staging`; `main` stays production until an approved PR.
@@ -131,7 +131,7 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - `ProcedureService.bookingPriceFor` produces one result: `{ minimum, variable, free, display }`. `display` is presentation-ready: `от 1 500 ₽`, `3 000 ₽`, `Бесплатно` or `Цена уточняется`. Source numbers remain numeric and valid for finance or combining multiple services.
 - Both the guest `OnlineBookingService.getContext` and authenticated account/contact `AccountContactRecordService.context` use `ProcedureService.publicBookingCatalog`. The duplicate account-specific price calculation was **removed**. The Account API retains its `price` field name and transparently sends the canonical `display` alongside existing numeric flags; guest API keeps `bookingPrice`.
 - New canonical Record snapshots carry `priceText` with exactly that display string, separate from numeric `cost` for settlement. Historical Record data remains unchanged. No DB migration or second pricing owner.
-- `tests/procedure-booking-contract.test.mjs` covers fixed prices, `from` stored via `amount`, `from-to` lower price, stale `amount`, workplace overrides and free, deleted services, historical snapshots and the no-duplication guard for account booking. Run via existing `npm test` / Check Book.
+- `tests/procedure-booking-contract.test.mjs` covers fixed prices, `from` stored via `amount`, `from-to` lower price, stale `amount`, workplace overrides and free, deleted services, historical snapshots and the no-duplication guard for account booking. Run via existing `npm test` / Check Core.
 - `co-va/user/staging` already preserves and prefers the returned `price.display` in `recordProcedurePriceText`. `co-va/professional/staging` guest booking now renders `bookingPrice.display` for catalog and single-service confirmation. Only combination totals may aggregate the server-provided numeric minima; they must not re-interpret `from/to` modes.
 - Scope: `co-va/core/staging` and narrowly necessary guest-booking presentation in `co-va/professional/staging`. No `main` changes. Live behavior requires deployment of the Core backend from an approved release.
 
