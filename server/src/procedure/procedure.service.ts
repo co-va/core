@@ -63,11 +63,6 @@ export class ProcedureService {
     return hasAssigned ? assigned : base;
   }
 
-  private costFor(procedure: JsonObject, workplaceId: string) {
-    const price = this.bookingPriceFor(procedure, workplaceId);
-    return price.free ? '' : price.minimum;
-  }
-
   // Canonical price for all booking contexts. Display is prepared by the server,
   // never inferred from a number in a booking frontend.
   private bookingPriceFor(procedure: JsonObject, workplaceId: string): BookingPrice {
