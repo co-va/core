@@ -291,6 +291,9 @@ export class AccountContactsService {
       this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
     ]);
     const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
+    // Price percentage comes from the same active-program source as the Person discount.
+    const activePrices = new Map(depositPriceSourcesFromRows(rows, personKey, new Date())
+      .map((source) => [text(source.depositId), source.percent]));
     return rows.map((row) => {
       const terms = objectValue(row.terms);
       const presentation = objectValue(terms.presentation);
@@ -301,6 +304,7 @@ export class AccountContactsService {
         fundedAmount: Number(row.initialAmount || 0),
         balance: Number(row.balance || 0),
         status: text(row.status),
+        discountPercent: activePrices.get(text(row.depositId)) || 0,
         terms,
         visibleToPersonOverride: typeof presentation.visibleToPerson === 'boolean' ? presentation.visibleToPerson : null,
       };
@@ -332,6 +336,7 @@ export class AccountContactsService {
         balance: Number(deposit.balance || 0),
         fundedAmount: Number(deposit.fundedAmount || 0),
         status: text(deposit.status),
+        discountPercent: Number(deposit.discountPercent || 0),
         terms: {
           termRule: text(objectValue(deposit.terms).termRule),
           benefit: text(objectValue(deposit.terms).benefit),
