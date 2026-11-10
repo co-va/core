@@ -126,6 +126,14 @@ export class RecordService {
     return (await resolveSelectedRecordProgramPricePercent(this.prisma, tenantId, person, loyaltyProgram)).percent;
   }
 
+  // Normal appointments use the live catalog today and in the future.
+  // Only genuinely past service days can select a dated historical tariff.
+  private async procedureSnapshotsForDate(tenantId: string, workplaceId: string, ids: string[], date: string) {
+    const workplace = await this.prisma.workplace.findUnique({ where: { tenantId_key: { tenantId, key: workplaceId } } });
+    const today = this.time.zonedNow(workplace?.timeZone).date;
+    return this.procedures.snapshots(tenantId, workplaceId, ids, date && date < today ? date : '');
+  }
+
   private async validateAvailability(
     tenantId: string,
     { date, workplaceId, from, to }: { date: string; workplaceId: string; from: string; to: string },
@@ -210,7 +218,7 @@ export class RecordService {
       : requestedProcedures.map((item) => text(item?.id)).filter(Boolean))];
     let procedureSnapshots = requestedProcedures.map((item) => clone(objectValue(item)));
     if (procedureIds.length) {
-      const canonical = await this.procedures.snapshots(tenantId, workplaceId, procedureIds, date);
+      const canonical = await this.procedureSnapshotsForDate(tenantId, workplaceId, procedureIds, date);
       const requestedById = new Map(requestedProcedures.map((item) => [text(item?.id), objectValue(item)]));
       procedureSnapshots = canonical.map((item) => {
         const requested = requestedById.get(item.id);
@@ -506,7 +514,7 @@ export class RecordService {
     if (refreshProcedures) {
       const requested = rawProceduresChanged ? arrayValue(incoming.procedures) : arrayValue(current.procedures);
       const ids = requested.map((item) => text(item?.id)).filter(Boolean);
-      const canonical = ids.length ? await this.procedures.snapshots(tenantId, incomingWorkplaceId, ids, date) : [];
+      const canonical = ids.length ? await this.procedureSnapshotsForDate(tenantId, incomingWorkplaceId, ids, date) : [];
       const requestedById = new Map(requested.map((item) => [text(item?.id), objectValue(item)]));
       procedures = canonical.map((item) => {
         const draft = requestedById.get(item.id);
