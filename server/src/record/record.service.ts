@@ -505,17 +505,30 @@ export class RecordService {
     let procedures = arrayValue(current.procedures).map((item) => clone(objectValue(item)));
     if (refreshProcedures) {
       const requested = rawProceduresChanged ? arrayValue(incoming.procedures) : arrayValue(current.procedures);
-      const ids = requested.map((item) => text(item?.id)).filter(Boolean);
-      const canonical = ids.length ? await this.procedures.snapshots(tenantId, incomingWorkplaceId, ids) : [];
+      // Existing Record items are facts of the booking, not references that
+      // must still exist in the live catalog. Only newly added services need
+      // catalog validation, even when the appointment is moved or edited.
+      const savedById = new Map(arrayValue(current.procedures)
+        .map((item) => [text(item?.id), objectValue(item)]));
+      const ids = [...new Set(requested.map((item) => text(item?.id)).filter(Boolean))];
+      const newIds = ids.filter((id) => !savedById.has(id));
+      const canonical = newIds.length ? await this.procedures.snapshots(tenantId, incomingWorkplaceId, newIds) : [];
+      const canonicalById = new Map(canonical.map((item) => [item.id, item]));
       const requestedById = new Map(requested.map((item) => [text(item?.id), objectValue(item)]));
-      procedures = canonical.map((item) => {
-        const draft = requestedById.get(item.id);
+      procedures = ids.map((id) => {
+        const item = savedById.get(id) || canonicalById.get(id)!;
+        const draft = requestedById.get(id);
         const requestedDuration = Number(draft?.duration);
-        const requestedCost = Number(draft?.cost ?? draft?.price);
+        const rawCost = draft?.cost ?? draft?.price;
+        const requestedCost = rawCost === '' || rawCost == null ? NaN : Number(rawCost);
+        const changedCost = Number.isFinite(requestedCost) && requestedCost >= 0;
         return {
           ...item,
           duration: Number.isFinite(requestedDuration) && requestedDuration > 0 ? requestedDuration : item.duration,
-          cost: Number.isFinite(requestedCost) && requestedCost >= 0 ? requestedCost : item.cost,
+          cost: changedCost ? requestedCost : item.cost,
+          ...(changedCost && requestedCost !== Number(item.cost)
+            ? { priceText: `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(requestedCost)} ₽` }
+            : {}),
         };
       });
     }
