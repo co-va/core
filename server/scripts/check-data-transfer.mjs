@@ -185,7 +185,7 @@ try {
   let priceHistory=await db.$queryRaw`SELECT "occurredAt", "effectiveAt", "provenance", "data", "sourceType", "sourceId" FROM "BusinessHistoryEvent" WHERE "tenantId"=${tenantId} AND "entityType"='procedure' AND "eventType"='versioned' ORDER BY "id" DESC LIMIT 1`;
   assert.equal(priceHistory[0].occurredAt.toISOString().slice(0,10),'2022-05-01');assert.equal(priceHistory[0].effectiveAt.toISOString().slice(0,10),'2022-05-01');
   assert.equal(priceHistory[0].provenance.transferId,priceTransfer);assert.equal(priceHistory[0].data.current.cost.amount,3000);assert.equal(priceHistory[0].sourceType,'procedure');assert.equal(priceHistory[0].sourceId,currentProcedure.id);
-  assert.equal((await procedures.snapshots(tenantId,workplaceKey,[currentProcedure.id],'2022-05-02'))[0].cost,3000);
+  // Archived price facts are not a source for new bookings.
   assert.equal((await procedures.snapshots(tenantId,workplaceKey,[currentProcedure.id]))[0].cost,11000);
   result=await run('procedures',[{transferId:priceTransfer,name:'Текущая процедура',price:3500,workplaceKey,occurredAt:'2022-05-01'}]);assert.equal(result.failed,0);
   assert.deepEqual((await db.businessOperationalState.findUnique({where:{tenantId}})).data.procedures,[currentProcedure]);

@@ -125,3 +125,11 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Removed unused legacy-brand metadata: CI workflow title `Check Core` and NestJS package name `co-va-core-api`. Historical migration names, PostgreSQL role/database identifiers and live env credentials MUST NOT be renamed during this release; they are storage compatibility identifiers, not a duplicate Book app.
 - The release branch is based on current `main` to retain the independent Profile/loyalty API and readiness features from PR #860/#861. Unapproved Admin UI work still in `staging` is intentionally not included. Professional and User repos are not changed by this release.
 - GitHub passing checks verify source/isolated backend only; the active Core runtime requires its normal Amvera deployment before these API changes are live.
+
+## Record: единый действующий прайс — 2026-11-10
+
+- Единственный действующий прайс — `BusinessOperationalState.procedures`. Любая новая запись, включая ручной ввод прошлой даты, использует этот каталог и проверяет активность услуги и назначение рабочему пространству. Дата визита не выбирает другой прайс.
+- Удалены `catalogAt`, `historicalMoment` и передача даты в `ProcedureService.snapshots`; история изменений и импортированных фактов остаётся историей, не источником доступности для новой записи.
+- При создании записи цена подтягивается из действующего прайса. Сохранённая услуга и её стоимость принадлежат самой записи; профессионал может вручную изменить стоимость. Удаление услуги из каталога не отменяет существующую запись. При редактировании или переносе сохранённые услуги берутся из Record; только новые добавленные ID проверяются по текущему каталогу. Исторические Record и Finance не переписываются.
+- Регрессия в `tests/procedure-booking-contract.test.mjs`: единый прайс без поиска истории, сохранённые услуги после удаления из каталога, ручное изменение цены, перенос, добавление новой услуги, защита удалённых/не назначенных ID, цены «от» и бесплатные услуги.
+- Только Core; Professional/User, схема БД и production-данные не изменены. Выпуск отдельным PR #863 к main после зелёных проверок и разрешения владельца.
