@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 type JsonObject = Record<string, any>;
-type HistoryProcedureRow = { entityId: string; status: string; data: unknown };
 type BookingPrice = { minimum: number; variable: boolean; free: boolean; display: string };
 
 function objectValue(value: unknown): JsonObject {
@@ -26,19 +25,6 @@ function priceNumber(value: unknown) {
 
 function hasPriceValue(value: unknown) {
   return value !== '' && value != null;
-}
-
-function historySnapshot(value: unknown) {
-  const data = objectValue(value);
-  return objectValue(data.current ?? data.after ?? data.deleted);
-}
-
-function historicalMoment(value: unknown) {
-  const raw = text(value);
-  if (!raw) return null;
-  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
-  const moment = new Date(dateOnly ? `${raw}T23:59:59.999Z` : raw);
-  return Number.isFinite(moment.getTime()) ? moment : null;
 }
 
 @Injectable()
@@ -109,30 +95,6 @@ export class ProcedureService {
     return result;
   }
 
-  private async catalogAt(tenantId: string, ids: string[], atValue: unknown) {
-    const at = historicalMoment(atValue);
-    if (!at) return null;
-    const rows = await this.prisma.$queryRaw<HistoryProcedureRow[]>(Prisma.sql`
-      SELECT DISTINCT ON ("entityId") "entityId", "status", "data"
-      FROM "BusinessHistoryEvent"
-      WHERE "tenantId" = ${tenantId}
-        AND "entityType" = 'procedure'
-        AND "entityId" IN (${Prisma.join(ids)})
-        AND "effectiveAt" <= ${at}
-      ORDER BY "entityId", "effectiveAt" DESC, "occurredAt" DESC, "recordedAt" DESC, "id" DESC
-    `);
-    const byId = new Map(rows.map((row) => [row.entityId, row]));
-    return ids.map((id) => {
-      const row = byId.get(id);
-      if (!row) return null;
-      // An explicit deletion is not the same as a missing historical version.
-      // Never fall back to today's catalog for a known historical deletion.
-      if (row.status === 'deleted') return { id, deletedAt: true };
-      const procedure = historySnapshot(row.data);
-      return Object.keys(procedure).length ? procedure : null;
-    });
-  }
-
   async importProcedure(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient) {
     if (!text(input.name)) throw new BadRequestException('Не указана процедура');
     if (input.price != null && !input.occurredAt) throw new BadRequestException('Не указана дата исторического прайса');
@@ -188,26 +150,19 @@ export class ProcedureService {
     return found[0];
   }
 
-  async snapshots(tenantId: string, workplaceId: string, procedureIds: string[], atValue: unknown = '') {
+  async snapshots(tenantId: string, workplaceId: string, procedureIds: string[]) {
     const ids = [...new Set(procedureIds.map(text).filter(Boolean))];
     if (!ids.length) throw new BadRequestException('Выберите хотя бы одну процедуру');
 
-    const historical = await this.catalogAt(tenantId, ids, atValue);
-    // Existing manual records may refer to a service that has never been
-    // versioned. A missing history row is not proof of unavailability.
-    // Use the actual current catalog only for IDs without a historical version;
-    // a known historical deletion or workspace mismatch still rejects.
-    let catalog: JsonObject[] = [];
-    if (!historical || historical.some((item) => !item)) {
-      const row = await this.prisma.businessOperationalState.findUnique({ where: { tenantId } });
-      const data = objectValue(row?.data);
-      catalog = arrayValue(data.procedures).map((item) => objectValue(item));
-    }
+    // One live catalog for every new Record, regardless of service date.
+    // Previously saved Record snapshots and transferred facts are not catalog entries.
+    const row = await this.prisma.businessOperationalState.findUnique({ where: { tenantId } });
+    const catalog = arrayValue(objectValue(row?.data).procedures).map((item) => objectValue(item));
 
-    return ids.map((id, index) => {
-      const procedure = historical?.[index] || catalog.find((item) => text(item?.id) === id);
+    return ids.map((id) => {
+      const procedure = catalog.find((item) => text(item?.id) === id);
       if (!procedure || procedure.deletedAt || !this.assignmentFor(procedure, workplaceId)) {
-        throw new BadRequestException('Одна из услуг недоступна в этом рабочем пространстве на выбранную дату');
+        throw new BadRequestException('Одна из услуг недоступна в этом рабочем пространстве');
       }
       const groupEnabled = procedure?.groupBooking?.enabled === true;
       const price = this.bookingPriceFor(procedure, workplaceId);
