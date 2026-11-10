@@ -158,12 +158,16 @@ export class DataTransferService {
       const person = await this.people.resolveTransferPerson(tenantId, v, tx);
       const workplace = await this.profiles.resolveTransferWorkplace(tenantId, v, tx);
       if (v.to && (!v.from || v.to <= v.from)) throw Error('Окончание обслуживания должно быть позже начала');
-      const snapshots = (v.procedures || (text(v.procedure) ? [{ ...v, name: text(v.procedure) }] : [])).map((p: Values) => ({
-        ...(v.appendProcedures?{id:id+':procedure'}:{}), name: p.name, ...(p.duration != null ? { duration: p.duration } : {}), ...(p.cost != null ? { cost: p.cost } : {}),
-        ...(p.price != null ? { historicalPrice: p.price } : {}),
-        ...(p.discountPercent != null ? { historicalDiscount: { type: 'percent', value: p.discountPercent } } : {}),
-        ...(p.discountMoney != null ? { historicalDiscount: { type: 'money', value: p.discountMoney } } : {}),
-      }));
+      // Import actual Record facts only. Neither today's catalog nor a dated
+      // catalog price may supply a missing work price.
+      const snapshots = (v.procedures || (text(v.procedure) ? [{ ...v, name: text(v.procedure) }] : [])).map((p: Values) => {
+        if (p.cost == null || p.cost === '') throw Error(`Не указана цена услуги «${p.name}». Заполните цену в этой строке файла. Для бесплатной услуги укажите 0.`);
+        return {
+          ...(v.appendProcedures?{id:id+':procedure'}:{}), name: p.name, ...(p.duration != null ? { duration: p.duration } : {}), cost: p.cost,
+          ...(p.discountPercent != null ? { historicalDiscount: { type: 'percent', value: p.discountPercent } } : {}),
+          ...(p.discountMoney != null ? { historicalDiscount: { type: 'money', value: p.discountMoney } } : {}),
+        };
+      });
       if (!snapshots.length && (v.cost != null || v.price != null || v.discountPercent != null || v.discountMoney != null)) throw Error('Не указана процедура для цены или скидки');
       targetId = await this.records.importHistorical(tenantId, { date: v.date, from: v.from, to: v.to,
         workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
