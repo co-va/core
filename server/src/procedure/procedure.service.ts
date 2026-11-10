@@ -124,7 +124,10 @@ export class ProcedureService {
     const byId = new Map(rows.map((row) => [row.entityId, row]));
     return ids.map((id) => {
       const row = byId.get(id);
-      if (!row || row.status === 'deleted') return null;
+      if (!row) return null;
+      // An explicit deletion is not the same as a missing historical version.
+      // Never fall back to today's catalog for a known historical deletion.
+      if (row.status === 'deleted') return { id, deletedAt: true };
       const procedure = historySnapshot(row.data);
       return Object.keys(procedure).length ? procedure : null;
     });
@@ -190,19 +193,21 @@ export class ProcedureService {
     if (!ids.length) throw new BadRequestException('Выберите хотя бы одну процедуру');
 
     const historical = await this.catalogAt(tenantId, ids, atValue);
-    let catalog: JsonObject[];
-    if (historical) {
-      catalog = historical.filter((item): item is JsonObject => Boolean(item));
-    } else {
+    // Existing manual records may refer to a service that has never been
+    // versioned. A missing history row is not proof of unavailability.
+    // Use the actual current catalog only for IDs without a historical version;
+    // a known historical deletion or workspace mismatch still rejects.
+    let catalog: JsonObject[] = [];
+    if (!historical || historical.some((item) => !item)) {
       const row = await this.prisma.businessOperationalState.findUnique({ where: { tenantId } });
       const data = objectValue(row?.data);
       catalog = arrayValue(data.procedures).map((item) => objectValue(item));
     }
 
-    return ids.map((id) => {
-      const procedure = catalog.find((item) => text(item?.id) === id);
+    return ids.map((id, index) => {
+      const procedure = historical?.[index] || catalog.find((item) => text(item?.id) === id);
       if (!procedure || procedure.deletedAt || !this.assignmentFor(procedure, workplaceId)) {
-        throw new BadRequestException('Одна из процедур недоступна в этом рабочем пространстве на выбранную дату');
+        throw new BadRequestException('Одна из услуг недоступна в этом рабочем пространстве на выбранную дату');
       }
       const groupEnabled = procedure?.groupBooking?.enabled === true;
       const price = this.bookingPriceFor(procedure, workplaceId);
