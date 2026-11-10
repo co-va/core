@@ -113,4 +113,49 @@ service.catalogAt = async () => [{ ...deleted, deletedAt: undefined }];
 const historical = await service.snapshots('tenant-a', 'salon-a', ['deleted'], '2026-10-01');
 assert.equal(historical[0].id, 'deleted');
 
-console.log('PASS: canonical Procedure catalog, soft deletion, workplace free prices, historical Record snapshot');
+// Missing history for a currently assigned service must not reject a manual
+// past Record; where a dated tariff exists, it still wins for that ID.
+service.catalogAt = async () => [null, { ...range, cost: { mode: 'amount', amount: 900 } }];
+const mixed = await service.snapshots('tenant-a', 'salon-a', ['base', 'range'], '2026-10-01');
+assert.deepEqual(mixed.map(item => item.cost), [1200, 900]);
+assert.deepEqual(mixed.map(item => item.id), ['base', 'range']);
+
+service.catalogAt = async () => [null];
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['deleted'], '2026-10-01'), /недоступна/,
+  'Missing history cannot resurrect a currently deleted service');
+await assert.rejects(service.snapshots('tenant-a', 'missing', ['base'], '2026-10-01'), /недоступна/,
+  'Missing history cannot bypass the actual workplace assignment');
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['unknown'], '2026-10-01'), /недоступна/);
+service.catalogAt = async () => [{ id: 'base', deletedAt: true }];
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['base'], '2026-10-01'), /недоступна/,
+  'An explicit historical deletion is not a missing history row');
+assert.match(source, /if \(row\.status === 'deleted'\) return \{ id, deletedAt: true \}/);
+
+// Test the actual RecordService date routing without duplicating date policy.
+const recordSource = readFileSync('server/src/record/record.service.ts', 'utf8');
+const routingStart = recordSource.indexOf('  private async procedureSnapshotsForDate(');
+const routingEnd = recordSource.indexOf('  private async validateAvailability(', routingStart);
+assert.ok(routingStart >= 0 && routingEnd > routingStart);
+const routingCode = recordSource.slice(routingStart, routingEnd)
+  .replace(/\bprivate\s+/g, '').replace(/:\s*(?:string\[\]|string)/g, '');
+const routing = new Function('return class RecordRouting {' + routingCode + '}')();
+const route = new routing();
+const calls = [];
+route.prisma = { workplace: { findUnique: async (query) => {
+  assert.deepEqual(query.where.tenantId_key, { tenantId: 'tenant-a', key: 'salon-a' });
+  return { timeZone: 'Europe/Moscow' };
+} } };
+route.time = { zonedNow: (zone) => {
+  assert.equal(zone, 'Europe/Moscow');
+  return { date: '2026-11-10' };
+} };
+route.procedures = { snapshots: async (...args) => { calls.push(args); return []; } };
+for (const date of ['2026-11-10', '2026-11-11', '2026-11-09']) {
+  await route.procedureSnapshotsForDate('tenant-a', 'salon-a', ['base'], date);
+}
+assert.deepEqual(calls.map(call => call[3]), ['', '', '2026-11-09'],
+  'Today and future use current catalog; only past days use dated history');
+assert.match(recordSource, /this\.procedureSnapshotsForDate\(tenantId, workplaceId, procedureIds, date\)/);
+assert.match(recordSource, /this\.procedureSnapshotsForDate\(tenantId, incomingWorkplaceId, ids, date\)/);
+
+console.log('PASS: current/future Record dates, mixed historical/current service versions, deletion, workplace and canonical prices');
