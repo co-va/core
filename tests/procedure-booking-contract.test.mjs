@@ -10,7 +10,7 @@ assert.doesNotMatch(accountContext, /function procedurePrice\(/,
 // Exercise the actual ProcedureService methods before the server dependencies are installed in CI.
 const source = readFileSync('server/src/procedure/procedure.service.ts', 'utf8');
 const start = source.indexOf('  private assignmentFor(');
-const end = source.indexOf('  private async catalogAt(', start);
+const end = source.indexOf('  async importProcedure(', start);
 const snapshotsStart = source.indexOf('  async snapshots(');
 const snapshotsEnd = source.lastIndexOf('\n}');
 assert.ok(start >= 0 && end > start && snapshotsStart > end && snapshotsEnd > snapshotsStart,
@@ -71,7 +71,7 @@ const assignedRange = {
 const records = [procedure, deleted, fallback, from, range, assignedRange];
 const service = new ProcedureContract();
 service.prisma = { businessOperationalState: { findUnique: async () => ({ data: { procedures: records } }) } };
-service.catalogAt = async () => null;
+service.prisma.$queryRaw = async () => { throw new Error('Record creation must never read the historical price catalog'); };
 
 const catalog = service.publicBookingCatalog(records, ['salon-a', 'salon-b']);
 assert.deepEqual(catalog.map(item => item.id), ['shared', 'base', 'from', 'range', 'assigned-range'],
@@ -108,54 +108,49 @@ assert.match(rangeSnapshot.priceText, /^от 1[\s\u00a0]500 ₽$/,
   'Record snapshot should preserve canonical display without recomputing it in the frontend');
 await assert.rejects(service.snapshots('tenant-a', 'missing', ['shared']), /недоступна/);
 
-// A historical snapshot from before deletion remains usable for past Record reconstruction.
-service.catalogAt = async () => [{ ...deleted, deletedAt: undefined }];
-const historical = await service.snapshots('tenant-a', 'salon-a', ['deleted'], '2026-10-01');
-assert.equal(historical[0].id, 'deleted');
-
-// Missing history for a currently assigned service must not reject a manual
-// past Record; where a dated tariff exists, it still wins for that ID.
-service.catalogAt = async () => [null, { ...range, cost: { mode: 'amount', amount: 900 } }];
-const mixed = await service.snapshots('tenant-a', 'salon-a', ['base', 'range'], '2026-10-01');
-assert.deepEqual(mixed.map(item => item.cost), [1200, 900]);
-assert.deepEqual(mixed.map(item => item.id), ['base', 'range']);
-
-service.catalogAt = async () => [null];
-await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['deleted'], '2026-10-01'), /недоступна/,
-  'Missing history cannot resurrect a currently deleted service');
-await assert.rejects(service.snapshots('tenant-a', 'missing', ['base'], '2026-10-01'), /недоступна/,
-  'Missing history cannot bypass the actual workplace assignment');
-await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['unknown'], '2026-10-01'), /недоступна/);
-service.catalogAt = async () => [{ id: 'base', deletedAt: true }];
-await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['base'], '2026-10-01'), /недоступна/,
-  'An explicit historical deletion is not a missing history row');
-assert.match(source, /if \(row\.status === 'deleted'\) return \{ id, deletedAt: true \}/);
-
-// Test the actual RecordService date routing without duplicating date policy.
+// A new Record uses the same live catalog regardless of its appointment date.
 const recordSource = readFileSync('server/src/record/record.service.ts', 'utf8');
-const routingStart = recordSource.indexOf('  private async procedureSnapshotsForDate(');
-const routingEnd = recordSource.indexOf('  private async validateAvailability(', routingStart);
-assert.ok(routingStart >= 0 && routingEnd > routingStart);
-const routingCode = recordSource.slice(routingStart, routingEnd)
-  .replace(/\bprivate\s+/g, '').replace(/:\s*(?:string\[\]|string)/g, '');
-const routing = new Function('return class RecordRouting {' + routingCode + '}')();
-const route = new routing();
-const calls = [];
-route.prisma = { workplace: { findUnique: async (query) => {
-  assert.deepEqual(query.where.tenantId_key, { tenantId: 'tenant-a', key: 'salon-a' });
-  return { timeZone: 'Europe/Moscow' };
+assert.doesNotMatch(source, /catalogAt\(|historicalMoment\(/);
+assert.doesNotMatch(recordSource, /procedureSnapshotsForDate\(/);
+assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds\)/);
+assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, incomingWorkplaceId, newIds\)/);
+assert.doesNotMatch(recordSource, /this\.procedures\.snapshots\([^;\n]*,\s*date\)/);
+assert.equal((await service.snapshots('tenant-a', 'salon-a', ['base']))[0].cost, 1200);
+const saved = (await service.snapshots('tenant-a', 'salon-a', ['range']))[0];
+range.cost = { mode: 'amount', amount: 4000 };
+assert.equal((await service.snapshots('tenant-a', 'salon-a', ['range']))[0].cost, 4000);
+assert.equal(saved.cost, 1500, 'Changing the single current price cannot mutate an existing Record snapshot');
+assert.match(saved.priceText, /^от 1[\s\u00a0]500 ₽$/);
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['deleted']), /недоступна/);
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['unknown']), /недоступна/);
+// Existing bookings survive removal of their catalog service. Execute the
+// actual update block, including manual price changes and new additions.
+const updateStart = recordSource.indexOf('    let procedures = arrayValue(current.procedures)', recordSource.indexOf('  async upsertFromOwner('));
+const updateEnd = recordSource.indexOf('\n    const from = text(incoming.from);', updateStart);
+assert.ok(updateStart >= 0 && updateEnd > updateStart);
+const updateCode = recordSource.slice(updateStart, updateEnd).replace(/canonicalById\.get\(id\)!/g, 'canonicalById.get(id)');
+const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+const runUpdate = new AsyncFunction('current', 'incoming', 'rawProceduresChanged', 'refreshProcedures',
+  'tenantId', 'incomingWorkplaceId', 'arrayValue', 'objectValue', 'clone', 'text',
+  updateCode + '\nreturn procedures;');
+const booked = { id: 'deleted', name: 'Укладка', duration: 45, cost: 2500, priceText: 'от 2 500 ₽' };
+const active = { id: 'base', name: 'Стрижка', duration: 60, cost: 1200, priceText: '1 200 ₽' };
+const catalogRequests = [];
+const owner = { procedures: { snapshots: async (_tenant, _space, ids) => {
+  catalogRequests.push(ids);
+  if (ids.includes('deleted')) throw new Error('Deleted catalog service');
+  return ids.map(id => ({ ...active, id }));
 } } };
-route.time = { zonedNow: (zone) => {
-  assert.equal(zone, 'Europe/Moscow');
-  return { date: '2026-11-10' };
-} };
-route.procedures = { snapshots: async (...args) => { calls.push(args); return []; } };
-for (const date of ['2026-11-10', '2026-11-11', '2026-11-09']) {
-  await route.procedureSnapshotsForDate('tenant-a', 'salon-a', ['base'], date);
-}
-assert.deepEqual(calls.map(call => call[3]), ['', '', '2026-11-09'],
-  'Today and future use current catalog; only past days use dated history');
-assert.match(recordSource, /this\.procedureSnapshotsForDate\(tenantId, workplaceId, procedureIds, date\)/);
-assert.match(recordSource, /this\.procedureSnapshotsForDate\(tenantId, incomingWorkplaceId, ids, date\)/);
-
-console.log('PASS: current/future Record dates, mixed historical/current service versions, deletion, workplace and canonical prices');
+const edit = (items, changed = true) => runUpdate.call(owner, { procedures: [booked] },
+  { procedures: items }, changed, true, 'tenant-a', 'salon-a',
+  v => Array.isArray(v) ? v : [], v => v || {}, v => JSON.parse(JSON.stringify(v)), v => String(v ?? '').trim());
+assert.deepEqual(await edit([booked], false), [booked], 'Moving a booking retains the saved service without checking the current catalog');
+const corrected = await edit([{ ...booked, cost: 3100 }]);
+assert.equal(corrected[0].cost, 3100, 'Professional can manually change the price of a saved, deleted-from-catalog service');
+assert.deepEqual(catalogRequests, [], 'Existing booked services never require the current catalog');
+const combined = await edit([booked, active]);
+assert.deepEqual(catalogRequests, [['base']], 'Only newly added service IDs are checked');
+assert.equal(combined[0].cost, 2500);
+assert.equal(combined[1].cost, 1200);
+assert.deepEqual(await edit([]), [], 'Removing an item from the Record is an explicit edit');
+console.log('PASS: one live price catalog, existing bookings survive deletion, editable Record prices and new-service validation');
