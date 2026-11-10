@@ -113,7 +113,7 @@ const recordSource = readFileSync('server/src/record/record.service.ts', 'utf8')
 assert.doesNotMatch(source, /catalogAt\(|historicalMoment\(/);
 assert.doesNotMatch(recordSource, /procedureSnapshotsForDate\(/);
 assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds\)/);
-assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, incomingWorkplaceId, ids\)/);
+assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, incomingWorkplaceId, newIds\)/);
 assert.doesNotMatch(recordSource, /this\.procedures\.snapshots\([^;\n]*,\s*date\)/);
 assert.equal((await service.snapshots('tenant-a', 'salon-a', ['base']))[0].cost, 1200);
 const saved = (await service.snapshots('tenant-a', 'salon-a', ['range']))[0];
@@ -123,4 +123,34 @@ assert.equal(saved.cost, 1500, 'Changing the single current price cannot mutate 
 assert.match(saved.priceText, /^от 1[\s\u00a0]500 ₽$/);
 await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['deleted']), /недоступна/);
 await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['unknown']), /недоступна/);
-console.log('PASS: one current price catalog, immutable Record snapshots, workspace and deletion guards');
+// Existing bookings survive removal of their catalog service. Execute the
+// actual update block, including manual price changes and new additions.
+const updateStart = recordSource.indexOf('    let procedures = arrayValue(current.procedures)', recordSource.indexOf('  async upsertFromOwner('));
+const updateEnd = recordSource.indexOf('\n    const from = text(incoming.from);', updateStart);
+assert.ok(updateStart >= 0 && updateEnd > updateStart);
+const updateCode = recordSource.slice(updateStart, updateEnd).replace(/canonicalById\.get\(id\)!/g, 'canonicalById.get(id)');
+const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+const runUpdate = new AsyncFunction('current', 'incoming', 'rawProceduresChanged', 'refreshProcedures',
+  'tenantId', 'incomingWorkplaceId', 'arrayValue', 'objectValue', 'clone', 'text',
+  updateCode + '\nreturn procedures;');
+const booked = { id: 'deleted', name: 'Укладка', duration: 45, cost: 2500, priceText: 'от 2 500 ₽' };
+const active = { id: 'base', name: 'Стрижка', duration: 60, cost: 1200, priceText: '1 200 ₽' };
+const catalogRequests = [];
+const owner = { procedures: { snapshots: async (_tenant, _space, ids) => {
+  catalogRequests.push(ids);
+  if (ids.includes('deleted')) throw new Error('Deleted catalog service');
+  return ids.map(id => ({ ...active, id }));
+} } };
+const edit = (items, changed = true) => runUpdate.call(owner, { procedures: [booked] },
+  { procedures: items }, changed, true, 'tenant-a', 'salon-a',
+  v => Array.isArray(v) ? v : [], v => v || {}, v => JSON.parse(JSON.stringify(v)), v => String(v ?? '').trim());
+assert.deepEqual(await edit([booked], false), [booked], 'Moving a booking retains the saved service without checking the current catalog');
+const corrected = await edit([{ ...booked, cost: 3100 }]);
+assert.equal(corrected[0].cost, 3100, 'Professional can manually change the price of a saved, deleted-from-catalog service');
+assert.deepEqual(catalogRequests, [], 'Existing booked services never require the current catalog');
+const combined = await edit([booked, active]);
+assert.deepEqual(catalogRequests, [['base']], 'Only newly added service IDs are checked');
+assert.equal(combined[0].cost, 2500);
+assert.equal(combined[1].cost, 1200);
+assert.deepEqual(await edit([]), [], 'Removing an item from the Record is an explicit edit');
+console.log('PASS: one live price catalog, existing bookings survive deletion, editable Record prices and new-service validation');
