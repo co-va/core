@@ -345,7 +345,7 @@ export class BookingFlowService {
 
     const prepared = [] as Array<{ participant: BookingParticipant; procedureIds: string[]; duration: number }>;
     for (const participant of participants) {
-      const snapshots = await this.procedures.snapshots(tenantId, workplaceKey, participant.procedureIds, date);
+      const snapshots = await this.procedures.snapshots(tenantId, workplaceKey, participant.procedureIds);
       const duration = snapshots.reduce((sum, procedure) => sum + Math.max(0, Number(procedure?.duration || 0)), 0);
       if (!snapshots.length || duration <= 0) throw new BadRequestException(`Не удалось определить услуги для ${participant.name}`);
       prepared.push({ participant, procedureIds: snapshots.map((procedure) => text(procedure.id)), duration });
