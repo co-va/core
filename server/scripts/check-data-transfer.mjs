@@ -73,14 +73,18 @@ try {
   assert.equal(Number((await db.$queryRaw`SELECT COUNT(*) AS count FROM "Notification" WHERE "tenantId"=${tenantId}`)[0].count),0);
   assert.equal(await db.recordEvent.count({where:{tenantId}}),0);
   result=await run('records',[record]);assert.equal(result.failed,0);assert.equal(result.unchanged,3);
-  result=await run('records',[{...record,externalId:'no-price',date:'2024-05-16',cost:''}]);assert.equal(result.failed,0);
-  const noPriceId=target(result,'records').targetId;
-  assert.equal(await db.financeSettlement.count({where:{tenantId,sourceId:noPriceId}}),0);
-  await finance.settlementForSource(tenantId,'record',noPriceId,{items:[],planTotal:0});
-  assert.equal(await db.financeSettlement.count({where:{tenantId,sourceId:noPriceId}}),0);
+  const noPrice={...record,externalId:'no-price',date:'2024-05-16',cost:''};
+  result=await run('records',[noPrice],true);error(result,/Не указана цена услуги/);
+  assert.ok(result.rows.some(row=>row.domain==='records'&&row.row===2&&row.reason.includes('Заполните цену')));
+  result=await run('records',[noPrice]);error(result,/Не указана цена услуги/);
+  assert.equal(target(result,'records'),undefined);
+  result=await run('records',[{...noPrice,price:10000}]);error(result,/Не указана цена услуги/);
+  result=await run('records',[{...noPrice,cost:0}]);assert.equal(result.failed,0,JSON.stringify(result));
+  const zeroId=target(result,'records').targetId;
+  assert.equal((await db.record.findUnique({where:{tenantId_recordId:{tenantId,recordId:zeroId}}})).data.procedures[0].cost,0);
   result=await run('records',[{...record,externalId:'priced',date:'2024-05-17',price:10000,cost:7000}]);assert.equal(result.failed,0);
   const priced=(await db.record.findUnique({where:{tenantId_recordId:{tenantId,recordId:target(result,'records').targetId}}})).data;
-  assert.equal(priced.procedures[0].historicalPrice,10000);assert.equal(priced.procedures[0].historicalDiscount,undefined);
+  assert.equal(priced.procedures[0].cost,7000);assert.equal(priced.procedures[0].historicalPrice,undefined);assert.equal(priced.procedures[0].historicalDiscount,undefined);
   // Similar workplace names stay distinct.
   result=await run('workplaces',[{name:'Москва BeautyToria'}]);assert.equal(result.failed,0);
   assert.equal(await db.workplace.count({where:{tenantId}}),2);
@@ -185,7 +189,7 @@ try {
   let priceHistory=await db.$queryRaw`SELECT "occurredAt", "effectiveAt", "provenance", "data", "sourceType", "sourceId" FROM "BusinessHistoryEvent" WHERE "tenantId"=${tenantId} AND "entityType"='procedure' AND "eventType"='versioned' ORDER BY "id" DESC LIMIT 1`;
   assert.equal(priceHistory[0].occurredAt.toISOString().slice(0,10),'2022-05-01');assert.equal(priceHistory[0].effectiveAt.toISOString().slice(0,10),'2022-05-01');
   assert.equal(priceHistory[0].provenance.transferId,priceTransfer);assert.equal(priceHistory[0].data.current.cost.amount,3000);assert.equal(priceHistory[0].sourceType,'procedure');assert.equal(priceHistory[0].sourceId,currentProcedure.id);
-  assert.equal((await procedures.snapshots(tenantId,workplaceKey,[currentProcedure.id],'2022-05-02'))[0].cost,3000);
+  // Archived transfer facts must never become a second booking catalog.
   assert.equal((await procedures.snapshots(tenantId,workplaceKey,[currentProcedure.id]))[0].cost,11000);
   result=await run('procedures',[{transferId:priceTransfer,name:'Текущая процедура',price:3500,workplaceKey,occurredAt:'2022-05-01'}]);assert.equal(result.failed,0);
   assert.deepEqual((await db.businessOperationalState.findUnique({where:{tenantId}})).data.procedures,[currentProcedure]);
