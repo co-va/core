@@ -1,0 +1,70 @@
+name: Verify live Admin is the merged main build
+
+on:
+  push:
+    branches: [release/admin-single-source-20261111]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove the permanent Admin domain serves the main source
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin='https://admin.va-tools.ru/admin'
+          verified=0
+          for n in 1 2 3; do
+            echo "Live Admin attempt ${n}"
+            curl -fsSL --connect-timeout 8 --max-time 20 "${origin}/?probe=${GITHUB_RUN_ID}-${n}" -o /tmp/main-admin.html || continue
+            curl -fsSL --connect-timeout 8 --max-time 20 "${origin}/admin.js?probe=${GITHUB_RUN_ID}-${n}" -o /tmp/main-admin.js || continue
+            curl -fsSL --connect-timeout 8 --max-time 20 "${origin}/admin.css?probe=${GITHUB_RUN_ID}-${n}" -o /tmp/main-admin.css || continue
+            if cmp -s admin/admin.css /tmp/main-admin.css \
+              && grep -q 'function renderOverview()' /tmp/main-admin.js \
+              && grep -q 'admin-overview-metric-hint' /tmp/main-admin.js \
+              && grep -q 'overview/user-accounts' /tmp/main-admin.js \
+              && grep -q 'Desktop Admin shell: H stays present' /tmp/main-admin.css \
+              && grep -q 'ui/v2/shell.js' /tmp/main-admin.html; then
+              verified=1
+              break
+            fi
+            echo 'Live Admin does not yet match main source'
+            sleep 3
+          done
+          if [ "$verified" -ne 1 ]; then
+            echo 'MAIN_ADMIN_NOT_DEPLOYED'
+            exit 1
+          fi
+          echo 'MAIN_ADMIN_CANONICAL_SOURCE_DEPLOYED'
+          echo "Deployed Admin CSS sha256: $(sha256sum /tmp/main-admin.css | awk '{print $1}')"
+          echo "Repository Admin CSS sha256: $(sha256sum admin/admin.css | awk '{print $1}')"
+      - name: Verify the live Admin mounts in desktop and mobile browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser=''
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then browser="$(command -v "$candidate")"; break; fi
+          done
+          test -n "$browser"
+          for width in 390 1440; do
+            timeout --signal=TERM --kill-after=5s 65s "$browser" \
+              --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+              --window-size="${width},850" --virtual-time-budget=12000 \
+              --dump-dom "https://admin.va-tools.ru/admin/?live-check=${GITHUB_RUN_ID}" \
+              >"/tmp/live-admin-${width}.html" 2>"/tmp/live-admin-${width}.log"
+            grep -q 'admin-auth-screen' "/tmp/live-admin-${width}.html" || {
+              echo "LIVE_ADMIN_BROWSER_FAILED at ${width}"
+              grep -Ei 'CONSOLE|SyntaxError|Uncaught' "/tmp/live-admin-${width}.log" | tail -n 10 || true
+              exit 1
+            }
+          done
+          echo 'LIVE_ADMIN_MOBILE_AND_DESKTOP_PASS'
