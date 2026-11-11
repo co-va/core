@@ -56,6 +56,20 @@ jobs:
               }
             fi
           done
+      - name: Verify production gateway serves latest single-request staging HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fSL --connect-timeout 8 --max-time 25 \
+            'https://va-app-volokovykh.msk1.amvera.tech/admin/?single-request-probe=1' \
+            -o /tmp/preview-served.html
+          grep -q 'data-preview-style' /tmp/preview-served.html || {
+            echo 'Gateway still serves multi-request Admin HTML'
+            exit 1
+          }
+          grep -q 'data-preview-module="admin.js"' /tmp/preview-served.html || exit 1
+          grep -q 'data-preview-module="commercial-tenant.js"' /tmp/preview-served.html || exit 1
+          echo "Gateway served inlined admin HTML: $(wc -c </tmp/preview-served.html) bytes"
       - name: Diagnose preview DNS and repeated navigation latency
         shell: bash
         run: |
