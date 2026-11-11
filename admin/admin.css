@@ -401,3 +401,36 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-overview-metric:hover{transform:none}
 }
 
+
+/* Platform overview: Professional/User separation */
+.admin-overview-app-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin:9px 0 0}
+.admin-overview-app-head h3{margin:0;color:var(--white);font-size:25px;line-height:1.2;letter-spacing:-.03em}
+.admin-overview-app-head .admin-overview-eyebrow{color:#C6C8C9;margin-bottom:5px}
+.admin-overview-app-head p{margin:0 0 2px;color:#C6C8C9;font-size:13px;line-height:1.4}
+.admin-overview-user-section,.admin-overview-tools-section{display:grid;gap:14px;min-width:0;margin-top:17px}
+.admin-overview-user-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.admin-overview-user-metrics .admin-overview-metric{cursor:default;min-height:154px}
+.admin-overview-user-metrics .admin-overview-metric:hover{transform:none;box-shadow:0 3px 10px rgba(0,0,0,.045)}
+.admin-overview-user-note{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;color:#D9DADC;font-size:12px;line-height:1.45}
+.admin-overview-user-note button{border:1px solid #B9BEC2;border-radius:10px;padding:8px 13px;color:#FFF;background:transparent;cursor:pointer;font-weight:650}
+.admin-overview-user-section>.admin-overview-footnote{margin:0;color:#C9CCCE}
+.admin-overview-tools-by-app{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.admin-overview-tools-section .admin-overview-inline-link{color:#F5F5F3}
+.admin-overview-tools-by-app .admin-overview-panel-head h3{font-size:19px}
+.admin-overview-tools-by-app .admin-overview-panel-head{margin-bottom:18px}
+@media(max-width:1100px){.admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){
+  .admin-mobile-app .admin-overview-app-head{margin:3px 0 1px;gap:6px;align-items:start}
+  .admin-mobile-app .admin-overview-app-head h3{color:#232526;font-size:20px}
+  .admin-mobile-app .admin-overview-app-head .admin-overview-eyebrow{color:#7B7F82}
+  .admin-mobile-app .admin-overview-app-head p{color:#6D7376;font-size:11px}
+  .admin-mobile-app .admin-overview-user-section,.admin-mobile-app .admin-overview-tools-section{margin-top:10px;gap:10px}
+  .admin-mobile-app .admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .admin-mobile-app .admin-overview-user-metrics .admin-overview-metric{min-height:134px}
+  .admin-mobile-app .admin-overview-tools-by-app{grid-template-columns:minmax(0,1fr);gap:9px}
+  .admin-mobile-app .admin-overview-user-note{color:#666A6D}
+  .admin-mobile-app .admin-overview-user-note button{color:#33383B;border-color:#8D9295}
+  .admin-mobile-app .admin-overview-user-section>.admin-overview-footnote{color:#717579}
+  .admin-mobile-app .admin-overview-tools-section .admin-overview-inline-link{color:#33383B}
+}
+@media(max-width:420px){.admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
