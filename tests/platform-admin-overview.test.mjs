@@ -42,9 +42,11 @@ const content = {
 const state = {
   tenants,
   toolReadiness: [
-    { key: 'a', status: 'READY' },
-    { key: 'b', status: 'TESTING' },
-    { key: 'c', status: 'NOT_READY' },
+    { key: 'cabinet.people', status: 'READY' },
+    { key: 'cabinet.chat', status: 'TESTING' },
+    { key: 'cabinet.inventory.stock', status: 'NOT_READY' },
+    { key: 'records.profile.personal-data', status: 'READY' },
+    { key: 'records.journal.list', status: 'NOT_READY' },
   ],
   section: 'overview',
 };
@@ -55,9 +57,17 @@ const context = {
   escapeHtml: (text) => String(text || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
   openAccessDrawer: (tenantId) => { openedTenant = tenantId; },
   renderCurrentSection: () => { currentSectionRendered = state.section; },
+  adminRequest: async () => { throw new Error('Preview backend does not have the new endpoint'); },
 };
 runInNewContext(source.slice(start, end) + '\nrenderOverview();', context);
 assert.match(markup, /Состояние платформы/);
+assert.match(markup, /<h3>Кабинет<\/h3>/);
+assert.match(markup, /<h3>Записи<\/h3>/);
+assert.match(markup, /Аккаунты пользователей приложения, не контакты специалистов/);
+assert.match(markup, /Входили · 30 дней/);
+assert.match(markup, /\u2014/, 'Unavailable User metrics must not claim zero');
+assert.match(markup, /data-overview-tool-app="cabinet"/);
+assert.match(markup, /data-overview-tool-app="records"/);
 assert.match(markup, /<span class="admin-overview-metric-label">Зарегистрированы<\/span>\s*<strong[^>]*>3<\/strong>/, 'Only real registered non-owner accounts count');
 assert.match(markup, /<span class="admin-overview-metric-label">LIVE<\/span>\s*<strong[^>]*>1<\/strong>/);
 assert.match(markup, /<span class="admin-overview-metric-label">DEMO<\/span>\s*<strong[^>]*>2<\/strong>/);
@@ -67,6 +77,8 @@ assert.match(markup, /Это не показатель активности в �
 assert.match(markup, /Готово <strong>1<\/strong>/);
 assert.match(markup, /Проверка <strong>1<\/strong>/);
 assert.match(markup, /Не готово <strong>1<\/strong>/);
+assert.match(markup, /Не готово <strong>1<\/strong>/, 'Readiness cards must show actual groups');
+assert.doesNotMatch(markup, /Готово <strong>2<\/strong>/, 'Readiness counts must not combine apps');
 assert.doesNotMatch(markup, /7 активных/, 'Dashboard cannot equate a record status with product activity');
 
 listeners.get('group')();
