@@ -65,3 +65,29 @@ jobs:
           else
             echo 'ADMIN_SCRIPT_UNAVAILABLE'
           fi
+
+      - name: Check production presence release
+        shell: bash
+        run: |
+          set -uo pipefail
+          route_code="$(curl --silent --show-error --connect-timeout 5 --max-time 12 \
+            -X POST -H 'Content-Type: application/json' \
+            --output /tmp/presence-route-response.json --write-out '%{http_code}' \
+            'https://api.va-tools.ru/auth/presence' 2>/dev/null)" || route_code='000'
+          echo "UNAUTHENTICATED_PRESENCE_ROUTE_STATUS=${route_code}; expected 401 after Core deployment"
+          if [ "${route_code}" = '401' ]; then
+            echo 'PRESENCE_CORE_ROUTE_PUBLISHED'
+          else
+            echo 'PRESENCE_CORE_ROUTE_NOT_YET_PUBLISHED'
+          fi
+          if curl --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            'https://admin.va-tools.ru/admin/admin.js' -o /tmp/presence-live-admin.js; then
+            if grep -q 'data-online-cell' /tmp/presence-live-admin.js \
+              && grep -q 'data-inline-tester' /tmp/presence-live-admin.js; then
+              echo 'PRESENCE_ADMIN_UI_PUBLISHED'
+            else
+              echo 'PRESENCE_ADMIN_UI_NOT_YET_PUBLISHED'
+            fi
+          else
+            echo 'PRESENCE_ADMIN_UI_UNREACHABLE'
+          fi
