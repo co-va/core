@@ -688,6 +688,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
 }
 
+.admin-registry-add{display:none}
+.admin-registry-section .admin-pill.admin-registry-status-draft{
+  background:#FFF4C7;
+  color:#765600;
+  font-size:10px;
+  padding:4px 5px;
+  white-space:nowrap;
+}
 /* Admin document registry — shared desktop/iPad document-sheet geometry. */
 @media(min-width:761px){
   .admin-document-drawer{
