@@ -134,8 +134,9 @@ function documentStatus(item) {
 
 function documentStatusMarkup(item) {
   const status = documentStatus(item);
-  return '<span class="admin-registry-document-status is-' +
-    (status === 'Рабочий' ? 'working' : 'legal') + '">' + status + '</span>';
+  // Reuse the same badge already used for History events and Users.
+  return '<span class="admin-pill ' +
+    (status === 'Рабочий' ? 'pending' : 'active') + '">' + status + '</span>';
 }
 
 function documentTable(items, escapeHtml, application) {
