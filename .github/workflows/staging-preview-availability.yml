@@ -153,6 +153,7 @@ jobs:
           started_at=$SECONDS
           timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
             --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --enable-logging=stderr --v=0 \
             --window-size=390,844 --force-device-scale-factor=1 \
             --touch-events=enabled --virtual-time-budget=18000 \
             --dump-dom 'https://va-app-volokovykh.msk1.amvera.tech/admin/' \
@@ -174,6 +175,7 @@ jobs:
           print('Has mobile CSS:', 'admin-mobile-app' in s)
           print('Has preview bundle:', 'data-preview-module="admin.js"' in s)
           PY
+            grep -Ei 'CONSOLE|script|javascript|syntaxerror|typeerror|uncaught|Refused to execute|net::ERR_' /tmp/admin-mobile-preview-browser.log | tail -n 35 || true
             tail -n 25 /tmp/admin-mobile-preview-browser.log || true
             exit 1
           fi
