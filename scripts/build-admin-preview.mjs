@@ -39,13 +39,16 @@ for (const entry of entries) {
   if (result.outputFiles.length !== 1) {
     throw new Error('Preview bundle must be a single inline script: ' + entry);
   }
-  // Keep HTML syntax entirely separate from bundled JavaScript: an inline HTML
+  // All generated script bodies stay inline. Callback replacement below is
+  // essential:   // Keep HTML syntax entirely separate from bundled JavaScript: an inline HTML
   // tokenizer can corrupt a template-heavy module even when the JS is valid.
   // Data URL imports preserve the single-request preview with no eval or
   // additional network request and no exposure to embedded HTML tag sequences.
   const encodedJs = Buffer.from(result.outputFiles[0].text, 'utf8').toString('base64');
   scripts.push('<script type="module" data-preview-module="' + entry
-    + '">import "data:text/javascript;base64,' + encodedJs + '";</script>');
+    + '">import "data:text/javascript;base64,' + encodedJs + '";</script>'); in esbuild output must never expand into </body> HTML.
+  const safeJs = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
+  scripts.push('<script type="module" data-preview-module="' + entry + '">\n' + safeJs + '\n</script>');
 }
 
 html = html.replace(/^\s*<link rel="modulepreload"[^>]*>\s*$/gm, '');
