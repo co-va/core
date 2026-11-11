@@ -16,14 +16,24 @@ assert.match(css, /width:min\(820px,calc\(100vw - 40px\)\)/, 'Reader is wider th
 assert.match(css, /admin-document-reading\{[^}]*overflow:auto/, 'Reader scrolls independently within the white drawer');
 assert.match(css, /admin-registry-section \.admin-registry-table tbody tr/, 'Compact mobile rows override general mobile card rules');
 assert.ok(catalog.includes("'rkn-notification-guide-template'"), 'Roskomnadzor helper stays in the source catalog');
+const admin = read('admin/admin.js');
+const docService = read('server/src/document-registry/document-registry.service.ts');
+const docController = read('server/src/saas-admin/saas-admin.controller.ts');
+assert.match(admin, /loadCurrentDocuments: \(\) => adminRequest\('\/document-registry\/current'\)/);
+assert.match(docController, /@Get\('document-registry\/current'\)/);
+assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredForRegistration"/);
+assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
+assert.match(css, /admin-registry-documents-table tbody tr\{height:66px\}/, 'All desktop document rows share the same height');
+assert.match(css, /admin-registry-documents-table \.admin-registry-title\{text-wrap:balance/, 'Full titles are naturally balanced, not truncated');
+assert.match(css, /admin-registry-documents-table th:first-child/, 'Document names get remaining width instead of user identity 31%');
 
 const professionalDocs = [
-  { key: 'privacy-policy', title: 'Политика', version: 3, content: 'A' },
-  { key: 'saas-agreement', title: 'Соглашение', version: 2, content: 'B' },
-  { key: 'platform-processor-consent', title: 'Согласие оператора', version: 1, content: 'C' },
-  { key: 'marketing-consent', title: 'Маркетинг', version: 1, content: 'D' },
-  { key: 'public-profile-consent', title: 'Публичный профиль', version: 1, content: 'E' },
-  { key: 'dpa', title: 'Поручение', version: 1, content: 'F' },
+  { key: 'privacy-policy', title: 'Политика', version: 3, content: 'A', requiredForRegistration: true },
+  { key: 'saas-agreement', title: 'Соглашение', version: 2, content: 'B', requiredForRegistration: true },
+  { key: 'platform-processor-consent', title: 'Согласие оператора', version: 1, content: 'C', requiredForRegistration: true },
+  { key: 'marketing-consent', title: 'Маркетинг', version: 1, content: 'D', requiredForRegistration: false },
+  { key: 'public-profile-consent', title: 'Публичный профиль', version: 1, content: 'E', requiredForRegistration: false },
+  { key: 'dpa', title: 'Поручение', version: 1, content: 'F', requiredForRegistration: true },
 ];
 const guideDocs = [{ key: 'rkn-notification-guide-template', title: 'Инструкция РКН', version: 1, content: 'G' }];
 const userDocs = [
@@ -92,14 +102,23 @@ const root = {
   get innerHTML() { return fullMarkup; },
   set innerHTML(value) { fullMarkup = value; },
   querySelector(selector) { return selector === '[data-registry-history-content]' ? historyHost : null; },
-  querySelectorAll(selector) { return selector === '[data-registry-document]' ? buttons : []; },
+  querySelectorAll(selector) {
+    if (selector === '[data-registry-document]') return buttons;
+    if (selector === '[data-registry-version]') return versionNodes;
+    return [];
+  },
 };
 const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
 let fulfillHistory;
+let fulfillCurrent;
+const versionNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
+  dataset: { registryVersion: doc.key }, textContent: '—',
+}));
 let title = '';
 const rendered = registry.renderDocumentRegistry(root, {
   escapeHtml, setTitle: (value) => { title = value; },
   loadHistory: () => new Promise((resolve) => { fulfillHistory = resolve; }),
+  loadCurrentDocuments: () => new Promise((resolve) => { fulfillCurrent = resolve; }),
 });
 assert.equal(title, 'Реестр документов');
 assert.match(fullMarkup, /Кабинет<span class="admin-registry-app"> \/ Professional<\/span>/);
@@ -115,12 +134,30 @@ assert.ok(guideAt > 0 && guideAt < userAt, 'RKN help is Professional, not User c
 assert.equal((fullMarkup.match(/data-registry-document="/g) || []).length, 10, 'All ten canonical registry documents remain');
 assert.equal((fullMarkup.match(/class="admin-registry-icon"/g) || []).length, 10, 'Each document has one small line icon');
 assert.doesNotMatch(fullMarkup, /document-tile|document-tiles--rail|Платформа ↔ пользователь|Шаблоны помощников/);
+assert.match(fullMarkup, /<th>Документ<\/th><th>Назначение<\/th><th>Версия<\/th>/);
+assert.equal((fullMarkup.match(/is-required/g) || []).length, 5, 'Four mandatory Professional and one User PDN consent');
+assert.equal((fullMarkup.match(/is-optional/g) || []).length, 3, 'Two Professional options and User marketing');
+assert.equal((fullMarkup.match(/is-reading/g) || []).length, 1, 'User privacy notice is for familiarization');
+assert.equal((fullMarkup.match(/is-reference/g) || []).length, 1, 'RKN is reference material, not consent');
+assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 10, 'Every document has a real-version placeholder');
+assert.doesNotMatch(fullMarkup, /Подписать|подписать|Надо подписать/, 'Purpose is not an action and does not claim an existing signature');
+assert.ok(versionNodes.every((node) => node.textContent === '—'), 'Never guess persisted editions from catalog source');
 
+await Promise.resolve();
+fulfillCurrent([
+  { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Current edition from the database' },
+  { key: 'user-document-pdn-policy', title: 'Условия ПДН', type: 'USER_DOCUMENT_BASE', version: 4, content: 'Current User edition from the database' },
+]);
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(versionNodes[0].textContent, '17', 'Latest DB version replaces placeholder');
+assert.equal(versionNodes[6].textContent, '—', 'Missing current DB edition does not become a fake version');
+assert.equal(versionNodes[7].textContent, '4', 'User source also gets the current persisted version');
 buttons[0].click();
 assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
 assert.match(opened[0].innerHTML, /admin-document-reading/);
-assert.match(opened[0].innerHTML, /Политика \/ 3 \/ A/, 'Correct canonical catalog content is displayed');
+assert.match(opened[0].innerHTML, /Политика \/ 17 \/ Current edition from the database/, 'Opens authoritative current DB text and version, never old catalog');
 assert.ok(subscribed > 0);
 
 fulfillHistory(history);

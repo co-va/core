@@ -181,9 +181,8 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       for (const item of items) {
         if (!item || typeof item.key !== 'string' || !Number.isSafeInteger(item.version) || item.version < 1) continue;
         currentDocumentsByKey.set(item.key, item);
-        const badge = root.querySelectorAll('[data-registry-version]').find
-          ? root.querySelectorAll('[data-registry-version]').find((node) => node.dataset.registryVersion === item.key)
-          : Array.from(root.querySelectorAll('[data-registry-version]')).find((node) => node.dataset.registryVersion === item.key);
+        const badge = Array.from(root.querySelectorAll('[data-registry-version]'))
+          .find((node) => node.dataset.registryVersion === item.key);
         if (badge) badge.textContent = String(item.version);
       }
     }).catch(() => {
