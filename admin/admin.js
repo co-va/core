@@ -930,7 +930,8 @@ function renderTenants() {
       if (!url) throw new Error('Ссылка не получена');
       inviteLinkInput.value = url;
       inviteLinkBox.hidden = false;
-      await refreshData();
+      // The link already exists; a background list refresh cannot turn success into an error.
+      void refreshData().catch(() => {});
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : 'Не удалось создать ссылку';
       message.classList.add('error');
