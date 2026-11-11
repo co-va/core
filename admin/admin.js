@@ -442,19 +442,190 @@ function renderCurrentSection() {
   return renderTenants();
 }
 
+// Dashboard state is local to Admin presentation; no new API, ledger or shadow counter.
+let overviewWindowWeeks = 8;
+let overviewDetailGroup = '';
+
+function overviewGroupRows(group, regular) {
+  if (group === 'registered') return regular.filter((item) => Boolean(item.ownerProfile));
+  if (group === 'live' || group === 'demo') {
+    return regular.filter((item) => item.ownerProfile && String(item.access?.commercialMode || 'DEMO').toUpperCase() === group.toUpperCase());
+  }
+  if (group === 'pending') return regular.filter((item) => !item.ownerProfile && item.invitation?.status === 'PENDING');
+  if (group === 'suspended') return regular.filter((item) => item.status === 'SUSPENDED');
+  return [];
+}
+
+function overviewRegistrationWeeks(registered, weeks = 8, now = new Date()) {
+  const monday = (value) => {
+    const date = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    return date;
+  };
+  const first = monday(now);
+  first.setDate(first.getDate() - (weeks - 1) * 7);
+  const weekNumber = (date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 604800000;
+  const start = weekNumber(first);
+  const buckets = Array.from({ length: weeks }, (_, index) => {
+    const mondayDate = new Date(first);
+    mondayDate.setDate(mondayDate.getDate() + 7 * index);
+    return { date: mondayDate, count: 0 };
+  });
+  for (const item of registered) {
+    const date = new Date(item.ownerProfile?.registeredAt || '');
+    if (!Number.isFinite(date.getTime()) || date > now) continue;
+    const index = Math.round(weekNumber(monday(date)) - start);
+    if (index >= 0 && index < weeks) buckets[index].count += 1;
+  }
+  return buckets;
+}
+
 function renderOverview() {
   setActiveSection('Обзор');
   const content = app.querySelector('[data-content]');
   const regular = state.tenants.filter((item) => !item.isOwnerBook);
-  const active = regular.filter((item) => item.status === 'ACTIVE' && item.ownerProfile).length;
-  const pending = regular.filter((item) => !item.ownerProfile && item.invitation?.status === 'PENDING').length;
+  const registered = overviewGroupRows('registered', regular);
+  const demo = overviewGroupRows('demo', regular);
+  const live = overviewGroupRows('live', regular);
+  const pending = overviewGroupRows('pending', regular);
+  const suspended = overviewGroupRows('suspended', regular);
+  const toolRows = Array.isArray(state.toolReadiness) ? state.toolReadiness : [];
+  const toolsReady = toolRows.filter((item) => item.status === 'READY').length;
+  const toolsTesting = toolRows.filter((item) => item.status === 'TESTING').length;
+  const toolsNotReady = toolRows.filter((item) => item.status === 'NOT_READY').length;
+  const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
+  const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
+  const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
+  const periodLabel = overviewWindowWeeks === 4 ? '4 недели' : overviewWindowWeeks === 8 ? '8 недель' : '12 недель';
+  const groupCards = [
+    { key: 'registered', value: registered.length, title: 'Зарегистрированы', note: 'Создан аккаунт и профиль', theme: 'primary' },
+    { key: 'demo', value: demo.length, title: 'DEMO', note: 'Демонстрационный режим' },
+    { key: 'live', value: live.length, title: 'LIVE', note: 'Рабочий режим' },
+    { key: 'pending', value: pending.length, title: 'Ожидают', note: 'Завершения регистрации' },
+  ];
+  const selected = groupCards.find((item) => item.key === overviewDetailGroup)
+    || (overviewDetailGroup === 'suspended'
+      ? { key: 'suspended', title: 'Приостановлены', value: suspended.length }
+      : null);
+  const details = selected ? overviewGroupRows(selected.key, regular) : [];
+  const issueRows = [
+    { label: 'Ожидают регистрации', count: pending.length, group: 'pending' },
+    { label: 'Приостановлены', count: suspended.length, group: 'suspended' },
+  ].filter((item) => item.count > 0);
+
   content.innerHTML = `
-    <div class="admin-heading"><div><h2>Обзор</h2><p>Состояние рабочих пространств</p></div></div>
-    <div class="admin-stats">
-      <div class="admin-stat"><strong>${regular.length}</strong><span>зарегистрировано</span></div>
-      <div class="admin-stat"><strong>${active}</strong><span>активных</span></div>
-      <div class="admin-stat"><strong>${pending}</strong><span>ожидают регистрации</span></div>
+    <div class="admin-overview">
+      <div class="admin-heading admin-overview-heading">
+        <div><h2>Состояние платформы</h2><p>Главные показатели и вопросы, требующие внимания</p></div>
+      </div>
+      <section class="admin-overview-metrics" aria-label="Аккаунты платформы">
+        ${groupCards.map((item) => `
+          <button type="button" class="admin-overview-metric${item.theme ? ' is-primary' : ''}${overviewDetailGroup === item.key ? ' is-selected' : ''}"
+            data-overview-group="${item.key}" aria-pressed="${overviewDetailGroup === item.key}">
+            <span class="admin-overview-metric-label">${item.title}</span>
+            <strong class="admin-overview-metric-value">${item.value}</strong>
+            <span class="admin-overview-metric-bottom"><span>${item.note}</span><span aria-hidden="true">↗</span></span>
+          </button>`).join('')}
+      </section>
+      ${selected ? `
+        <section class="admin-overview-detail" aria-label="${escapeHtml(selected.title)}">
+          <div class="admin-overview-detail-heading">
+            <div><strong>${escapeHtml(selected.title)} · ${details.length}</strong><span>Нажми на человека, чтобы открыть его карточку</span></div>
+            <button type="button" class="admin-overview-close" data-overview-close aria-label="Свернуть подробности">×</button>
+          </div>
+          <div class="admin-overview-detail-list">
+            ${details.length ? details.map((item) => `
+              <button type="button" class="admin-overview-person" data-overview-tenant="${escapeHtml(item.tenantId)}">
+                <span><strong>${escapeHtml(item.ownerProfile?.name || item.invitation?.name || item.tenantName || 'Без имени')}</strong>
+                <small>${escapeHtml(item.ownerProfile?.email || item.invitation?.email || '')}</small></span>
+                <span class="admin-overview-person-status">${item.ownerProfile ? escapeHtml(String(item.access?.commercialMode || 'DEMO')) : 'Ожидает'} <span aria-hidden="true">↗</span></span>
+              </button>`).join('') : '<p class="admin-overview-empty">В этой категории пока никого нет.</p>'}
+          </div>
+        </section>` : ''}
+      <div class="admin-overview-layout">
+        <section class="admin-overview-panel admin-overview-chart-panel">
+          <div class="admin-overview-panel-head">
+            <div><span class="admin-overview-eyebrow">ДИНАМИКА</span><h3>Новые регистрации</h3></div>
+            <div class="admin-overview-period" role="group" aria-label="Период графика">
+              ${[4, 8, 12].map((weeks) => `<button type="button" data-overview-weeks="${weeks}" aria-pressed="${overviewWindowWeeks === weeks}">${weeks} нед.</button>`).join('')}
+            </div>
+          </div>
+          <div class="admin-overview-chart-summary"><strong>${recent}</strong><span>за последние ${periodLabel}</span></div>
+          <div class="admin-overview-bars" role="img" aria-label="Регистрации по неделям за ${periodLabel}">
+            ${bars.map((bar, index) => `
+              <div class="admin-overview-bar-cell">
+                <span class="admin-overview-bar-value">${bar.count || ''}</span>
+                <span class="admin-overview-bar-track">
+                  <span class="admin-overview-bar${index === bars.length - 1 ? ' is-current' : ''}"
+                    style="--bar-height:${bar.count ? Math.max(9, Math.round(100 * bar.count / maxBar)) : 3}%"></span>
+                </span>
+                <span class="admin-overview-bar-label">${new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' }).format(bar.date)}</span>
+              </div>`).join('')}
+          </div>
+          <p class="admin-overview-footnote">По дате регистрации аккаунта. Это не показатель активности в приложении.</p>
+        </section>
+        <section class="admin-overview-panel admin-overview-focus">
+          <div class="admin-overview-panel-head"><div><span class="admin-overview-eyebrow">КОНТРОЛЬ</span><h3>Требует внимания</h3></div></div>
+          ${issueRows.length ? `<div class="admin-overview-focus-list">
+            ${issueRows.map((row) => `<button type="button" data-overview-group="${row.group}" class="admin-overview-focus-row">
+              <span>${row.label}</span><strong>${row.count}</strong><span aria-hidden="true">↗</span>
+            </button>`).join('')}
+          </div>` : `<div class="admin-overview-clear"><span class="admin-overview-clear-mark" aria-hidden="true">✓</span>
+            <strong>Нет ожидающих действий</strong>
+            <p>Нет незавершённых регистраций или приостановленных аккаунтов.</p>
+          </div>`}
+          <button type="button" class="admin-overview-panel-link" data-overview-section="tenants">Открыть пользователей <span aria-hidden="true">↗</span></button>
+        </section>
+      </div>
+      <section class="admin-overview-panel admin-overview-tools">
+        <div class="admin-overview-panel-head">
+          <div><span class="admin-overview-eyebrow">ИНСТРУМЕНТЫ</span><h3>Готовность функций</h3></div>
+          <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Открыть инструменты <span aria-hidden="true">↗</span></button>
+        </div>
+        <div class="admin-overview-tool-counts">
+          <span><i class="is-ready"></i>Готово <strong>${toolsReady}</strong></span>
+          <span><i class="is-testing"></i>Проверка <strong>${toolsTesting}</strong></span>
+          <span><i class="is-not-ready"></i>Не готово <strong>${toolsNotReady}</strong></span>
+        </div>
+        <div class="admin-overview-tool-track" role="img" aria-label="Готово: ${toolsReady}, проверка: ${toolsTesting}, не готово: ${toolsNotReady}">
+          ${toolRows.length ? `
+            <span class="is-ready" style="width:${100 * toolsReady / toolRows.length}%"></span>
+            <span class="is-testing" style="width:${100 * toolsTesting / toolRows.length}%"></span>
+            <span class="is-not-ready" style="width:${100 * toolsNotReady / toolRows.length}%"></span>
+          ` : '<span class="is-empty" style="width:100%"></span>'}
+        </div>
+      </section>
     </div>`;
+
+  content.querySelectorAll('[data-overview-group]').forEach((button) => {
+    button.addEventListener('click', () => {
+      overviewDetailGroup = overviewDetailGroup === button.dataset.overviewGroup ? '' : button.dataset.overviewGroup;
+      renderOverview();
+    });
+  });
+  content.querySelector('[data-overview-close]')?.addEventListener('click', () => {
+    overviewDetailGroup = '';
+    renderOverview();
+  });
+  content.querySelectorAll('[data-overview-weeks]').forEach((button) => {
+    button.addEventListener('click', () => {
+      overviewWindowWeeks = Number(button.dataset.overviewWeeks) || 8;
+      renderOverview();
+    });
+  });
+  content.querySelectorAll('[data-overview-tenant]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.section = 'tenants';
+      renderCurrentSection();
+      openAccessDrawer(button.dataset.overviewTenant);
+    });
+  });
+  content.querySelectorAll('[data-overview-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.section = button.dataset.overviewSection;
+      renderCurrentSection();
+    });
+  });
 }
 
 function renderOwnerBook() {
