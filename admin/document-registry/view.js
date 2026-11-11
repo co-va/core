@@ -103,9 +103,11 @@ function sectionMarkup(title, application, body, escapeHtml, extra = '') {
 }
 
 // A label describes the document's purpose, never whether this administrator signed it.
-function documentPurpose(item, application) {
+function documentPurpose(item) {
   if (item.type === 'RKN_GUIDE_TEMPLATE') return 'Справочный';
-  if (application === 'user') {
+  // These working templates are provided to Professional but define the
+  // downstream purpose for that Professional's own User-facing documents.
+  if (item.type === 'USER_DOCUMENT_BASE') {
     if (item.key === 'user-document-pdn-policy') return 'Ознакомление';
     if (item.key === 'user-document-pdn-consent') return 'Обязательно';
     return 'Необязательно';
@@ -143,7 +145,7 @@ function documentTable(items, escapeHtml, application) {
     const edition = escapeHtml(legalEdition(item.content) || item.edition || '—');
     const publicationDate = escapeHtml(publishedDocumentDate(item));
     const key = escapeHtml(item.key || '');
-    const purpose = documentPurpose(item, application);
+    const purpose = documentPurpose(item);
     return '<tr>' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
@@ -151,7 +153,8 @@ function documentTable(items, escapeHtml, application) {
       '<td data-label="Дата"><time class="admin-registry-published-date" data-registry-date="' + key + '">' + publicationDate + '</time></td>' +
       '<td data-label="Статус">' + documentStatusMarkup(item) + '</td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
-      '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td>' +
+      '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '"' +
+      (item.content ? '' : ' disabled aria-disabled="true"') + '>' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><div class="admin-registry-documents-scroll"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
@@ -271,7 +274,15 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   // The Admin-owned source displays its declared edition immediately.
   // When available, the API supplies the latest persisted document snapshot.
   // The DB's technical version index is never shown as a legal edition.
-  root.querySelectorAll('[data-registry-document]').forEach((button) => {
+  const sourceButtons = Array.from(root.querySelectorAll('[data-registry-document]'));
+  const enableDocumentButton = (key) => {
+    for (const button of sourceButtons) {
+      if (button.dataset.registryDocument !== key) continue;
+      button.disabled = false;
+      button.removeAttribute?.('aria-disabled');
+    }
+  };
+  sourceButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const key = button.dataset.registryDocument;
       const selected = currentDocumentsByKey.get(key) || getRegistryDocument(key);
@@ -288,6 +299,7 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       for (const item of items) {
         if (!item || typeof item.key !== 'string' || typeof item.content !== 'string') continue;
         currentDocumentsByKey.set(item.key, item);
+        enableDocumentButton(item.key);
         const badge = badges.find((node) => node.dataset.registryVersion === item.key);
         if (badge) badge.textContent = legalEdition(item.content) || '—';
         const date = dates.find((node) => node.dataset.registryDate === item.key);
@@ -305,6 +317,7 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       if (!item || typeof item.content !== 'string' || item.key !== 'account-terms'
         || root.isConnected === false) return;
       currentDocumentsByKey.set(item.key, item);
+      enableDocumentButton(item.key);
       for (const badge of root.querySelectorAll('[data-registry-version]')) {
         if (badge.dataset.registryVersion === item.key) {
           badge.textContent = legalEdition(item.content) || '—';
