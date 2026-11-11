@@ -269,7 +269,7 @@ function openDocument(item) {
   return backdrop;
 }
 
-export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments, loadAccountTerms }) {
+export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments, loadWorkingTemplates, loadAccountTerms }) {
   if (!root) return;
   setTitle?.('Реестр документов');
 
@@ -328,6 +328,37 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       // Older preview backend may lack this GET. Source document metadata remains.
     });
   }
+  // The original platform-bases endpoint is already deployed in core/main.
+  // It returns the canonical (not Professional-local) versions from
+  // PlatformDocumentVersion. This keeps Admin's staging preview usable even
+  // before the newer Admin-only /document-registry/current route is deployed.
+  if (typeof loadWorkingTemplates === 'function') {
+    void Promise.resolve().then(loadWorkingTemplates).then((items) => {
+      if (!Array.isArray(items) || root.isConnected === false) return;
+      const publishedBaseKeys = new Set([
+        'user-document-pdn-policy',
+        'user-document-pdn-consent',
+        'user-document-messages-consent',
+      ]);
+      for (const item of items) {
+        if (!publishedBaseKeys.has(item?.key)) continue;
+        const version = Number(item?.version);
+        if (!Number.isSafeInteger(version) || version < 1 || typeof item.content !== 'string') continue;
+        const source = { ...item, type: 'USER_DOCUMENT_BASE', version };
+        currentDocumentsByKey.set(item.key, source);
+        enableDocumentButton(item.key);
+        for (const badge of root.querySelectorAll('[data-registry-version]')) {
+          if (badge.dataset.registryVersion === item.key) badge.textContent = String(version);
+        }
+        // This API does not supply a publication date. Retain the platform's
+        // source issue date rather than inventing one or using tenant edits.
+      }
+    }).catch(() => {
+      // Core's more recent Admin endpoint may still return the same versions.
+      // The index must not guess a revision on network failure.
+    });
+  }
+
   // Account terms are stored exclusively in the platform DB, not in the
   // static template catalog. The public account endpoint returns the same
   // authoritative legal snapshot even if Admin's guarded GET is unavailable.
