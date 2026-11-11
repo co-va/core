@@ -545,13 +545,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 /* Preserve the original compact mobile header. */
 .admin-registry-section .admin-registry-table thead th{height:34px}
-/* Desktop and iPad: a 66px graphite title band over 44px white records.
-   Fixed tracks remain identical across Professional, User and History. */
+/* Desktop and iPad: a warm-light 66px header above 44px white records.
+   Keep the same column tracks throughout Professional, User and History. */
 @media(min-width:761px){
   .admin-registry-section .admin-registry-table thead th{
     height:66px;
-    background:var(--surface-dark);
-    color:var(--white);
+    background:#EDE8E1;
+    color:#735E49;
     font-size:13px;
     font-weight:700;
     line-height:1.2;
