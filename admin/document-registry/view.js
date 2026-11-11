@@ -46,21 +46,43 @@ function sectionMarkup(title, application, body, escapeHtml, extra = '') {
     body + '</section>';
 }
 
-function documentTable(items, escapeHtml) {
+// A label describes the document's purpose, never whether this administrator signed it.
+function documentPurpose(item, application) {
+  if (item.type === 'RKN_GUIDE_TEMPLATE') return 'Справочный';
+  if (application === 'user') {
+    if (item.key === 'user-document-pdn-policy') return 'Ознакомление';
+    if (item.key === 'user-document-pdn-consent') return 'Обязательно';
+    return 'Необязательно';
+  }
+  return item.requiredForRegistration ? 'Обязательно' : 'Необязательно';
+}
+
+function purposeMarkup(value) {
+  const kind = value === 'Обязательно' ? 'required'
+    : value === 'Необязательно' ? 'optional'
+      : value === 'Справочный' ? 'reference' : 'reading';
+  const symbol = kind === 'required' ? '✓' : kind === 'optional' ? '–'
+    : kind === 'reference' ? 'i' : '•';
+  return '<span class="admin-registry-purpose is-' + kind + '"><span class="admin-registry-purpose-mark" aria-hidden="true">' + symbol +
+    '</span><span>' + value + '</span></span>';
+}
+
+function documentTable(items, escapeHtml, application) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
     const key = escapeHtml(item.key || '');
-    const version = item.version == null || item.version === '' ? '—' : escapeHtml(String(item.version));
+    const purpose = documentPurpose(item, application);
     return '<tr>' +
       '<td data-label="Документ"><button type="button" class="admin-registry-open" data-registry-document="' + key +
-      '" aria-label="Открыть документ ' + title + '">' + DOCUMENT_ICON +
+      '" aria-label="Открыть документ ' + title + '" title="' + title + '">' + DOCUMENT_ICON +
       '<strong class="admin-registry-title">' + title + '</strong></button></td>' +
-      '<td data-label="Версия"><span class="admin-registry-version">' + version + '</span></td>' +
+      '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
+      '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">—</span></td>' +
       '</tr>';
   }).join('');
-  return '<div class="admin-card"><table class="admin-table admin-registry-table">' +
-    '<thead><tr><th>Документ</th><th>Версия</th></tr></thead><tbody>' +
-    (rows || '<tr><td colspan="2" class="admin-history-empty">Документов пока нет.</td></tr>') +
+  return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
+    '<thead><tr><th>Документ</th><th>Назначение</th><th>Версия</th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="3" class="admin-history-empty">Документов пока нет.</td></tr>') +
     '</tbody></table></div>';
 }
 
@@ -130,7 +152,7 @@ function openDocument(item) {
   return backdrop;
 }
 
-export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory }) {
+export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments }) {
   if (!root) return;
   setTitle?.('Реестр документов');
 
@@ -138,16 +160,37 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   // application's consent screens.
   const professional = [...getRegistryBookUserDocuments(), ...getRegistryUserHelperTemplates()];
   const user = getRegistryUserLegalTemplates();
+  const currentDocumentsByKey = new Map();
   root.innerHTML = '<div class="admin-users-layout admin-registry-layout">' +
-    sectionMarkup('Кабинет', 'Professional', documentTable(professional, escapeHtml), escapeHtml) +
-    sectionMarkup('Записи', 'User', documentTable(user, escapeHtml), escapeHtml) +
+    sectionMarkup('Кабинет', 'Professional', documentTable(professional, escapeHtml, 'professional'), escapeHtml) +
+    sectionMarkup('Записи', 'User', documentTable(user, escapeHtml, 'user'), escapeHtml) +
     sectionMarkup('История', '', '<div data-registry-history-content><div class="admin-card admin-history-empty">Загрузка истории…</div></div>', escapeHtml) +
     '</div>';
 
-  // Documents remain usable immediately, regardless of history API latency.
+  // Show local legal-purpose labels immediately; current versions and edition text
+  // always come from persisted PlatformDocumentVersion when the API is available.
   root.querySelectorAll('[data-registry-document]').forEach((button) => {
-    button.addEventListener('click', () => openDocument(getRegistryDocument(button.dataset.registryDocument)));
+    button.addEventListener('click', () => {
+      const key = button.dataset.registryDocument;
+      openDocument(currentDocumentsByKey.get(key) || getRegistryDocument(key));
+    });
   });
+  if (typeof loadCurrentDocuments === 'function') {
+    void Promise.resolve().then(loadCurrentDocuments).then((items) => {
+      if (!Array.isArray(items)) return;
+      for (const item of items) {
+        if (!item || typeof item.key !== 'string' || !Number.isSafeInteger(item.version) || item.version < 1) continue;
+        currentDocumentsByKey.set(item.key, item);
+        const badge = root.querySelectorAll('[data-registry-version]').find
+          ? root.querySelectorAll('[data-registry-version]').find((node) => node.dataset.registryVersion === item.key)
+          : Array.from(root.querySelectorAll('[data-registry-version]')).find((node) => node.dataset.registryVersion === item.key);
+        if (badge) badge.textContent = String(item.version);
+      }
+    }).catch(() => {
+      // Older staging preview backends can lack this read route. Never invent
+      // a version from the text's legal revision or an unrelated signing event.
+    });
+  }
 
   const host = root.querySelector('[data-registry-history-content]');
   if (!host) return;

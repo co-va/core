@@ -478,6 +478,7 @@ function renderCurrentSection() {
       escapeHtml,
       setTitle: setActiveSection,
       loadHistory: () => adminRequest('/document-registry/history'),
+      loadCurrentDocuments: () => adminRequest('/document-registry/current'),
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();

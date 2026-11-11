@@ -6,6 +6,32 @@ import { PrismaService } from '../prisma.service';
 export class DocumentRegistryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Read the persisted current edition, not the legal edition printed in source text.
+  // Keep this read scoped behind the existing PlatformAdminGuard.
+  async currentDocuments() {
+    return this.prisma.$queryRaw<Array<{
+      key: string;
+      title: string;
+      type: string;
+      requiredForRegistration: boolean;
+      version: number;
+      content: string;
+    }>>`
+      SELECT d."key", d."title", d."type", d."requiredForRegistration",
+             v."version", v."contentSnapshot" AS "content"
+      FROM "PlatformDocument" d
+      JOIN LATERAL (
+        SELECT "version", "contentSnapshot"
+        FROM "PlatformDocumentVersion"
+        WHERE "documentId" = d."id"
+        ORDER BY "version" DESC, "publishedAt" DESC
+        LIMIT 1
+      ) v ON true
+      WHERE d."isActive" = true
+      ORDER BY d."key" ASC
+    `;
+  }
+
   async tenantLegalTemplateBases() {
     const rows = await this.prisma.$queryRaw<Array<{
       key: string;

@@ -32,6 +32,10 @@ export class SaasAdminService {
     return this.documentRegistry.history();
   }
 
+  documentRegistryCurrent() {
+    return this.documentRegistry.currentDocuments();
+  }
+
   syncDocumentRegistry(documents: unknown) {
     return this.documentRegistry.syncCatalog(documents);
   }
