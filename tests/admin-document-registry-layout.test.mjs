@@ -118,7 +118,7 @@ const versionNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) 
 }));
 const dateNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
   dataset: { registryDate: doc.key },
-  textContent: doc.key === 'privacy-policy' ? '16.09.2026' : doc.key === 'saas-agreement' ? '18.09.2026' : '—',
+  textContent: doc.key === 'privacy-policy' ? '16.09.2026' : doc.key === 'saas-agreement' ? '18.09.2026' : doc.key === 'rkn-notification-guide-template' ? '03.10.2026' : '18.09.2026',
 }));
 let title = '';
 const rendered = registry.renderDocumentRegistry(root, {
