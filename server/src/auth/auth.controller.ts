@@ -30,4 +30,10 @@ export class AuthController {
   me(@Req() request: AuthRequest) {
     return this.auth.me(request.auth!.platformAccountId, request.auth!.tenantId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('presence')
+  presence(@Req() request: AuthRequest) {
+    return this.auth.touchPresence(request.auth!.platformAccountId, request.auth!.tenantId);
+  }
 }

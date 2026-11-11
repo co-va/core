@@ -19,13 +19,14 @@ function between(source, from, to) {
 }
 
 const accountHelpers = between(service, 'function text(value: unknown)', 'function profilePhones(');
+const publicCardHelpers = between(service, 'function publicCardAppearance(', 'function publicDiscountText(');
 const depositHelpers = between(deposits, 'function objectValue(value: unknown)', 'export function depositPersonKey(');
 const depositProjection = between(deposits, 'export function depositPriceSourcesFromRows(', 'export async function activeDepositPriceSources(');
 const contactProjection = between(service, 'function personBelongsToAccount(', 'function completedRecord(');
 const contactsMethod = between(service, '  private async accountDiscounts(', '  private async projectedRecords(')
   .replace('  private async accountDiscounts(', 'async function accountDiscounts(');
 
-const fixtureSource = [accountHelpers, depositHelpers, depositProjection, contactProjection, contactsMethod]
+const fixtureSource = [accountHelpers, publicCardHelpers, depositHelpers, depositProjection, contactProjection, contactsMethod]
   .join('\n').replaceAll('export function ', 'function ');
 const runnable = stripTypeScriptTypes(fixtureSource, { mode: 'strip' });
 const runtime = runInNewContext(
@@ -118,7 +119,7 @@ const summariesMethod = between(service, '  private async programSummaries(', ' 
   .replace('  private async programSummaries(', 'async function programSummaries(');
 const presentationHelpers = between(service, 'function publicProgramCard(', '// A discount may be shown');
 const programRuntime = runInNewContext(
-  stripTypeScriptTypes(accountHelpers + '\n' + presentationHelpers + '\n'
+  stripTypeScriptTypes(accountHelpers + '\n' + publicCardHelpers + '\n' + presentationHelpers + '\n'
     + visibleMethod + '\n' + summariesMethod, { mode: 'strip' })
     + '\n({ visibleDepositSummaries, programSummaries })',
   {
@@ -246,7 +247,7 @@ assert.match(service, /depositPriceSourcesFromRows\(rows, personKey, new Date\(\
 const profileProjection = between(service, 'function publicContactCard(', 'function participantMatchesAccount(');
 const workplaceProjection = between(service, 'function workplaceCard(', '// A card is a projection of a SAVED Professional appearance');
 const cardRuntime = runInNewContext(
-  stripTypeScriptTypes(accountHelpers + '\n' + profileProjection + '\n' + workplaceProjection, { mode: 'strip' })
+  stripTypeScriptTypes(accountHelpers + '\n' + publicCardHelpers + '\n' + profileProjection + '\n' + workplaceProjection, { mode: 'strip' })
     + '\n({ profileCard, workplaceCard, publicContactCard })',
 );
 const publicProfile = {

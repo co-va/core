@@ -104,9 +104,37 @@ model Membership {
 
   tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   account PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+  presence TenantAccountPresence?
 
   @@unique([tenantId, platformAccountId])
   @@index([platformAccountId])
+}
+
+// Ephemeral presence belongs to a specific authenticated account membership.
+model TenantAccountPresence {
+  tenantId          String
+  platformAccountId String
+  lastSeenAt        DateTime   @default(now())
+  totalOnlineMs     BigInt     @default(0)
+  days              TenantAccountPresenceDay[]
+
+  membership Membership @relation(fields: [tenantId, platformAccountId], references: [tenantId, platformAccountId], onDelete: Cascade)
+
+  @@id([tenantId, platformAccountId])
+}
+
+// Daily aggregates share the exact same authenticated heartbeat and membership owner.
+// They are not a second source of online/offline truth.
+model TenantAccountPresenceDay {
+  tenantId          String
+  platformAccountId String
+  day               DateTime @db.Date
+  onlineMs          BigInt   @default(0)
+
+  presence TenantAccountPresence @relation(fields: [tenantId, platformAccountId], references: [tenantId, platformAccountId], onDelete: Cascade)
+
+  @@id([tenantId, platformAccountId, day])
+  @@index([day])
 }
 
 model WorkspaceState {

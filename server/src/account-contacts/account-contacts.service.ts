@@ -34,19 +34,45 @@ function profilePhones(profile: any) {
 }
 
 
-function publicContactCard(appearanceValue: unknown, fieldValues: Array<{ value: string; label: string; text: string }>, photo: unknown, position: string) {
-  const saved = objectValue(appearanceValue);
-  const allowed = new Set(fieldValues.map((field) => field.value));
+// One public projection of Professional's canonical nine-row/three-cell card.
+// Preserve every approved position and style; strip unauthorized field keys
+// BEFORE passing the card to User. Historic single-field rows are supported
+// as input, but no second rendering template is created here.
+function publicCardAppearance(value: unknown, allowed: Set<string>) {
+  const saved = objectValue(value);
+  const visible = new Set<string>();
+  const publicField = (value: unknown) => {
+    const key = text(value);
+    if (!allowed.has(key)) return '';
+    visible.add(key);
+    return key;
+  };
   const appearance = {
     ...saved,
     ...(Array.isArray(saved.lines) ? {
       lines: saved.lines.map((item: unknown) => {
         const line = objectValue(item);
-        return { ...line, field: allowed.has(text(line.field)) ? text(line.field) : '' };
+        const cells = objectValue(line.cells);
+        return {
+          ...line,
+          ...(line.cells && typeof line.cells === 'object' ? {
+            cells: Object.fromEntries(['left', 'center', 'right'].map((column) => {
+              const cell = objectValue(cells[column]);
+              return [column, { ...cell, field: publicField(cell.field) }];
+            })),
+          } : {}),
+          field: publicField(line.field),
+        };
       }),
     } : {}),
   };
-  const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
+  return { appearance, visible };
+}
+
+function publicContactCard(appearanceValue: unknown, fieldValues: Array<{ value: string; label: string; text: string }>, photo: unknown, position: string) {
+  const { appearance, visible } = publicCardAppearance(
+    appearanceValue, new Set(fieldValues.map((field) => field.value)),
+  );
   return { appearance, fields: fieldValues.filter((field) => visible.has(field.value)), photo: text(photo), photoPosition: position };
 }
 
@@ -173,20 +199,9 @@ function publicProgramCard(
 ) {
   const template = arrayValue(templates)
     .map(objectValue).find((item) => text(item.scope) === scope) || {};
-  const saved = objectValue(template.appearance);
-  const allowed = new Set(['uei', 'title', 'subtitle', 'status', 'metaLeft', 'metaRight']);
-  // Preserve the saved geometry and styling; never send internal field keys.
-  const appearance = {
-    ...saved,
-    ...(Array.isArray(saved.lines) ? {
-      lines: saved.lines.map((item: unknown) => {
-        const line = objectValue(item);
-        const key = text(line.field);
-        return { ...line, field: allowed.has(key) ? key : '' };
-      }),
-    } : {}),
-  };
-  const visible = new Set(arrayValue(appearance.lines).map((line) => text(objectValue(line).field)));
+  const { appearance, visible } = publicCardAppearance(
+    template.appearance, new Set(['uei', 'title', 'subtitle', 'status', 'metaLeft', 'metaRight']),
+  );
   const fields = [
     { value: 'uei', label: 'UEI', text: text(values.uei) },
     { value: 'title', label: 'Название', text: text(values.title) },

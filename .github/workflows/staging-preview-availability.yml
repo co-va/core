@@ -1,0 +1,230 @@
+name: Staging Preview Availability
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - '.github/workflows/staging-preview-availability.yml'
+      - 'admin/**'
+      - 'ui/**'
+      - 'server/src/staging-preview.ts'
+      - 'tests/staging-preview.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout gateway contract
+        uses: actions/checkout@v4
+      - name: Setup Node for gateway contract
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify read-only preview cache and gateway contract
+        run: node tests/staging-preview.test.mjs
+      - name: Syntax-check the exact browser inline JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const html = readFileSync('admin/index.html', 'utf8');
+          const tag = '<script type="module" data-preview-module="admin.js">';
+          const tagAt = html.indexOf(tag);
+          if (tagAt < 0) throw new Error('Bundled Admin script missing');
+          const nl = String.fromCharCode(10);
+          const from = html.indexOf(nl, tagAt) + 1;
+          const to = html.indexOf(nl + '</script>', from);
+          if (to < from) throw new Error('Bundled Admin script does not end');
+          const script = html.slice(from, to);
+          writeFileSync('/tmp/preview-admin-check.mjs', script);
+          NODE
+          node --check /tmp/preview-admin-check.mjs
+      - name: Resolve preview hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          getent ahostsv4 va-app-volokovykh.msk1.amvera.tech | head -n 3
+      - name: Probe backend and single-request Admin entry (no separate JS/CSS requests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://va-app-volokovykh.msk1.amvera.tech'
+          for path in /health /admin/; do
+            echo "== Checking ${path} =="
+            code=$(curl -sSL --connect-timeout 8 --max-time 20 -D /tmp/preview-headers -o /tmp/preview-body -w '%{http_code}' "${base}${path}") || {
+              echo "Request failed: ${path}"
+              exit 1
+            }
+            echo "HTTP ${code}"
+            grep -Ei '^(content-type|x-co-va-preview|location):' /tmp/preview-headers || true
+            if [ "${code}" != "200" ]; then
+              head -c 250 /tmp/preview-body || true
+              exit 1
+            fi
+            if [ "${path}" != "/health" ]; then
+              grep -Eiq '^x-co-va-preview: staging' /tmp/preview-headers || {
+                echo "Preview header missing: wrong host or gateway not activated"
+                exit 1
+              }
+            fi
+          done
+      - name: Verify production gateway serves latest single-request staging HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            curl -fsSL --connect-timeout 8 --max-time 25 \
+              "https://va-app-volokovykh.msk1.amvera.tech/admin/?single-request-probe=${attempt}" \
+              -o /tmp/preview-served.html
+            if grep -q 'data-preview-style' /tmp/preview-served.html; then
+              echo "Current bundled staging HTML active on attempt ${attempt}"
+              break
+            fi
+            echo "Gateway returned old HTML ($(wc -c </tmp/preview-served.html) bytes) on attempt ${attempt}"
+            echo 'Comparing raw GitHub staging vs immutable commit:'
+            curl -fsSL --connect-timeout 8 --max-time 15 \
+              "https://raw.githubusercontent.com/co-va/core/staging/admin/index.html?check=${attempt}" \
+              -o /tmp/branch-raw.html
+            curl -fsSL --connect-timeout 8 --max-time 15 \
+              "https://raw.githubusercontent.com/co-va/core/${GITHUB_SHA}/admin/index.html?check=${attempt}" \
+              -o /tmp/commit-raw.html
+            echo "raw branch bytes: $(wc -c </tmp/branch-raw.html); pinned commit bytes: $(wc -c </tmp/commit-raw.html)"
+            if [ "${attempt}" -eq 12 ]; then
+              echo 'Live gateway did not advance to compiled staging HTML'
+              exit 1
+            fi
+            sleep 20
+          done
+          grep -q 'data-preview-module="admin.js"' /tmp/preview-served.html || exit 1
+          grep -q 'data-preview-module="commercial-tenant.js"' /tmp/preview-served.html || exit 1
+          echo "Gateway served inlined admin HTML: $(wc -c </tmp/preview-served.html) bytes"
+      - name: Verify live gateway serves the exact current Admin build
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://va-app-volokovykh.msk1.amvera.tech/admin/'
+          raw='https://raw.githubusercontent.com/co-va/core/staging/admin/index.html'
+          curl -fsSL --connect-timeout 8 --max-time 20 "$raw" -o /tmp/preview-expected.html
+          expected=$(head -n 2 /tmp/preview-expected.html | grep -o 'content-sha256: [a-f0-9]*' | awk '{print $2}')
+          test -n "$expected"
+          echo "Expected staging build: $expected"
+          for n in 1 2 3; do
+            curl -fsSL --connect-timeout 8 --max-time 20 "${url}?revision-check=${GITHUB_RUN_ID}-${n}" -o /tmp/preview-served.html
+            actual=$(head -n 2 /tmp/preview-served.html | grep -o 'content-sha256: [a-f0-9]*' | awk '{print $2}' || true)
+            echo "Live gateway build attempt ${n}: ${actual:-missing}"
+            if [ "$actual" = "$expected" ]; then
+              closing_tags=$(grep -o '</body>' /tmp/preview-served.html | wc -l)
+              if [ "$closing_tags" -ne 1 ]; then
+                echo "Live HTML has ${closing_tags} body close tags; generated JavaScript may be corrupted"
+                exit 1
+              fi
+              if grep -Eq 'Каждый аккаунт отдельно, независимо от UEI|Статистика будет доступна после обновления API Core|Подтверждённые входы; не вся активность' /tmp/preview-served.html; then
+                echo 'Legacy explanatory text still present in live Admin HTML'
+                exit 1
+              fi
+              # The public page must contain both the readable KPI context and fixed-H layout.
+              grep -q 'admin-overview-metric-hint' /tmp/preview-served.html || {
+                echo 'Live Admin lacks readable metric descriptions'
+                exit 1
+              }
+              grep -q 'scrollbar-gutter:stable' /tmp/preview-served.html || {
+                echo 'Live Admin lacks independent desktop content scrolling'
+                exit 1
+              }
+              echo 'Live Admin build matches staging with KPI context and fixed H'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Live preview did not serve the current staging build'
+          exit 1
+      - name: Diagnose preview DNS and repeated navigation latency
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='va-app-volokovykh.msk1.amvera.tech'
+          echo 'Compare backend latency with full Admin HTML (cold direct calls):'
+          for path in health admin/; do
+            for n in 1 2 3; do
+              curl -4 -sS --connect-timeout 6 --max-time 18 -o /dev/null \
+                -w "path=${path} n=${n} status=%{http_code} resolve=%{time_namelookup}s tcp=%{time_connect}s tls=%{time_appconnect}s first_byte=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}\\n" \
+                "https://${host}/${path}?fresh=${GITHUB_RUN_ID}-${n}" || echo "FAILED ${path} request ${n}"
+            done
+          done
+          echo 'IPv4 address records:'
+          getent ahostsv4 "$host" | awk '{print $1}' | sort -u
+          echo 'IPv6 address records (empty means none or not resolved on runner):'
+          getent ahostsv6 "$host" | awk '{print $1}' | sort -u || true
+          echo 'Five fresh HTML navigation requests (sequential):'
+          for i in 1 2 3 4 5; do
+            curl -4 -sSL --connect-timeout 8 --max-time 20 -o /dev/null \
+              -w 'request='"${i}"' status=%{http_code} ip=%{remote_ip} connect=%{time_connect}s ttfb=%{time_starttransfer}s total=%{time_total}s\\n' \
+              "https://${host}/admin/?diagnostic=${i}" || exit 1
+          done
+      - name: Render preview as a mobile browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome_bin="$(command -v "$candidate")"
+              break
+            fi
+          done
+          if [ -z "$chrome_bin" ]; then
+            echo 'No browser on runner'
+            exit 1
+          fi
+          started_at=$SECONDS
+          timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+            --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --enable-logging=stderr --v=0 \
+            --window-size=390,844 --force-device-scale-factor=1 \
+            --touch-events=enabled --virtual-time-budget=18000 \
+            --dump-dom 'https://va-app-volokovykh.msk1.amvera.tech/admin/' \
+            >/tmp/admin-mobile-preview-dom.html 2>/tmp/admin-mobile-preview-browser.log || {
+              echo 'Remote mobile render timed out or browser failed'
+              tail -n 30 /tmp/admin-mobile-preview-browser.log || true
+              exit 1
+            }
+          if ! grep -Eq 'class="[^"]*(admin-auth-screen|admin-mobile-app)' /tmp/admin-mobile-preview-dom.html; then
+            echo 'Preview did not render admin login or authenticated mobile shell'
+            python3 - <<'PY'
+          from pathlib import Path
+          s = Path('/tmp/admin-mobile-preview-dom.html').read_text(errors='replace')
+          marker = '<div id="admin-app"'
+          index = s.find(marker)
+          print('DOM bytes:', len(s), 'App mount:', index)
+          print('App DOM snippet:', s[index:index+1800] if index >= 0 else 'MISSING')
+          print('HTML title:', s[s.find('<title'):s.find('</title>')+8][:350])
+          print('Has mobile CSS:', 'admin-mobile-app' in s)
+          print('Has preview bundle:', 'data-preview-module="admin.js"' in s)
+          import re, hashlib
+          current = Path('/tmp/preview-served.html').read_text(errors='replace')
+          pattern = re.compile(r'<script type="module" data-preview-module="admin.js">\\n([\\s\\S]*?)\\n</script>')
+          m1, m2 = pattern.search(current), pattern.search(s)
+          expected = m1.group(1) if m1 else ''
+          browser = m2.group(1) if m2 else ''
+          print('JS SCRIPT raw/server lengths:', len(expected), len(browser))
+          print('JS SCRIPT matching:', expected == browser)
+          if expected != browser:
+              for i,(a,b) in enumerate(zip(expected,browser)):
+                  if a != b:
+                      print('JS SCRIPT first difference:',i,repr(expected[max(0,i-120):i+120]),repr(browser[max(0,i-120):i+120]))
+                      break
+          print('Has inline script close?', '</script' in browser.lower())
+          PY
+            grep -Ei 'CONSOLE|script|javascript|syntaxerror|typeerror|uncaught|Refused to execute|net::ERR_' /tmp/admin-mobile-preview-browser.log | tail -n 35 || true
+            tail -n 25 /tmp/admin-mobile-preview-browser.log || true
+            exit 1
+          fi
+          echo "Mobile preview browser elapsed: $((SECONDS - started_at))s"
+          echo 'Staging preview mobile DOM: PASS'

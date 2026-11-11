@@ -6,7 +6,7 @@ import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js'
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
 import { v2Header } from '../ui/v2/header.js';
-import { v2CardDeck } from '../ui/v2/card-deck.js';
+import { v2CardDeck, v2NavigationIcon } from '../ui/v2/card-deck.js';
 import { initV2WorkspaceInteraction, setV2DeckOpen } from '../ui/v2/workspace-navigation.js';
 import { modal, mountModal } from '../ui/modals/index.js';
 import { iconButton } from '../ui/buttons/index.js';
@@ -19,7 +19,7 @@ const state = {
   capabilities: [],
   toolReadiness: [],
   pushEnabled: false,
-  section: 'tenants',
+  section: 'overview',
 };
 
 let adminPollTimer = null;
@@ -116,14 +116,46 @@ async function enableAdminPush(promptUser = false) {
   return true;
 }
 
+// Poll only the accounts when their table is visible. Never recreate active
+// role selectors or the registration-link editor just to refresh online labels.
+async function refreshTenantNetwork() {
+  const tenants = await adminRequest('/tenants');
+  if (!Array.isArray(tenants)) return;
+  const content = app.querySelector('[data-content]');
+  state.tenants = tenants;
+  const liveRows = [...(content?.querySelectorAll('[data-tenant]') || [])];
+  const liveIds = liveRows.map((row) => row.dataset.tenant);
+  const nextIds = tenants.map((item) => item.tenantId);
+  if (liveIds.length !== nextIds.length || liveIds.some((id) => !nextIds.includes(id))) {
+    renderTenants();
+    return;
+  }
+  const byId = new Map(tenants.map((item) => [item.tenantId, item]));
+  liveRows.forEach((row) => {
+    const fresh = byId.get(row.dataset.tenant);
+    if (!fresh) return;
+    const scratch = document.createElement('tbody');
+    scratch.innerHTML = tenantRow(fresh);
+    const updated = scratch.querySelector('[data-online-cell]');
+    const current = row.querySelector('[data-online-cell]');
+    if (current && updated) current.innerHTML = updated.innerHTML;
+    // Keep a focused or pending edit untouched, but apply external role changes.
+    const select = row.querySelector('[data-inline-tester]');
+    if (select && !select.disabled && document.activeElement !== select) {
+      select.value = String(Boolean(fresh.isTester));
+      select.dataset.previous = select.value;
+    }
+  });
+}
+
 function startAdminPolling() {
   if (adminPollTimer) window.clearInterval(adminPollTimer);
   adminPollTimer = window.setInterval(async () => {
     try {
-      await refreshData();
-      if (state.section === 'tenants') renderTenants();
+      if (state.section === 'tenants') await refreshTenantNetwork();
+      else await refreshData();
     } catch {
-      // Фоновое обновление не должно мешать работе админки.
+      // Network presence and routine refresh must not interrupt the Admin UI.
     }
   }, 30_000);
 }
@@ -299,10 +331,9 @@ async function refreshData() {
 
 const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
-  { id: 'owner', label: 'Моё пространство', icon: 'profile' },
-  { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
+  { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
 ];
 
 function adminSectionLabel() {
@@ -400,7 +431,7 @@ function renderShell() {
     + '<aside class="admin-sidebar">'
     + '<div class="admin-brand">ACVERO<span>Администратор</span></div>'
     + '<nav class="admin-nav" aria-label="Разделы администратора">'
-    + ADMIN_SECTIONS.map((item) => '<button type="button" data-section="' + item.id + '">' + escapeHtml(item.label) + '</button>').join('')
+    + ADMIN_SECTIONS.map((item) => '<button type="button" data-section="' + item.id + '">' + v2NavigationIcon(item.icon) + '<span>' + escapeHtml(item.label) + '</span></button>').join('')
     + '</nav><div class="admin-sidebar-foot">Управление системой</div></aside>'
     + '<header class="admin-toolbar">'
     + '<div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>'
@@ -430,7 +461,6 @@ function setActiveSection(title) {
 
 function renderCurrentSection() {
   if (state.section === 'overview') return renderOverview();
-  if (state.section === 'owner') return renderOwnerBook();
   if (state.section === 'document-registry') {
     return renderDocumentRegistry(app.querySelector('[data-content]'), {
       escapeHtml,
@@ -691,25 +721,7 @@ function renderOverview() {
   });
 }
 
-function renderOwnerBook() {
-  setActiveSection('Моё пространство');
-  const owner = state.tenants.find((item) => item.isOwnerBook);
-  const content = app.querySelector('[data-content]');
-  if (!owner) {
-    content.innerHTML = '<div class="admin-card" style="padding:20px">Личное рабочее пространство пока не определено.</div>';
-    return;
-  }
-  content.innerHTML = `
-    <div class="admin-heading"><div><h2>Моё пространство</h2><p>Личное рабочее пространство администратора остаётся отдельным от списка пользователей.</p></div></div>
-    <div class="admin-card" style="padding:20px">
-      <strong>${escapeHtml(owner.ownerProfile?.name || owner.tenantName)}</strong>
-      <p style="color:var(--muted)">${escapeHtml(owner.ownerProfile?.email || '')}</p>
-      <button class="admin-button" data-edit-owner>Настроить доступы</button>
-    </div>`;
-  content.querySelector('[data-edit-owner]').addEventListener('click', () => openAccessDrawer(owner.tenantId));
-}
-
-function openDeleteTenantModal(tenantId) {
+function openDeleteTenantModal(tenantId, onDeleted = () => {}) {
   const tenant = state.tenants.find((item) => item.tenantId === tenantId);
   if (!tenant || tenant.isOwnerBook) return;
 
@@ -748,6 +760,7 @@ function openDeleteTenantModal(tenantId) {
     try {
       await adminRequest(`/tenants/${encodeURIComponent(tenantId)}`, { method: 'DELETE' });
       close();
+      onDeleted();
       await refreshData();
       renderTenants();
     } catch (error) {
@@ -758,83 +771,118 @@ function openDeleteTenantModal(tenantId) {
   });
 }
 
-const INVITATION_TOOL_GROUP_LABELS = {
-  profile: 'Профиль',
-  work: 'Основные',
-  people: 'Основные',
-  finance: 'Финансы',
-  journal: 'Журнал',
-  settings: 'Настройки',
-};
+// Reuse the account capability hierarchy for invitations; never maintain a second tool catalog.
+const selectedRegistrationToolKeys = new Set();
 
-function invitationToolSelector() {
-  const groups = new Map();
-  state.capabilities.forEach((item) => {
-    if (item.valueType !== 'BOOLEAN') return;
-    const label = INVITATION_TOOL_GROUP_LABELS[item.groupKey] || item.groupKey || 'Инструменты';
-    if (!groups.has(label)) groups.set(label, []);
-    groups.get(label).push(item);
-  });
-  return `<div class="admin-invite-tools" data-invite-tools>
-    <div class="admin-invite-tools-head">
-      <div><h4>Доступ по ссылке</h4><p class="admin-service-note">Выбери только те инструменты, которые должны быть доступны человеку в DEMO по этой ссылке.</p></div>
-      <div class="admin-inline-actions">
-        <button class="admin-button secondary" type="button" data-select-all-invite-tools>Выбрать всё</button>
-        <button class="admin-button secondary" type="button" data-clear-invite-tools>Снять всё</button>
-      </div>
-    </div>
-    ${[...groups.entries()].map(([group, items]) => `<section class="admin-invite-tool-group">
-      <strong>${escapeHtml(group)}</strong>
-      <div class="admin-invite-tool-list">
-        ${items.map((item) => `<label class="admin-invite-tool">
-          <input type="checkbox" value="${escapeHtml(item.key)}" data-invite-tool>
-          <span>${escapeHtml(item.name)}</span>
-        </label>`).join('')}
-      </div>
-    </section>`).join('')}
-  </div>`;
+function updateRegistrationToolSummary(root) {
+  const summary = root.querySelector('[data-invite-selection]');
+  if (summary) summary.textContent = selectedRegistrationToolKeys.size
+    ? 'Выбрано инструментов: ' + selectedRegistrationToolKeys.size
+    : 'Инструменты не выбраны';
 }
 
-function selectedInvitationTools(root) {
-  return [...root.querySelectorAll('[data-invite-tool]:checked')]
-    .map((input) => String(input.value || '').trim())
-    .filter(Boolean);
+function openRegistrationToolDrawer() {
+  const resolved = new Map(state.capabilities.map((capability) => [
+    capability.key, { enabled: selectedRegistrationToolKeys.has(capability.key), limit: null },
+  ]));
+  let backdrop = document.createElement('div');
+  backdrop.className = 'admin-drawer-backdrop';
+  backdrop.innerHTML = `
+    <aside class="admin-drawer">
+      <div class="admin-drawer-head">
+        <div><h3>Инструменты нового аккаунта</h3><p>Настройки доступа по регистрационной ссылке</p></div>
+        <button type="button" class="admin-close" data-close aria-label="Закрыть">×</button>
+      </div>
+      <div data-capability-order-list>${renderTenantRegistry(resolved)}</div>
+      <div class="admin-actions">
+        <button type="button" class="admin-button secondary" data-close>Отмена</button>
+        <button type="button" class="admin-button" data-apply-invite>Применить</button>
+      </div>
+    </aside>`;
+  // Registration links accept Boolean capability switches, never capacity overrides.
+  backdrop.querySelectorAll('[data-type="LIMIT"]').forEach((input) => {
+    input.closest('.admin-capability')?.remove();
+  });
+  const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
+  if (sharedQ) {
+    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
+    if (!mounted) return;
+    backdrop = mounted;
+  } else document.body.append(backdrop);
+  const close = () => { if (sharedQ) backdrop.v2Close?.(); else backdrop.remove(); };
+  backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+  backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      button.classList.toggle('is-on');
+      button.dataset.current = String(button.classList.contains('is-on'));
+      button.setAttribute('aria-pressed', button.dataset.current);
+    });
+  });
+  backdrop.querySelector('[data-apply-invite]')?.addEventListener('click', () => {
+    selectedRegistrationToolKeys.clear();
+    backdrop.querySelectorAll('[data-capability][data-type="BOOLEAN"][data-current="true"]')
+      .forEach((button) => selectedRegistrationToolKeys.add(button.dataset.capability));
+    close();
+    const content = app.querySelector('[data-content]');
+    updateRegistrationToolSummary(content);
+    const oldLink = content.querySelector('[data-invite-link]');
+    if (oldLink) oldLink.hidden = true;
+    const linkValue = content.querySelector('[data-invite-link-value]');
+    if (linkValue) linkValue.value = '';
+    const message = content.querySelector('[data-invite-message]');
+    if (message) {
+      message.textContent = '';
+      message.classList.remove('error');
+    }
+  });
 }
 
 function renderTenants() {
   setActiveSection('Пользователи');
   const content = app.querySelector('[data-content]');
+  const owner = state.tenants.find((item) => item.isOwnerBook);
   const tenants = state.tenants.filter((item) => !item.isOwnerBook);
   content.innerHTML = `
-    <div class="admin-heading"><div><h2>Пользователи</h2><p>Режимы и доступ пользователей.</p></div></div>
-    <section class="admin-invite-panel">
-      <div class="admin-invite-head">
-        <div>
-          <h3>Регистрационная ссылка</h3>
-          <p class="admin-service-note">Настрой доступ и создай одноразовую ссылку.</p>
+    <div class="admin-users-layout">
+      <section class="admin-users-section" aria-labelledby="admin-my-account-title">
+        <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
+        <div class="admin-card">
+          <table class="admin-table">
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
+            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="6">Административный аккаунт не найден.</td></tr>'}</tbody>
+          </table>
         </div>
-      </div>
-      <details class="admin-invite-access">
-        <summary>Настроить доступ по ссылке</summary>
-        ${invitationToolSelector()}
-      </details>
-      <div class="admin-invite-primary-actions">
-        <button class="admin-button" type="button" data-create-invite-link>Создать ссылку</button>
-      </div>
-      <div class="admin-invite-link" data-invite-link hidden>
-        <label class="admin-field">
-          <span>Ссылка для регистрации</span>
-          <input type="text" readonly data-invite-link-value>
-        </label>
-        <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
-      </div>
-      <p class="admin-inline-message" data-invite-message></p>
-    </section>
-    <div class="admin-card">
-      <table class="admin-table">
-        <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
-        <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="4">Пока нет созданных профилей.</td></tr>'}</tbody>
-      </table>
+      </section>
+      <section class="admin-users-section" aria-labelledby="admin-registration-link-title">
+        <h2 class="admin-users-section-title" id="admin-registration-link-title">Регистрационная ссылка</h2>
+        <div class="admin-invite-panel">
+          <p class="admin-service-note">Настрой доступ для нового аккаунта и создай одноразовую ссылку.</p>
+          <p class="admin-service-note" data-invite-selection>Инструменты не выбраны</p>
+          <div class="admin-invite-primary-actions">
+            <button class="admin-button secondary" type="button" data-configure-invite-tools>Настроить инструменты</button>
+            <button class="admin-button" type="button" data-create-invite-link>Создать ссылку</button>
+          </div>
+          <div class="admin-invite-link" data-invite-link hidden>
+            <label class="admin-field">
+              <span>Ссылка для регистрации</span>
+              <input type="text" readonly data-invite-link-value>
+            </label>
+            <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
+          </div>
+          <p class="admin-inline-message" data-invite-message></p>
+        </div>
+      </section>
+      <section class="admin-users-section" aria-labelledby="admin-all-users-title">
+        <h2 class="admin-users-section-title" id="admin-all-users-title">Все пользователи</h2>
+        <div class="admin-card">
+          <table class="admin-table">
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
+            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="6">Пока нет других пользователей.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </section>
     </div>`;
 
   const message = content.querySelector('[data-invite-message]');
@@ -843,21 +891,17 @@ function renderTenants() {
   const inviteLinkInput = content.querySelector('[data-invite-link-value]');
   const copyLinkButton = content.querySelector('[data-copy-invite-link]');
 
-  content.querySelector('[data-select-all-invite-tools]')?.addEventListener('click', () => {
-    content.querySelectorAll('[data-invite-tool]').forEach((input) => { input.checked = true; });
-  });
-  content.querySelector('[data-clear-invite-tools]')?.addEventListener('click', () => {
-    content.querySelectorAll('[data-invite-tool]').forEach((input) => { input.checked = false; });
-  });
+  updateRegistrationToolSummary(content);
+  content.querySelector('[data-configure-invite-tools]')?.addEventListener('click', openRegistrationToolDrawer);
 
   createLinkButton?.addEventListener('click', async () => {
     message.textContent = '';
     message.classList.remove('error');
-    const tools = selectedInvitationTools(content);
+    const tools = [...selectedRegistrationToolKeys];
     if (!tools.length) {
-      content.querySelector('.admin-invite-access')?.setAttribute('open', '');
-      message.textContent = 'Выбери хотя бы один инструмент или нажми «Выбрать всё».';
+      message.textContent = 'Сначала настрой инструменты нового аккаунта.';
       message.classList.add('error');
+      openRegistrationToolDrawer();
       return;
     }
     createLinkButton.disabled = true;
@@ -899,28 +943,88 @@ function renderTenants() {
 
   content.querySelectorAll('[data-tenant]').forEach((row) => {
     row.addEventListener('click', () => openAccessDrawer(row.dataset.tenant));
+    row.addEventListener('keydown', (event) => {
+      if (event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      openAccessDrawer(row.dataset.tenant);
+    });
   });
-
-  content.querySelectorAll('[data-delete-tenant]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+  // This selector changes only the tester flag; capability overrides stay untouched.
+  content.querySelectorAll('[data-inline-tester]').forEach((select) => {
+    select.addEventListener('click', (event) => event.stopPropagation());
+    select.addEventListener('keydown', (event) => event.stopPropagation());
+    select.addEventListener('change', async (event) => {
       event.stopPropagation();
-      const tenantId = button.dataset.deleteTenant;
-      if (tenantId) openDeleteTenantModal(tenantId);
+      const row = select.closest('[data-tenant]');
+      const tenantId = row?.dataset.tenant;
+      const previous = select.dataset.previous === 'true';
+      if (!tenantId) return;
+      const next = select.value === 'true';
+      const errorLabel = row.querySelector('[data-tester-error]');
+      if (errorLabel) { errorLabel.hidden = true; errorLabel.textContent = ''; }
+      if (next === previous) return;
+      select.disabled = true;
+      try {
+        await adminRequest(`/tenants/${encodeURIComponent(tenantId)}/access`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isTester: next }),
+        });
+        const tenant = state.tenants.find((item) => item.tenantId === tenantId);
+        if (tenant) tenant.isTester = next;
+        select.dataset.previous = String(next);
+      } catch (error) {
+        select.value = String(previous);
+        if (errorLabel) {
+          errorLabel.textContent = error instanceof Error ? error.message : 'Не удалось изменить статус';
+          errorLabel.hidden = false;
+        }
+      } finally {
+        if (select.isConnected) select.disabled = false;
+      }
     });
   });
 }
 
 function tenantRow(item) {
   const pending = !item.ownerProfile && item.invitation?.status === 'PENDING';
-  const name = item.ownerProfile?.name || item.invitation?.name || item.tenantName;
+  const name = item.ownerProfile?.name || item.invitation?.name || item.tenantName || 'Без имени';
   const email = item.ownerProfile?.email || item.invitation?.email || '';
+  const displayedEmail = email.endsWith('@registration.invalid') ? '' : email;
   const mode = String(item.access?.commercialMode || 'DEMO');
-  const statusClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
-  const statusLabel = item.status === 'SUSPENDED' ? 'Отключён' : pending ? 'Ждёт регистрации' : item.ownerProfile ? 'Активен' : 'Создан';
-  const modeClass = mode === 'LIVE' ? 'active' : 'pending';
-  const testerBadge = item.isTester ? ' <span class="admin-pill pending">Тестировщик</span>' : '';
-  const remove = `<button class="admin-button danger" data-delete-tenant="${escapeHtml(item.tenantId)}">Удалить</button>`;
-  return `<tr data-tenant="${escapeHtml(item.tenantId)}"><td><strong>${escapeHtml(name)}</strong>${testerBadge}</td><td>${email ? escapeHtml(email) : '—'}</td><td><span class="admin-pill ${modeClass}">${escapeHtml(mode)}</span></td><td><span class="admin-pill ${statusClass}">${statusLabel}</span> ${remove}</td></tr>`;
+  const accessClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
+  const accessLabel = item.status === 'SUSPENDED' ? 'Отключён'
+    : pending ? 'Ждёт регистрации'
+    : item.ownerProfile ? 'Разрешён' : 'Не зарегистрирован';
+  const testerOptions = item.isOwnerBook ? '' : `<span class="admin-inline-role-editor"><select class="admin-inline-role-select" data-inline-tester
+      data-previous="${Boolean(item.isTester)}" aria-label="Тестировщик: ${escapeHtml(name)}">
+      <option value="false"${item.isTester ? '' : ' selected'}>—</option>
+      <option value="true"${item.isTester ? ' selected' : ''}>Тестировщик</option>
+    </select><small data-tester-error class="admin-inline-error" role="alert" hidden></small></span>`;
+  let network = '—';
+  if (item.ownerProfile && typeof item.presence?.online === 'boolean') {
+    const connected = item.presence.online;
+    const rawTime = Number(item.presence.totalOnlineMs);
+    const minutes = Number.isFinite(rawTime) && rawTime >= 0 ? Math.floor(rawTime / 60_000) : null;
+    const hours = minutes == null ? null : Math.floor(minutes / 60);
+    const duration = hours == null ? '' : hours
+      ? `${hours} ч ${minutes % 60} мин` : minutes ? `${minutes} мин` : 'менее 1 мин';
+    const rawLastVisit = item.presence.lastSeenAt ? new Date(item.presence.lastSeenAt) : null;
+    const lastVisit = rawLastVisit && Number.isFinite(rawLastVisit.getTime())
+      ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '';
+    network = `<span class="admin-account-presence ${connected ? 'is-online' : 'is-offline'}">${connected ? 'В сети' : 'Не в сети'}</span>
+      ${duration ? `<small class="admin-network-detail">Учтено: ${duration}</small>` : ''}
+      ${!connected && lastVisit ? `<small class="admin-network-detail">Последний: ${escapeHtml(lastVisit)}</small>` : ''}`;
+  }
+  return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
+    <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
+    <td data-label="Роль">${item.isOwnerBook ? 'Администратор' : 'Пользователь'}${testerOptions}</td>
+    <td data-label="Режим"><span class="admin-pill ${mode === 'LIVE' ? 'active' : 'pending'}">${escapeHtml(mode)}</span></td>
+    <td data-label="Тариф">${escapeHtml(item.plan?.name || '—')}</td>
+    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span></td>
+    <td data-label="В сети" data-online-cell>${network}</td>
+  </tr>`;
 }
 
 function renderCapabilities() {
@@ -1010,6 +1114,7 @@ function openAccessDrawer(tenantId) {
 
       <section class="admin-section">
         <h4>Роль доступа</h4>
+        ${tenant.isOwnerBook ? `<div class="admin-capability"><div><strong>Администратор</strong><small>Защищённый аккаунт платформы.</small></div></div>` : `
         <div class="admin-capability">
           <div>
             <strong data-tester-label>${tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
@@ -1018,7 +1123,7 @@ function openAccessDrawer(tenantId) {
           <button type="button" class="admin-toggle${tenant.isTester ? ' is-on' : ''}"
             role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
             data-tester-toggle></button>
-        </div>
+        </div>`}
       </section>
 
       <section class="admin-section">
@@ -1029,10 +1134,10 @@ function openAccessDrawer(tenantId) {
         </div>
       </section>
 
-      <section class="admin-section">
+      ${tenant.isOwnerBook ? '' : `<section class="admin-section">
         <h4>Состояние пространства</h4>
         <button class="admin-button ${tenant.status === 'SUSPENDED' ? '' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
-      </section>
+      </section>`}
 
       ${tenant.ownerProfile?.email ? `
       <section class="admin-section">
@@ -1046,6 +1151,7 @@ function openAccessDrawer(tenantId) {
         </form>
       </section>` : ''}
 
+      ${tenant.isOwnerBook ? '' : `<section class="admin-section admin-danger-zone"><button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button></section>`}
       <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить изменения</button></div>
       <p class="admin-inline-message" data-save-message></p>
     </aside>`;
@@ -1075,6 +1181,8 @@ function openAccessDrawer(tenantId) {
       button.dataset.current = button.classList.contains('is-on') ? 'true' : 'false';
     });
   });
+
+  backdrop.querySelector('[data-delete-account]')?.addEventListener('click', () => openDeleteTenantModal(tenantId, close));
 
   backdrop.querySelector('[data-status]')?.addEventListener('click', async () => {
     const next = tenant.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
@@ -1139,7 +1247,7 @@ function openAccessDrawer(tenantId) {
       }
     });
 
-    const testerChanged = (testerToggle?.getAttribute('aria-checked') === 'true') !== Boolean(tenant.isTester);
+    const testerChanged = !tenant.isOwnerBook && (testerToggle?.getAttribute('aria-checked') === 'true') !== Boolean(tenant.isTester);
     const message = backdrop.querySelector('[data-save-message]');
     if (!changes.length && !testerChanged) {
       message.textContent = 'Изменений нет.';

@@ -4,6 +4,66 @@ export const STAGING_PREVIEW_HOST = 'va-app-volokovykh.msk1.amvera.tech';
 
 const STAGING_RAW_BASE = 'https://raw.githubusercontent.com/co-va/core/staging';
 const PREVIEW_FETCH_TIMEOUT_MS = 8_000;
+const PREVIEW_CACHE_TTL_MS = 15_000;
+const PREVIEW_CACHE_MAX_STALE_MS = 5 * 60_000;
+const PREVIEW_CACHE_MAX_FILES = 96;
+const PREVIEW_CACHE_MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+type PreviewCacheEntry = { body: Buffer; fetchedAt: number };
+const previewAssetCache = new Map<string, PreviewCacheEntry>();
+const pendingAssetFetches = new Map<string, Promise<Buffer | null>>();
+
+function rememberPreviewAsset(file: string, body: Buffer) {
+  if (body.byteLength > PREVIEW_CACHE_MAX_FILE_BYTES) return;
+  previewAssetCache.delete(file);
+  previewAssetCache.set(file, { body, fetchedAt: Date.now() });
+  while (previewAssetCache.size > PREVIEW_CACHE_MAX_FILES) {
+    const oldest = previewAssetCache.keys().next().value;
+    if (!oldest) break;
+    previewAssetCache.delete(oldest);
+  }
+}
+
+function fetchPreviewAsset(file: string): Promise<Buffer | null> {
+  const current = pendingAssetFetches.get(file);
+  if (current) return current;
+
+  const task = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PREVIEW_FETCH_TIMEOUT_MS);
+    try {
+      const upstream = await fetch(`${STAGING_RAW_BASE}/${file}?preview=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'User-Agent': 'CO-VA-Staging-Preview' },
+        signal: controller.signal,
+      });
+      if (upstream.status === 404) {
+        previewAssetCache.delete(file);
+        return null;
+      }
+      if (!upstream.ok) throw new Error('Staging asset fetch failed');
+      const body = Buffer.from(await upstream.arrayBuffer());
+      rememberPreviewAsset(file, body);
+      return body;
+    } finally {
+      clearTimeout(timer);
+    }
+  })().finally(() => {
+    pendingAssetFetches.delete(file);
+  });
+  pendingAssetFetches.set(file, task);
+  return task;
+}
+
+function setPreviewAssetHeaders(response: Response, file: string, cacheStatus: string) {
+  response.setHeader('Content-Type', CONTENT_TYPES.get(fileExtension(file)) || 'application/octet-stream');
+  response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  response.setHeader('Pragma', 'no-cache');
+  response.setHeader('Expires', '0');
+  response.setHeader('X-CO-VA-Preview', 'staging');
+  response.setHeader('X-CO-VA-Preview-Cache', cacheStatus);
+}
+
 
 const CONTENT_TYPES = new Map<string, string>([
   ['.html', 'text/html; charset=utf-8'],
@@ -85,32 +145,28 @@ export async function stagingPreviewMiddleware(
   const file = resolveStagingPreviewFile(request.path);
   if (!file) return next();
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PREVIEW_FETCH_TIMEOUT_MS);
+  const cached = previewAssetCache.get(file);
+  if (cached && Date.now() - cached.fetchedAt < PREVIEW_CACHE_TTL_MS) {
+    setPreviewAssetHeaders(response, file, 'hit');
+    if (method === 'HEAD') return response.status(200).end();
+    return response.status(200).send(cached.body);
+  }
+  if (cached && Date.now() - cached.fetchedAt < PREVIEW_CACHE_MAX_STALE_MS) {
+    // Serve a known-good snapshot immediately and refresh in the background.
+    // Slow or temporarily unavailable GitHub must not block the Admin UI.
+    void fetchPreviewAsset(file).catch(() => undefined);
+    setPreviewAssetHeaders(response, file, 'stale');
+    if (method === 'HEAD') return response.status(200).end();
+    return response.status(200).send(cached.body);
+  }
 
   try {
-    const upstream = await fetch(`${STAGING_RAW_BASE}/${file}?preview=${Date.now()}`, {
-      cache: 'no-store',
-      headers: { 'User-Agent': 'CO-VA-Staging-Preview' },
-      signal: controller.signal,
-    });
-
-    if (upstream.status === 404) return response.status(404).send('Preview file not found');
-    if (!upstream.ok) return response.status(502).send('Staging preview unavailable');
-
-    response.setHeader('Content-Type', CONTENT_TYPES.get(fileExtension(file)) || 'application/octet-stream');
-    response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    response.setHeader('Pragma', 'no-cache');
-    response.setHeader('Expires', '0');
-    response.setHeader('X-CO-VA-Preview', 'staging');
-
+    const body = await fetchPreviewAsset(file);
+    if (!body) return response.status(404).send('Preview file not found');
+    setPreviewAssetHeaders(response, file, 'miss');
     if (method === 'HEAD') return response.status(200).end();
-
-    const body = Buffer.from(await upstream.arrayBuffer());
     return response.status(200).send(body);
   } catch {
     return response.status(502).send('Staging preview unavailable');
-  } finally {
-    clearTimeout(timer);
   }
 }
