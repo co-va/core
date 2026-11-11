@@ -9,6 +9,7 @@ import { v2Header } from '../ui/v2/header.js';
 import { v2CardDeck } from '../ui/v2/card-deck.js';
 import { initV2WorkspaceInteraction, setV2DeckOpen } from '../ui/v2/workspace-navigation.js';
 import { modal, mountModal } from '../ui/modals/index.js';
+import { iconButton } from '../ui/buttons/index.js';
 
 const app = document.querySelector('#admin-app');
 const state = {
@@ -17,11 +18,39 @@ const state = {
   tenants: [],
   capabilities: [],
   toolReadiness: [],
+  pushEnabled: false,
   section: 'tenants',
 };
 
 let adminPollTimer = null;
 let cleanupMobileShell = null;
+
+const SESSION_ICONS = {
+  push: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M10 21h4"></path></svg>',
+  logout: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg>',
+};
+
+function adminSessionIcon(action) {
+  const push = action === 'push';
+  return iconButton(SESSION_ICONS[action], {
+    className: 'admin-session-icon admin-session-icon--' + action,
+    data: push ? 'data-enable-admin-push' : 'data-logout',
+    aria: push ? 'Включить PUSH' : 'Выйти из аккаунта',
+  });
+}
+
+function syncAdminPushIcon(button, { enabled = false, loading = false } = {}) {
+  if (!button) return;
+  const supported = typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+  button.hidden = !supported;
+  if (!supported) return;
+  const label = loading ? 'Подключаем PUSH' : enabled ? 'PUSH включён' : 'Включить PUSH';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.classList.toggle('is-enabled', enabled);
+  button.classList.toggle('is-loading', loading);
+  button.disabled = enabled || loading;
+}
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -249,12 +278,12 @@ async function loadAdmin() {
   renderShell();
   startAdminPolling();
   void enableAdminPush(false).then((enabled) => {
-    const pushButton = app.querySelector('[data-enable-admin-push]');
-    if (enabled && pushButton) {
-      pushButton.textContent = 'PUSH включён';
-      pushButton.disabled = true;
-    }
-  }).catch(() => false);
+    state.pushEnabled = Boolean(enabled);
+    syncAdminPushIcon(app.querySelector('[data-enable-admin-push]'), { enabled: state.pushEnabled });
+  }).catch(() => {
+    state.pushEnabled = false;
+    syncAdminPushIcon(app.querySelector('[data-enable-admin-push]'));
+  });
 }
 
 async function refreshData() {
@@ -293,21 +322,12 @@ function watchAdminBreakpoint(dispose = () => {}) {
 
 function bindAdminSessionControls() {
   const pushButton = app.querySelector('[data-enable-admin-push]');
-  const syncPushButton = (enabled = false) => {
-    if (!pushButton) return;
-    const supported = typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
-    if (!supported) { pushButton.hidden = true; return; }
-    const active = enabled || Notification.permission === 'granted';
-    pushButton.textContent = active ? 'PUSH включён' : 'Включить PUSH';
-    pushButton.disabled = active;
-  };
-  syncPushButton(false);
+  syncAdminPushIcon(pushButton, { enabled: state.pushEnabled });
   pushButton?.addEventListener('click', async () => {
-    pushButton.disabled = true;
-    pushButton.textContent = 'Включаем…';
+    syncAdminPushIcon(pushButton, { loading: true });
     const enabled = await enableAdminPush(true).catch(() => false);
-    syncPushButton(enabled);
-    if (!enabled && Notification.permission !== 'granted') pushButton.disabled = false;
+    state.pushEnabled = Boolean(enabled);
+    syncAdminPushIcon(pushButton, { enabled: state.pushEnabled });
   });
   app.querySelector('[data-logout]')?.addEventListener('click', () => {
     cleanupMobileShell?.();
@@ -316,6 +336,7 @@ function bindAdminSessionControls() {
     clearAuthToken();
     state.account = null;
     state.admin = null;
+    state.pushEnabled = false;
     renderLogin();
   });
 }
@@ -323,8 +344,8 @@ function bindAdminSessionControls() {
 function renderMobileShell() {
   const deck = v2CardDeck(ADMIN_SECTIONS, { active: state.section, data: 'data-section' })
     + '<div class="admin-mobile-deck-footer"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
-    + '<button class="ui-button ui-button--secondary" type="button" data-enable-admin-push>Включить PUSH</button>'
-    + '<button class="ui-button ui-button--secondary" type="button" data-logout>Выйти</button></div>';
+    + adminSessionIcon('push')
+    + adminSessionIcon('logout') + '</div>';
   const header = v2Header({
     b: { label: adminSectionLabel(), subtitle: 'Администратор' },
     c: { kind: 'mode', data: 'data-admin-deck-toggle', aria: 'Разделы' },
@@ -384,8 +405,8 @@ function renderShell() {
     + '<header class="admin-toolbar">'
     + '<div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>'
     + '<div class="admin-toolbar-user"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
-    + '<button class="admin-button secondary" data-enable-admin-push>Включить PUSH</button>'
-    + '<button class="admin-button secondary" data-logout>Выйти</button></div></header>'
+    + adminSessionIcon('push')
+    + adminSessionIcon('logout') + '</div></header>';
     + '<main class="admin-main"><div class="admin-content" data-content></div></main>'
     + '</div>';
   app.querySelectorAll('[data-section]').forEach((button) => {
