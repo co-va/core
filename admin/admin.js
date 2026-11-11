@@ -1,4 +1,5 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
+import { startAccountPresence, stopAccountPresence } from '../core/presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
 import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
@@ -151,6 +152,7 @@ async function refreshTenantNetwork() {
 function startAdminPolling() {
   if (adminPollTimer) window.clearInterval(adminPollTimer);
   adminPollTimer = window.setInterval(async () => {
+    if (document.visibilityState === 'hidden') return;
     try {
       if (state.section === 'tenants') await refreshTenantNetwork();
       else await refreshData();
@@ -161,6 +163,7 @@ function startAdminPolling() {
 }
 
 function renderConnectionFailure(message = 'Не удалось связаться с сервером.') {
+  stopAccountPresence();
   cleanupMobileShell?.();
   app.innerHTML = v2Sticker({
     title: 'Нет соединения с сервером',
@@ -208,6 +211,7 @@ async function loginWithOneRetry(identifier, password, onRetry) {
 }
 
 function renderLogin(message = '') {
+  stopAccountPresence();
   cleanupMobileShell?.();
   const formBody = '<form class="auth-form shared-login-form" id="admin-auth-form" data-login-form>'
     + field({ label: 'Телефон или email', name: 'identifier', type: 'text', required: true, autocomplete: 'username' })
@@ -309,6 +313,13 @@ async function loadAdmin() {
   await refreshData();
   renderShell();
   startAdminPolling();
+  // Shares the Professional backend heartbeat: no second online state or login work.
+  // The first confirmed signal refreshes only the visible network cells.
+  startAccountPresence({
+    onForegroundReport: () => {
+      if (state.section === 'tenants') void refreshTenantNetwork().catch(() => {});
+    },
+  });
   void enableAdminPush(false).then((enabled) => {
     state.pushEnabled = Boolean(enabled);
     syncAdminPushIcon(app.querySelector('[data-enable-admin-push]'), { enabled: state.pushEnabled });
@@ -361,6 +372,7 @@ function bindAdminSessionControls() {
     syncAdminPushIcon(pushButton, { enabled: state.pushEnabled });
   });
   app.querySelector('[data-logout]')?.addEventListener('click', () => {
+    stopAccountPresence();
     cleanupMobileShell?.();
     if (adminPollTimer) window.clearInterval(adminPollTimer);
     adminPollTimer = null;
@@ -1004,18 +1016,18 @@ function tenantRow(item) {
   let network = '—';
   if (item.ownerProfile && typeof item.presence?.online === 'boolean') {
     const connected = item.presence.online;
-    const rawTime = Number(item.presence.totalOnlineMs);
-    const minutes = Number.isFinite(rawTime) && rawTime >= 0 ? Math.floor(rawTime / 60_000) : null;
-    const hours = minutes == null ? null : Math.floor(minutes / 60);
-    const duration = hours == null ? '' : hours
-      ? `${hours} ч ${minutes % 60} мин` : minutes ? `${minutes} мин` : 'менее 1 мин';
     const rawLastVisit = item.presence.lastSeenAt ? new Date(item.presence.lastSeenAt) : null;
     const lastVisit = rawLastVisit && Number.isFinite(rawLastVisit.getTime())
-      ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+      ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
       : '';
+    const rawTime = Number(item.presence.totalOnlineMs);
+    const minutes = Number.isFinite(rawTime) && rawTime >= 60_000 ? Math.floor(rawTime / 60_000) : 0;
+    const duration = minutes >= 60 ? `${Math.floor(minutes / 60)} ч${minutes % 60 ? ` ${minutes % 60} мин` : ''}`
+      : minutes ? `${minutes} мин` : '';
+    // A zero accumulated duration is not a visit. Never invent a date from registration.
+    const visitDetails = lastVisit ? [lastVisit, duration].filter(Boolean).join(' — ') : '';
     network = `<span class="admin-account-presence ${connected ? 'is-online' : 'is-offline'}">${connected ? 'В сети' : 'Не в сети'}</span>
-      ${duration ? `<small class="admin-network-detail">Учтено: ${duration}</small>` : ''}
-      ${!connected && lastVisit ? `<small class="admin-network-detail">Последний: ${escapeHtml(lastVisit)}</small>` : ''}`;
+      ${visitDetails ? `<small class="admin-network-detail">${escapeHtml(visitDetails)}</small>` : ''}`;
   }
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
