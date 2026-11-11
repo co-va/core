@@ -689,7 +689,7 @@ function renderOverview() {
   });
 }
 
-function openDeleteTenantModal(tenantId) {
+function openDeleteTenantModal(tenantId, onDeleted = () => {}) {
   const tenant = state.tenants.find((item) => item.tenantId === tenantId);
   if (!tenant || tenant.isOwnerBook) return;
 
@@ -728,6 +728,7 @@ function openDeleteTenantModal(tenantId) {
     try {
       await adminRequest(`/tenants/${encodeURIComponent(tenantId)}`, { method: 'DELETE' });
       close();
+      onDeleted();
       await refreshData();
       renderTenants();
     } catch (error) {
@@ -792,8 +793,8 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
         <div class="admin-card">
           <table class="admin-table">
-            <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
-            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="4">Административный аккаунт не найден.</td></tr>'}</tbody>
+            <thead><tr><th>Пользователь</th><th>Email</th><th>Роль</th><th>Тестировщик</th><th>Режим</th><th>Тариф</th><th>Состояние</th></tr></thead>
+            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="7">Административный аккаунт не найден.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -822,8 +823,8 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-all-users-title">Все пользователи</h2>
         <div class="admin-card">
           <table class="admin-table">
-            <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
-            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="4">Пока нет других пользователей.</td></tr>'}</tbody>
+            <thead><tr><th>Пользователь</th><th>Email</th><th>Роль</th><th>Тестировщик</th><th>Режим</th><th>Тариф</th><th>Состояние</th></tr></thead>
+            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="7">Пока нет других пользователей.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -891,30 +892,32 @@ function renderTenants() {
 
   content.querySelectorAll('[data-tenant]').forEach((row) => {
     row.addEventListener('click', () => openAccessDrawer(row.dataset.tenant));
-  });
-
-  content.querySelectorAll('[data-delete-tenant]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const tenantId = button.dataset.deleteTenant;
-      if (tenantId) openDeleteTenantModal(tenantId);
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openAccessDrawer(row.dataset.tenant);
     });
   });
 }
 
 function tenantRow(item) {
   const pending = !item.ownerProfile && item.invitation?.status === 'PENDING';
-  const name = item.ownerProfile?.name || item.invitation?.name || item.tenantName;
+  const name = item.ownerProfile?.name || item.invitation?.name || item.tenantName || 'Без имени';
   const email = item.ownerProfile?.email || item.invitation?.email || '';
   const mode = String(item.access?.commercialMode || 'DEMO');
   const statusClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
   const statusLabel = item.status === 'SUSPENDED' ? 'Отключён' : pending ? 'Ждёт регистрации' : item.ownerProfile ? 'Активен' : 'Создан';
-  const modeClass = mode === 'LIVE' ? 'active' : 'pending';
-  const roleBadge = item.isOwnerBook
-    ? ' <span class="admin-pill active">Администратор</span>'
-    : item.isTester ? ' <span class="admin-pill pending">Тестировщик</span>' : '';
-  const remove = item.isOwnerBook ? '' : `<button class="admin-button danger" data-delete-tenant="${escapeHtml(item.tenantId)}">Удалить</button>`;
-  return `<tr data-tenant="${escapeHtml(item.tenantId)}"><td><strong>${escapeHtml(name)}</strong>${roleBadge}</td><td>${email ? escapeHtml(email) : '—'}</td><td><span class="admin-pill ${modeClass}">${escapeHtml(mode)}</span></td><td><span class="admin-pill ${statusClass}">${statusLabel}</span> ${remove}</td></tr>`;
+  const role = item.isOwnerBook ? 'Администратор' : 'Пользователь';
+  const tester = item.isOwnerBook ? '—' : item.isTester ? 'Да' : 'Нет';
+  return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
+    <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong></td>
+    <td data-label="Email">${email ? escapeHtml(email) : '—'}</td>
+    <td data-label="Роль">${escapeHtml(role)}</td>
+    <td data-label="Тестировщик">${escapeHtml(tester)}</td>
+    <td data-label="Режим"><span class="admin-pill ${mode === 'LIVE' ? 'active' : 'pending'}">${escapeHtml(mode)}</span></td>
+    <td data-label="Тариф">${escapeHtml(item.plan?.name || '—')}</td>
+    <td data-label="Состояние"><span class="admin-pill ${statusClass}">${statusLabel}</span></td>
+  </tr>`;
 }
 
 function renderCapabilities() {
@@ -1041,6 +1044,7 @@ function openAccessDrawer(tenantId) {
         </form>
       </section>` : ''}
 
+      ${tenant.isOwnerBook ? '' : `<section class="admin-section admin-danger-zone"><button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button></section>`}
       <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить изменения</button></div>
       <p class="admin-inline-message" data-save-message></p>
     </aside>`;
@@ -1070,6 +1074,8 @@ function openAccessDrawer(tenantId) {
       button.dataset.current = button.classList.contains('is-on') ? 'true' : 'false';
     });
   });
+
+  backdrop.querySelector('[data-delete-account]')?.addEventListener('click', () => openDeleteTenantModal(tenantId, close));
 
   backdrop.querySelector('[data-status]')?.addEventListener('click', async () => {
     const next = tenant.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
