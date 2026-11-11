@@ -42,7 +42,7 @@ const userDocs = [
   { key: 'user-document-messages-consent', title: 'Согласие на сообщения', version: 1, content: 'J' },
 ];
 const history = [
-  { id: 'prof-event', subjectType: 'PLATFORM_ACCOUNT', documentTitle: 'Соглашение', documentVersion: 2, documentContent: 'Exact signed professional snapshot', accountEmail: 'professional@example.test', action: 'ACCEPTED', occurredAt: '2026-11-11T10:00:00.000Z' },
+  { id: 'prof-event', subjectType: 'PLATFORM_ACCOUNT', documentKey: 'saas-agreement', documentTitle: 'Пользовательское соглашение / публичная оферта', documentVersion: 2, documentContent: 'Exact signed professional snapshot', accountEmail: 'professional@example.test', action: 'ACCEPTED', occurredAt: '2026-11-11T10:00:00.000Z' },
   { id: 'user-event', subjectType: 'ACCOUNT', documentTitle: 'Согласие ПДН', documentVersion: 1, documentContent: 'Exact signed user snapshot', accountEmail: 'user@example.test', action: 'REVOKED', occurredAt: '2026-11-11T11:00:00.000Z' },
 ];
 const documents = new Map([...professionalDocs, ...guideDocs, ...userDocs].map((row) => [row.key, row]));
