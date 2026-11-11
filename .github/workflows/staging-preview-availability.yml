@@ -17,7 +17,7 @@ permissions:
 jobs:
   external-preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 7
     steps:
       - name: Checkout gateway contract
         uses: actions/checkout@v4
@@ -60,13 +60,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fSL --connect-timeout 8 --max-time 25 \
-            'https://va-app-volokovykh.msk1.amvera.tech/admin/?single-request-probe=1' \
-            -o /tmp/preview-served.html
-          grep -q 'data-preview-style' /tmp/preview-served.html || {
-            echo 'Gateway still serves multi-request Admin HTML'
-            exit 1
-          }
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            curl -fsSL --connect-timeout 8 --max-time 25 \
+              "https://va-app-volokovykh.msk1.amvera.tech/admin/?single-request-probe=${attempt}" \
+              -o /tmp/preview-served.html
+            if grep -q 'data-preview-style' /tmp/preview-served.html; then
+              echo "Current bundled staging HTML active on attempt ${attempt}"
+              break
+            fi
+            echo "Gateway returned old HTML ($(wc -c </tmp/preview-served.html) bytes) on attempt ${attempt}"
+            echo 'Comparing raw GitHub staging vs immutable commit:'
+            curl -fsSL --connect-timeout 8 --max-time 15 \
+              "https://raw.githubusercontent.com/co-va/core/staging/admin/index.html?check=${attempt}" \
+              -o /tmp/branch-raw.html
+            curl -fsSL --connect-timeout 8 --max-time 15 \
+              "https://raw.githubusercontent.com/co-va/core/${GITHUB_SHA}/admin/index.html?check=${attempt}" \
+              -o /tmp/commit-raw.html
+            echo "raw branch bytes: $(wc -c </tmp/branch-raw.html); pinned commit bytes: $(wc -c </tmp/commit-raw.html)"
+            if [ "${attempt}" -eq 12 ]; then
+              echo 'Live gateway did not advance to compiled staging HTML'
+              exit 1
+            fi
+            sleep 20
+          done
           grep -q 'data-preview-module="admin.js"' /tmp/preview-served.html || exit 1
           grep -q 'data-preview-module="commercial-tenant.js"' /tmp/preview-served.html || exit 1
           echo "Gateway served inlined admin HTML: $(wc -c </tmp/preview-served.html) bytes"
