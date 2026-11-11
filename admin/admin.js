@@ -739,47 +739,72 @@ function openDeleteTenantModal(tenantId, onDeleted = () => {}) {
   });
 }
 
-const INVITATION_TOOL_GROUP_LABELS = {
-  profile: 'Профиль',
-  work: 'Основные',
-  people: 'Основные',
-  finance: 'Финансы',
-  journal: 'Журнал',
-  settings: 'Настройки',
-};
+// Reuse the account capability hierarchy for invitations; never maintain a second tool catalog.
+const selectedRegistrationToolKeys = new Set();
 
-function invitationToolSelector() {
-  const groups = new Map();
-  state.capabilities.forEach((item) => {
-    if (item.valueType !== 'BOOLEAN') return;
-    const label = INVITATION_TOOL_GROUP_LABELS[item.groupKey] || item.groupKey || 'Инструменты';
-    if (!groups.has(label)) groups.set(label, []);
-    groups.get(label).push(item);
-  });
-  return `<div class="admin-invite-tools" data-invite-tools>
-    <div class="admin-invite-tools-head">
-      <div><h4>Доступ по ссылке</h4><p class="admin-service-note">Выбери только те инструменты, которые должны быть доступны человеку в DEMO по этой ссылке.</p></div>
-      <div class="admin-inline-actions">
-        <button class="admin-button secondary" type="button" data-select-all-invite-tools>Выбрать всё</button>
-        <button class="admin-button secondary" type="button" data-clear-invite-tools>Снять всё</button>
-      </div>
-    </div>
-    ${[...groups.entries()].map(([group, items]) => `<section class="admin-invite-tool-group">
-      <strong>${escapeHtml(group)}</strong>
-      <div class="admin-invite-tool-list">
-        ${items.map((item) => `<label class="admin-invite-tool">
-          <input type="checkbox" value="${escapeHtml(item.key)}" data-invite-tool>
-          <span>${escapeHtml(item.name)}</span>
-        </label>`).join('')}
-      </div>
-    </section>`).join('')}
-  </div>`;
+function updateRegistrationToolSummary(root) {
+  const summary = root.querySelector('[data-invite-selection]');
+  if (summary) summary.textContent = selectedRegistrationToolKeys.size
+    ? 'Выбрано инструментов: ' + selectedRegistrationToolKeys.size
+    : 'Инструменты не выбраны';
 }
 
-function selectedInvitationTools(root) {
-  return [...root.querySelectorAll('[data-invite-tool]:checked')]
-    .map((input) => String(input.value || '').trim())
-    .filter(Boolean);
+function openRegistrationToolDrawer() {
+  const resolved = new Map(state.capabilities.map((capability) => [
+    capability.key, { enabled: selectedRegistrationToolKeys.has(capability.key), limit: null },
+  ]));
+  let backdrop = document.createElement('div');
+  backdrop.className = 'admin-drawer-backdrop';
+  backdrop.innerHTML = `
+    <aside class="admin-drawer">
+      <div class="admin-drawer-head">
+        <div><h3>Инструменты нового аккаунта</h3><p>Настройки доступа по регистрационной ссылке</p></div>
+        <button type="button" class="admin-close" data-close aria-label="Закрыть">×</button>
+      </div>
+      <div data-capability-order-list>${renderTenantRegistry(resolved)}</div>
+      <div class="admin-actions">
+        <button type="button" class="admin-button secondary" data-close>Отмена</button>
+        <button type="button" class="admin-button" data-apply-invite>Применить</button>
+      </div>
+    </aside>`;
+  // Registration links accept Boolean capability switches, never capacity overrides.
+  backdrop.querySelectorAll('[data-type="LIMIT"]').forEach((input) => {
+    input.closest('.admin-capability')?.remove();
+  });
+  const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
+  if (sharedQ) {
+    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
+    if (!mounted) return;
+    backdrop = mounted;
+  } else document.body.append(backdrop);
+  const close = () => { if (sharedQ) backdrop.v2Close?.(); else backdrop.remove(); };
+  backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
+  backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+  backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      button.classList.toggle('is-on');
+      button.dataset.current = String(button.classList.contains('is-on'));
+      button.setAttribute('aria-pressed', button.dataset.current);
+    });
+  });
+  backdrop.querySelector('[data-apply-invite]')?.addEventListener('click', () => {
+    selectedRegistrationToolKeys.clear();
+    backdrop.querySelectorAll('[data-capability][data-type="BOOLEAN"][data-current="true"]')
+      .forEach((button) => selectedRegistrationToolKeys.add(button.dataset.capability));
+    close();
+    const content = app.querySelector('[data-content]');
+    updateRegistrationToolSummary(content);
+    const oldLink = content.querySelector('[data-invite-link]');
+    if (oldLink) oldLink.hidden = true;
+    const linkValue = content.querySelector('[data-invite-link-value]');
+    if (linkValue) linkValue.value = '';
+    const message = content.querySelector('[data-invite-message]');
+    if (message) {
+      message.textContent = '';
+      message.classList.remove('error');
+    }
+  });
 }
 
 function renderTenants() {
@@ -802,11 +827,9 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-registration-link-title">Регистрационная ссылка</h2>
         <div class="admin-invite-panel">
           <p class="admin-service-note">Настрой доступ для нового аккаунта и создай одноразовую ссылку.</p>
-          <details class="admin-invite-access">
-            <summary>Доступы нового аккаунта</summary>
-            ${invitationToolSelector()}
-          </details>
+          <p class="admin-service-note" data-invite-selection>Инструменты не выбраны</p>
           <div class="admin-invite-primary-actions">
+            <button class="admin-button secondary" type="button" data-configure-invite-tools>Настроить инструменты</button>
             <button class="admin-button" type="button" data-create-invite-link>Создать ссылку</button>
           </div>
           <div class="admin-invite-link" data-invite-link hidden>
@@ -836,21 +859,17 @@ function renderTenants() {
   const inviteLinkInput = content.querySelector('[data-invite-link-value]');
   const copyLinkButton = content.querySelector('[data-copy-invite-link]');
 
-  content.querySelector('[data-select-all-invite-tools]')?.addEventListener('click', () => {
-    content.querySelectorAll('[data-invite-tool]').forEach((input) => { input.checked = true; });
-  });
-  content.querySelector('[data-clear-invite-tools]')?.addEventListener('click', () => {
-    content.querySelectorAll('[data-invite-tool]').forEach((input) => { input.checked = false; });
-  });
+  updateRegistrationToolSummary(content);
+  content.querySelector('[data-configure-invite-tools]')?.addEventListener('click', openRegistrationToolDrawer);
 
   createLinkButton?.addEventListener('click', async () => {
     message.textContent = '';
     message.classList.remove('error');
-    const tools = selectedInvitationTools(content);
+    const tools = [...selectedRegistrationToolKeys];
     if (!tools.length) {
-      content.querySelector('.admin-invite-access')?.setAttribute('open', '');
-      message.textContent = 'Выбери хотя бы один инструмент или нажми «Выбрать всё».';
+      message.textContent = 'Сначала настрой инструменты нового аккаунта.';
       message.classList.add('error');
+      openRegistrationToolDrawer();
       return;
     }
     createLinkButton.disabled = true;
