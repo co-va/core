@@ -32,7 +32,7 @@ assert.match(css, /@media\(min-width:761px\)\{[\s\S]*?admin-registry-table thead
   'Desktop/iPad registry header is 66px approved pearl with secondary-gray 13px labels');
 assert.match(css, /admin-registry-table thead th\{height:34px\}/, 'Original mobile header stays at 34px');
 assert.match(css, /--admin-pearl:#E0D6D6/, 'Approved pearl color is registered once');
-assert.match(css, /admin-registry-app\\{[\\s\\S]*?color:var\\(--admin-pearl\\)/, 'App subtitle uses the approved pearl on desktop');
+assert.match(css, /admin-registry-app\{[\s\S]*?color:var\(--admin-pearl\)/, 'App subtitle uses the approved pearl on desktop');
 
 assert.match(css, /admin-registry-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
 assert.match(css, /admin-registry-documents-table th:first-child/, 'Document names get remaining width instead of user identity 31%');
