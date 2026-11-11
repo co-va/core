@@ -44,3 +44,35 @@ jobs:
               }
             fi
           done
+      - name: Render preview as a mobile browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome_bin="$(command -v "$candidate")"
+              break
+            fi
+          done
+          if [ -z "$chrome_bin" ]; then
+            echo 'No browser on runner'
+            exit 1
+          fi
+          timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+            --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=390,844 --force-device-scale-factor=1 \
+            --touch-events=enabled --virtual-time-budget=18000 \
+            --dump-dom 'https://va-app-volokovykh.msk1.amvera.tech/admin/' \
+            >/tmp/admin-mobile-preview-dom.html 2>/tmp/admin-mobile-preview-browser.log || {
+              echo 'Remote mobile render timed out or browser failed'
+              tail -n 30 /tmp/admin-mobile-preview-browser.log || true
+              exit 1
+            }
+          if ! grep -Eq 'class="[^"]*(admin-auth-screen|admin-mobile-app)' /tmp/admin-mobile-preview-dom.html; then
+            echo 'Preview did not render admin login or authenticated mobile shell'
+            grep -o '.\{0,120\}admin-app.\{0,300\}' /tmp/admin-mobile-preview-dom.html | head -n 2 || true
+            tail -n 25 /tmp/admin-mobile-preview-browser.log || true
+            exit 1
+          fi
+          echo 'Staging preview mobile DOM: PASS'
