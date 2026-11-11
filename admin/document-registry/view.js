@@ -15,6 +15,26 @@ import {
 // persisted signing history stay canonical and are never copied into this view.
 const DOCUMENT_ICON = '<svg class="admin-registry-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h6"/></svg>';
 
+// Short labels are for Admin's index only; legal source titles stay intact.
+const SHORT_TITLES = Object.freeze({
+  'privacy-policy': 'Политика ПДН',
+  'saas-agreement': 'Оферта',
+  'platform-processor-consent': 'Согласие Амвера',
+  'marketing-consent': 'Маркетинг',
+  'public-profile-consent': 'Публичный профиль',
+  'dpa': 'Поручение ПДН',
+  'rkn-notification-guide-template': 'Инструкция РКН',
+  'user-document-pdn-policy': 'Политика ПДН',
+  'user-document-pdn-consent': 'Согласие ПДН',
+  'user-document-messages-consent': 'Маркетинг',
+});
+
+// Only an explicitly published legal edition counts as a registry revision.
+function legalEdition(content) {
+  const header = String(content || '').split(/\r?\n/).slice(0, 8).join('\n');
+  return header.match(/(?:юридическая\s+)?редакция\s+(\d+(?:\.\d+)+)(?=\s|$)/i)?.[1] || '';
+}
+
 function formatMoment(value) {
   const date = new Date(value || '');
   return Number.isFinite(date.getTime())
@@ -70,14 +90,16 @@ function purposeMarkup(value) {
 function documentTable(items, escapeHtml, application) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
+    const shortTitle = escapeHtml(SHORT_TITLES[item.key] || item.title || 'Документ');
+    const edition = escapeHtml(legalEdition(item.content) || '—');
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item, application);
     return '<tr>' +
       '<td data-label="Документ"><button type="button" class="admin-registry-open" data-registry-document="' + key +
       '" aria-label="Открыть документ ' + title + '" title="' + title + '">' + DOCUMENT_ICON +
-      '<strong class="admin-registry-title">' + title + '</strong></button></td>' +
+      '<strong class="admin-registry-title">' + shortTitle + '</strong></button></td>' +
       '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
-      '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">—</span></td>' +
+      '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
@@ -118,8 +140,10 @@ function historyTable(escapeHtml) {
 function openDocument(item) {
   if (!item) return null;
   const title = item.title || item.documentTitle || 'Документ';
-  const version = item.version || item.documentVersion || '';
   const content = item.content || item.documentContent || '';
+  // Historical signings retain their immutable technical index. Current
+  // documents show the legal edition printed in the actual source text.
+  const version = item.documentVersion || legalEdition(content) || '';
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = '<aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Просмотр документа">' +
@@ -167,8 +191,9 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
     sectionMarkup('История', '', '<div data-registry-history-content><div class="admin-card admin-history-empty">Загрузка истории…</div></div>', escapeHtml) +
     '</div>';
 
-  // Show local legal-purpose labels immediately; current versions and edition text
-  // always come from persisted PlatformDocumentVersion when the API is available.
+  // The Admin-owned source displays its declared edition immediately.
+  // When available, the API supplies the latest persisted document snapshot.
+  // The DB's technical version index is never shown as a legal edition.
   root.querySelectorAll('[data-registry-document]').forEach((button) => {
     button.addEventListener('click', () => {
       const key = button.dataset.registryDocument;
@@ -177,17 +202,17 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   });
   if (typeof loadCurrentDocuments === 'function') {
     void Promise.resolve().then(loadCurrentDocuments).then((items) => {
-      if (!Array.isArray(items)) return;
+      if (!Array.isArray(items) || root.isConnected === false) return;
+      const badges = Array.from(root.querySelectorAll('[data-registry-version]'));
       for (const item of items) {
-        if (!item || typeof item.key !== 'string' || !Number.isSafeInteger(item.version) || item.version < 1) continue;
+        if (!item || typeof item.key !== 'string' || typeof item.content !== 'string') continue;
         currentDocumentsByKey.set(item.key, item);
-        const badge = Array.from(root.querySelectorAll('[data-registry-version]'))
-          .find((node) => node.dataset.registryVersion === item.key);
-        if (badge) badge.textContent = String(item.version);
+        const badge = badges.find((node) => node.dataset.registryVersion === item.key);
+        if (badge) badge.textContent = legalEdition(item.content) || '—';
       }
     }).catch(() => {
-      // Older staging preview backends can lack this read route. Never invent
-      // a version from the text's legal revision or an unrelated signing event.
+      // Older preview backend may lack this GET. Do not erase real source
+      // editions or replace them with unverified technical counters.
     });
   }
 
