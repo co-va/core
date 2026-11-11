@@ -522,16 +522,16 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-registry-layout{gap:20px}
   .admin-mobile-app .admin-registry-section>.admin-card{padding:4px 14px;border-radius:var(--radius-card);overflow:hidden}
   .admin-mobile-app .admin-registry-table thead{display:none}
-  .admin-mobile-app .admin-registry-table tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 10px;border-bottom:1px solid var(--border)}
-  .admin-mobile-app .admin-registry-table tr:last-child{border-bottom:0}
-  .admin-mobile-app .admin-registry-table td{display:block;padding:12px 0;border:0;min-width:0}
-  .admin-mobile-app .admin-registry-table td:first-child{grid-column:1}
-  .admin-mobile-app .admin-registry-table td:last-child{grid-column:2;width:auto}
-  .admin-mobile-app .admin-registry-table td:not(:first-child)::before{display:none}
-  .admin-mobile-app .admin-registry-history-table tr{grid-template-columns:minmax(0,1fr) auto}
-  .admin-mobile-app .admin-registry-history-table td:first-child{grid-column:1/-1;width:auto;padding-bottom:3px}
-  .admin-mobile-app .admin-registry-history-table td:nth-child(2){grid-column:1;grid-row:2;padding-top:3px}
-  .admin-mobile-app .admin-registry-history-table td:nth-child(3){grid-column:2;grid-row:2;padding-top:3px}
-  .admin-mobile-app .admin-registry-history-table td:last-child{grid-column:1/-1;grid-row:3;width:auto;padding-top:0;font-size:11px}
+  .admin-mobile-app .admin-registry-section .admin-registry-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 10px;border-bottom:1px solid var(--border)}
+  .admin-mobile-app .admin-registry-section .admin-registry-table tbody tr:last-child{border-bottom:0}
+  .admin-mobile-app .admin-registry-section .admin-registry-table td{display:block;padding:12px 0;border:0;min-width:0}
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:first-child{grid-column:1}
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:last-child{grid-column:2;width:auto}
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:not(:first-child)::before{display:none}
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr{grid-template-columns:minmax(0,1fr) auto}
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table td:first-child{grid-column:1/-1;width:auto;padding-bottom:3px}
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table td:nth-child(2){grid-column:1;grid-row:2;padding-top:3px}
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table td:nth-child(3){grid-column:2;grid-row:2;padding-top:3px}
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table td:last-child{grid-column:1/-1;grid-row:3;width:auto;padding-top:0;font-size:11px}
   .admin-mobile-app .admin-registry-title{font-size:13px}
 }
