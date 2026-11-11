@@ -71,6 +71,9 @@ const documents = new Map([...professionalDocs, ...guideDocs, ...userDocs].map((
 let hydrated = [];
 let isMobile = false;
 const opened = [];
+const openedEditors = [];
+const rootEvents = {};
+
 let modalOptions = null;
 let subscribed = 0;
 const closeButton = { addEventListener() {} };
@@ -90,6 +93,7 @@ const document = {
 let mounted = null;
 const context = {
   document,
+  openDocumentEditor: (options) => { openedEditors.push(options); return { className: 'editor-sheet' }; },
   getRegistryBookUserDocuments: () => professionalDocs,
   getRegistryUserHelperTemplates: () => guideDocs,
   getRegistryUserLegalTemplates: () => userDocs,
@@ -127,6 +131,7 @@ const root = {
   get innerHTML() { return fullMarkup; },
   set innerHTML(value) { fullMarkup = value; },
   querySelector(selector) { return selector === '[data-registry-history-content]' ? historyHost : null; },
+  addEventListener(kind, callback) { rootEvents[kind] = callback; },
   querySelectorAll(selector) {
     if (selector === '[data-registry-document]') return buttons;
     if (selector === '[data-registry-version]') return versionNodes;
@@ -161,6 +166,11 @@ const rendered = registry.renderDocumentRegistry(root, {
   loadWorkingTemplates: () => Promise.resolve([]),
   loadAccountTerms: () => new Promise((resolve) => { fulfillAccountTerms = resolve; }),
 });
+const clickSourceRow = (key) => rootEvents.click({
+  target: { closest(selector) {
+    return selector === '[data-registry-row]' ? { dataset: { registryRow: key } } : null;
+  } },
+});
 assert.equal(title, 'Реестр документов');
 assert.match(fullMarkup, /Кабинет<span class="admin-registry-app"> \/ Professional<\/span>/);
 assert.match(fullMarkup, /Записи<span class="admin-registry-app"> \/ User<\/span>/);
@@ -173,8 +183,10 @@ const guideAt = fullMarkup.indexOf('Инструкция РКН');
 const userAt = fullMarkup.indexOf('Записи<span');
 assert.ok(guideAt > 0 && guideAt < userAt, 'RKN help is Professional, not User consent');
 assert.equal((fullMarkup.match(/data-registry-document="/g) || []).length, 12, 'Ten Professional sources plus two platform User documents');
-assert.equal((fullMarkup.match(/class="admin-registry-icon"/g) || []).length, 12, 'Each displayed record has a viewer icon');
-assert.equal((fullMarkup.match(/class="admin-registry-open-cell"/g) || []).length, 12, 'Each viewer icon stays at the right edge');
+assert.equal((fullMarkup.match(/class="admin-registry-icon"/g) || []).length, 12, 'Each displayed record has its editor icon');
+assert.equal((fullMarkup.match(/class="admin-registry-open-cell"/g) || []).length, 12, 'Each editor icon stays at the right edge');
+assert.equal((fullMarkup.match(/data-registry-add="/g) || []).length, 2, 'Only Professional and User offer a create-document control');
+assert.match(css, /border-radius:36px 0 0 0/, 'Right sheet has the shared rounded top-left corner');
 const firstSection = fullMarkup.slice(fullMarkup.indexOf('Кабинет<span'), fullMarkup.indexOf('Записи<span'));
 const secondSection = fullMarkup.slice(fullMarkup.indexOf('Записи<span'), fullMarkup.indexOf('История</h2>'));
 assert.equal((firstSection.match(/data-registry-document="/g) || []).length, 10, 'Professional contains six contractual documents and four working templates');
@@ -220,7 +232,7 @@ assert.equal((fullMarkup.match(/data-registry-date="/g) || []).length, 12, 'All 
 assert.equal((fullMarkup.match(/<span class="admin-pill active">Правовой<\/span>/g) || []).length, 8, 'Legal documents reuse existing active pill');
 assert.equal((fullMarkup.match(/<span class="admin-pill working">Рабочий<\/span>/g) || []).length, 4, 'Working documents reuse existing pill with teal state');
 assert.doesNotMatch(css, /admin-registry-document-status/, 'No separate UI component is introduced');
-assert.match(css, /admin-registry-documents-table \.admin-pill\.working\{background:#DDF2F1;color:#136D76\}/, 'Working uses calm teal color in existing pill');
+assert.match(css, /admin-registry-documents-table \.admin-pill\.working\{background:#FFF4C7;color:#765600\}/, 'Working uses the warm brand yellow instead of teal');
 assert.match(css, /admin-registry-purpose\.is-platform\{color:#16191B\}/, 'Legal document purposes are black');
 assert.match(css, /admin-registry-purpose\.is-working\{color:#828A8F\}/, 'Professional-supplied template purposes are grey');
 assert.equal((firstSection.match(/admin-registry-purpose is-[a-z]+ is-working/g) || []).length, 4, 'Working templates have muted purpose labels');
@@ -276,9 +288,14 @@ assert.equal(dateNodes[11].textContent, '01.11.2026', 'Privacy issue date comes 
 assert.equal(buttons[10].disabled, false, 'Global User document becomes available with real source text');
 assert.equal(buttons[11].disabled, false, 'Privacy document opens only after core returns real body');
 buttons[0].click();
-assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
+assert.equal(openedEditors.length, 1, 'Document icon opens the editor, not the viewer');
+assert.equal(openedEditors[0].application, 'professional');
+clickSourceRow('privacy-policy');
+assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side viewer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
 assert.match(opened[0].innerHTML, /admin-document-reading/);
+assert.match(opened[0].innerHTML, /admin-document-head-version/, 'Version and title stay in the fixed reader header');
+assert.doesNotMatch(opened[0].innerHTML, /<h3>Документ<\/h3>/, 'No duplicated technical title in desktop header');
 assert.match(opened[0].innerHTML, /Политика \/ 1\.3 \/ Book — юридическая редакция 1\.3/, 'Viewer opens current persisted legal revision and content');
 assert.ok(subscribed > 0);
 
@@ -306,13 +323,13 @@ assert.match(mounted.html, /Exact signed user snapshot/, 'History opens immutabl
 assert.equal(opened.length, 1, 'Mobile document does not create another desktop drawer');
 assert.match(historySource, /documentContent: String\(item\.documentContent/, 'History retains immutable version content');
 isMobile = false;
-buttons[10].click();
+clickSourceRow('account-terms');
 assert.equal(opened.length, 2, 'User terms open from the real legal source, not an empty placeholder');
 assert.match(opened[1].innerHTML, /Условия использования учётной записи \/ 1 \/ Условия/, 'User terms snapshot opens in the document reader');
-buttons[11].click();
+clickSourceRow('platform-privacy-policy');
 assert.equal(opened.length, 3, 'The second User legal document opens from core storage');
 assert.match(opened[2].innerHTML, /Политика обработки персональных данных \/ 1 \/ Политика/, 'Privacy viewer reads the database version');
-buttons[6].click();
+clickSourceRow('user-document-pdn-policy');
 assert.equal(opened.length, 4, 'Working template opens published platform source');
 assert.match(opened[3].innerHTML, /Условия ПДН \/ 4 \/ Current User edition from the database/, 'Working document reader shows core template version, not Professional custom version');
 
