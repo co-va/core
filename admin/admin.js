@@ -528,10 +528,10 @@ function renderOverview() {
   const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
   const periodLabel = overviewWindowWeeks === 4 ? '4 недели' : overviewWindowWeeks === 8 ? '8 недель' : '12 недель';
   const groupCards = [
-    { key: 'registered', value: registered.length, title: 'Зарегистрированы', theme: 'primary' },
-    { key: 'demo', value: demo.length, title: 'DEMO' },
-    { key: 'live', value: live.length, title: 'LIVE' },
-    { key: 'pending', value: pending.length, title: 'Ожидают' },
+    { key: 'registered', value: registered.length, title: 'Зарегистрированы', hint: 'Всего аккаунтов', theme: 'primary' },
+    { key: 'demo', value: demo.length, title: 'DEMO', hint: 'Пробный режим' },
+    { key: 'live', value: live.length, title: 'LIVE', hint: 'Рабочий режим' },
+    { key: 'pending', value: pending.length, title: 'Ожидают', hint: 'Завершения регистрации' },
   ];
   const selected = groupCards.find((item) => item.key === overviewDetailGroup)
     || (overviewDetailGroup === 'suspended'
@@ -557,6 +557,7 @@ function renderOverview() {
             data-overview-group="${item.key}" aria-pressed="${overviewDetailGroup === item.key}">
             <span class="admin-overview-metric-label">${item.title}</span>
             <strong class="admin-overview-metric-value">${item.value}</strong>
+            <span class="admin-overview-metric-hint">${item.hint}</span>
             <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
           </button>`).join('')}
       </section>
@@ -616,14 +617,17 @@ function renderOverview() {
           <div class="admin-overview-metric">
             <span class="admin-overview-metric-label">Зарегистрированы</span>
             <strong class="admin-overview-metric-value">${userStats ? userStats.registered : '—'}</strong>
+            <span class="admin-overview-metric-hint">Всего аккаунтов</span>
           </div>
           <div class="admin-overview-metric">
-            <span class="admin-overview-metric-label">Новые · 30 дней</span>
+            <span class="admin-overview-metric-label">Новые</span>
             <strong class="admin-overview-metric-value">${userStats ? userStats.newLast30Days : '—'}</strong>
+            <span class="admin-overview-metric-hint">За последние 30 дней</span>
           </div>
           <div class="admin-overview-metric">
-            <span class="admin-overview-metric-label">Входили · 30 дней</span>
+            <span class="admin-overview-metric-label">Входили</span>
             <strong class="admin-overview-metric-value">${userStats ? userStats.loggedInLast30Days : '—'}</strong>
+            <span class="admin-overview-metric-hint">С входом за 30 дней</span>
           </div>
         </div>
       </section>
