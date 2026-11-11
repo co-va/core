@@ -459,6 +459,27 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-users-section>.admin-invite-panel{padding:0 10px;margin:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:0 2px 6px rgba(17,17,17,.035)}
 }
 
+/* Desktop and iPad account lists use identical six-column tracks.
+   Content in the owner row must not size columns differently from other users.
+   Narrow desktop/iPad viewports can scroll horizontally without clipping the last track. */
+@media(min-width:761px){
+  .admin-users-section>.admin-card:has(> .admin-accounts-table){
+    overflow-x:auto;
+    overscroll-behavior-x:contain;
+  }
+  .admin-users-section .admin-accounts-table{
+    width:100%;
+    min-width:760px;
+    table-layout:fixed;
+  }
+  .admin-users-section .admin-accounts-table thead th:nth-child(1){width:30%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(2){width:16%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(3){width:10%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(4){width:10%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(5){width:13%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(6){width:21%}
+}
+
 /* Accounts: identity is a single compact field, tester is an optional account attribute. */
 .admin-users-section .admin-table th,.admin-users-section .admin-table td{padding:13px 12px}
 .admin-users-section .admin-table th:first-child,.admin-users-section .admin-table td:first-child{width:31%;min-width:205px}
