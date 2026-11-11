@@ -340,8 +340,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-bar-cell{display:flex;min-width:0;height:100%;flex-direction:column;align-items:center;gap:0}
 .admin-overview-bar-value{height:19px;line-height:19px;color:#64676A;font-size:11px;font-weight:650;font-variant-numeric:tabular-nums}
 .admin-overview-bar-track{display:flex;flex:1;align-items:flex-end;justify-content:center;min-height:0;width:100%}
-.admin-overview-bar{display:block;width:min(100%,34px);height:var(--bar-height);border-radius:5px 5px 0 0;background:#ABB0B2;transition:height .2s ease}
-.admin-overview-bar.is-current{background:#2F3338}
+.admin-overview-bar{display:block;width:min(100%,34px);height:var(--bar-height);border-radius:5px 5px 0 0;background:var(--admin-pearl);transition:height .2s ease}
+.admin-overview-bar.is-current{background:var(--admin-pearl)}
 .admin-overview-bar-label{height:23px;line-height:23px;font-size:10px;white-space:nowrap;color:#7B8083;font-variant-numeric:tabular-nums}
 .admin-overview-footnote{margin:16px 0 0;color:#7B8083;font-size:11px;line-height:1.45}
 .admin-overview-focus{display:flex;flex-direction:column}
@@ -361,8 +361,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tool-counts>span{display:flex;align-items:center;gap:8px}
 .admin-overview-tool-counts strong{font-variant-numeric:tabular-nums;color:#222;font-size:14px}
 .admin-overview-tool-counts i{width:9px;height:9px;border-radius:50%;display:inline-block}
-.admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:#3C4841}
-.admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:#B8A77B}
+.admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:#FFFF00}
+.admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:var(--admin-pearl)}
 .admin-overview-tool-counts .is-not-ready,.admin-overview-tool-track .is-not-ready{background:#D7D7D3}
 .admin-overview-tool-track{display:flex;gap:2px;height:9px;overflow:hidden;border-radius:20px;background:#EEE}
 .admin-overview-tool-track>span{display:block;min-width:0}
@@ -478,6 +478,19 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-users-section .admin-accounts-table thead th:nth-child(4){width:10%}
   .admin-users-section .admin-accounts-table thead th:nth-child(5){width:13%}
   .admin-users-section .admin-accounts-table thead th:nth-child(6){width:21%}
+  /* The Users tables use the same approved 44px pearl headers as Document Registry. */
+  .admin-users-section .admin-accounts-table thead th{
+    height:44px;
+    background:var(--admin-pearl);
+    color:#41484F;
+    font-size:15px;
+    font-weight:750;
+    line-height:1.2;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    border-bottom-color:var(--admin-pearl);
+  }
+  .admin-users-section .admin-accounts-table tbody td{border-bottom-color:var(--admin-pearl)}
 }
 
 /* Accounts: identity is a single compact field, tester is an optional account attribute. */
