@@ -1,0 +1,124 @@
+name: Admin Preview Single Request
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - 'admin/**'
+      - '!admin/index.html'
+      - 'ui/**'
+      - 'css/**'
+      - 'core/auth.js'
+      - 'core/environment.js'
+      - 'scripts/build-admin-preview.mjs'
+      - '.github/workflows/admin-preview-single-request.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: admin-preview-single-request-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-compiled-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install preview-only bundler
+        run: npm install --no-save --package-lock=false esbuild@0.25.12
+      - name: Build single-request staging preview
+        run: node scripts/build-admin-preview.mjs
+      - name: Assert independent preview document
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'data-preview-style' admin/index.html
+          grep -q 'data-preview-module="admin.js"' admin/index.html
+          grep -q 'data-preview-module="commercial-tenant.js"' admin/index.html
+          if grep -Eq '<(script|link)[^>]+(src=|rel="stylesheet"|rel="modulepreload")' admin/index.html; then
+            echo 'Preview unexpectedly requires external JS or CSS'
+            exit 1
+          fi
+          echo 'Admin preview has one HTML request and no dependent JS/CSS requests'
+      - name: Browser smoke on compiled mobile and desktop Admin
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_bin=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome_bin="$(command -v "$candidate")"
+              break
+            fi
+          done
+          if [ -z "$chrome_bin" ]; then echo 'No headless browser'; exit 1; fi
+          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/preview-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
+          for i in 1 2 3 4 5 6 7 8; do
+            if curl -fsS http://127.0.0.1:4173/admin/ >/dev/null; then break; fi
+            sleep 0.5
+          done
+          for width in 390 1440; do
+            timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+              --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+              --window-size="${width},850" --virtual-time-budget=12000 \
+              --dump-dom http://127.0.0.1:4173/admin/ \
+              >"/tmp/preview-${width}.html" 2>"/tmp/preview-${width}.log" || {
+                tail -n 20 "/tmp/preview-${width}.log"
+                exit 1
+              }
+            grep -q 'admin-auth-screen' "/tmp/preview-${width}.html" || {
+              echo "Admin login failed at viewport ${width}"
+              tail -n 20 "/tmp/preview-${width}.log"
+              exit 1
+            }
+          done
+          echo 'Both viewport smoke checks passed'
+          # Assert the desktop H remains fixed while actual scroll goes to Admin main.
+          timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+            --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=1440,850 --virtual-time-budget=12000 \
+            --dump-dom http://127.0.0.1:4173/tests/admin-desktop-h-scroll-smoke.html \
+            >/tmp/admin-desktop-h-scroll-dom.html 2>/tmp/admin-desktop-h-scroll-browser.log || {
+              tail -n 20 /tmp/admin-desktop-h-scroll-browser.log
+              exit 1
+            }
+          if ! grep -q 'data-admin-h-scroll="pass"' /tmp/admin-desktop-h-scroll-dom.html; then
+            echo 'Desktop H moved when overview content scrolled'
+            grep -o 'data-admin-h-scroll="[^"]*"\|data-main-scroll="[^"]*"\|data-header-start="[^"]*"\|data-header-end="[^"]*"' /tmp/admin-desktop-h-scroll-dom.html | head -n 8 || true
+            exit 1
+          fi
+          echo 'Desktop fixed H and independent content scrolling: PASS'
+      - name: Publish validated preview to staging without overwriting other work
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            git fetch origin staging
+            git reset --hard origin/staging
+            node scripts/build-admin-preview.mjs
+            if git diff --quiet -- admin/index.html; then
+              echo 'Preview already up to date'
+              exit 0
+            fi
+            git add admin/index.html
+            git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'build(admin): publish verified single-request staging preview'
+            if git push origin HEAD:staging; then
+              echo 'Updated staging preview without touching main'
+              exit 0
+            fi
+            echo "Staging advanced during preview publish, retry ${attempt}"
+          done
+          echo 'Concurrent staging writes prevented publish'
+          exit 1

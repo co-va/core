@@ -520,6 +520,7 @@ export class TenantInvitationService {
       tenantName: 'Новый профиль',
       tokenHash,
       expiresAt,
+      tools,
     });
 
     let url: string;

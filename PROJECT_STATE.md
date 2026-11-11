@@ -116,6 +116,59 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - В Professional `Касса` остаётся доступной при любом разрешённом вложении, включая ситуацию «разрешены только Займы», и не подменяется названием «Инвестиции». Остальные экраны `ДДС` и `Z-отчёт` не перестраиваются.
 - Всё работается в `core/staging` и `professional/staging`. До зелёных CI и выпуска в `core/main` новая карта не считается опубликованной.
 
+## Procedure / services: deleted booking and per-workplace free price — 2026-11-10
+
+- The backend keeps the canonical technical domain `Procedure`, `BusinessOperationalState.procedures`, `ProcedureService.snapshots` and immutable Record history. Professional UI uses the display label «Услуги»; no data-key or schema migration.
+- `server/src/procedure/procedure.service.ts::publicBookingCatalog` now excludes any current procedure with `deletedAt`. Such a service cannot appear in the public booking catalog.
+- `ProcedureService.snapshots` rejects current deleted procedures even when an outdated guest/client attempts booking with their ID; historical Record facts remain stored; historical catalog entries never authorize new bookings.
+- `costSourceFor` prioritizes the workspace's explicit `cost.free === true` over a nonzero global/base price, including when the workspace cost has no numeric fields. Other workspaces preserve their prices; missing workspace overrides still inherit the base price.
+- Regression test: `tests/procedure-booking-contract.test.mjs`, integrated into the existing root `npm test` (no new CI workflow). Checks deleted filtering, booking rejection, free vs paid workplace, inherited base price, missing assignment, saved Record snapshot.
+- Only `co-va/core/staging` changed. No changes to the Professional/User frontend, `main`, DB/Prisma, historical Record rows or external APIs. Live API/Amvera execution still requires deployed Core release; isolated contract tests do not prove production behavior.
+
+## Canonical display-ready service price from Core — 2026-11-10
+
+- The service price source is the current `ProcedureService` pricing contract, including the selected workplace override and price mode `amount`, `from`, `from-to` and `free`. In `from-to`, use the first/lower `from` even if a stale `amount` is also present. In `from`, retain the prefix even when the value is stored in `amount`.
+- `ProcedureService.bookingPriceFor` produces one result: `{ minimum, variable, free, display }`. `display` is presentation-ready: `от 1 500 ₽`, `3 000 ₽`, `Бесплатно` or `Цена уточняется`. Source numbers remain numeric and valid for finance or combining multiple services.
+- Both the guest `OnlineBookingService.getContext` and authenticated account/contact `AccountContactRecordService.context` use `ProcedureService.publicBookingCatalog`. The duplicate account-specific price calculation was **removed**. The Account API retains its `price` field name and transparently sends the canonical `display` alongside existing numeric flags; guest API keeps `bookingPrice`.
+- New canonical Record snapshots carry `priceText` with exactly that display string, separate from numeric `cost` for settlement. Historical Record data remains unchanged. No DB migration or second pricing owner.
+- `tests/procedure-booking-contract.test.mjs` covers fixed prices, `from` stored via `amount`, `from-to` lower price, stale `amount`, workplace overrides and free, deleted services, historical snapshots and the no-duplication guard for account booking. Run via existing `npm test` / Check Core.
+- `co-va/user/staging` already preserves and prefers the returned `price.display` in `recordProcedurePriceText`. `co-va/professional/staging` guest booking now renders `bookingPrice.display` for catalog and single-service confirmation. Only combination totals may aggregate the server-provided numeric minima; they must not re-interpret `from/to` modes.
+- Scope: `co-va/core/staging` and narrowly necessary guest-booking presentation in `co-va/professional/staging`. No `main` changes. Live behavior requires deployment of the Core backend from an approved release.
+
+## Record: единый действующий прайс — 2026-11-10
+
+- Единственный действующий прайс — `BusinessOperationalState.procedures`. Любая новая запись, включая ручной ввод прошлой даты, использует этот каталог и проверяет активность услуги и назначение рабочему пространству. Дата визита не выбирает другой прайс.
+- Удалены `catalogAt`, `historicalMoment` и передача даты в `ProcedureService.snapshots`; история изменений и импортированных фактов остаётся историей, не источником доступности для новой записи.
+- При создании записи цена подтягивается из действующего прайса. Сохранённая услуга и её стоимость принадлежат самой записи; профессионал может вручную изменить стоимость. Удаление услуги из каталога не отменяет существующую запись. При редактировании или переносе сохранённые услуги берутся из Record; только новые добавленные ID проверяются по текущему каталогу. Исторические Record и Finance не переписываются.
+- Регрессия в `tests/procedure-booking-contract.test.mjs`: единый прайс без поиска истории, сохранённые услуги после удаления из каталога, ручное изменение цены, перенос, добавление новой услуги, защита удалённых/не назначенных ID, цены «от» и бесплатные услуги.
+- Только Core; Professional/User, схема БД и production-данные не изменены. Выпуск отдельным PR #863 к main после зелёных проверок и разрешения владельца.
+
+### Canonical Professional card projection to User — 2026-11-11
+- Professional has nine rows, three cells per row (`left/center/right`). Core now filters visible fields at the actual cell level, preserving Professional geometry/colors/photo and the allowed field values.
+- One shared `publicCardAppearance` projection is used for profile, workplace and assigned program cards. No duplicate layout, no invented User fields, no private Person fields.
+- Historic single-field rows remain accepted as input; unauthorized keys are cleared before delivery.
+- Test: `tests/account-contacts-card-projection.test.mjs`. Staging only; main requires explicit authorization.
+
+## Account presence (2026-11-11, staging only)
+- Canonical per-membership `TenantAccountPresence` timestamp. A migration creates the table and cascade-deletes it with its membership. No account profile or last-login state is repurposed.
+- Authenticated `POST /auth/presence` verifies JWT plus actual tenant membership, then upserts a timestamp. Activity from separate tabs is additive; no logout writes a false offline flag.
+- Professional sends foreground-only heartbeat every 45 seconds. A signal less than 120 seconds old means online. Timed out/background/closed sessions expire without a network disconnect event.
+- Admin reads the presence under the **Доступ** column and displays two lines. Without the new API presence field the second line is omitted, not replaced with a fabricated placeholder.
+- User and guest booking do not use the Professional presence endpoint. Backend migration and deployment are prerequisites to production availability; staging changes do not deploy Core production.
+
+## Unified account duration (2026-11-11, staging)
+- Extend the **same** `POST /auth/presence` heartbeat and `TenantAccountPresence`. There is no second presence endpoint, worker, client timer or browser recorder.
+- Serialise membership updates using a DB row lock; update the last seen timestamp and cumulative milliseconds together. Credit only gaps under 120 seconds; split credited gaps into `TenantAccountPresenceDay` UTC date buckets for future daily/monthly reporting. Multiple browser tabs cannot double count elapsed time.
+- Retain `AUTH_LOGIN_SUCCEEDED` as the separate immutable security/login audit (not a presence calculation). No legacy competing online-duration implementation was found in the current staging code.
+- The incremental migration `20261111160000_account_online_duration` preserves the already-created presence table migration/checksum. Aggregate durations start at first recorded heartbeats after this migration; historical time cannot be reconstructed from old login events.
+
+## Admin inline tester and network column — 2026-11-11 (staging)
+- The Users tables have six columns: identity, role, commercial mode, plan, access, and dedicated online presence. The role cell offers an inline two-option tester selector, using the existing `PUT /saas-admin/tenants/:tenantId/access` contract with `{isTester}`. No duplicate tester API or second role record.
+- Network status, cumulative credited time and last visit are projections of the canonical `TenantAccountPresence` record. Registered users without heartbeat display offline, not a fabricated online status; a Core version without the presence contract displays only a neutral dash.
+- The pre-existing 30-second Admin poll on the Users section fetches only /tenants and patches online cells, preserving active inline selectors, generated registration links and account-modal context. Other Admin sections keep existing refresh logic.
+
+## Previously published main release notes preserved during branch reconciliation
+
 ## Core service pricing release — 2026-11-10
 
 - Scope: only the NestJS Core API, not a Professional/User frontend. The active `server/src/online-booking/**` is the canonical booking API; legacy browser `booking.html` and old application entrypoints are prohibited by `scripts/check-platform-only-boundary.mjs`.
