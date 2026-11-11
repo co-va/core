@@ -6,7 +6,7 @@ import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js'
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
 import { v2Header } from '../ui/v2/header.js';
-import { v2CardDeck } from '../ui/v2/card-deck.js';
+import { v2CardDeck, v2NavigationIcon } from '../ui/v2/card-deck.js';
 import { initV2WorkspaceInteraction, setV2DeckOpen } from '../ui/v2/workspace-navigation.js';
 import { modal, mountModal } from '../ui/modals/index.js';
 import { iconButton } from '../ui/buttons/index.js';
@@ -399,7 +399,7 @@ function renderShell() {
     + '<aside class="admin-sidebar">'
     + '<div class="admin-brand">ACVERO<span>Администратор</span></div>'
     + '<nav class="admin-nav" aria-label="Разделы администратора">'
-    + ADMIN_SECTIONS.map((item) => '<button type="button" data-section="' + item.id + '">' + escapeHtml(item.label) + '</button>').join('')
+    + ADMIN_SECTIONS.map((item) => '<button type="button" data-section="' + item.id + '">' + v2NavigationIcon(item.icon) + '<span>' + escapeHtml(item.label) + '</span></button>').join('')
     + '</nav><div class="admin-sidebar-foot">Управление системой</div></aside>'
     + '<header class="admin-toolbar">'
     + '<div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>'
