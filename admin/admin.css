@@ -764,6 +764,28 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-document-drawer .admin-document-reading .document-page__version,
   .admin-document-drawer .admin-document-reading .document-page>h1{display:none}
+  /* History is a separate scroll region: its section title and column head stay visible. */
+  .admin-registry-history-section>.admin-users-section-title{
+    position:sticky;
+    top:0;
+    z-index:3;
+    padding:9px 0 14px;
+    margin:-9px 0 0;
+    background:var(--surface-dark);
+  }
+  .admin-registry-history-scroll{
+    max-height:calc(100dvh - 180px);
+    overflow-x:auto;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
+  }
+  .admin-registry-history-table thead th{
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:var(--admin-pearl);
+  }
   .admin-registry-section .admin-registry-table tbody tr[data-registry-row],
   .admin-registry-section .admin-registry-history-table tbody tr[data-registry-history-row]{cursor:pointer}
   .admin-registry-section .admin-registry-table tbody tr[data-registry-row]:focus-visible,
@@ -812,6 +834,18 @@ html:has(.admin-shell){background:var(--surface-dark)}
     color:var(--text);
     font:inherit;
     font-size:14px;
+  }
+  /* Safari must render select controls at the same full height as text inputs. */
+  .admin-registry-editor-field input,
+  .admin-registry-editor-field select{
+    height:44px;
+    min-height:44px;
+    line-height:normal;
+  }
+  .admin-registry-editor-field select{
+    padding:0 12px;
+    -webkit-appearance:menulist;
+    appearance:menulist;
   }
   .admin-registry-editor-field textarea{min-height:300px;line-height:1.5;resize:vertical}
   .admin-registry-editor-actions{display:flex;flex-wrap:wrap;gap:12px;padding:16px 0}
