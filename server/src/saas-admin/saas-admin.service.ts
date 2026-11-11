@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CapabilityValueType, TenantAccessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { isAccountOnline } from '../auth/presence-policy';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { TenantInvitationService, TOOL_CAPABILITY_KEYS } from '../tenant-invitation/tenant-invitation.service';
 import { DocumentRegistryService } from '../document-registry/document-registry.service';
@@ -99,7 +100,10 @@ export class SaasAdminService {
         tenant: {
           include: {
             memberships: {
-              include: { account: { select: { id: true, email: true, createdAt: true } } },
+              include: {
+                account: { select: { id: true, email: true, createdAt: true } },
+                presence: { select: { lastSeenAt: true } },
+              },
               orderBy: { createdAt: 'asc' },
             },
             profiles: {
@@ -131,6 +135,7 @@ export class SaasAdminService {
         isOwnerBook: row.isOwnerBook,
         isTester: row.isTester,
         plan: row.plan,
+        presence: membership ? { online: isAccountOnline(membership.presence?.lastSeenAt) } : null,
         ownerProfile: membership ? {
           platformAccountId: membership.account.id,
           email: membership.account.email,

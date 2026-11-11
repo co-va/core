@@ -933,12 +933,15 @@ function tenantRow(item) {
   const role = item.isOwnerBook ? 'Администратор' : 'Пользователь';
   const tester = !item.isOwnerBook && item.isTester
     ? '<small class="admin-account-role-note">Тестировщик</small>' : '';
+  const presence = item.ownerProfile && typeof item.presence?.online === 'boolean'
+    ? `<small class="admin-account-presence ${item.presence.online ? 'is-online' : 'is-offline'}">${item.presence.online ? 'В сети' : 'Не в сети'}</small>`
+    : '';
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
     <td data-label="Роль">${escapeHtml(role)}${tester}</td>
     <td data-label="Режим"><span class="admin-pill ${mode === 'LIVE' ? 'active' : 'pending'}">${escapeHtml(mode)}</span></td>
     <td data-label="Тариф">${escapeHtml(item.plan?.name || '—')}</td>
-    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span></td>
+    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span>${presence}</td>
   </tr>`;
 }
 

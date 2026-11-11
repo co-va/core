@@ -148,3 +148,10 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - One shared `publicCardAppearance` projection is used for profile, workplace and assigned program cards. No duplicate layout, no invented User fields, no private Person fields.
 - Historic single-field rows remain accepted as input; unauthorized keys are cleared before delivery.
 - Test: `tests/account-contacts-card-projection.test.mjs`. Staging only; main requires explicit authorization.
+
+## Account presence (2026-11-11, staging only)
+- Canonical per-membership `TenantAccountPresence` timestamp. A migration creates the table and cascade-deletes it with its membership. No account profile or last-login state is repurposed.
+- Authenticated `POST /auth/presence` verifies JWT plus actual tenant membership, then upserts a timestamp. Activity from separate tabs is additive; no logout writes a false offline flag.
+- Professional sends foreground-only heartbeat every 45 seconds. A signal less than 120 seconds old means online. Timed out/background/closed sessions expire without a network disconnect event.
+- Admin reads the presence under the **Доступ** column and displays two lines. Without the new API presence field the second line is omitted, not replaced with a fabricated placeholder.
+- User and guest booking do not use the Professional presence endpoint. Backend migration and deployment are prerequisites to production availability; staging changes do not deploy Core production.

@@ -39,7 +39,9 @@ assert.match(tenantRow(user), /data-label="Роль">Пользователь<sm
 assert.match(tenantRow(user), /data-label="Режим"/);
 assert.match(tenantRow(user), /data-label="Тариф"/);
 assert.match(tenantRow(user), /data-label="Доступ"><span class="admin-pill active">Разрешён<\/span><\/td>/, 'Only the real access status is shown');
-assert.doesNotMatch(tenantRow(user), /Сеть: нет данных|В сети|Не в сети|admin-account-presence/, 'No fabricated presence status without telemetry');
+assert.doesNotMatch(tenantRow(user), /Сеть: нет данных|В сети|Не в сети|admin-account-presence/, 'No fabricated presence without backend telemetry');
+assert.match(tenantRow({ ...user, presence: { online: true } }), /admin-account-presence is-online">В сети<\/small>/, 'Recent report is online');
+assert.match(tenantRow({ ...user, presence: { online: false } }), /admin-account-presence is-offline">Не в сети<\/small>/, 'Expired report is offline');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-label="Email"|data-label="Тестировщик"|Активен|В сети/, 'No redundant columns or misleading online status');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-delete-tenant|Удалить/, 'No destructive actions in table rows');
 assert.equal((tenantRow(user).match(/<td /g) || []).length, 5, 'Account table has five aligned fields');
@@ -49,6 +51,7 @@ const suspended = { ...user, status: 'SUSPENDED' };
 assert.match(tenantRow(suspended), /data-label="Доступ"><span class="admin-pill suspended">Отключён<\/span>/, 'Suspended means blocked access');
 const invitation = { ...user, ownerProfile: null, invitation: { status: 'PENDING', email: 'registration+token@registration.invalid' } };
 assert.match(tenantRow(invitation), /Ждёт регистрации/, 'Invitation is not a registered active user');
+assert.doesNotMatch(tenantRow({ ...invitation, presence: { online: true } }), /admin-account-presence/, 'Invitations have no online state before registration');
 assert.doesNotMatch(tenantRow(invitation), /registration\+token/, 'Internal registration sentinel is never shown as email');
 assert.match(tenantRow(user), /tabindex="0"/, 'Account editor remains accessible from keyboard');
 

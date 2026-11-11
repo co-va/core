@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+
+const read = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+const policy = read('server/src/auth/presence-policy.ts');
+const src = policy.slice(policy.indexOf('export function isAccountOnline('));
+const expression = src.replace('export function isAccountOnline(lastSeenAt: Date | string | null | undefined, now = Date.now()): boolean {',
+  'function isAccountOnline(lastSeenAt, now = Date.now()) {');
+const isAccountOnline = runInNewContext(expression + '\nisAccountOnline;', { Date, Number, PRESENCE_ONLINE_MS: 120_000 });
+const now = Date.parse('2026-11-11T14:00:00Z');
+assert.equal(isAccountOnline(null, now), false);
+assert.equal(isAccountOnline(new Date(now - 45_000), now), true);
+assert.equal(isAccountOnline(new Date(now - 119_999), now), true);
+assert.equal(isAccountOnline(new Date(now - 120_000), now), false);
+assert.equal(isAccountOnline(new Date(now + 600_000), now), false);
+assert.equal(isAccountOnline('invalid', now), false);
+const schema = read('server/prisma/schema.prisma');
+const migration = read('server/prisma/migrations/20261111150000_tenant_account_presence/migration.sql');
+assert.match(schema, /model TenantAccountPresence \{/);
+assert.match(schema, /membership Membership @relation\(fields: \[tenantId, platformAccountId\], references: \[tenantId, platformAccountId\], onDelete: Cascade\)/);
+assert.match(migration, /PRIMARY KEY \("tenantId", "platformAccountId"\)/);
+assert.match(migration, /ON DELETE CASCADE/);
+const controller = read('server/src/auth/auth.controller.ts');
+assert.match(controller, /@UseGuards\(JwtAuthGuard\)\s+@Post\('presence'\)/);
+const auth = read('server/src/auth/auth.service.ts');
+assert.match(auth, /membership\.findUnique\([\s\S]*?tenantId_platformAccountId/);
+assert.match(auth, /if \(!member\) throw new UnauthorizedException/);
+assert.match(auth, /tenantAccountPresence\.upsert\(/);
+const adminService = read('server/src/saas-admin/saas-admin.service.ts');
+assert.match(adminService, /presence: \{ select: \{ lastSeenAt: true \} \}/);
+assert.match(adminService, /presence: membership \? \{ online: isAccountOnline\(membership\.presence\?\.lastSeenAt\) \} : null/);
+const admin = read('admin/admin.js');
+assert.match(admin, /typeof item\.presence\?\.online === 'boolean'/);
+assert.match(admin, /'В сети' : 'Не в сети'/);
+assert.doesNotMatch(admin, /Сеть: нет данных/);
+console.log('Presence: membership-scoped, 2min TTL, Admin status PASS');

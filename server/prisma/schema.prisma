@@ -104,9 +104,21 @@ model Membership {
 
   tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   account PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+  presence TenantAccountPresence?
 
   @@unique([tenantId, platformAccountId])
   @@index([platformAccountId])
+}
+
+// Ephemeral presence belongs to a specific authenticated account membership.
+model TenantAccountPresence {
+  tenantId          String
+  platformAccountId String
+  lastSeenAt        DateTime   @default(now())
+
+  membership Membership @relation(fields: [tenantId, platformAccountId], references: [tenantId, platformAccountId], onDelete: Cascade)
+
+  @@id([tenantId, platformAccountId])
 }
 
 model WorkspaceState {

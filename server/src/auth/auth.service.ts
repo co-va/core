@@ -117,6 +117,24 @@ export class AuthService {
     return { changed: true };
   }
 
+  async touchPresence(platformAccountId: string, tenantId: string) {
+    const member = await this.prisma.membership.findUnique({
+      where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
+      select: { id: true },
+    });
+    if (!member) throw new UnauthorizedException('Учётная запись не привязана к пространству');
+
+    // Idempotent across devices. Missing heartbeats expire; no unsafe logout
+    // update can mark another active browser tab offline.
+    const seenAt = new Date();
+    await this.prisma.tenantAccountPresence.upsert({
+      where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
+      create: { tenantId, platformAccountId, lastSeenAt: seenAt },
+      update: { lastSeenAt: seenAt },
+    });
+    return { accepted: true };
+  }
+
   async me(platformAccountId: string, tenantId: string) {
     const membership = await this.prisma.membership.findUnique({
       where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
