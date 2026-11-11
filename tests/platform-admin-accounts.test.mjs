@@ -63,7 +63,7 @@ assert.ok(markup.indexOf('Все пользователи') < markup.indexOf('da
 assert.equal((markup.match(/data-tenant="owner-id"/g) || []).length, 1, 'Existing owner tenant must be reused once');
 assert.equal((markup.match(/data-tenant="person-id"/g) || []).length, 1, 'Existing user must not be duplicated');
 assert.doesNotMatch(markup, /admin-table-group|Остальные пользователи|admin-heading/, 'No grey separators or duplicate page title');
-assert.match(markup, /data-select-all-invite-tools/);
+assert.match(source, /data-select-all-invite-tools/, 'Registration tool-selection actions remain wired');
 assert.match(markup, /data-create-invite-link/);
 assert.match(markup, /data-copy-invite-link/);
 
