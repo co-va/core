@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../admin/admin.css', import.meta.url), 'utf8');
 const adminService = readFileSync(new URL('../server/src/saas-admin/saas-admin.service.ts', import.meta.url), 'utf8');
 const adminController = readFileSync(new URL('../server/src/saas-admin/saas-admin.controller.ts', import.meta.url), 'utf8');
 const userSummaryStart = adminService.indexOf('async userAccountOverview()');
@@ -93,7 +94,17 @@ for (const serviceCopy of [
   'Демонстрационный режим',
 ]) assert.ok(!markup.includes(serviceCopy), `Overview must not show service copy: ${serviceCopy}`);
 
-assert.match(markup, /Входили · 30 дней/);
+assert.match(markup, /<span class="admin-overview-metric-label">Входили<\/span>/);
+assert.match(markup, /С входом за 30 дней/);
+assert.match(markup, /<span class="admin-overview-metric-hint">Всего аккаунтов<\/span>/);
+assert.match(markup, /Пробный режим/);
+assert.match(markup, /Рабочий режим/);
+assert.match(markup, /Завершения регистрации/);
+assert.match(markup, /За последние 30 дней/);
+assert.match(source, /<header class="admin-toolbar">/, 'Shared desktop H must remain in shell');
+assert.match(styles, /@media\(min-width:761px\)\{[\s\S]*?\.admin-shell\{height:100dvh;min-height:0;overflow:hidden\}/, 'Desktop shell must hold height to viewport');
+assert.match(styles, /\.admin-main\{min-height:0;overflow-y:auto;/, 'Only dashboard content scrolls inside desktop shell');
+assert.match(styles, /\.admin-toolbar\{position:relative;z-index:2;min-height:68px;/, 'H remains above content instead of scrolling away');
 assert.match(markup, /\u2014/, 'Unavailable User metrics must not claim zero');
 assert.match(markup, /data-overview-tool-app="cabinet"/);
 assert.match(markup, /data-overview-tool-app="records"/);
