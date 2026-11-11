@@ -552,6 +552,15 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-purpose.is-reference,.admin-registry-purpose.is-reading{color:#6B7377}
 .admin-registry-purpose.is-reference .admin-registry-purpose-mark,
 .admin-registry-purpose.is-reading .admin-registry-purpose-mark{border-radius:3px;font-size:9px}
+/* Document ownership affects emphasis only; required/optional semantics
+   and checkbox symbols remain unchanged. */
+.admin-registry-section .admin-registry-documents-table .admin-registry-purpose.is-platform{color:#16191B}
+.admin-registry-section .admin-registry-documents-table .admin-registry-purpose.is-working{color:#828A8F}
+.admin-registry-section .admin-registry-documents-table .admin-registry-purpose.is-working .admin-registry-purpose-mark{border-color:#AAB1B5}
+.admin-registry-section .admin-registry-documents-table .admin-registry-purpose.is-working.is-required .admin-registry-purpose-mark{background:#969DA1;border-color:#969DA1;color:#fff}
+/* Reuse the existing Admin pill geometry. Calm teal is specific to working
+   platform templates, not a new general purpose UI component. */
+.admin-registry-section .admin-registry-documents-table .admin-pill.working{background:#DDF2F1;color:#136D76}
 .admin-registry-history-card{overflow:hidden}
 .admin-registry-documents-scroll,.admin-registry-history-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-registry-section .admin-registry-history-table{width:100%;min-width:860px;table-layout:fixed}
