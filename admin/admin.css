@@ -450,17 +450,20 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-users-section>.admin-invite-panel{padding:16px 14px;margin:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:0 2px 6px rgba(17,17,17,.035)}
 }
 
-/* Accounts: independent dimensions in aligned columns, actions only in the editor. */
+/* Accounts: identity is a single compact field, tester is an optional account attribute. */
 .admin-users-section .admin-table th,.admin-users-section .admin-table td{padding:13px 12px}
-.admin-users-section .admin-table th:nth-child(2),.admin-users-section .admin-table td:nth-child(2){min-width:160px;overflow-wrap:anywhere}
+.admin-users-section .admin-table th:first-child,.admin-users-section .admin-table td:first-child{width:31%;min-width:205px}
+.admin-account-email,.admin-account-role-note{display:block;margin-top:4px;font-size:12px;line-height:1.35;color:var(--text-secondary);font-weight:400;overflow-wrap:anywhere}
+.admin-account-role-note{font-size:11px}
 .admin-users-section .admin-table tbody tr:focus-visible{outline:2px solid var(--white);outline-offset:-3px}
 .admin-danger-zone{display:flex;justify-content:flex-end}
 @media(max-width:760px){
   .admin-mobile-app .admin-users-section .admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
   .admin-mobile-app .admin-users-section .admin-table td{display:block;grid-column:auto;min-width:0;overflow-wrap:anywhere}
   .admin-mobile-app .admin-users-section .admin-table td:first-child,
+  .admin-mobile-app .admin-users-section .admin-table td:nth-child(5){grid-column:1/-1;width:auto;min-width:0}
   .admin-mobile-app .admin-users-section .admin-table td:nth-child(2),
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(7){grid-column:1/-1}
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(4){display:block;justify-content:initial}
+  .admin-mobile-app .admin-users-section .admin-table td:nth-child(3),
+  .admin-mobile-app .admin-users-section .admin-table td:nth-child(4){grid-column:auto;display:block;justify-content:initial}
   .admin-mobile-app .admin-users-section .admin-table td:not(:first-child)::before{content:attr(data-label);display:block;margin-bottom:4px;font-size:11px;font-weight:650;color:var(--text-secondary)}
 }

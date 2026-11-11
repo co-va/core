@@ -818,8 +818,8 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
         <div class="admin-card">
           <table class="admin-table">
-            <thead><tr><th>Пользователь</th><th>Email</th><th>Роль</th><th>Тестировщик</th><th>Режим</th><th>Тариф</th><th>Состояние</th></tr></thead>
-            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="7">Административный аккаунт не найден.</td></tr>'}</tbody>
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th></tr></thead>
+            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="5">Административный аккаунт не найден.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -846,8 +846,8 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-all-users-title">Все пользователи</h2>
         <div class="admin-card">
           <table class="admin-table">
-            <thead><tr><th>Пользователь</th><th>Email</th><th>Роль</th><th>Тестировщик</th><th>Режим</th><th>Тариф</th><th>Состояние</th></tr></thead>
-            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="7">Пока нет других пользователей.</td></tr>'}</tbody>
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th></tr></thead>
+            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="5">Пока нет других пользователей.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -923,19 +923,22 @@ function tenantRow(item) {
   const pending = !item.ownerProfile && item.invitation?.status === 'PENDING';
   const name = item.ownerProfile?.name || item.invitation?.name || item.tenantName || 'Без имени';
   const email = item.ownerProfile?.email || item.invitation?.email || '';
+  const displayedEmail = email.endsWith('@registration.invalid') ? '' : email;
   const mode = String(item.access?.commercialMode || 'DEMO');
-  const statusClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
-  const statusLabel = item.status === 'SUSPENDED' ? 'Отключён' : pending ? 'Ждёт регистрации' : item.ownerProfile ? 'Активен' : 'Создан';
+  // Tenant access status is permission state, not online presence.
+  const accessClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
+  const accessLabel = item.status === 'SUSPENDED' ? 'Отключён'
+    : pending ? 'Ждёт регистрации'
+    : item.ownerProfile ? 'Разрешён' : 'Не зарегистрирован';
   const role = item.isOwnerBook ? 'Администратор' : 'Пользователь';
-  const tester = item.isOwnerBook ? '—' : item.isTester ? 'Да' : 'Нет';
+  const tester = !item.isOwnerBook && item.isTester
+    ? '<small class="admin-account-role-note">Тестирование включено</small>' : '';
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
-    <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong></td>
-    <td data-label="Email">${email ? escapeHtml(email) : '—'}</td>
-    <td data-label="Роль">${escapeHtml(role)}</td>
-    <td data-label="Тестировщик">${escapeHtml(tester)}</td>
+    <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
+    <td data-label="Роль">${escapeHtml(role)}${tester}</td>
     <td data-label="Режим"><span class="admin-pill ${mode === 'LIVE' ? 'active' : 'pending'}">${escapeHtml(mode)}</span></td>
     <td data-label="Тариф">${escapeHtml(item.plan?.name || '—')}</td>
-    <td data-label="Состояние"><span class="admin-pill ${statusClass}">${statusLabel}</span></td>
+    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span></td>
   </tr>`;
 }
 

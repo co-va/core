@@ -32,15 +32,23 @@ const user = {
   ownerProfile: { name: 'Пользователь', email: 'person@example.invalid' },
   access: { commercialMode: 'DEMO' },
 };
-assert.match(tenantRow(owner), /data-label="Роль">Администратор/, 'Owner role is a dedicated cell');
-assert.match(tenantRow(owner), /data-label="Тестировщик">—/, 'Owner tester indicator is independent of role');
-assert.match(tenantRow(user), /data-label="Роль">Пользователь/);
-assert.match(tenantRow(user), /data-label="Тестировщик">Да/, 'Tester flag gets its own column');
+assert.match(tenantRow(owner), /data-label="Роль">Администратор/, 'Owner role remains a dedicated field');
+assert.doesNotMatch(tenantRow(owner), /Тестирование включено/, 'Owner never shows tester flag');
+assert.match(tenantRow(owner), /data-label="Пользователь"><strong>Мой профиль<\/strong><small class="admin-account-email">owner@example.invalid<\/small><\/td>/, 'Name and email are a single identity cell');
+assert.match(tenantRow(user), /data-label="Роль">Пользователь<small class="admin-account-role-note">Тестирование включено<\/small>/, 'Tester is a non-role account flag visible only when enabled');
 assert.match(tenantRow(user), /data-label="Режим"/);
 assert.match(tenantRow(user), /data-label="Тариф"/);
-assert.match(tenantRow(user), /data-label="Состояние"/);
+assert.match(tenantRow(user), /data-label="Доступ"><span class="admin-pill active">Разрешён<\/span>/, 'Access allowed does not pretend to be online presence');
+assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-label="Email"|data-label="Тестировщик"|Активен|В сети/, 'No redundant columns or misleading online status');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-delete-tenant|Удалить/, 'No destructive actions in table rows');
-assert.equal((tenantRow(user).match(/<td /g) || []).length, 7, 'Account table has seven aligned fields');
+assert.equal((tenantRow(user).match(/<td /g) || []).length, 5, 'Account table has five aligned fields');
+const notTester = { ...user, isTester: false };
+assert.doesNotMatch(tenantRow(notTester), /Тестирование включено|Тестировщик|>Нет</, 'No repetitive negative tester status');
+const suspended = { ...user, status: 'SUSPENDED' };
+assert.match(tenantRow(suspended), /data-label="Доступ"><span class="admin-pill suspended">Отключён<\/span>/, 'Suspended means blocked access');
+const invitation = { ...user, ownerProfile: null, invitation: { status: 'PENDING', email: 'registration+token@registration.invalid' } };
+assert.match(tenantRow(invitation), /Ждёт регистрации/, 'Invitation is not a registered active user');
+assert.doesNotMatch(tenantRow(invitation), /registration\+token/, 'Internal registration sentinel is never shown as email');
 assert.match(tenantRow(user), /tabindex="0"/, 'Account editor remains accessible from keyboard');
 
 const state = { tenants: [user, owner], capabilities: [] };
@@ -69,6 +77,7 @@ assert.ok(markup.indexOf('Все пользователи') < markup.indexOf('da
 assert.equal((markup.match(/data-tenant="owner-id"/g) || []).length, 1, 'Existing owner tenant must be reused once');
 assert.equal((markup.match(/data-tenant="person-id"/g) || []).length, 1, 'Existing user must not be duplicated');
 assert.doesNotMatch(markup, /admin-table-group|Остальные пользователи|admin-heading/, 'No grey separators or duplicate page title');
+assert.equal((markup.match(/<th>Пользователь<\/th><th>Роль<\/th><th>Режим<\/th><th>Тариф<\/th><th>Доступ<\/th>/g) || []).length, 2, 'Both tables use five identical headers');
 assert.doesNotMatch(markup, /admin-invite-access|data-select-all-invite-tools|data-clear-invite-tools/, 'Retired registration checkbox implementation is absent');
 assert.match(markup, /data-configure-invite-tools/, 'Registration config launches a modal');
 assert.match(markup, /data-invite-selection/, 'User can see selected tool count');
