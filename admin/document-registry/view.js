@@ -15,6 +15,9 @@ import {
 // The registry is a single three-section document list. The source catalog and
 // persisted signing history stay canonical and are never copied into this view.
 const DOCUMENT_ICON = '<svg class="admin-registry-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h6"/></svg>';
+const ADD_DOCUMENT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l4 4v5M14 3v5h4M5 3v18h8M16 15v8M12 19h8"/></svg>';
+const escapeDocument = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+
 
 // Short labels are for Admin's index only; legal source titles stay intact.
 const SHORT_TITLES = Object.freeze({
@@ -97,9 +100,14 @@ function actionState(value) {
 }
 
 function sectionMarkup(title, application, body, escapeHtml, extra = '') {
+  const app = String(application || '').toLowerCase();
+  const canCreate = app === 'professional' || app === 'user';
   return '<section class="admin-users-section admin-registry-section" ' + extra + '>' +
+    (canCreate ? '<div class="admin-registry-section-title-line">' : '') +
     '<h2 class="admin-users-section-title">' + escapeHtml(title) +
       (application ? '<span class="admin-registry-app"> / ' + escapeHtml(application) + '</span>' : '') + '</h2>' +
+    (canCreate ? '<button type="button" class="admin-registry-add" data-registry-add="' + app +
+      '" aria-label="Добавить документ в ' + escapeHtml(title) + '" title="Добавить документ">' + ADD_DOCUMENT_ICON + '</button></div>' : '') +
     body + '</section>';
 }
 
@@ -133,20 +141,23 @@ function purposeMarkup(value, status) {
 function documentStatus(item) {
   return item.key === 'rkn-notification-guide-template'
     || item.type === 'USER_DOCUMENT_BASE'
+    || item.type === 'CUSTOM_WORKING'
     ? 'Рабочий' : 'Правовой';
 }
 
-function documentStatusMarkup(item) {
+function documentStatusMarkup(item, hasDraft = false) {
   const status = documentStatus(item);
-  // Reuse the same badge already used for History events and Users.
+  // A draft is not a second document row: indicate it in the existing status cell.
   return '<span class="admin-pill' +
-    (status === 'Правовой' ? ' active' : ' working') + '">' + status + '</span>';
+    (hasDraft ? ' admin-registry-status-draft' : status === 'Правовой' ? ' active' : ' working') +
+    '">' + status + (hasDraft ? ' · Черновик' : '') + '</span>';
 }
 
 // A platform-supplied working base has an explicit source version in
 // PlatformDocumentVersion. A Professional's private edits are NOT this version.
 // The RKN instruction stays unversioned as an informational helper.
 function sourceEdition(item) {
+  if (item?.editorEdition) return String(item.editorEdition);
   const legal = legalEdition(item?.content);
   if (legal) return legal;
   if (item?.type === 'USER_DOCUMENT_BASE') {
@@ -156,7 +167,7 @@ function sourceEdition(item) {
   return item?.edition || '—';
 }
 
-function documentTable(items, escapeHtml, application) {
+function documentTable(items, escapeHtml, application, draftKeys = new Set()) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
     const shortTitle = escapeHtml(SHORT_TITLES[item.key] || item.title || 'Документ');
@@ -164,14 +175,14 @@ function documentTable(items, escapeHtml, application) {
     const publicationDate = escapeHtml(publishedDocumentDate(item));
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item);
-    return '<tr>' +
+    return '<tr data-registry-row="' + key + '" tabindex="0" role="button" aria-label="Просмотреть ' + title + '">' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
       '<td data-label="Назначение">' + purposeMarkup(purpose, documentStatus(item)) + '</td>' +
       '<td data-label="Дата"><time class="admin-registry-published-date" data-registry-date="' + key + '">' + publicationDate + '</time></td>' +
-      '<td data-label="Статус">' + documentStatusMarkup(item) + '</td>' +
+      '<td data-label="Статус">' + documentStatusMarkup(item, draftKeys.has(item.key)) + '</td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
-      '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '"' +
+      '" aria-label="Редактировать документ ' + title + '" title="Редактировать: ' + title + '"' +
       (item.content ? '' : ' disabled aria-disabled="true"') + '>' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
@@ -212,7 +223,7 @@ function historyTable(escapeHtml) {
     const action = escapeHtml(actionLabel(item.action));
     const status = actionState(item.action);
     const moment = formatEventMoment(item.occurredAt);
-    return '<tr>' +
+    return '<tr data-registry-history-row="' + id + '" tabindex="0" role="button" aria-label="Просмотреть архивный документ">' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" title="Архивная копия ' + archiveVersion + '">' + version + '</span></td>' +
       '<td data-label="Аккаунт"><span class="admin-registry-history-account" title="' + account + ' · ' + subject + '">' +
@@ -235,17 +246,22 @@ function openDocument(item) {
   const content = item.content || item.documentContent || '';
   // Both current and signed archived document readers show the revision
   // actually stated in that snapshot; the archive index is not a legal edition.
-  const version = legalEdition(content) ||
+  const version = item.editorEdition || legalEdition(content) ||
     (item.type === 'USER_DOCUMENT_BASE' ? sourceEdition(item) : '');
+  const sharedQ = Boolean(document.querySelector('.admin-mobile-app'));
+  const heading = escapeDocument(title);
+  const fixedHeader = sharedQ
+    ? '<div><h3>Документ</h3></div>'
+    : '<div><span class="admin-document-head-version">Версия ' + escapeDocument(version || '—') +
+      '</span><h3>' + heading + '</h3></div>';
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = '<aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Просмотр документа">' +
-    '<div class="admin-drawer-head"><div><h3>Документ</h3></div>' +
+    '<div class="admin-drawer-head">' + fixedHeader +
     '<button type="button" class="admin-close" data-close aria-label="Закрыть">×</button></div>' +
     '<div class="admin-document-reading">' + documentPage({ title, version, content }) + '</div></aside>';
 
   // Reuse the same desktop drawer and mobile shared Q as Users / Tools.
-  const sharedQ = Boolean(document.querySelector('.admin-mobile-app'));
   if (sharedQ) {
     const html = modal(backdrop.innerHTML, { title: 'Документ', variant: 'q', className: 'admin-document-q' });
     const mounted = mountModal(document.querySelector('[data-v2-app]'), html);
