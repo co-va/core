@@ -523,18 +523,15 @@ function renderOverview() {
     { label: 'Записи', type: 'records', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('records.'))) },
   ];
   const userStats = overviewUserStatsStatus === 'ready' ? overviewUserStats : null;
-  const userStatusNote = overviewUserStatsStatus === 'unavailable'
-    ? 'Статистика будет доступна после обновления API Core. Сейчас нет подтверждённых данных.'
-    : 'Получаем показатели зарегистрированных аккаунтов…';
   const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
   const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
   const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
   const periodLabel = overviewWindowWeeks === 4 ? '4 недели' : overviewWindowWeeks === 8 ? '8 недель' : '12 недель';
   const groupCards = [
-    { key: 'registered', value: registered.length, title: 'Зарегистрированы', note: 'Создан аккаунт и профиль', theme: 'primary' },
-    { key: 'demo', value: demo.length, title: 'DEMO', note: 'Демонстрационный режим' },
-    { key: 'live', value: live.length, title: 'LIVE', note: 'Рабочий режим' },
-    { key: 'pending', value: pending.length, title: 'Ожидают', note: 'Завершения регистрации' },
+    { key: 'registered', value: registered.length, title: 'Зарегистрированы', theme: 'primary' },
+    { key: 'demo', value: demo.length, title: 'DEMO' },
+    { key: 'live', value: live.length, title: 'LIVE' },
+    { key: 'pending', value: pending.length, title: 'Ожидают' },
   ];
   const selected = groupCards.find((item) => item.key === overviewDetailGroup)
     || (overviewDetailGroup === 'suspended'
@@ -549,11 +546,10 @@ function renderOverview() {
   content.innerHTML = `
     <div class="admin-overview">
       <div class="admin-heading admin-overview-heading">
-        <div><h2>Состояние платформы</h2><p>Главные показатели и вопросы, требующие внимания</p></div>
+        <div><h2>Состояние платформы</h2></div>
       </div>
       <div class="admin-overview-app-head">
-        <div><span class="admin-overview-eyebrow">PROFESSIONAL</span><h3>Кабинет</h3></div>
-        <p>Профессиональные аккаунты и их рабочие режимы</p>
+        <h3>Кабинет <span class="admin-overview-head-suffix">/ Professional</span></h3>
       </div>
       <section class="admin-overview-metrics" aria-label="Аккаунты Кабинета">
         ${groupCards.map((item) => `
@@ -561,13 +557,13 @@ function renderOverview() {
             data-overview-group="${item.key}" aria-pressed="${overviewDetailGroup === item.key}">
             <span class="admin-overview-metric-label">${item.title}</span>
             <strong class="admin-overview-metric-value">${item.value}</strong>
-            <span class="admin-overview-metric-bottom"><span>${item.note}</span><span aria-hidden="true">↗</span></span>
+            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
           </button>`).join('')}
       </section>
       ${selected ? `
         <section class="admin-overview-detail" aria-label="${escapeHtml(selected.title)}">
           <div class="admin-overview-detail-heading">
-            <div><strong>${escapeHtml(selected.title)} · ${details.length}</strong><span>Нажми на человека, чтобы открыть его карточку</span></div>
+            <div><strong>${escapeHtml(selected.title)} · ${details.length}</strong></div>
             <button type="button" class="admin-overview-close" data-overview-close aria-label="Свернуть подробности">×</button>
           </div>
           <div class="admin-overview-detail-list">
@@ -582,7 +578,7 @@ function renderOverview() {
       <div class="admin-overview-layout">
         <section class="admin-overview-panel admin-overview-chart-panel">
           <div class="admin-overview-panel-head">
-            <div><span class="admin-overview-eyebrow">ДИНАМИКА</span><h3>Новые регистрации</h3></div>
+            <div><h3>Новые регистрации</h3></div>
             <div class="admin-overview-period" role="group" aria-label="Период графика">
               ${[4, 8, 12].map((weeks) => `<button type="button" data-overview-weeks="${weeks}" aria-pressed="${overviewWindowWeeks === weeks}">${weeks} нед.</button>`).join('')}
             </div>
@@ -599,56 +595,47 @@ function renderOverview() {
                 <span class="admin-overview-bar-label">${new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit' }).format(bar.date)}</span>
               </div>`).join('')}
           </div>
-          <p class="admin-overview-footnote">По дате регистрации аккаунта. Это не показатель активности в приложении.</p>
         </section>
         <section class="admin-overview-panel admin-overview-focus">
-          <div class="admin-overview-panel-head"><div><span class="admin-overview-eyebrow">КОНТРОЛЬ</span><h3>Требует внимания</h3></div></div>
+          <div class="admin-overview-panel-head"><div><h3>Требует внимания</h3></div></div>
           ${issueRows.length ? `<div class="admin-overview-focus-list">
             ${issueRows.map((row) => `<button type="button" data-overview-group="${row.group}" class="admin-overview-focus-row">
               <span>${row.label}</span><strong>${row.count}</strong><span aria-hidden="true">↗</span>
             </button>`).join('')}
           </div>` : `<div class="admin-overview-clear"><span class="admin-overview-clear-mark" aria-hidden="true">✓</span>
             <strong>Нет ожидающих действий</strong>
-            <p>Нет незавершённых регистраций или приостановленных аккаунтов.</p>
           </div>`}
           <button type="button" class="admin-overview-panel-link" data-overview-section="tenants">Открыть пользователей <span aria-hidden="true">↗</span></button>
         </section>
       </div>
       <section class="admin-overview-user-section" aria-label="Статистика приложения Записи">
         <div class="admin-overview-app-head">
-          <div><span class="admin-overview-eyebrow">USER</span><h3>Записи</h3></div>
-          <p>Аккаунты пользователей приложения, не контакты специалистов</p>
+          <h3>Записи <span class="admin-overview-head-suffix">/ User</span></h3>
         </div>
         <div class="admin-overview-user-metrics">
           <div class="admin-overview-metric">
             <span class="admin-overview-metric-label">Зарегистрированы</span>
             <strong class="admin-overview-metric-value">${userStats ? userStats.registered : '—'}</strong>
-            <span class="admin-overview-metric-bottom">Каждый аккаунт отдельно, независимо от UEI</span>
           </div>
           <div class="admin-overview-metric">
             <span class="admin-overview-metric-label">Новые · 30 дней</span>
             <strong class="admin-overview-metric-value">${userStats ? userStats.newLast30Days : '—'}</strong>
-            <span class="admin-overview-metric-bottom">Новые регистрации в приложении</span>
           </div>
           <div class="admin-overview-metric">
             <span class="admin-overview-metric-label">Входили · 30 дней</span>
             <strong class="admin-overview-metric-value">${userStats ? userStats.loggedInLast30Days : '—'}</strong>
-            <span class="admin-overview-metric-bottom">Подтверждённые входы; не вся активность</span>
           </div>
         </div>
-        ${!userStats ? `<div class="admin-overview-user-note"><span>${userStatusNote}</span>
-          ${overviewUserStatsStatus === 'unavailable' ? '<button type="button" data-overview-refresh-users>Повторить</button>' : ''}
-        </div>` : '<p class="admin-overview-footnote">Гостевые записи и контакты специалистов сюда не входят. Два самостоятельных аккаунта учитываются дважды.</p>'}
       </section>
       <section class="admin-overview-tools-section">
         <div class="admin-overview-app-head">
-          <div><span class="admin-overview-eyebrow">ИНСТРУМЕНТЫ</span><h3>Готовность функций</h3></div>
-          <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Открыть инструменты <span aria-hidden="true">↗</span></button>
+          <h3>Готовность функций <span class="admin-overview-head-suffix">/ Инструменты</span></h3>
+          <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities" aria-label="Открыть инструменты">Открыть инструменты <span aria-hidden="true">↗</span></button>
         </div>
         <div class="admin-overview-tools-by-app">
           ${toolsByApp.map((group) => `
             <div class="admin-overview-panel admin-overview-tools" data-overview-tool-app="${group.type}">
-              <div class="admin-overview-panel-head"><h3>${group.label}</h3></div>
+              <div class="admin-overview-panel-head"><h3>${group.label} <span class="admin-overview-head-suffix">/ ${group.type === 'cabinet' ? 'Professional' : 'User'}</span></h3></div>
               <div class="admin-overview-tool-counts">
                 <span><i class="is-ready"></i>Готово <strong>${group.ready}</strong></span>
                 <span><i class="is-testing"></i>Проверка <strong>${group.testing}</strong></span>
@@ -667,7 +654,6 @@ function renderOverview() {
       </section>
     </div>`;
 
-  content.querySelector('[data-overview-refresh-users]')?.addEventListener('click', () => requestOverviewUserStats(true));
   if (overviewUserStatsStatus === 'idle') requestOverviewUserStats();
 
   content.querySelectorAll('[data-overview-group]').forEach((button) => {
