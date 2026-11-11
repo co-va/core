@@ -25,6 +25,25 @@ export const USER_DOCUMENT_BASE_KEYS = [
   ...USER_HELPER_TEMPLATE_KEYS,
 ];
 
+// Platform ↔ User account agreement. Its canonical legal text is stored in
+// PlatformDocumentVersion (key account-terms) and served by GET /account/terms.
+// This UI descriptor is NOT part of the sync payload and cannot overwrite it.
+export const PLATFORM_USER_DOCUMENT_REFERENCES = Object.freeze([
+  Object.freeze({
+    key: 'account-terms',
+    type: 'ACCOUNT_TERMS',
+    title: 'Условия использования учётной записи',
+    requiredForRegistration: true,
+    edition: '1',
+    issuedAt: '21.09.2026',
+    content: '',
+  }),
+]);
+
+export function getRegistryPlatformUserDocuments() {
+  return PLATFORM_USER_DOCUMENT_REFERENCES.map((item) => ({ ...item }));
+}
+
 export const DOCUMENT_CATALOG = [
   {
     key: "privacy-policy",
