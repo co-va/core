@@ -33,6 +33,11 @@ export class SaasAdminController {
     return this.historyService.listPlatform({ tenantId, limit: Number(limit) });
   }
 
+  @Get('overview/user-accounts')
+  userAccountOverview() {
+    return this.admin.userAccountOverview();
+  }
+
   @Get('tenants')
   tenants() {
     return this.admin.tenants();
