@@ -29,10 +29,20 @@ const SHORT_TITLES = Object.freeze({
   'user-document-messages-consent': 'Маркетинг',
 });
 
+// Source content provenance: Git commits that introduced/last changed these
+// exact, still-current unnumbered texts. Used only when the persisted version
+// has no publishedAt, not as a fabricated legal edition or signature date.
+const SOURCE_CONTENT_LAST_EDITED = Object.freeze({
+  'user-document-pdn-policy': '18.09.2026', // 28223eb4658c
+  'user-document-pdn-consent': '18.09.2026', // 28223eb4658c
+  'user-document-messages-consent': '18.09.2026', // 28223eb4658c
+  'rkn-notification-guide-template': '03.10.2026', // f9564343a31a
+});
+
 // Only an explicitly published legal edition counts as a registry revision.
 function legalEdition(content) {
   const header = String(content || '').split(/\r?\n/).slice(0, 8).join('\n');
-  return header.match(/(?:юридическая\s+)?редакция\s+(\d+(?:\.\d+)+)(?=\s|$)/i)?.[1] || '';
+  return header.match(/(?:юридическая\s+)?(?:редакция|версия)\s+(\d+(?:\.\d+)*)(?=\s|$)/i)?.[1] || '';
 }
 
 // The document header's issue date takes precedence over its technical
@@ -50,17 +60,19 @@ function legalEditionDate(content) {
 function publishedDocumentDate(item) {
   const fromLegalText = legalEditionDate(item?.content);
   if (fromLegalText) return fromLegalText;
-  if (!item?.publishedAt) return '—';
+  if (!item?.publishedAt) return SOURCE_CONTENT_LAST_EDITED[item?.key] || '—';
   const date = new Date(item.publishedAt);
-  if (!Number.isFinite(date.getTime())) return '—';
+  if (!Number.isFinite(date.getTime())) return SOURCE_CONTENT_LAST_EDITED[item?.key] || '—';
   return [String(date.getUTCDate()).padStart(2, '0'), String(date.getUTCMonth() + 1).padStart(2, '0'), String(date.getUTCFullYear())].join('.');
 }
 
-function formatMoment(value) {
-  const date = new Date(value || '');
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '')
-    : '—';
+function formatEventMoment(value) {
+  const moment = new Date(value || '');
+  if (!Number.isFinite(moment.getTime())) return { date: '—', time: '' };
+  return {
+    date: moment.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    time: moment.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+  };
 }
 
 function actionLabel(value) {
@@ -155,18 +167,21 @@ function historyTable(escapeHtml) {
     const title = escapeHtml(item.documentTitle || item.documentKey || 'Документ');
     const shortTitle = escapeHtml(historyShortTitle(item));
     const id = escapeHtml(item.id || '');
-    const version = escapeHtml(item.documentVersion ? String(item.documentVersion) : '—');
+    const version = escapeHtml(legalEdition(item.documentContent) || '—');
+    const archiveVersion = escapeHtml(String(item.documentVersion || ''));
     const account = escapeHtml(item.accountEmail || item.tenantName || '—');
     const subject = item.subjectType === 'ACCOUNT' ? 'User' : 'Professional';
     const action = escapeHtml(actionLabel(item.action));
     const status = actionState(item.action);
-    const moment = escapeHtml(formatMoment(item.occurredAt));
+    const moment = formatEventMoment(item.occurredAt);
     return '<tr>' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
-      '<td data-label="Версия"><span class="admin-registry-version">' + version + '</span></td>' +
+      '<td data-label="Версия"><span class="admin-registry-version" title="Архивная копия ' + archiveVersion + '">' + version + '</span></td>' +
       '<td data-label="Аккаунт"><span class="admin-registry-history-account" title="' + account + ' · ' + subject + '">' +
       '<span class="admin-registry-account-email">' + account + '</span><small class="admin-registry-account-app">' + subject + '</small></span></td>' +
-      '<td data-label="Дата"><time>' + moment + '</time></td>' +
+      '<td data-label="Дата"><time class="admin-registry-history-moment" datetime="' + escapeHtml(item.occurredAt || '') + '">' +
+      '<span class="admin-registry-event-date">' + escapeHtml(moment.date) + '</span>' +
+      '<small class="admin-registry-event-time">' + escapeHtml(moment.time) + '</small></time></td>' +
       '<td data-label="Событие"><span class="admin-pill ' + status + '">' + action + '</span></td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-history="' + id +
       '" aria-label="Открыть сохранённый документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td></tr>';
@@ -180,9 +195,9 @@ function openDocument(item) {
   if (!item) return null;
   const title = item.title || item.documentTitle || 'Документ';
   const content = item.content || item.documentContent || '';
-  // Historical signings retain their immutable technical index. Current
-  // documents show the legal edition printed in the actual source text.
-  const version = item.documentVersion || legalEdition(content) || '';
+  // Both current and signed archived document readers show the revision
+  // actually stated in that snapshot; the archive index is not a legal edition.
+  const version = legalEdition(content);
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = '<aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Просмотр документа">' +
