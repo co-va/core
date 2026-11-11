@@ -591,6 +591,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr{display:table-row;height:44px;min-height:44px;padding:0;border:0}
   .admin-mobile-app .admin-registry-section .admin-registry-history-table td{display:table-cell;grid-column:auto;grid-row:auto;padding:7px 12px!important;height:44px;min-width:0;white-space:nowrap;overflow:hidden}
   .admin-mobile-app .admin-registry-section .admin-registry-history-table th{display:table-cell;min-width:0;white-space:nowrap}
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table td.admin-registry-open-cell{padding:0!important}
   .admin-mobile-app .admin-registry-section .admin-registry-history-table td:not(:first-child)::before{display:none}
 }
 @media(max-width:360px){
