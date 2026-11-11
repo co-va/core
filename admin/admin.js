@@ -116,14 +116,46 @@ async function enableAdminPush(promptUser = false) {
   return true;
 }
 
+// Poll only the accounts when their table is visible. Never recreate active
+// role selectors or the registration-link editor just to refresh online labels.
+async function refreshTenantNetwork() {
+  const tenants = await adminRequest('/tenants');
+  if (!Array.isArray(tenants)) return;
+  const content = app.querySelector('[data-content]');
+  state.tenants = tenants;
+  const liveRows = [...(content?.querySelectorAll('[data-tenant]') || [])];
+  const liveIds = liveRows.map((row) => row.dataset.tenant);
+  const nextIds = tenants.map((item) => item.tenantId);
+  if (liveIds.length !== nextIds.length || liveIds.some((id) => !nextIds.includes(id))) {
+    renderTenants();
+    return;
+  }
+  const byId = new Map(tenants.map((item) => [item.tenantId, item]));
+  liveRows.forEach((row) => {
+    const fresh = byId.get(row.dataset.tenant);
+    if (!fresh) return;
+    const scratch = document.createElement('tbody');
+    scratch.innerHTML = tenantRow(fresh);
+    const updated = scratch.querySelector('[data-online-cell]');
+    const current = row.querySelector('[data-online-cell]');
+    if (current && updated) current.innerHTML = updated.innerHTML;
+    // Keep a focused or pending edit untouched, but apply external role changes.
+    const select = row.querySelector('[data-inline-tester]');
+    if (select && !select.disabled && document.activeElement !== select) {
+      select.value = String(Boolean(fresh.isTester));
+      select.dataset.previous = select.value;
+    }
+  });
+}
+
 function startAdminPolling() {
   if (adminPollTimer) window.clearInterval(adminPollTimer);
   adminPollTimer = window.setInterval(async () => {
     try {
-      await refreshData();
-      if (state.section === 'tenants') renderTenants();
+      if (state.section === 'tenants') await refreshTenantNetwork();
+      else await refreshData();
     } catch {
-      // Фоновое обновление не должно мешать работе админки.
+      // Network presence and routine refresh must not interrupt the Admin UI.
     }
   }, 30_000);
 }
@@ -818,8 +850,8 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
         <div class="admin-card">
           <table class="admin-table">
-            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th></tr></thead>
-            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="5">Административный аккаунт не найден.</td></tr>'}</tbody>
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
+            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="6">Административный аккаунт не найден.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -846,8 +878,8 @@ function renderTenants() {
         <h2 class="admin-users-section-title" id="admin-all-users-title">Все пользователи</h2>
         <div class="admin-card">
           <table class="admin-table">
-            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th></tr></thead>
-            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="5">Пока нет других пользователей.</td></tr>'}</tbody>
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
+            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="6">Пока нет других пользователей.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -912,9 +944,44 @@ function renderTenants() {
   content.querySelectorAll('[data-tenant]').forEach((row) => {
     row.addEventListener('click', () => openAccessDrawer(row.dataset.tenant));
     row.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) return;
       event.preventDefault();
       openAccessDrawer(row.dataset.tenant);
+    });
+  });
+  // This selector changes only the tester flag; capability overrides stay untouched.
+  content.querySelectorAll('[data-inline-tester]').forEach((select) => {
+    select.addEventListener('click', (event) => event.stopPropagation());
+    select.addEventListener('keydown', (event) => event.stopPropagation());
+    select.addEventListener('change', async (event) => {
+      event.stopPropagation();
+      const row = select.closest('[data-tenant]');
+      const tenantId = row?.dataset.tenant;
+      const previous = select.dataset.previous === 'true';
+      if (!tenantId) return;
+      const next = select.value === 'true';
+      const errorLabel = row.querySelector('[data-tester-error]');
+      if (errorLabel) { errorLabel.hidden = true; errorLabel.textContent = ''; }
+      if (next === previous) return;
+      select.disabled = true;
+      try {
+        await adminRequest(`/tenants/${encodeURIComponent(tenantId)}/access`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isTester: next }),
+        });
+        const tenant = state.tenants.find((item) => item.tenantId === tenantId);
+        if (tenant) tenant.isTester = next;
+        select.dataset.previous = String(next);
+      } catch (error) {
+        select.value = String(previous);
+        if (errorLabel) {
+          errorLabel.textContent = error instanceof Error ? error.message : 'Не удалось изменить статус';
+          errorLabel.hidden = false;
+        }
+      } finally {
+        if (select.isConnected) select.disabled = false;
+      }
     });
   });
 }
@@ -925,23 +992,38 @@ function tenantRow(item) {
   const email = item.ownerProfile?.email || item.invitation?.email || '';
   const displayedEmail = email.endsWith('@registration.invalid') ? '' : email;
   const mode = String(item.access?.commercialMode || 'DEMO');
-  // Tenant access status is permission state, not online presence.
   const accessClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
   const accessLabel = item.status === 'SUSPENDED' ? 'Отключён'
     : pending ? 'Ждёт регистрации'
     : item.ownerProfile ? 'Разрешён' : 'Не зарегистрирован';
-  const role = item.isOwnerBook ? 'Администратор' : 'Пользователь';
-  const tester = !item.isOwnerBook && item.isTester
-    ? '<small class="admin-account-role-note">Тестировщик</small>' : '';
-  const presence = item.ownerProfile && typeof item.presence?.online === 'boolean'
-    ? `<small class="admin-account-presence ${item.presence.online ? 'is-online' : 'is-offline'}">${item.presence.online ? 'В сети' : 'Не в сети'}</small>`
-    : '';
+  const testerOptions = item.isOwnerBook ? '' : `<span class="admin-inline-role-editor"><select class="admin-inline-role-select" data-inline-tester
+      data-previous="${Boolean(item.isTester)}" aria-label="Тестировщик: ${escapeHtml(name)}">
+      <option value="false"${item.isTester ? '' : ' selected'}>—</option>
+      <option value="true"${item.isTester ? ' selected' : ''}>Тестировщик</option>
+    </select><small data-tester-error class="admin-inline-error" role="alert" hidden></small></span>`;
+  let network = '—';
+  if (item.ownerProfile && typeof item.presence?.online === 'boolean') {
+    const connected = item.presence.online;
+    const rawTime = Number(item.presence.totalOnlineMs);
+    const minutes = Number.isFinite(rawTime) && rawTime >= 0 ? Math.floor(rawTime / 60_000) : null;
+    const hours = minutes == null ? null : Math.floor(minutes / 60);
+    const duration = hours == null ? '' : hours
+      ? `${hours} ч ${minutes % 60} мин` : minutes ? `${minutes} мин` : 'менее 1 мин';
+    const rawLastVisit = item.presence.lastSeenAt ? new Date(item.presence.lastSeenAt) : null;
+    const lastVisit = rawLastVisit && Number.isFinite(rawLastVisit.getTime())
+      ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '';
+    network = `<span class="admin-account-presence ${connected ? 'is-online' : 'is-offline'}">${connected ? 'В сети' : 'Не в сети'}</span>
+      ${duration ? `<small class="admin-network-detail">Учтено: ${duration}</small>` : ''}
+      ${!connected && lastVisit ? `<small class="admin-network-detail">Последний: ${escapeHtml(lastVisit)}</small>` : ''}`;
+  }
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
-    <td data-label="Роль">${escapeHtml(role)}${tester}</td>
+    <td data-label="Роль">${item.isOwnerBook ? 'Администратор' : 'Пользователь'}${testerOptions}</td>
     <td data-label="Режим"><span class="admin-pill ${mode === 'LIVE' ? 'active' : 'pending'}">${escapeHtml(mode)}</span></td>
     <td data-label="Тариф">${escapeHtml(item.plan?.name || '—')}</td>
-    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span>${presence}</td>
+    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span></td>
+    <td data-label="В сети" data-online-cell>${network}</td>
   </tr>`;
 }
 

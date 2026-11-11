@@ -453,15 +453,26 @@ html:has(.admin-shell){background:var(--surface-dark)}
 /* Accounts: identity is a single compact field, tester is an optional account attribute. */
 .admin-users-section .admin-table th,.admin-users-section .admin-table td{padding:13px 12px}
 .admin-users-section .admin-table th:first-child,.admin-users-section .admin-table td:first-child{width:31%;min-width:205px}
-.admin-account-email,.admin-account-role-note{display:block;margin-top:4px;font-size:12px;line-height:1.35;color:var(--text-secondary);font-weight:400;overflow-wrap:anywhere}
-.admin-account-role-note{font-size:11px}.admin-account-presence{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;line-height:1.3;color:var(--text-secondary);font-weight:500}.admin-account-presence::before{content:'';display:inline-block;flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:#9ea5a8}.admin-account-presence.is-online::before{background:#378448}
+.admin-account-email{display:block;margin-top:4px;font-size:12px;line-height:1.35;color:var(--text-secondary);font-weight:400;overflow-wrap:anywhere}
+.admin-inline-role-editor{display:block;margin-top:5px}
+.admin-inline-role-select{max-width:145px;min-width:105px;min-height:28px;padding:4px 20px 4px 6px;border:1px solid var(--border);border-radius:7px;background:var(--white);font:inherit;font-size:11px;color:var(--text);cursor:pointer}
+.admin-inline-role-select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.admin-inline-role-select:disabled{opacity:.6}
+.admin-inline-error{display:block;margin-top:5px;max-width:145px;color:#a13e31;font-size:11px;line-height:1.3}
+.admin-inline-error[hidden]{display:none}
+.admin-account-presence{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.3;color:var(--text);font-weight:650;white-space:nowrap}
+.admin-account-presence::before{content:'';display:inline-block;flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:#9ea5a8}
+.admin-account-presence.is-online::before{background:#378448}
+.admin-network-detail{display:block;margin-top:5px;font-size:11px;line-height:1.3;color:var(--text-secondary);white-space:normal}
+.admin-users-section .admin-table th:last-child,.admin-users-section .admin-table td:last-child{min-width:130px}
 .admin-users-section .admin-table tbody tr:focus-visible{outline:2px solid var(--white);outline-offset:-3px}
 .admin-danger-zone{display:flex;justify-content:flex-end}
 @media(max-width:760px){
   .admin-mobile-app .admin-users-section .admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
   .admin-mobile-app .admin-users-section .admin-table td{display:block;grid-column:auto;min-width:0;overflow-wrap:anywhere}
   .admin-mobile-app .admin-users-section .admin-table td:first-child,
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(5){grid-column:1/-1;width:auto;min-width:0}
+  .admin-mobile-app .admin-users-section .admin-table td:nth-child(5),
+  .admin-mobile-app .admin-users-section .admin-table td:nth-child(6){grid-column:1/-1;width:auto;min-width:0}
   .admin-mobile-app .admin-users-section .admin-table td:nth-child(2),
   .admin-mobile-app .admin-users-section .admin-table td:nth-child(3),
   .admin-mobile-app .admin-users-section .admin-table td:nth-child(4){grid-column:auto;display:block;justify-content:initial}
