@@ -531,15 +531,15 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-open-icon:hover{background:var(--border)}
 .admin-registry-open-icon .admin-registry-icon{width:17px;height:19px;flex:0 0 17px;color:var(--text)}
 .admin-registry-section .admin-registry-documents-table th:first-child,
-.admin-registry-section .admin-registry-documents-table td:first-child{width:240px;min-width:240px}
+.admin-registry-section .admin-registry-documents-table td:first-child{width:23%;min-width:0}
 .admin-registry-section .admin-registry-documents-table th:nth-child(2),
-.admin-registry-section .admin-registry-documents-table td:nth-child(2){width:92px;min-width:92px}
+.admin-registry-section .admin-registry-documents-table td:nth-child(2){width:9%;min-width:0}
 .admin-registry-section .admin-registry-documents-table th:nth-child(3),
-.admin-registry-section .admin-registry-documents-table td:nth-child(3){width:174px;min-width:174px}
+.admin-registry-section .admin-registry-documents-table td:nth-child(3){width:30%;min-width:0}
 .admin-registry-section .admin-registry-documents-table th:nth-child(4),
-.admin-registry-section .admin-registry-documents-table td:nth-child(4){width:148px;min-width:148px}
+.admin-registry-section .admin-registry-documents-table td:nth-child(4){width:18%;min-width:0}
 .admin-registry-section .admin-registry-documents-table th:nth-child(5),
-.admin-registry-section .admin-registry-documents-table td:nth-child(5){width:auto;min-width:0}
+.admin-registry-section .admin-registry-documents-table td:nth-child(5){width:20%;min-width:0}
 .admin-registry-section .admin-registry-documents-table .admin-registry-published-date{font-size:12px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
 .admin-registry-purpose{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:#555D62;font-size:11px;font-weight:630}
 .admin-registry-purpose-mark{display:grid;place-items:center;flex:0 0 13px;width:13px;height:13px;border:1px solid #A2AAA9;border-radius:3px;font-size:9px;line-height:1;font-weight:750}
