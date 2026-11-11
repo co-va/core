@@ -1,3 +1,4 @@
+// Compile the independent staging preview after Core main/staging release reconciliation.
 import { build, transform } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
