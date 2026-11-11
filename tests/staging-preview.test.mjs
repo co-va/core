@@ -21,6 +21,7 @@ assert.equal(resolveStagingPreviewFile('/admin/secret.exe'), null);
 assert.equal(resolveStagingPreviewFile('/user.html'), null);
 assert.match(gateway, /request\.path === '\/' \|\| request\.path === '\/admin'/);
 assert.match(gateway, /request\.path === '\/auth\/login'/);
+assert.match(gateway, /request\.path === '\/auth\/presence'/, 'Preview must forward only canonical authenticated presence');
 assert.match(gateway, /request\.path === '\/saas-admin\/document-registry\/sync'/);
 assert.match(gateway, /status\(405\)/, 'Preview writes must be refused');
 assert.match(gateway, /Cache-Control', 'no-store, no-cache, must-revalidate'/);
@@ -97,6 +98,17 @@ try {
 
   const blockedWrite = await previewRequest('/admin/admin.js', 'POST');
   assert.equal(blockedWrite.statusCode, 405, 'Caching must not weaken preview write restrictions');
+  const blockedMutation = await previewRequest('/saas-admin/tenants/test/access', 'PUT');
+  assert.equal(blockedMutation.statusCode, 405, 'Admin access modification stays blocked in preview');
+  const blockedPresenceGet = await previewRequest('/auth/presence', 'PUT');
+  assert.equal(blockedPresenceGet.statusCode, 405, 'Only the POST presence method is allowed');
+  let presenceForwarded = false;
+  await stagingPreviewMiddleware(
+    { headers: { host: STAGING_PREVIEW_HOST }, path: '/auth/presence', method: 'POST' },
+    responseProbe(),
+    () => { presenceForwarded = true; },
+  );
+  assert.equal(presenceForwarded, true, 'Presence request must reach JwtAuthGuard and canonical account handler');
 } finally {
   Date.now = originalNow;
   globalThis.fetch = originalFetch;
