@@ -16,6 +16,25 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Diagnose API, Admin, and staging gateway independently
+        shell: bash
+        run: |
+          set -uo pipefail
+          for host in admin.va-tools.ru api.va-tools.ru va-app-volokovykh.msk1.amvera.tech; do
+            echo "DNS for ${host}:"
+            getent ahostsv4 "${host}" | head -n 2 || true
+          done
+          for url in 'https://api.va-tools.ru/health' 'https://admin.va-tools.ru/admin/' 'https://va-app-volokovykh.msk1.amvera.tech/admin/'; do
+            echo "Probing ${url}"
+            curl -sS --location --connect-timeout 7 --max-time 22 \
+              --dump-header /tmp/admin-diagnostic-headers \
+              --output /tmp/admin-diagnostic-body \
+              --write-out 'status=%{http_code} remote_ip=%{remote_ip} tls=%{time_appconnect}s first_byte=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}\\n' \
+              "${url}?diag=${GITHUB_RUN_ID}" || true
+            head -n 15 /tmp/admin-diagnostic-headers || true
+            head -c 180 /tmp/admin-diagnostic-body || true
+            echo
+          done
       - name: Prove the permanent Admin domain serves the main source
         shell: bash
         run: |
