@@ -142,3 +142,9 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - При создании записи цена подтягивается из действующего прайса. Сохранённая услуга и её стоимость принадлежат самой записи; профессионал может вручную изменить стоимость. Удаление услуги из каталога не отменяет существующую запись. При редактировании или переносе сохранённые услуги берутся из Record; только новые добавленные ID проверяются по текущему каталогу. Исторические Record и Finance не переписываются.
 - Регрессия в `tests/procedure-booking-contract.test.mjs`: единый прайс без поиска истории, сохранённые услуги после удаления из каталога, ручное изменение цены, перенос, добавление новой услуги, защита удалённых/не назначенных ID, цены «от» и бесплатные услуги.
 - Только Core; Professional/User, схема БД и production-данные не изменены. Выпуск отдельным PR #863 к main после зелёных проверок и разрешения владельца.
+
+### Canonical Professional card projection to User — 2026-11-11
+- Professional has nine rows, three cells per row (`left/center/right`). Core now filters visible fields at the actual cell level, preserving Professional geometry/colors/photo and the allowed field values.
+- One shared `publicCardAppearance` projection is used for profile, workplace and assigned program cards. No duplicate layout, no invented User fields, no private Person fields.
+- Historic single-field rows remain accepted as input; unauthorized keys are cleared before delivery.
+- Test: `tests/account-contacts-card-projection.test.mjs`. Staging only; main requires explicit authorization.
