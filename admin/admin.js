@@ -479,6 +479,17 @@ function renderCurrentSection() {
       setTitle: setActiveSection,
       loadHistory: () => adminRequest('/document-registry/history'),
       loadCurrentDocuments: () => adminRequest('/document-registry/current'),
+      // This published core endpoint already exists on the live backend and
+      // returns source versions of the 3 Professional working templates.
+      // The new Admin current endpoint may not yet be deployed there.
+      loadWorkingTemplates: async () => {
+        const response = await apiRequest('/tenant-document-archive/platform-bases');
+        const items = await response.json().catch(() => []);
+        if (!response.ok || !Array.isArray(items)) {
+          throw new Error('Не удалось загрузить версии рабочих документов');
+        }
+        return items;
+      },
       // Canonical global User agreement: public snapshot endpoint is already
       // used by the User registration flow, not the Professional template base.
       loadAccountTerms: async () => {
