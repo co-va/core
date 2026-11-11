@@ -83,6 +83,21 @@ jobs:
             }
           done
           echo 'Both viewport smoke checks passed'
+          # Assert the desktop H remains fixed while actual scroll goes to Admin main.
+          timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+            --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=1440,850 --virtual-time-budget=12000 \
+            --dump-dom http://127.0.0.1:4173/tests/admin-desktop-h-scroll-smoke.html \
+            >/tmp/admin-desktop-h-scroll-dom.html 2>/tmp/admin-desktop-h-scroll-browser.log || {
+              tail -n 20 /tmp/admin-desktop-h-scroll-browser.log
+              exit 1
+            }
+          if ! grep -q 'data-admin-h-scroll="pass"' /tmp/admin-desktop-h-scroll-dom.html; then
+            echo 'Desktop H moved when overview content scrolled'
+            grep -o 'data-admin-h-scroll="[^"]*"\|data-main-scroll="[^"]*"\|data-header-start="[^"]*"\|data-header-end="[^"]*"' /tmp/admin-desktop-h-scroll-dom.html | head -n 8 || true
+            exit 1
+          fi
+          echo 'Desktop fixed H and independent content scrolling: PASS'
       - name: Publish validated preview to staging without overwriting other work
         shell: bash
         run: |
