@@ -45,6 +45,34 @@ if (policy.includes('|| actor.isOwnerBook ||')) throw new Error('Owner must not 
 if (!policy.includes("actor.commercialMode === 'DEMO' || actor.isTester || actor.isOwnerBook")) throw new Error('DEMO, testers and owner must see TESTING');
 if (policy.includes('item.enforced === true')) throw new Error('NOT_READY must not bypass readiness when enforcement was never toggled');
 if (ui.includes('data-activate-readiness=')) throw new Error('Readiness must apply as soon as the status is saved');
+
+const css = fs.readFileSync('admin/admin.css','utf8');
+const adminNav = fs.readFileSync('admin/admin.js','utf8');
+const manifest = fs.readFileSync('server/src/saas-admin/commercial-catalog.service.ts','utf8');
+if (!ui.includes("renderToolRegister('cabinet', 'Кабинет', 'Professional')") ||
+    !ui.includes("renderToolRegister('records', 'Записи', 'User')")) {
+  throw new Error('Tools must be the two document-style registries');
+}
+if (ui.includes('data-commerce-folder')) throw new Error('Separate Commerce accordion has returned');
+if (!ui.includes('data-tool-expand=') || !ui.includes('data-commercial-price') ||
+    !ui.includes('data-commercial-mode') || !ui.includes('bindInlineCommercial(content)')) {
+  throw new Error('Nested tool rows and inline auto-saving commercial controls are required');
+}
+if (!ui.includes("child.readinessKey === 'cabinet.journal.month'") ||
+    !ui.includes("nested.readinessKey === 'cabinet.timetable'")) {
+  throw new Error('Graph must stay beneath Journal / Month, without becoming another F');
+}
+for(const row of ['tool.loyalty.deposit','tool.loyalty.personal-account']) {
+  if(!manifest.includes("key: '" + row + "'")) throw new Error('Missing inline loyalty price '+row);
+}
+for(const name of ['admin-accounts-table','admin-registry-table','admin-tool-register-table']) {
+  if(!css.includes(name)) throw new Error('Missing shared registry '+name);
+}
+if(!css.includes('/* Unified three-registry 44px geometry')) throw new Error('Shared row/header geometry missing');
+if(!adminNav.includes("if (state.section !== 'tenants' || !Array.isArray(tenants)) return;")) {
+  throw new Error('Late Users network refresh must not navigate away from Tools');
+}
+
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
 
 if (!ui.includes("readinessKey: 'cabinet.profile.workspaces'")) throw new Error('Workplace readiness dropdown must be present');
