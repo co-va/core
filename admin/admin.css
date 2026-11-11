@@ -77,8 +77,23 @@ button,input,select,textarea{font:inherit}
 .admin-delete-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:24px}.admin-delete-actions .admin-button{min-width:140px;padding:13px 18px;font-size:17px}.admin-delete-actions .admin-button.danger{background:#9e3d33;color:var(--white);border-color:#9e3d33}
 @media(max-width:620px){.admin-delete-modal{padding:24px}.admin-delete-modal h2{font-size:26px}.admin-delete-copy{font-size:17px}.admin-delete-actions{display:grid;grid-template-columns:1fr 1fr}.admin-delete-actions .admin-button{min-width:0}}
 
-.admin-invite-primary-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.admin-invite-primary-actions .admin-button{min-width:150px}
-@media(max-width:900px){.admin-invite-primary-actions{justify-content:stretch}.admin-invite-primary-actions .admin-button{flex:1 1 170px}}
+/* The registration flow is one compact row; the whole left surface opens tools. */
+.admin-users-section .admin-invite-panel{padding:0 12px}
+.admin-invite-strip{display:flex;align-items:center;gap:12px;min-height:62px}
+.admin-invite-open{display:flex;align-items:center;justify-content:space-between;gap:12px;align-self:stretch;flex:1;min-width:0;padding:10px 8px;border:0;background:transparent;color:var(--text);font:inherit;font-weight:650;font-size:14px;text-align:left;cursor:pointer}
+.admin-invite-open:hover{color:var(--text-secondary)}
+.admin-invite-open:focus-visible{outline:2px solid #737f88;outline-offset:-3px;border-radius:7px}
+.admin-invite-arrow{font-size:26px;line-height:1;color:var(--text-secondary);font-weight:400}
+.admin-invite-create{min-width:142px;white-space:nowrap}
+.admin-invite-panel .admin-invite-link{margin:0 4px 12px;padding-top:12px}
+.admin-invite-panel .admin-inline-message{margin:0 4px 12px}
+.admin-invite-panel .admin-inline-message[hidden]{display:none}
+@media(max-width:760px){
+  .admin-mobile-app .admin-users-section>.admin-invite-panel{padding:0 10px}
+  .admin-mobile-app .admin-invite-strip{gap:6px;min-height:58px}
+  .admin-mobile-app .admin-invite-open{font-size:13px;padding:8px 5px}
+  .admin-mobile-app .admin-invite-create{min-width:0;min-height:40px;padding:9px 11px;font-size:12px}
+}
 
 /* Platform Admin: responsive navigation and accessible control hierarchy. */
 .admin-button:not(.secondary):not(.danger):hover:not(:disabled){background:#41484f;border-color:#41484f}
@@ -447,7 +462,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-users-layout{gap:20px}
   .admin-mobile-app .admin-users-section-title{font-size:18px;margin-bottom:10px}
   .admin-mobile-app .admin-users-section>.admin-card{padding:4px 14px;border-radius:var(--radius-card);overflow:hidden}
-  .admin-mobile-app .admin-users-section>.admin-invite-panel{padding:16px 14px;margin:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:0 2px 6px rgba(17,17,17,.035)}
+  .admin-mobile-app .admin-users-section>.admin-invite-panel{padding:0 10px;margin:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:0 2px 6px rgba(17,17,17,.035)}
 }
 
 /* Accounts: identity is a single compact field, tester is an optional account attribute. */
