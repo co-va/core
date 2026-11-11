@@ -34,8 +34,13 @@ jobs:
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           const html = readFileSync('admin/index.html', 'utf8');
-          const script = html.match(/<script type="module" data-preview-module="admin\\.js">\\n([\\s\\S]*?)\\n<\\/script>/)?.[1];
-          if (!script) throw new Error('Bundled Admin script missing');
+          const tag = '<script type="module" data-preview-module="admin.js">';
+          const tagAt = html.indexOf(tag);
+          if (tagAt < 0) throw new Error('Bundled Admin script missing');
+          const from = html.indexOf('\\n', tagAt) + 1;
+          const to = html.indexOf('\\n</script>', from);
+          if (to < from) throw new Error('Bundled Admin script does not end');
+          const script = html.slice(from, to);
           writeFileSync('/tmp/preview-admin-check.mjs', script);
           NODE
           node --check /tmp/preview-admin-check.mjs
