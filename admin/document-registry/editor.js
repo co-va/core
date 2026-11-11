@@ -53,6 +53,17 @@ export function openDocumentEditor({
   document.body.append(layer);
   const form = layer.querySelector('[data-document-editor]');
   const error = layer.querySelector('[data-editor-error]');
+  // Keep the fixed header synchronized with edits while only the document body scrolls.
+  const titleField = form?.querySelector('[name="title"]');
+  const editionField = form?.querySelector('[name="edition"]');
+  titleField?.addEventListener('input', () => {
+    const heading = layer.querySelector('.admin-drawer-head h3');
+    if (heading) heading.textContent = titleField.value.trim() || 'Новый документ';
+  });
+  editionField?.addEventListener('input', () => {
+    const label = layer.querySelector('.admin-document-head-version');
+    if (label) label.textContent = 'Черновик · Редакция ' + (editionField.value.trim() || '—');
+  });
   const controls = [...layer.querySelectorAll('[data-save-draft], [data-publish-draft]')];
   let closed = false;
   let busy = false;
