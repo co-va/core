@@ -932,13 +932,17 @@ function tenantRow(item) {
     : item.ownerProfile ? 'Разрешён' : 'Не зарегистрирован';
   const role = item.isOwnerBook ? 'Администратор' : 'Пользователь';
   const tester = !item.isOwnerBook && item.isTester
-    ? '<small class="admin-account-role-note">Тестирование включено</small>' : '';
+    ? '<small class="admin-account-role-note">Тестировщик</small>' : '';
+  // Network presence is a separate signal. Never infer it from permitted access or last login.
+  const online = item.presence?.online;
+  const presenceLabel = online === true ? 'В сети' : online === false ? 'Не в сети' : 'Сеть: нет данных';
+  const presenceClass = online === true ? 'is-online' : online === false ? 'is-offline' : 'is-unknown';
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
     <td data-label="Роль">${escapeHtml(role)}${tester}</td>
     <td data-label="Режим"><span class="admin-pill ${mode === 'LIVE' ? 'active' : 'pending'}">${escapeHtml(mode)}</span></td>
     <td data-label="Тариф">${escapeHtml(item.plan?.name || '—')}</td>
-    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span></td>
+    <td data-label="Доступ"><span class="admin-pill ${accessClass}">${accessLabel}</span><small class="admin-account-presence ${presenceClass}">${presenceLabel}</small></td>
   </tr>`;
 }
 

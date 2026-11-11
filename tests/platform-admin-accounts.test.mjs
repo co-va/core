@@ -33,12 +33,14 @@ const user = {
   access: { commercialMode: 'DEMO' },
 };
 assert.match(tenantRow(owner), /data-label="Роль">Администратор/, 'Owner role remains a dedicated field');
-assert.doesNotMatch(tenantRow(owner), /Тестирование включено/, 'Owner never shows tester flag');
+assert.doesNotMatch(tenantRow(owner), /Тестировщик/, 'Owner never shows tester flag');
 assert.match(tenantRow(owner), /data-label="Пользователь"><strong>Мой профиль<\/strong><small class="admin-account-email">owner@example.invalid<\/small><\/td>/, 'Name and email are a single identity cell');
-assert.match(tenantRow(user), /data-label="Роль">Пользователь<small class="admin-account-role-note">Тестирование включено<\/small>/, 'Tester is a non-role account flag visible only when enabled');
+assert.match(tenantRow(user), /data-label="Роль">Пользователь<small class="admin-account-role-note">Тестировщик<\/small>/, 'Tester is a concise non-role flag visible only when enabled');
 assert.match(tenantRow(user), /data-label="Режим"/);
 assert.match(tenantRow(user), /data-label="Тариф"/);
-assert.match(tenantRow(user), /data-label="Доступ"><span class="admin-pill active">Разрешён<\/span>/, 'Access allowed does not pretend to be online presence');
+assert.match(tenantRow(user), /data-label="Доступ"><span class="admin-pill active">Разрешён<\/span><small class="admin-account-presence is-unknown">Сеть: нет данных<\/small>/, 'Access allowed does not pretend to be online presence');
+assert.match(tenantRow({ ...user, presence: { online: true } }), /admin-account-presence is-online">В сети<\/small>/, 'Known online presence shares Access column');
+assert.match(tenantRow({ ...user, presence: { online: false } }), /admin-account-presence is-offline">Не в сети<\/small>/, 'Known offline presence shares Access column');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-label="Email"|data-label="Тестировщик"|Активен|В сети/, 'No redundant columns or misleading online status');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-delete-tenant|Удалить/, 'No destructive actions in table rows');
 assert.equal((tenantRow(user).match(/<td /g) || []).length, 5, 'Account table has five aligned fields');
