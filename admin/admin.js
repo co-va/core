@@ -787,39 +787,46 @@ function renderTenants() {
   const owner = state.tenants.find((item) => item.isOwnerBook);
   const tenants = state.tenants.filter((item) => !item.isOwnerBook);
   content.innerHTML = `
-    <div class="admin-heading"><div><h2>Пользователи</h2><p>Аккаунты, режимы и доступы.</p></div></div>
-    <section class="admin-invite-panel">
-      <div class="admin-invite-head">
-        <div>
-          <h3>Регистрационная ссылка</h3>
-          <p class="admin-service-note">Настрой доступ и создай одноразовую ссылку.</p>
+    <div class="admin-users-layout">
+      <section class="admin-users-section" aria-labelledby="admin-my-account-title">
+        <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
+        <div class="admin-card">
+          <table class="admin-table">
+            <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
+            <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="4">Административный аккаунт не найден.</td></tr>'}</tbody>
+          </table>
         </div>
-      </div>
-      <details class="admin-invite-access">
-        <summary>Настроить доступ по ссылке</summary>
-        ${invitationToolSelector()}
-      </details>
-      <div class="admin-invite-primary-actions">
-        <button class="admin-button" type="button" data-create-invite-link>Создать ссылку</button>
-      </div>
-      <div class="admin-invite-link" data-invite-link hidden>
-        <label class="admin-field">
-          <span>Ссылка для регистрации</span>
-          <input type="text" readonly data-invite-link-value>
-        </label>
-        <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
-      </div>
-      <p class="admin-inline-message" data-invite-message></p>
-    </section>
-    <div class="admin-card">
-      <table class="admin-table">
-        <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
-        <tbody>
-          ${owner ? '<tr class="admin-table-group"><td colspan="4">Мой аккаунт</td></tr>' + tenantRow(owner) : ''}
-          <tr class="admin-table-group"><td colspan="4">Остальные пользователи</td></tr>
-          ${tenants.map(tenantRow).join('') || '<tr><td colspan="4">Пока нет других пользователей.</td></tr>'}
-        </tbody>
-      </table>
+      </section>
+      <section class="admin-users-section" aria-labelledby="admin-registration-link-title">
+        <h2 class="admin-users-section-title" id="admin-registration-link-title">Регистрационная ссылка</h2>
+        <div class="admin-invite-panel">
+          <p class="admin-service-note">Настрой доступ для нового аккаунта и создай одноразовую ссылку.</p>
+          <details class="admin-invite-access">
+            <summary>Доступы нового аккаунта</summary>
+            ${invitationToolSelector()}
+          </details>
+          <div class="admin-invite-primary-actions">
+            <button class="admin-button" type="button" data-create-invite-link>Создать ссылку</button>
+          </div>
+          <div class="admin-invite-link" data-invite-link hidden>
+            <label class="admin-field">
+              <span>Ссылка для регистрации</span>
+              <input type="text" readonly data-invite-link-value>
+            </label>
+            <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
+          </div>
+          <p class="admin-inline-message" data-invite-message></p>
+        </div>
+      </section>
+      <section class="admin-users-section" aria-labelledby="admin-all-users-title">
+        <h2 class="admin-users-section-title" id="admin-all-users-title">Все пользователи</h2>
+        <div class="admin-card">
+          <table class="admin-table">
+            <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
+            <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="4">Пока нет других пользователей.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </section>
     </div>`;
 
   const message = content.querySelector('[data-invite-message]');

@@ -52,10 +52,20 @@ runInNewContext(source.slice(tenantsStart, tenantsEnd) + '\nrenderTenants();', {
   app: { querySelector: () => content }, state, setActiveSection: () => {},
   invitationToolSelector: () => '', tenantRow, escapeHtml,
 });
-assert.ok(markup.indexOf('Мой аккаунт') < markup.indexOf('data-tenant="owner-id"'));
-assert.ok(markup.indexOf('data-tenant="owner-id"') < markup.indexOf('Остальные пользователи'));
-assert.ok(markup.indexOf('Остальные пользователи') < markup.indexOf('data-tenant="person-id"'));
+const sectionTitles = [...markup.matchAll(/class="admin-users-section-title"[^>]*>([^<]+)/g)].map((match) => match[1]);
+assert.deepEqual(sectionTitles, ['Мой аккаунт', 'Регистрационная ссылка', 'Все пользователи'], 'Three independent cards in requested order');
+assert.equal((markup.match(/class="admin-users-section"/g) || []).length, 3, 'Exactly three working sections');
+assert.equal((markup.match(/class="admin-card"/g) || []).length, 2, 'Owner and users have separate cards');
+assert.equal((markup.match(/class="admin-invite-panel"/g) || []).length, 1, 'Registration card is independent');
+assert.ok(markup.indexOf('data-tenant="owner-id"') < markup.indexOf('Регистрационная ссылка'), 'Owner always above invitation');
+assert.ok(markup.indexOf('data-create-invite-link') < markup.indexOf('Все пользователи'), 'Invitation actions before user list');
+assert.ok(markup.indexOf('Все пользователи') < markup.indexOf('data-tenant="person-id"'), 'Other accounts in the final growing block');
 assert.equal((markup.match(/data-tenant="owner-id"/g) || []).length, 1, 'Existing owner tenant must be reused once');
+assert.equal((markup.match(/data-tenant="person-id"/g) || []).length, 1, 'Existing user must not be duplicated');
+assert.doesNotMatch(markup, /admin-table-group|Остальные пользователи|admin-heading/, 'No grey separators or duplicate page title');
+assert.match(markup, /data-select-all-invite-tools/);
+assert.match(markup, /data-create-invite-link/);
+assert.match(markup, /data-copy-invite-link/);
 
 const drawer = source.slice(source.indexOf('function openAccessDrawer('), source.indexOf('document.addEventListener(\'admin:tool-readiness-changed\''));
 assert.match(drawer, /tenant\.isOwnerBook \? '' :/, 'Owner has no suspend control');
