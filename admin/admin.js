@@ -479,6 +479,16 @@ function renderCurrentSection() {
       setTitle: setActiveSection,
       loadHistory: () => adminRequest('/document-registry/history'),
       loadCurrentDocuments: () => adminRequest('/document-registry/current'),
+      loadDrafts: () => adminRequest('/document-registry/drafts'),
+      saveDraft: (draft) => adminRequest('/document-registry/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      }),
+      publishDraft: (key) => adminRequest('/document-registry/drafts/' + encodeURIComponent(key) + '/publish', {
+        method: 'POST',
+      }),
+      loadVersions: () => adminRequest('/document-registry/versions'),
       // This published core endpoint already exists on the live backend and
       // returns source versions of the 3 Professional working templates.
       // The new Admin current endpoint may not yet be deployed there.
