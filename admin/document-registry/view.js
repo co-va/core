@@ -141,7 +141,8 @@ function historyTable(escapeHtml) {
     return '<tr>' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version">' + version + '</span></td>' +
-      '<td data-label="Аккаунт"><span class="admin-registry-history-account" title="' + account + ' · ' + subject + '">' + account + '</span></td>' +
+      '<td data-label="Аккаунт"><span class="admin-registry-history-account" title="' + account + ' · ' + subject + '">' +
+      '<span class="admin-registry-account-email">' + account + '</span><small class="admin-registry-account-app">' + subject + '</small></span></td>' +
       '<td data-label="Дата"><time>' + moment + '</time></td>' +
       '<td data-label="Событие"><span class="admin-pill ' + status + '">' + action + '</span></td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-history="' + id +
