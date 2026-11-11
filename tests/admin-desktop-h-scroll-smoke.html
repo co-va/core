@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin desktop H scroll smoke</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../admin/admin.css">
+  <style>.admin-scroll-fixture-content{height:2400px}</style>
+</head>
+<body>
+  <div id="admin-app">
+    <div class="admin-shell">
+      <aside class="admin-sidebar">
+        <div class="admin-brand">ACVERO<span>Администратор</span></div>
+        <nav class="admin-nav"><button class="is-active">Обзор</button></nav>
+      </aside>
+      <header class="admin-toolbar">
+        <div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Обзор</span></div>
+        <div class="admin-toolbar-user"><span>admin@example.invalid</span><button class="admin-session-icon" aria-label="Выйти"></button></div>
+      </header>
+      <main class="admin-main">
+        <div class="admin-content">
+          <div class="admin-scroll-fixture-content">Scrollable overview content</div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('load', () => {
+      const header = document.querySelector('.admin-toolbar');
+      const side = document.querySelector('.admin-sidebar');
+      const main = document.querySelector('.admin-main');
+      const beforeHeader = header.getBoundingClientRect();
+      const beforeSide = side.getBoundingClientRect();
+      main.scrollTop = 620;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const afterHeader = header.getBoundingClientRect();
+        const afterSide = side.getBoundingClientRect();
+        const pass = main.scrollTop >= 600
+          && Math.abs(afterHeader.top - beforeHeader.top) < 2
+          && Math.abs(afterSide.top - beforeSide.top) < 2
+          && afterHeader.top >= -1
+          && window.scrollY === 0;
+        document.documentElement.dataset.adminHScroll = pass ? 'pass' : 'fail';
+        document.documentElement.dataset.mainScroll = String(main.scrollTop);
+        document.documentElement.dataset.headerStart = String(Math.round(beforeHeader.top));
+        document.documentElement.dataset.headerEnd = String(Math.round(afterHeader.top));
+      }));
+    });
+  </script>
+</body>
+</html>
