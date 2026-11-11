@@ -29,6 +29,7 @@ const SHORT_TITLES = Object.freeze({
   'user-document-pdn-consent': 'Согласие ПДН',
   'user-document-messages-consent': 'Маркетинг',
   'account-terms': 'Условия аккаунта',
+  'platform-privacy-policy': 'Политика ПДН',
 });
 
 // Source content provenance: Git commits that introduced/last changed these
@@ -104,6 +105,7 @@ function sectionMarkup(title, application, body, escapeHtml, extra = '') {
 
 // A label describes the document's purpose, never whether this administrator signed it.
 function documentPurpose(item) {
+  if (item.key === 'platform-privacy-policy') return 'Ознакомление';
   if (item.type === 'RKN_GUIDE_TEMPLATE') return 'Справочный';
   // These working templates are provided to Professional but define the
   // downstream purpose for that Professional's own User-facing documents.
@@ -135,8 +137,8 @@ function documentStatus(item) {
 function documentStatusMarkup(item) {
   const status = documentStatus(item);
   // Reuse the same badge already used for History events and Users.
-  return '<span class="admin-pill ' +
-    (status === 'Рабочий' ? 'pending' : 'active') + '">' + status + '</span>';
+  return '<span class="admin-pill' +
+    (status === 'Правовой' ? ' active' : '') + '">' + status + '</span>';
 }
 
 function documentTable(items, escapeHtml, application) {
@@ -286,7 +288,7 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   sourceButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const key = button.dataset.registryDocument;
-      const selected = currentDocumentsByKey.get(key) || getRegistryDocument(key);
+      const selected = currentDocumentsByKey.get(key) || user.find((item) => item.key === key) || getRegistryDocument(key);
       // Account terms must come from the real platform snapshot, not a dummy
       // legal body; source descriptors deliberately contain no document text.
       if (selected?.content) openDocument(selected);
