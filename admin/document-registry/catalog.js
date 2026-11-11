@@ -38,6 +38,17 @@ export const PLATFORM_USER_DOCUMENT_REFERENCES = Object.freeze([
     issuedAt: '21.09.2026',
     content: '',
   }),
+  // Source of truth: core DB PlatformDocumentVersion, seeded from the exact
+  // original User policy. Never include legal text in this UI descriptor.
+  Object.freeze({
+    key: 'platform-privacy-policy',
+    type: 'PRIVACY_POLICY',
+    title: 'Политика обработки персональных данных',
+    requiredForRegistration: false,
+    edition: '1',
+    issuedAt: '01.11.2026',
+    content: '',
+  }),
 ]);
 
 export function getRegistryPlatformUserDocuments() {
