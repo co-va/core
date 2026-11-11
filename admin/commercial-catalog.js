@@ -455,6 +455,7 @@ function flatToolKey(area, item, parentKey) {
 }
 
 function toolDisplayName(item) {
+  if (item.readinessKey === 'cabinet.profile.workspaces') return 'Рабочее пространство';
   return String(item.label || '').startsWith('График (') ? 'График' : item.label;
 }
 
@@ -498,8 +499,8 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       '><td><div class="admin-tool-registry-name" style="--tool-depth:' + depth + '">' +
       toggle + '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
       '<td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
-      '<td>' + readiness + '</td><td>' + payment + '</td><td>' + price +
-      '<small class="admin-tool-registry-save-state" aria-live="polite"></small></td></tr>';
+      '<td>' + readiness + '</td><td>' + payment + '</td><td><div class="admin-tool-registry-cost">' + price +
+      '<small class="admin-tool-registry-save-state" aria-live="polite"></small></div></td></tr>';
     return row + (expandable
       ? toolRegisterRows(area, groupedChildren, byKey, depth + 1, [...ancestorIds, id], key)
       : '');
@@ -550,13 +551,12 @@ function bindInlineCommercial(content) {
     const message = row.querySelector('.admin-tool-registry-save-state');
     if (!price || !mode) return;
     const save = async (event) => {
+      const isPrice = event.currentTarget === price;
       if (pending.has(row)) {
         // A later edit is written after the current request, never raced over it.
-        await pending.get(row);
+        try { await pending.get(row); } catch { /* The first handler shows the error. */ }
         if (!row.isConnected) return;
       }
-      const target = event.currentTarget;
-      const isPrice = target === price;
       const rub = Number(String(price.value).replace(',', '.'));
       if (isPrice && (!Number.isFinite(rub) || rub < 0 || !Number.isInteger(Math.round(rub * 100)))) {
         price.value = price.dataset.previous || '0';
