@@ -401,6 +401,8 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
         const item = sourceFor(key);
         const cell = row.querySelector('td[data-label="Статус"]');
         if (cell && item) cell.innerHTML = documentStatusMarkup(item, draftKeys.has(key));
+        const purposeCell = row.querySelector('td[data-label="Назначение"]');
+        if (purposeCell && item) purposeCell.innerHTML = purposeMarkup(documentPurpose(item), documentStatus(item));
       }
     }
   };
