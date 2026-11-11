@@ -549,7 +549,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
    All six column tracks remain aligned across Professional, User and History. */
 @media(min-width:761px){
   .admin-registry-section .admin-registry-table thead th{
-    height:66px;
+    height:44px;
     background:var(--admin-pearl);
     color:#41484F;
     font-size:15px;
