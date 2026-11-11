@@ -360,7 +360,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tool-counts{display:flex;flex-wrap:wrap;gap:18px 28px;margin-bottom:16px;font-size:13px;color:#454A4C}
 .admin-overview-tool-counts>span{display:flex;align-items:center;gap:8px}
 .admin-overview-tool-counts strong{font-variant-numeric:tabular-nums;color:#222;font-size:14px}
-.admin-overview-tool-counts i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.admin-overview-tool-counts i{width:12px;height:12px;border-radius:0;display:inline-block;flex:0 0 12px}
 .admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:var(--surface-dark)}
 .admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:#FFFF00}
 .admin-overview-tool-counts .is-not-ready,.admin-overview-tool-track .is-not-ready{background:var(--admin-pearl)}
@@ -833,12 +833,11 @@ html:has(.admin-shell){background:var(--surface-dark)}
     line-height:1.2;
     letter-spacing:0;
   }
-  .admin-shell .admin-nav button,
+  .admin-shell .admin-nav button{
+    color:var(--white);
+  }
   .admin-shell .admin-sidebar-foot{
     color:var(--admin-pearl);
-  }
-  .admin-shell .admin-nav button[data-section="document-registry"]{
-    color:var(--white);
   }
   .admin-shell .admin-toolbar-context{
     color:var(--admin-pearl);
