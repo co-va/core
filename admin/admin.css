@@ -542,7 +542,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 /* Unified compact registries: the legal/archive data are unchanged. */
 .admin-registry-section .admin-registry-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-table th,
-.admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;border-bottom-color:var(--admin-pearl)}
 /* Preserve the original compact mobile header. */
 .admin-registry-section .admin-registry-table thead th{height:34px}
 /* Desktop/iPad registry: one approved pearl background and existing secondary ink.
