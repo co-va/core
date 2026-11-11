@@ -60,6 +60,37 @@ export class SaasAdminService {
     });
   }
 
+  // User dashboard counts Account identities, never Person/UEI/contact rows or bookings.
+  // Deleted User accounts are retained as anonymized tombstones and excluded.
+  async userAccountOverview() {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [accounts, logins] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ registered: bigint; new30: bigint }>>`
+        SELECT
+          COUNT(*)::bigint AS "registered",
+          COUNT(*) FILTER (WHERE "createdAt" >= ${since})::bigint AS "new30"
+        FROM "Account"
+        WHERE COALESCE("profileData"->>'deletedAt', '') = ''
+      `,
+      this.prisma.$queryRaw<Array<{ logged30: bigint }>>`
+        SELECT COUNT(DISTINCT e."subjectAccountId")::bigint AS "logged30"
+        FROM "PlatformActivityEvent" e
+        INNER JOIN "Account" a ON a."id" = e."subjectAccountId"
+        WHERE e."eventType" = 'AUTH_LOGIN_SUCCEEDED'
+          AND e."occurredAt" >= ${since}
+          AND e."metadata"->'source'->>'surface' = 'user'
+          AND COALESCE(a."profileData"->>'deletedAt', '') = ''
+      `,
+    ]);
+    return {
+      registered: Number(accounts[0]?.registered ?? 0n),
+      newLast30Days: Number(accounts[0]?.new30 ?? 0n),
+      loggedInLast30Days: Number(logins[0]?.logged30 ?? 0n),
+      periodDays: 30,
+      loginMetric: 'recorded-successful-user-logins',
+    };
+  }
+
   async tenants() {
     await this.invitations.ensureStarterPlan();
     const rows = await this.prisma.tenantAccess.findMany({
