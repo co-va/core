@@ -119,7 +119,7 @@ const summariesMethod = between(service, '  private async programSummaries(', ' 
   .replace('  private async programSummaries(', 'async function programSummaries(');
 const presentationHelpers = between(service, 'function publicProgramCard(', '// A discount may be shown');
 const programRuntime = runInNewContext(
-  stripTypeScriptTypes(accountHelpers + '\n' + presentationHelpers + '\n'
+  stripTypeScriptTypes(accountHelpers + '\n' + publicCardHelpers + '\n' + presentationHelpers + '\n'
     + visibleMethod + '\n' + summariesMethod, { mode: 'strip' })
     + '\n({ visibleDepositSummaries, programSummaries })',
   {
