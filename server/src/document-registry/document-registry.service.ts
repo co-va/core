@@ -14,16 +14,17 @@ export class DocumentRegistryService {
       title: string;
       type: string;
       requiredForRegistration: boolean;
+      purpose: string | null;
       version: number;
       content: string;
       publishedAt: Date;
     }>>`
-      SELECT d."key", d."title", d."type", d."requiredForRegistration",
+      SELECT d."key", d."title", d."type", d."requiredForRegistration", d."purpose",
              v."version", v."contentSnapshot" AS "content", v."publishedAt",
              v."editorEdition", ed."application"
       FROM "PlatformDocument" d
       JOIN LATERAL (
-        SELECT "version", "contentSnapshot", "publishedAt"
+        SELECT "version", "contentSnapshot", "publishedAt", "editorEdition"
         FROM "PlatformDocumentVersion"
         WHERE "documentId" = d."id"
         ORDER BY "version" DESC, "publishedAt" DESC
@@ -41,10 +42,10 @@ export class DocumentRegistryService {
   async adminDrafts() {
     return this.prisma.$queryRaw<Array<{
       key: string; application: string; title: string; type: string; content: string;
-      edition: string; requiredForRegistration: boolean; baseVersion: number;
+      edition: string; requiredForRegistration: boolean; purpose: string; baseVersion: number;
     }>>`
       SELECT "key","application","title","type","content","edition",
-             "requiredForRegistration","baseVersion"
+             "requiredForRegistration","purpose","baseVersion"
       FROM "PlatformDocumentDraft"
       WHERE "draftActive" = true
       ORDER BY "createdAt" ASC
@@ -76,9 +77,9 @@ export class DocumentRegistryService {
       FROM "PlatformDocumentDraft" WHERE "key" = ${key}
     `;
     const existing = await this.prisma.$queryRaw<Array<{
-      version: number; type: string; requiredForRegistration: boolean;
+      version: number; type: string; requiredForRegistration: boolean; purpose: string | null;
     }>>`
-      SELECT v."version",d."type",d."requiredForRegistration"
+      SELECT v."version",d."type",d."requiredForRegistration",d."purpose"
       FROM "PlatformDocument" d
       LEFT JOIN LATERAL (
         SELECT "version" FROM "PlatformDocumentVersion"
@@ -96,27 +97,37 @@ export class DocumentRegistryService {
       throw new BadRequestException('Документ принадлежит другому приложению');
     }
     const requestedType = String(body.type || '').toUpperCase();
-    const type = existing[0]?.type || (requestedType === 'CUSTOM_WORKING' ? 'CUSTOM_WORKING' : 'CUSTOM_LEGAL');
-    const required = existing.length ? Boolean(existing[0].requiredForRegistration) : Boolean(body.requiredForRegistration);
+    if (!['CUSTOM_LEGAL', 'CUSTOM_WORKING'].includes(requestedType)) {
+      throw new BadRequestException('Выберите статус документа: Правовой или Рабочий');
+    }
+    // Built-in legal source types are immutable; only custom document types can be changed.
+    const type = existing[0] && !['CUSTOM_LEGAL', 'CUSTOM_WORKING'].includes(existing[0].type)
+      ? existing[0].type : requestedType;
+    const purpose = String(body.purpose || '').toUpperCase();
+    if (!['REQUIRED', 'OPTIONAL', 'READING', 'REFERENCE'].includes(purpose)) {
+      throw new BadRequestException('Выберите назначение документа');
+    }
+    const required = purpose === 'REQUIRED';
     const baseVersion = saved[0]?.draftActive
       ? Number(saved[0].baseVersion)
       : Number(existing[0]?.version || 0);
     await this.prisma.$executeRaw`
       INSERT INTO "PlatformDocumentDraft" (
         "key","application","title","type","content","edition",
-        "requiredForRegistration","baseVersion","draftActive","publishedOnce"
+        "requiredForRegistration","purpose","baseVersion","draftActive","publishedOnce"
       ) VALUES (
         ${key},${application},${title},${type},${content},${edition},
-        ${required},${baseVersion},true,false
+        ${required},${purpose},${baseVersion},true,false
       )
       ON CONFLICT ("key") DO UPDATE SET
         "title"=EXCLUDED."title","type"=EXCLUDED."type",
         "content"=EXCLUDED."content","edition"=EXCLUDED."edition",
         "requiredForRegistration"=EXCLUDED."requiredForRegistration",
+        "purpose"=EXCLUDED."purpose",
         "baseVersion"=EXCLUDED."baseVersion","draftActive"=true,
         "updatedAt"=CURRENT_TIMESTAMP
     `;
-    return { key, application, title, type, content, edition, requiredForRegistration: required, baseVersion };
+    return { key, application, title, type, content, edition, requiredForRegistration: required, purpose, baseVersion };
   }
 
   async publishAdminDraft(keyInput: string) {
@@ -127,9 +138,9 @@ export class DocumentRegistryService {
     return this.prisma.$transaction(async (tx) => {
       const drafts = await tx.$queryRaw<Array<{
         key: string; title: string; type: string; content: string; edition: string;
-        requiredForRegistration: boolean; baseVersion: number;
+        requiredForRegistration: boolean; purpose: string; baseVersion: number;
       }>>`
-        SELECT "key","title","type","content","edition","requiredForRegistration","baseVersion"
+        SELECT "key","title","type","content","edition","requiredForRegistration","purpose","baseVersion"
         FROM "PlatformDocumentDraft"
         WHERE "key" = ${key} AND "draftActive" = true FOR UPDATE
       `;
@@ -164,13 +175,15 @@ export class DocumentRegistryService {
       }
       await tx.$executeRaw`
         INSERT INTO "PlatformDocument" (
-          "id","key","type","title","requiredForRegistration",
+          "id","key","type","title","requiredForRegistration","purpose",
           "requiredForLive","requiredForPublicBooking","isActive","createdAt","updatedAt"
         ) VALUES (
           ${documentId},${key},${draft.type},${draft.title},
-          ${draft.requiredForRegistration},false,false,true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+          ${draft.requiredForRegistration},${draft.purpose},false,false,true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
         ) ON CONFLICT ("key") DO UPDATE SET
-          "title"=EXCLUDED."title","isActive"=true,"updatedAt"=CURRENT_TIMESTAMP
+          "title"=EXCLUDED."title","type"=EXCLUDED."type",
+          "requiredForRegistration"=EXCLUDED."requiredForRegistration",
+          "purpose"=EXCLUDED."purpose","isActive"=true,"updatedAt"=CURRENT_TIMESTAMP
       `;
       if (latest.length) {
         await tx.$executeRaw`
