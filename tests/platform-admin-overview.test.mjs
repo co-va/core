@@ -109,9 +109,9 @@ assert.match(styles, /\.admin-toolbar\{position:relative;z-index:2;min-height:68
 // Admin visual contract: pearl is the single approved warm accent, yellow marks READY only.
 assert.match(styles, /\.admin-overview-bar\{[^}]*background:var\(--admin-pearl\)/, 'Overview bars use the same pearl as the document header');
 assert.match(styles, /\.admin-overview-bar\.is-current\{background:var\(--admin-pearl\)\}/, 'Last overview bar does not revert to graphite');
-assert.match(styles, /\.admin-overview-tool-counts \.is-ready,\.admin-overview-tool-track \.is-ready\{background:#FFFF00\}/, 'Ready is canonical yellow');
-assert.match(styles, /\.admin-overview-tool-counts \.is-testing,\.admin-overview-tool-track \.is-testing\{background:var\(--admin-pearl\)\}/, 'Testing uses approved pearl');
-assert.match(styles, /\.admin-overview-tool-counts \.is-not-ready,\.admin-overview-tool-track \.is-not-ready\{background:#D7D7D3\}/, 'Not ready retains prior gray');
+assert.match(styles, /\.admin-overview-tool-counts \.is-ready,\.admin-overview-tool-track \.is-ready\{background:var\(--surface-dark\)\}/, 'Ready is canonical graphite');
+assert.match(styles, /\.admin-overview-tool-counts \.is-testing,\.admin-overview-tool-track \.is-testing\{background:#FFFF00\}/, 'Testing is canonical yellow');
+assert.match(styles, /\.admin-overview-tool-counts \.is-not-ready,\.admin-overview-tool-track \.is-not-ready\{background:var\(--admin-pearl\)\}/, 'Not ready uses approved pearl');
 assert.match(styles, /\.admin-users-section \.admin-accounts-table thead th\{[^}]*height:44px;[^}]*background:var\(--admin-pearl\);[^}]*color:#41484F;[^}]*font-size:15px;[^}]*text-transform:uppercase;/, 'Users table headers match the document registry');
 assert.match(styles, /\.admin-users-section \.admin-accounts-table tbody td\{border-bottom-color:var\(--admin-pearl\)\}/, 'Users row dividers match the shared pearl header');
 assert.match(markup, /\u2014/, 'Unavailable User metrics must not claim zero');
