@@ -28,8 +28,8 @@ assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredFo
 assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
 assert.match(docService, /v\."publishedAt"/, 'Publication date is supplied by current persisted version');
 assert.match(css, /admin-registry-table tbody tr\{height:44px\}/, 'Compact 44px rows for all three sections');
-assert.match(css, /admin-registry-table thead th\\{[\\s\\S]*?height:44px;[\\s\\S]*?background:var\\(--white\\);[\\s\\S]*?color:var\\(--text\\);[\\s\\S]*?font-size:13px;[\\s\\S]*?text-transform:none;/,
-  'The registry header is 44px, white, 13px dark ink and matches row rhythm');
+assert.match(css, /admin-registry-table thead th\{[\s\S]*?height:66px;[\s\S]*?background:var\(--surface-dark\);[\s\S]*?color:var\(--white\);[\s\S]*?font-size:13px;[\s\S]*?text-transform:none;/,
+  'Registry header is 66px graphite with high-contrast white 13px labels');
 
 assert.match(css, /admin-registry-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
 assert.match(css, /admin-registry-documents-table th:first-child/, 'Document names get remaining width instead of user identity 31%');
