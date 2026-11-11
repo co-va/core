@@ -28,8 +28,8 @@ assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredFo
 assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
 assert.match(docService, /v\."publishedAt"/, 'Publication date is supplied by current persisted version');
 assert.match(css, /admin-registry-table tbody tr\{height:44px\}/, 'Compact 44px rows for all three sections');
-assert.match(css, /@media\(min-width:761px\)\{[\s\S]*?admin-registry-table thead th\{[\s\S]*?height:66px;[\s\S]*?background:var\(--surface-dark\);[\s\S]*?color:var\(--white\);[\s\S]*?font-size:13px;[\s\S]*?text-transform:none;/,
-  'Desktop/iPad registry header is 66px graphite with white 13px labels');
+assert.match(css, /@media\(min-width:761px\)\{[\s\S]*?admin-registry-table thead th\{[\s\S]*?height:66px;[\s\S]*?background:#EDE8E1;[\s\S]*?color:#735E49;[\s\S]*?font-size:13px;[\s\S]*?text-transform:none;/,
+  'Desktop/iPad registry header is 66px warm ivory with beige 13px labels');
 assert.match(css, /admin-registry-table thead th\{height:34px\}/, 'Original mobile header stays at 34px');
 
 assert.match(css, /admin-registry-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
