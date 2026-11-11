@@ -38,9 +38,9 @@ const professionalDocs = [
 ];
 const guideDocs = [{ key: 'rkn-notification-guide-template', type: 'RKN_GUIDE_TEMPLATE', title: 'Инструкция РКН', version: 1, content: 'G' }];
 const userDocs = [
-  { key: 'user-document-pdn-policy', title: 'Условия ПДН', version: 1, content: 'H' },
-  { key: 'user-document-pdn-consent', title: 'Согласие ПДН', version: 1, content: 'I' },
-  { key: 'user-document-messages-consent', title: 'Согласие на сообщения', version: 1, content: 'J' },
+  { key: 'user-document-pdn-policy', type: 'USER_DOCUMENT_BASE', title: 'Условия ПДН', version: 1, content: 'H' },
+  { key: 'user-document-pdn-consent', type: 'USER_DOCUMENT_BASE', title: 'Согласие ПДН', version: 1, content: 'I' },
+  { key: 'user-document-messages-consent', type: 'USER_DOCUMENT_BASE', title: 'Согласие на сообщения', version: 1, content: 'J' },
 ];
 const accountTermsDocs = [{
   key: 'account-terms',
@@ -214,8 +214,17 @@ assert.match(fullMarkup, /data-registry-version="privacy-policy">1\.1<\/span>/, 
 assert.match(fullMarkup, /data-registry-version="saas-agreement">1\.2<\/span>/, 'Second legal revision comes from source');
 assert.equal(versionNodes[0].textContent, '1.1');
 assert.equal(versionNodes[1].textContent, '1.2');
+assert.match(secondSection, /data-registry-document="account-terms"[^>]*disabled aria-disabled="true"/, 'Canonical User agreement waits for its real text');
 
 await Promise.resolve();
+fulfillAccountTerms({
+  key: 'account-terms',
+  type: 'ACCOUNT_TERMS',
+  title: 'Условия использования учётной записи',
+  version: 1,
+  content: 'Условия использования учётной записи\\nРедакция 1 от 21.09.2026\\nДействующий юридический текст',
+  publishedAt: '2026-11-11T08:00:00.000Z',
+});
 fulfillCurrent([
   { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Book — юридическая редакция 1.3 от 11.11.2026', publishedAt: '2026-11-12T00:00:00.000Z' },
   { key: 'user-document-pdn-policy', title: 'Условия ПДН', type: 'USER_DOCUMENT_BASE', version: 4, content: 'Current User edition from the database', publishedAt: '2026-11-04T13:30:00.000Z' },
@@ -228,6 +237,9 @@ assert.equal(versionNodes[6].textContent, '—', 'No legal edition in User templ
 assert.equal(dateNodes[0].textContent, '11.11.2026', 'Document header revision date takes priority over technical save timestamp');
 assert.equal(dateNodes[6].textContent, '04.11.2026', 'User template date is taken from the persisted publishedAt');
 assert.equal(dateNodes[9].textContent, '03.10.2026', 'RKN source date remains available without preview read endpoint');
+assert.equal(versionNodes[10].textContent, '1', 'Global User terms edition comes from canonical source');
+assert.equal(dateNodes[10].textContent, '21.09.2026', 'Legal edition date precedes technical publish timestamp');
+assert.equal(buttons[10].disabled, false, 'Global User document becomes available with real source text');
 buttons[0].click();
 assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
@@ -258,4 +270,8 @@ assert.deepEqual({ ...modalOptions }, { title: 'Документ', variant: 'q',
 assert.match(mounted.html, /Exact signed user snapshot/, 'History opens immutable saved document snapshot');
 assert.equal(opened.length, 1, 'Mobile document does not create another desktop drawer');
 assert.match(historySource, /documentContent: String\(item\.documentContent/, 'History retains immutable version content');
-console.log('Admin Document Registry: consistent signed legal editions, actual source dates and compact two-line history PASS');
+isMobile = false;
+buttons[10].click();
+assert.equal(opened.length, 2, 'User terms open from the real legal source, not an empty placeholder');
+assert.match(opened[1].innerHTML, /Условия использования учётной записи \/ 1 \/ Условия/, 'User terms snapshot opens in the document reader');
+console.log('Admin Document Registry: Professional 10 (6 legal + 4 working), User 1 legal, canonical account terms, shared geometry PASS');
