@@ -104,7 +104,8 @@ function actionState(value) {
 function sectionMarkup(title, application, body, escapeHtml, extra = '') {
   const app = String(application || '').toLowerCase();
   const canCreate = app === 'professional' || app === 'user';
-  return '<section class="admin-users-section admin-registry-section" ' + extra + '>' +
+  return '<section class="admin-users-section admin-registry-section' +
+    (canCreate ? '' : ' admin-registry-history-section') + '" ' + extra + '>' +
     (canCreate ? '<div class="admin-registry-section-title-line">' : '') +
     '<h2 class="admin-users-section-title">' + escapeHtml(title) +
       (application ? '<span class="admin-registry-app"> / ' + escapeHtml(application) + '</span>' : '') + '</h2>' +
@@ -115,6 +116,9 @@ function sectionMarkup(title, application, body, escapeHtml, extra = '') {
 
 // A label describes the document's purpose, never whether this administrator signed it.
 function documentPurpose(item) {
+  const chosen = { REQUIRED: 'Обязательно', OPTIONAL: 'Необязательно',
+    READING: 'Ознакомление', REFERENCE: 'Справочный' }[String(item?.purpose || '')];
+  if (chosen) return chosen;
   if (item.key === 'platform-privacy-policy') return 'Ознакомление';
   if (item.type === 'RKN_GUIDE_TEMPLATE') return 'Справочный';
   // These working templates are provided to Professional but define the
@@ -329,8 +333,13 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       return;
     }
     if (item?.key && !item.content && !draftsByKey.has(item.key)) return;
+    const purpose = documentPurpose(item || {});
     openDocumentEditor({
-      item,
+      item: item ? {
+        ...item,
+        purpose: ({ 'Обязательно': 'REQUIRED', 'Необязательно': 'OPTIONAL',
+          'Ознакомление': 'READING', 'Справочный': 'REFERENCE' })[purpose],
+      } : null,
       draft: item?.key ? draftsByKey.get(item.key) || null : null,
       application,
       saveDraft, publishDraft,
