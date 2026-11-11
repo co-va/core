@@ -15,6 +15,20 @@
   <link rel="stylesheet" href="../ui/documents/document.css">
   <link rel="stylesheet" href="../ui/commercial-catalog.css">
   <link rel="stylesheet" href="./admin.css">
+  <!-- Parallelize the Admin module graph on the remote staging gateway.
+       Each uncached module otherwise waits for its parent's GitHub proxy fetch. -->
+  <link rel="modulepreload" href="../core/auth.js">
+  <link rel="modulepreload" href="./document-registry/view.js">
+  <link rel="modulepreload" href="./document-registry/catalog.js">
+  <link rel="modulepreload" href="./commercial-catalog.js">
+  <link rel="modulepreload" href="../ui/inputs/index.js">
+  <link rel="modulepreload" href="../ui/v2/sticker.js">
+  <link rel="modulepreload" href="../ui/v2/shell.js">
+  <link rel="modulepreload" href="../ui/v2/header.js">
+  <link rel="modulepreload" href="../ui/v2/card-deck.js">
+  <link rel="modulepreload" href="../ui/v2/workspace-navigation.js">
+  <link rel="modulepreload" href="../ui/modals/index.js">
+  <link rel="modulepreload" href="../ui/buttons/index.js">
 </head>
 <body>
   <div id="admin-app"></div>
