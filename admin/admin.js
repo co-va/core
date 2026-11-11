@@ -121,7 +121,8 @@ async function enableAdminPush(promptUser = false) {
 // role selectors or the registration-link editor just to refresh online labels.
 async function refreshTenantNetwork() {
   const tenants = await adminRequest('/tenants');
-  if (!Array.isArray(tenants)) return;
+  // A request started in Users must never redraw Users after navigation to Tools.
+  if (state.section !== 'tenants' || !Array.isArray(tenants)) return;
   const content = app.querySelector('[data-content]');
   state.tenants = tenants;
   const liveRows = [...(content?.querySelectorAll('[data-tenant]') || [])];
