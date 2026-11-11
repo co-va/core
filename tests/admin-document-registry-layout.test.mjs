@@ -23,13 +23,13 @@ assert.match(admin, /loadCurrentDocuments: \(\) => adminRequest\('\/document-reg
 assert.match(docController, /@Get\('document-registry\/current'\)/);
 assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredForRegistration"/);
 assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
-assert.match(css, /admin-registry-documents-table tbody tr\{height:66px\}/, 'All desktop document rows share the same height');
-assert.match(css, /admin-registry-documents-table \.admin-registry-title\{text-wrap:balance/, 'Full titles are naturally balanced, not truncated');
+assert.match(css, /admin-registry-documents-table tbody tr\{height:44px\}/, 'Compact 44px document rows');
+assert.match(css, /admin-registry-documents-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
 assert.match(css, /admin-registry-documents-table th:first-child/, 'Document names get remaining width instead of user identity 31%');
 
 const professionalDocs = [
-  { key: 'privacy-policy', title: 'Политика', version: 3, content: 'A', requiredForRegistration: true },
-  { key: 'saas-agreement', title: 'Соглашение', version: 2, content: 'B', requiredForRegistration: true },
+  { key: 'privacy-policy', title: 'Политика', version: 3, content: 'Book — юридическая редакция 1.1 от 16.09.2026', requiredForRegistration: true },
+  { key: 'saas-agreement', title: 'Соглашение', version: 2, content: 'Book — юридическая редакция 1.2 от 18.09.2026', requiredForRegistration: true },
   { key: 'platform-processor-consent', title: 'Согласие оператора', version: 1, content: 'C', requiredForRegistration: true },
   { key: 'marketing-consent', title: 'Маркетинг', version: 1, content: 'D', requiredForRegistration: false },
   { key: 'public-profile-consent', title: 'Публичный профиль', version: 1, content: 'E', requiredForRegistration: false },
@@ -112,7 +112,7 @@ const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll(
 let fulfillHistory;
 let fulfillCurrent;
 const versionNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
-  dataset: { registryVersion: doc.key }, textContent: '—',
+  dataset: { registryVersion: doc.key }, textContent: doc.key === 'privacy-policy' ? '1.1' : doc.key === 'saas-agreement' ? '1.2' : '—',
 }));
 let title = '';
 const rendered = registry.renderDocumentRegistry(root, {
@@ -141,23 +141,28 @@ assert.equal((fullMarkup.match(/is-reading/g) || []).length, 1, 'User privacy no
 assert.equal((fullMarkup.match(/is-reference/g) || []).length, 1, 'RKN is reference material, not consent');
 assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 10, 'Every document has a real-version placeholder');
 assert.doesNotMatch(fullMarkup, /Подписать|подписать|Надо подписать/, 'Purpose is not an action and does not claim an existing signature');
-assert.ok(versionNodes.every((node) => node.textContent === '—'), 'Never guess persisted editions from catalog source');
+assert.match(fullMarkup, /admin-registry-title">Политика ПДН<\/strong>/, 'Short label is visible in registry');
+assert.match(fullMarkup, /admin-registry-title">Оферта<\/strong>/, 'Long legal heading never appears in the row');
+assert.match(fullMarkup, /data-registry-version="privacy-policy">1\.1<\/span>/, 'Initial legal revision comes from source');
+assert.match(fullMarkup, /data-registry-version="saas-agreement">1\.2<\/span>/, 'Second legal revision comes from source');
+assert.equal(versionNodes[0].textContent, '1.1');
+assert.equal(versionNodes[1].textContent, '1.2');
 
 await Promise.resolve();
 fulfillCurrent([
-  { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Current edition from the database' },
+  { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Book — юридическая редакция 1.3 от 11.11.2026' },
   { key: 'user-document-pdn-policy', title: 'Условия ПДН', type: 'USER_DOCUMENT_BASE', version: 4, content: 'Current User edition from the database' },
 ]);
 // Let the isolated VM Promise continuation complete after the mocked HTTP reply.
 await new Promise((resolve) => setImmediate(resolve));
-assert.equal(versionNodes[0].textContent, '17', 'Latest DB version replaces placeholder');
+assert.equal(versionNodes[0].textContent, '1.3', 'Latest actual legal revision, not technical index 17');
 assert.equal(versionNodes[6].textContent, '—', 'Missing current DB edition does not become a fake version');
-assert.equal(versionNodes[7].textContent, '4', 'User source also gets the current persisted version');
+assert.equal(versionNodes[7].textContent, '—', 'No legal edition in User template means dash, even if technical index is 4');
 buttons[0].click();
 assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
 assert.match(opened[0].innerHTML, /admin-document-reading/);
-assert.match(opened[0].innerHTML, /Политика \/ 17 \/ Current edition from the database/, 'Opens authoritative current DB text and version, never old catalog');
+assert.match(opened[0].innerHTML, /Политика \/ 1\.3 \/ Book — юридическая редакция 1\.3/, 'Viewer opens current persisted legal revision and content');
 assert.ok(subscribed > 0);
 
 fulfillHistory(history);
@@ -174,4 +179,4 @@ assert.deepEqual({ ...modalOptions }, { title: 'Документ', variant: 'q',
 assert.match(mounted.html, /Exact signed user snapshot/, 'History opens immutable saved document snapshot');
 assert.equal(opened.length, 1, 'Mobile document does not create another desktop drawer');
 assert.match(historySource, /documentContent: String\(item\.documentContent/, 'History retains immutable version content');
-console.log('Admin Document Registry: sections, compact document lines, side drawer, mobile Q and legal history PASS');
+console.log('Admin Document Registry: short single-line rows, legal editions, side drawer, mobile Q and signing history PASS');
