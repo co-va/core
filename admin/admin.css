@@ -581,7 +581,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-documents-table .admin-registry-purpose.is-working.is-required .admin-registry-purpose-mark{background:#969DA1;border-color:#969DA1;color:#fff}
 /* Reuse the existing Admin pill geometry. Calm teal is specific to working
    platform templates, not a new general purpose UI component. */
-.admin-registry-section .admin-registry-documents-table .admin-pill.working{background:#DDF2F1;color:#136D76}
+.admin-registry-section .admin-registry-documents-table .admin-pill.working{background:#FFF4C7;color:#765600}
 .admin-registry-history-card{overflow:hidden}
 .admin-registry-documents-scroll,.admin-registry-history-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-registry-section .admin-registry-history-table{width:100%;min-width:860px;table-layout:fixed}
@@ -686,4 +686,96 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-overview-tools-section{
     margin-top:calc(var(--admin-section-spacing) - 16px);
   }
+}
+
+/* Admin document registry — shared desktop/iPad document-sheet geometry. */
+@media(min-width:761px){
+  .admin-document-drawer{
+    border-radius:36px 0 0 0;
+    padding:0;
+    overflow:hidden;
+  }
+  .admin-document-drawer .admin-drawer-head{
+    flex:0 0 auto;
+    align-items:flex-start;
+    min-height:98px;
+    padding:25px 28px 20px;
+    margin:0;
+    border-bottom:1px solid var(--border);
+  }
+  .admin-document-drawer .admin-drawer-head h3{
+    margin:4px 0 0;
+    font-size:21px;
+    font-weight:720;
+    line-height:1.2;
+    letter-spacing:-.025em;
+    overflow-wrap:anywhere;
+  }
+  .admin-document-drawer .admin-document-head-version{
+    display:block;
+    font-size:12px;
+    line-height:1.4;
+    color:var(--text-secondary);
+  }
+  .admin-document-drawer .admin-document-reading{
+    padding:22px 25px 36px;
+  }
+  .admin-document-drawer .admin-document-reading .document-page{
+    padding:0 5px 20px;
+  }
+  .admin-document-drawer .admin-document-reading .document-page__version,
+  .admin-document-drawer .admin-document-reading .document-page>h1{display:none}
+  .admin-registry-section .admin-registry-table tbody tr[data-registry-row],
+  .admin-registry-section .admin-registry-history-table tbody tr[data-registry-history-row]{cursor:pointer}
+  .admin-registry-section .admin-registry-table tbody tr[data-registry-row]:focus-visible,
+  .admin-registry-section .admin-registry-history-table tbody tr[data-registry-history-row]:focus-visible{
+    outline:2px solid var(--text);
+    outline-offset:-3px;
+  }
+  .admin-registry-section-title-line{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+  }
+  .admin-registry-add{
+    display:grid;
+    place-items:center;
+    flex:0 0 34px;
+    width:34px;
+    height:34px;
+    border:0;
+    border-radius:9px;
+    padding:0;
+    background:transparent;
+    color:var(--white);
+    cursor:pointer;
+  }
+  .admin-registry-add svg{width:22px;height:22px}
+  .admin-registry-add:hover{background:rgba(255,255,255,.09)}
+  .admin-registry-add:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+  .admin-registry-editor-content{display:grid;gap:16px;min-height:0}
+  .admin-registry-editor-field{display:grid;gap:6px;min-width:0}
+  .admin-registry-editor-field label{font-size:12px;color:var(--text-secondary);font-weight:620}
+  .admin-registry-editor-field input,
+  .admin-registry-editor-field textarea,
+  .admin-registry-editor-field select{
+    display:block;
+    box-sizing:border-box;
+    width:100%;
+    min-height:40px;
+    border:1px solid var(--border);
+    border-radius:9px;
+    padding:10px 12px;
+    background:#fff;
+    color:var(--text);
+    font:inherit;
+    font-size:14px;
+  }
+  .admin-registry-editor-field textarea{min-height:300px;line-height:1.5;resize:vertical}
+  .admin-registry-editor-actions{display:flex;flex-wrap:wrap;gap:12px;padding:16px 0}
+  .admin-registry-editor-actions button{border-radius:9px;border:1px solid var(--border);padding:11px 15px;cursor:pointer;background:#fff;color:var(--text);font-weight:650}
+  .admin-registry-editor-actions .is-publish{background:var(--text);border-color:var(--text);color:#fff}
+  .admin-registry-editor-error{min-height:18px;color:#a13e31;font-size:12px}
+  .admin-registry-draft-badge{display:inline-flex;margin-left:6px;padding:3px 7px;border-radius:6px;background:#FFF1BA;color:#765600;font-size:11px;font-weight:680}
 }
