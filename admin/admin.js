@@ -19,7 +19,7 @@ const state = {
   capabilities: [],
   toolReadiness: [],
   pushEnabled: false,
-  section: 'tenants',
+  section: 'overview',
 };
 
 let adminPollTimer = null;
@@ -299,9 +299,9 @@ async function refreshData() {
 
 const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
-  { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
+  { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
 ];
 
 function adminSectionLabel() {
