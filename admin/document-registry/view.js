@@ -185,7 +185,7 @@ function documentTable(items, escapeHtml, application, draftKeys = new Set()) {
       '<td data-label="Статус">' + documentStatusMarkup(item, draftKeys.has(item.key)) + '</td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
       '" aria-label="Редактировать документ ' + title + '" title="Редактировать: ' + title + '"' +
-      (item.content ? '' : ' disabled aria-disabled="true"') + '>' + DOCUMENT_ICON + '</button></td>' +
+      (item.content || draftKeys.has(item.key) ? '' : ' disabled aria-disabled="true"') + '>' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><div class="admin-registry-documents-scroll"><table class="admin-table admin-registry-table admin-registry-documents-table" data-registry-application="' + application + '">' +
