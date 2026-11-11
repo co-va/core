@@ -145,7 +145,25 @@ const secondSection = fullMarkup.slice(fullMarkup.indexOf('Записи<span'), 
 assert.equal((firstSection.match(/data-registry-document="/g) || []).length, 7, 'Professional retains six documents and RKN');
 assert.equal((secondSection.match(/data-registry-document="/g) || []).length, 3, 'User retains exactly three documents');
 assert.match(css, /admin-registry-version\{font-size:14px;font-weight:750;color:var\(--text\)/, 'Version digits are strong dark text');
-assert.match(css, /admin-registry-history-scroll\{[^}]*overflow-x:auto/, 'Mobile history can scroll sideways without stacking rows');
+assert.match(css, /admin-registry-documents-scroll,\.admin-registry-history-scroll\{[^}]*overflow-x:auto/, 'All three sections use the same scroll structure');
+assert.match(source, /class="admin-registry-documents-scroll"/, 'Both source lists use the shared scrolling wrapper');
+assert.match(css, /admin-registry-table\{width:100%;min-width:860px;table-layout:fixed\}/, 'Every registry uses a single table-width contract');
+assert.match(css, /admin-registry-section \.admin-registry-table\{\s*display:table;width:100%;min-width:860px/, 'Mobile keeps the same column geometry, without independent grid rows');
+const registryWidth = (section, index) => {
+  const column = index === 1 ? 'first-child' : 'nth-child(' + index + ')';
+  const selector = '.admin-registry-section .admin-registry-' + section + '-table th:' + column + ',\\n' +
+    '.admin-registry-section .admin-registry-' + section + '-table td:' + column + '{width:';
+  const at = css.indexOf(selector);
+  assert.ok(at !== -1, 'Missing shared geometry for ' + section + ' column ' + index);
+  return Number(css.slice(at + selector.length).match(/^([0-9]+)%/)?.[1]);
+};
+for (const [index, expected] of [[1,23],[2,9],[3,30],[4,18]]) {
+  assert.equal(registryWidth('documents', index), expected, 'Documents column ' + index + ' has shared width');
+  assert.equal(registryWidth('history', index), expected, 'History column ' + index + ' starts at the exact same coordinate');
+}
+assert.equal(registryWidth('documents', 5), 20, 'Only the final source-cell width absorbs the event column');
+assert.equal(registryWidth('history', 5) + registryWidth('history', 6), 20, 'History event and icon fill the same final space');
+
 assert.doesNotMatch(fullMarkup, /document-tile|document-tiles--rail|Платформа ↔ пользователь|Шаблоны помощников/);
 assert.match(fullMarkup, /<th>Документ<\/th><th>Версия<\/th><th>Назначение<\/th><th>Дата<\/th><th aria-label="Открыть"><\/th>/, 'Catalog date follows purpose and precedes rightmost icon');
 assert.equal((fullMarkup.match(/is-required/g) || []).length, 5, 'Four mandatory Professional and one User PDN consent');
