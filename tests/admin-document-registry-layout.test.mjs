@@ -42,6 +42,16 @@ const userDocs = [
   { key: 'user-document-pdn-consent', title: 'Согласие ПДН', version: 1, content: 'I' },
   { key: 'user-document-messages-consent', title: 'Согласие на сообщения', version: 1, content: 'J' },
 ];
+const accountTermsDocs = [{
+  key: 'account-terms',
+  type: 'ACCOUNT_TERMS',
+  title: 'Условия использования учётной записи',
+  requiredForRegistration: true,
+  edition: '1',
+  issuedAt: '21.09.2026',
+  content: '',
+}];
+const allDocs = [...professionalDocs, ...userDocs, ...guideDocs, ...accountTermsDocs];
 const history = [
   { id: 'prof-event', subjectType: 'PLATFORM_ACCOUNT', documentKey: 'saas-agreement', documentTitle: 'Пользовательское соглашение / публичная оферта', documentVersion: 3, documentContent: 'Book — юридическая редакция 1.2 от 18.09.2026\nExact signed professional snapshot', accountEmail: 'professional@example.test', action: 'ACCEPTED', occurredAt: '2026-11-11T10:00:00.000Z' },
   { id: 'user-event', subjectType: 'ACCOUNT', documentTitle: 'Согласие ПДН', documentVersion: 1, documentContent: 'Exact signed user snapshot', accountEmail: 'user@example.test', action: 'REVOKED', occurredAt: '2026-11-11T11:00:00.000Z' },
@@ -72,6 +82,7 @@ const context = {
   getRegistryBookUserDocuments: () => professionalDocs,
   getRegistryUserHelperTemplates: () => guideDocs,
   getRegistryUserLegalTemplates: () => userDocs,
+  getRegistryPlatformUserDocuments: () => accountTermsDocs,
   getRegistryDocument: (key) => documents.get(key),
   getDocumentRegistryHistory: () => hydrated,
   hydrateDocumentRegistryHistory: (events) => { hydrated = events; },
@@ -85,8 +96,10 @@ const context = {
 const program = source.slice(source.indexOf('// The registry'))
   .replace('export async function renderDocumentRegistry(', 'async function renderDocumentRegistry(');
 const registry = runInNewContext(program + '\n({ renderDocumentRegistry, openDocument, documentTable, historyTable })', context);
-const buttons = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
+const buttons = allDocs.map((doc) => ({
   dataset: { registryDocument: doc.key },
+  disabled: !doc.content,
+  removeAttribute(name) { if (name === 'aria-disabled') this.disabled = false; },
   addEventListener(type, callback) { this[type] = callback; },
 }));
 const historicButtons = history.map((event) => ({
@@ -113,18 +126,26 @@ const root = {
 const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
 let fulfillHistory;
 let fulfillCurrent;
-const versionNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
-  dataset: { registryVersion: doc.key }, textContent: doc.key === 'privacy-policy' ? '1.1' : doc.key === 'saas-agreement' ? '1.2' : '—',
+let fulfillAccountTerms;
+const versionNodes = allDocs.map((doc) => ({
+  dataset: { registryVersion: doc.key },
+  textContent: doc.key === 'privacy-policy' ? '1.1'
+    : doc.key === 'saas-agreement' ? '1.2'
+      : doc.key === 'account-terms' ? '1' : '—',
 }));
-const dateNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
+const dateNodes = allDocs.map((doc) => ({
   dataset: { registryDate: doc.key },
-  textContent: doc.key === 'privacy-policy' ? '16.09.2026' : doc.key === 'saas-agreement' ? '18.09.2026' : doc.key === 'rkn-notification-guide-template' ? '03.10.2026' : '18.09.2026',
+  textContent: doc.key === 'privacy-policy' ? '16.09.2026'
+    : doc.key === 'saas-agreement' ? '18.09.2026'
+      : doc.key === 'rkn-notification-guide-template' ? '03.10.2026'
+        : doc.key === 'account-terms' ? '21.09.2026' : '18.09.2026',
 }));
 let title = '';
 const rendered = registry.renderDocumentRegistry(root, {
   escapeHtml, setTitle: (value) => { title = value; },
   loadHistory: () => new Promise((resolve) => { fulfillHistory = resolve; }),
   loadCurrentDocuments: () => new Promise((resolve) => { fulfillCurrent = resolve; }),
+  loadAccountTerms: () => new Promise((resolve) => { fulfillAccountTerms = resolve; }),
 });
 assert.equal(title, 'Реестр документов');
 assert.match(fullMarkup, /Кабинет<span class="admin-registry-app"> \/ Professional<\/span>/);
@@ -137,13 +158,17 @@ assert.ok(fullMarkup.indexOf('Записи<span') < fullMarkup.indexOf('Исто
 const guideAt = fullMarkup.indexOf('Инструкция РКН');
 const userAt = fullMarkup.indexOf('Записи<span');
 assert.ok(guideAt > 0 && guideAt < userAt, 'RKN help is Professional, not User consent');
-assert.equal((fullMarkup.match(/data-registry-document="/g) || []).length, 10, 'All ten canonical registry documents remain');
-assert.equal((fullMarkup.match(/class="admin-registry-icon"/g) || []).length, 10, 'Each document has one small line icon');
-assert.equal((fullMarkup.match(/class="admin-registry-open-cell"/g) || []).length, 10, 'Icons use their own last column');
+assert.equal((fullMarkup.match(/data-registry-document="/g) || []).length, 11, 'Ten source documents plus real User platform terms');
+assert.equal((fullMarkup.match(/class="admin-registry-icon"/g) || []).length, 11, 'Each displayed record has a viewer icon');
+assert.equal((fullMarkup.match(/class="admin-registry-open-cell"/g) || []).length, 11, 'Each viewer icon stays at the right edge');
 const firstSection = fullMarkup.slice(fullMarkup.indexOf('Кабинет<span'), fullMarkup.indexOf('Записи<span'));
 const secondSection = fullMarkup.slice(fullMarkup.indexOf('Записи<span'), fullMarkup.indexOf('История</h2>'));
-assert.equal((firstSection.match(/data-registry-document="/g) || []).length, 7, 'Professional retains six documents and RKN');
-assert.equal((secondSection.match(/data-registry-document="/g) || []).length, 3, 'User retains exactly three documents');
+assert.equal((firstSection.match(/data-registry-document="/g) || []).length, 10, 'Professional contains six contractual documents and four working templates');
+assert.equal((secondSection.match(/data-registry-document="/g) || []).length, 1, 'User contains only actual platform User agreement');
+assert.equal((firstSection.match(/data-registry-document="user-document-/g) || []).length, 3, 'All three User-facing templates are grouped with Professional');
+assert.doesNotMatch(secondSection, /data-registry-document="user-document-/, 'No Professional-provided template appears as a platform User contract');
+assert.match(secondSection, /data-registry-document="account-terms"/, 'Canonical platform User account terms are shown');
+assert.doesNotMatch(catalog, /DOCUMENT_CATALOG = \[[\s\S]*key: "account-terms"/, 'Admin sync must not overwrite actual account terms in DB');
 assert.match(css, /admin-registry-version\{font-size:14px;font-weight:750;color:var\(--text\)/, 'Version digits are strong dark text');
 assert.match(css, /admin-registry-documents-scroll,\.admin-registry-history-scroll\{[^}]*overflow-x:auto/, 'All three sections use the same scroll structure');
 assert.match(source, /class="admin-registry-documents-scroll"/, 'Both source lists use the shared scrolling wrapper');
@@ -161,17 +186,23 @@ for (const [index, expected] of [[1,23],[2,9],[3,30],[4,18]]) {
   assert.equal(registryWidth('documents', index), expected, 'Documents column ' + index + ' has shared width');
   assert.equal(registryWidth('history', index), expected, 'History column ' + index + ' starts at the exact same coordinate');
 }
-assert.equal(registryWidth('documents', 5), 20, 'Only the final source-cell width absorbs the event column');
-assert.equal(registryWidth('history', 5) + registryWidth('history', 6), 20, 'History event and icon fill the same final space');
+assert.equal(registryWidth('documents', 5), 14, 'Document status uses the same fifth track as History event');
+assert.equal(registryWidth('documents', 6), 6, 'Document icon shares the sixth right-edge track');
+assert.equal(registryWidth('history', 5), 14, 'History event keeps the fifth track');
+assert.equal(registryWidth('history', 6), 6, 'History document icon stays at the right edge');
 
 assert.doesNotMatch(fullMarkup, /document-tile|document-tiles--rail|Платформа ↔ пользователь|Шаблоны помощников/);
-assert.match(fullMarkup, /<th>Документ<\/th><th>Версия<\/th><th>Назначение<\/th><th>Дата<\/th><th aria-label="Открыть"><\/th>/, 'Catalog date follows purpose and precedes rightmost icon');
-assert.equal((fullMarkup.match(/is-required/g) || []).length, 5, 'Four mandatory Professional and one User PDN consent');
+assert.match(fullMarkup, /<th>Документ<\/th><th>Версия<\/th><th>Назначение<\/th><th>Дата<\/th><th>Статус<\/th><th aria-label="Открыть"><\/th>/, 'Catalog status occupies the fifth column before rightmost icon');
+assert.equal((fullMarkup.match(/is-required/g) || []).length, 6, 'Four mandatory Professional, one working PDN and one platform User account agreement');
 assert.equal((fullMarkup.match(/is-optional/g) || []).length, 3, 'Two Professional options and User marketing');
 assert.equal((fullMarkup.match(/is-reading/g) || []).length, 1, 'User privacy notice is for familiarization');
 assert.equal((fullMarkup.match(/is-reference/g) || []).length, 1, 'RKN is reference material, not consent');
-assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 10, 'Every document has a real-version placeholder');
-assert.equal((fullMarkup.match(/data-registry-date="/g) || []).length, 10, 'All 7+3 documents have a date column');
+assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 11, 'All 11 entries have distinct legal edition fields');
+assert.equal((fullMarkup.match(/data-registry-date="/g) || []).length, 11, 'All source entries have publication date');
+assert.equal((fullMarkup.match(/class="admin-registry-document-status is-legal"/g) || []).length, 7, 'Six platform Professional documents and User terms are Правовой');
+assert.equal((fullMarkup.match(/class="admin-registry-document-status is-working"/g) || []).length, 4, 'RKN and three User-facing templates are Рабочий');
+assert.match(css, /admin-registry-document-status\.is-legal\{background:#303638/, 'Правовой has graphite marker');
+assert.match(css, /admin-registry-document-status\.is-working\{background:#F3E4A8/, 'Рабочий has warm yellow marker');
 assert.match(fullMarkup, /data-registry-date="privacy-policy">16\.09\.2026<\/time>/, 'Legal document issue date comes from its actual published header');
 assert.match(fullMarkup, /data-registry-date="saas-agreement">18\.09\.2026<\/time>/, 'Edition change date is shown in catalog');
 assert.match(fullMarkup, /data-registry-date="user-document-pdn-policy">18\.09\.2026<\/time>/, 'User source file introduction date is grounded in Git');
@@ -192,11 +223,11 @@ fulfillCurrent([
 // Let the isolated VM Promise continuation complete after the mocked HTTP reply.
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(versionNodes[0].textContent, '1.3', 'Latest actual legal revision, not technical index 17');
-assert.equal(versionNodes[6].textContent, '—', 'Missing current DB edition does not become a fake version');
-assert.equal(versionNodes[7].textContent, '—', 'No legal edition in User template means dash, even if technical index is 4');
+assert.equal(versionNodes[9].textContent, '—', 'Missing current DB edition does not become a fake version');
+assert.equal(versionNodes[6].textContent, '—', 'No legal edition in User template means dash, even if technical index is 4');
 assert.equal(dateNodes[0].textContent, '11.11.2026', 'Document header revision date takes priority over technical save timestamp');
-assert.equal(dateNodes[7].textContent, '04.11.2026', 'User template date is taken from the persisted publishedAt');
-assert.equal(dateNodes[6].textContent, '03.10.2026', 'RKN source date remains available without preview read endpoint');
+assert.equal(dateNodes[6].textContent, '04.11.2026', 'User template date is taken from the persisted publishedAt');
+assert.equal(dateNodes[9].textContent, '03.10.2026', 'RKN source date remains available without preview read endpoint');
 buttons[0].click();
 assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
