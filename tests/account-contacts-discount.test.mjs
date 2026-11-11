@@ -247,7 +247,7 @@ assert.match(service, /depositPriceSourcesFromRows\(rows, personKey, new Date\(\
 const profileProjection = between(service, 'function publicContactCard(', 'function participantMatchesAccount(');
 const workplaceProjection = between(service, 'function workplaceCard(', '// A card is a projection of a SAVED Professional appearance');
 const cardRuntime = runInNewContext(
-  stripTypeScriptTypes(accountHelpers + '\n' + profileProjection + '\n' + workplaceProjection, { mode: 'strip' })
+  stripTypeScriptTypes(accountHelpers + '\n' + publicCardHelpers + '\n' + profileProjection + '\n' + workplaceProjection, { mode: 'strip' })
     + '\n({ profileCard, workplaceCard, publicContactCard })',
 );
 const publicProfile = {
