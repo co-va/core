@@ -10,6 +10,7 @@ const controller = read('server/src/saas-admin/saas-admin.controller.ts');
 const wrapper = read('server/src/saas-admin/saas-admin.service.ts');
 const service = read('server/src/document-registry/document-registry.service.ts');
 const migration = read('server/prisma/migrations/20261111223000_platform_document_editor/migration.sql');
+const purposeMigration = read('server/prisma/migrations/20261112010500_platform_document_purpose/migration.sql');
 
 assert.match(css, /admin-document-drawer\{[\s\S]*?border-radius:36px 0 0 0/, 'Desktop document sheet has the Z-like top-left corner');
 assert.match(css, /admin-registry-documents-table \.admin-pill\.working\{background:#FFF4C7;color:#765600\}/, 'Working status is brand yellow');
@@ -25,6 +26,23 @@ assert.match(view, /admin-registry-status-draft/, 'Draft is visibly marked');
 assert.match(editor, /Сохранить черновик/, 'Saving a draft is an explicit action');
 assert.match(editor, /Опубликовать/, 'Publishing is a separate explicit action');
 assert.match(editor, /window\.confirm/, 'Publication requires confirmation');
+assert.match(editor, /name="purpose"/, 'Purpose selector belongs to document form');
+for (const value of ['REQUIRED', 'OPTIONAL', 'READING', 'REFERENCE']) {
+  assert.ok(editor.includes('<option value="' + value + '"'), 'Purpose supports ' + value);
+}
+assert.match(editor, /name="type" required/, 'Legal/working status is a separate selector');
+assert.match(editor, /'CUSTOM_LEGAL'|value="CUSTOM_LEGAL"/, 'Legal status supported');
+assert.match(editor, /value="CUSTOM_WORKING"/, 'Working status supported');
+assert.match(editor, /purpose: String\(data.get\('purpose'\)/, 'Form saves selected purpose');
+assert.match(css, /admin-registry-editor-field input,[\s\S]*?admin-registry-editor-field select\{\s*height:44px;/, 'Text inputs and dropdowns share 44px height');
+assert.match(css, /admin-registry-history-scroll\{[^}]*max-height:calc\(100dvh - 180px\);[^}]*overflow-y:auto;/, 'History list scrolls without moving the section title');
+assert.match(css, /admin-registry-history-table thead th\{[^}]*position:sticky;/, 'History column headers remain visible');
+assert.match(view, /admin-registry-history-section/, 'History section has the sticky-title scope');
+assert.match(view, /purposeCell.innerHTML = purposeMarkup\(documentPurpose\(item\)/, 'Reload shows saved purpose');
+assert.match(service, /const purpose = String\(body.purpose/, 'Server validates selected purpose');
+assert.match(service, /"purpose"=EXCLUDED."purpose"/, 'Purpose persists on draft updates');
+assert.match(purposeMigration, /ALTER TABLE "PlatformDocumentDraft"/, 'Purpose is stored in the editorial draft');
+assert.match(purposeMigration, /ALTER TABLE "PlatformDocument"/, 'Published purpose is stored independently of signed snapshots');
 assert.match(editor, /await saveDraft\(payload\)/, 'Document state is persisted by the API, never localStorage');
 assert.match(editor, /await publishDraft\(saved\.key\)/, 'Publication happens only after saving draft');
 assert.doesNotMatch(editor, /localStorage|sessionStorage/, 'No shadow browser-side legal document store');
