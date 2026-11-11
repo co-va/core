@@ -21,3 +21,5 @@ CREATE TABLE "PlatformDocumentDraft" (
 -- This metadata never changes signed historical content.
 ALTER TABLE "PlatformDocumentVersion"
   ADD COLUMN IF NOT EXISTS "editorEdition" TEXT;
+ALTER TABLE "PlatformDocumentVersion"
+  ADD COLUMN IF NOT EXISTS "editorTitle" TEXT;
