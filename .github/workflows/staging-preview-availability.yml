@@ -44,6 +44,21 @@ jobs:
               }
             fi
           done
+      - name: Diagnose preview DNS and repeated navigation latency
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='va-app-volokovykh.msk1.amvera.tech'
+          echo 'IPv4 address records:'
+          getent ahostsv4 "$host" | awk '{print $1}' | sort -u
+          echo 'IPv6 address records (empty means none or not resolved on runner):'
+          getent ahostsv6 "$host" | awk '{print $1}' | sort -u || true
+          echo 'Five fresh HTML navigation requests (sequential):'
+          for i in 1 2 3 4 5; do
+            curl -4 -sSL --connect-timeout 8 --max-time 20 -o /dev/null \
+              -w 'request='"${i}"' status=%{http_code} ip=%{remote_ip} connect=%{time_connect}s ttfb=%{time_starttransfer}s total=%{time_total}s\\n' \
+              "https://${host}/admin/?diagnostic=${i}" || exit 1
+          done
       - name: Render preview as a mobile browser
         shell: bash
         run: |
