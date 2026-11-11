@@ -479,6 +479,13 @@ function renderCurrentSection() {
       setTitle: setActiveSection,
       loadHistory: () => adminRequest('/document-registry/history'),
       loadCurrentDocuments: () => adminRequest('/document-registry/current'),
+      // Canonical global User agreement: public snapshot endpoint is already
+      // used by the User registration flow, not the Professional template base.
+      loadAccountTerms: async () => {
+        const response = await apiRequest('/account/terms');
+        if (!response.ok) throw new Error('Не удалось загрузить Условия аккаунта');
+        return response.json();
+      },
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();
