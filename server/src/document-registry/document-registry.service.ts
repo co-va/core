@@ -16,12 +16,13 @@ export class DocumentRegistryService {
       requiredForRegistration: boolean;
       version: number;
       content: string;
+      publishedAt: Date;
     }>>`
       SELECT d."key", d."title", d."type", d."requiredForRegistration",
-             v."version", v."contentSnapshot" AS "content"
+             v."version", v."contentSnapshot" AS "content", v."publishedAt"
       FROM "PlatformDocument" d
       JOIN LATERAL (
-        SELECT "version", "contentSnapshot"
+        SELECT "version", "contentSnapshot", "publishedAt"
         FROM "PlatformDocumentVersion"
         WHERE "documentId" = d."id"
         ORDER BY "version" DESC, "publishedAt" DESC
