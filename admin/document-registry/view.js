@@ -95,17 +95,32 @@ function documentTable(items, escapeHtml, application) {
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item, application);
     return '<tr>' +
-      '<td data-label="Документ"><button type="button" class="admin-registry-open" data-registry-document="' + key +
-      '" aria-label="Открыть документ ' + title + '" title="' + title + '">' + DOCUMENT_ICON +
-      '<strong class="admin-registry-title">' + shortTitle + '</strong></button></td>' +
-      '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
+      '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
+      '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
+      '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
+      '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
-    '<thead><tr><th>Документ</th><th>Назначение</th><th>Версия</th></tr></thead><tbody>' +
-    (rows || '<tr><td colspan="3" class="admin-history-empty">Документов пока нет.</td></tr>') +
+    '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="4" class="admin-history-empty">Документов пока нет.</td></tr>') +
     '</tbody></table></div>';
+}
+
+// Short presentation labels never replace the original immutable signed title.
+function historyShortTitle(item) {
+  const title = String(item.documentTitle || item.documentKey || 'Документ');
+  if (SHORT_TITLES[item.documentKey]) return SHORT_TITLES[item.documentKey];
+  if (/пользовательское соглашение|публичная оферта/i.test(title)) return 'Оферта';
+  if (/условия использования уч[её]тной записи/i.test(title)) return 'Условия аккаунта';
+  if (/согласие на.*(?:реклам|маркетингов)/i.test(title)) return 'Маркетинг';
+  if (/согласие на поручение.*амвер/i.test(title)) return 'Согласие Амвера';
+  if (/согласие на обработку персональных данных/i.test(title)) return 'Согласие ПДН';
+  if (/политика обработки персональных данных/i.test(title)) return 'Политика ПДН';
+  if (/согласие на распространение персональных данных/i.test(title)) return 'Публичный профиль';
+  if (/поручение на обработку персональных данных/i.test(title)) return 'Поручение ПДН';
+  return title;
 }
 
 function historyTable(escapeHtml) {
@@ -115,26 +130,26 @@ function historyTable(escapeHtml) {
   }
   const rows = history.map((item) => {
     const title = escapeHtml(item.documentTitle || item.documentKey || 'Документ');
+    const shortTitle = escapeHtml(historyShortTitle(item));
     const id = escapeHtml(item.id || '');
-    const version = item.documentVersion ? 'Версия ' + escapeHtml(String(item.documentVersion)) : '';
+    const version = escapeHtml(item.documentVersion ? String(item.documentVersion) : '—');
     const account = escapeHtml(item.accountEmail || item.tenantName || '—');
     const subject = item.subjectType === 'ACCOUNT' ? 'User' : 'Professional';
     const action = escapeHtml(actionLabel(item.action));
     const status = actionState(item.action);
     const moment = escapeHtml(formatMoment(item.occurredAt));
     return '<tr>' +
-      '<td data-label="Документ"><button type="button" class="admin-registry-open" data-registry-history="' + id +
-      '" aria-label="Открыть сохранённый документ ' + title + '">' + DOCUMENT_ICON +
-      '<span class="admin-registry-identity"><strong class="admin-registry-title">' + title +
-      '</strong>' + (version ? '<small>' + version + '</small>' : '') + '</span></button></td>' +
-      '<td data-label="Аккаунт"><span class="admin-registry-identity">' + account +
-      '<small>' + subject + '</small></span></td>' +
+      '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
+      '<td data-label="Версия"><span class="admin-registry-version">' + version + '</span></td>' +
+      '<td data-label="Аккаунт"><span class="admin-registry-history-account" title="' + account + ' · ' + subject + '">' + account + '</span></td>' +
+      '<td data-label="Дата"><time>' + moment + '</time></td>' +
       '<td data-label="Событие"><span class="admin-pill ' + status + '">' + action + '</span></td>' +
-      '<td data-label="Дата"><time>' + moment + '</time></td></tr>';
+      '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-history="' + id +
+      '" aria-label="Открыть сохранённый документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td></tr>';
   }).join('');
-  return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-history-table">' +
-    '<thead><tr><th>Документ</th><th>Аккаунт</th><th>Событие</th><th>Дата</th></tr></thead><tbody>' +
-    rows + '</tbody></table></div>';
+  return '<div class="admin-card admin-registry-history-card"><div class="admin-registry-history-scroll"><table class="admin-table admin-registry-table admin-registry-history-table">' +
+    '<thead><tr><th>Документ</th><th>Версия</th><th>Аккаунт</th><th>Дата</th><th>Событие</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
+    rows + '</tbody></table></div></div>';
 }
 
 function openDocument(item) {
