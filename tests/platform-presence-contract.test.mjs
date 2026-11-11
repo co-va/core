@@ -4,7 +4,7 @@ import { runInNewContext } from 'node:vm';
 
 const read = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const policy = read('server/src/auth/presence-policy.ts');
-const src = policy.slice(policy.indexOf('export function isAccountOnline('));
+const src = policy.slice(policy.indexOf('export function isAccountOnline('), policy.indexOf('// Credit only'));
 const expression = src.replace('export function isAccountOnline(lastSeenAt: Date | string | null | undefined, now = Date.now()): boolean {',
   'function isAccountOnline(lastSeenAt, now = Date.now()) {');
 const isAccountOnline = runInNewContext(expression + '\nisAccountOnline;', { Date, Number, PRESENCE_ONLINE_MS: 120_000 });
@@ -20,7 +20,7 @@ const creditBody = splitSource.replace('export function creditPresenceDays(lastS
   'function creditPresenceDays(lastSeenAt, seenAt) {')
   .replace('const slices: Array<{ day: Date; milliseconds: number }> = [];', 'const slices = [];')
   .replace('lastSeenAt!', 'lastSeenAt');
-const creditPresenceDays = runInNewContext(creditBody + '\\ncreditPresenceDays;', { Date, Math, isAccountOnline });
+const creditPresenceDays = runInNewContext(creditBody + '\ncreditPresenceDays;', { Date, Math, isAccountOnline });
 assert.equal(creditPresenceDays(null, new Date(now)).length, 0, 'First beat cannot invent elapsed time');
 assert.equal(creditPresenceDays(new Date(now - 121_000), new Date(now)).length, 0, 'Closed tab/outage never counts unobserved time');
 const measured = creditPresenceDays(new Date(now - 45_000), new Date(now));
