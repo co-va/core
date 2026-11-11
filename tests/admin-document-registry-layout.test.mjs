@@ -20,6 +20,9 @@ const admin = read('admin/admin.js');
 const docService = read('server/src/document-registry/document-registry.service.ts');
 const docController = read('server/src/saas-admin/saas-admin.controller.ts');
 assert.match(admin, /loadCurrentDocuments: \(\) => adminRequest\('\/document-registry\/current'\)/);
+assert.match(admin, /loadWorkingTemplates: async \(\) => \{[\s\S]*?apiRequest\('\/tenant-document-archive\/platform-bases'\)/, 'Working source versions use the already-deployed core endpoint');
+assert.match(read('server/src/tenant-document-archive/tenant-document-archive.controller.ts'), /@Get\('platform-bases'\)/);
+assert.match(docService, /tenantLegalTemplateBases\(\)/, 'Working platform source versions come from PlatformDocumentVersion');
 assert.match(docController, /@Get\('document-registry\/current'\)/);
 assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredForRegistration"/);
 assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
@@ -155,6 +158,7 @@ const rendered = registry.renderDocumentRegistry(root, {
   escapeHtml, setTitle: (value) => { title = value; },
   loadHistory: () => new Promise((resolve) => { fulfillHistory = resolve; }),
   loadCurrentDocuments: () => new Promise((resolve) => { fulfillCurrent = resolve; }),
+  loadWorkingTemplates: () => Promise.resolve([]),
   loadAccountTerms: () => new Promise((resolve) => { fulfillAccountTerms = resolve; }),
 });
 assert.equal(title, 'Реестр документов');
@@ -311,4 +315,29 @@ assert.match(opened[2].innerHTML, /Политика обработки перс�
 buttons[6].click();
 assert.equal(opened.length, 4, 'Working template opens published platform source');
 assert.match(opened[3].innerHTML, /Условия ПДН \/ 4 \/ Current User edition from the database/, 'Working document reader shows core template version, not Professional custom version');
+
+// Regression: the real Amvera Admin staging preview runs against a backend
+// that has platform-bases but may not have /saas-admin/document-registry/current.
+for (const key of ['user-document-pdn-policy', 'user-document-pdn-consent', 'user-document-messages-consent']) {
+  versionNodes.find((node) => node.dataset.registryVersion === key).textContent = '…';
+}
+const oldBackendRender = registry.renderDocumentRegistry(root, {
+  escapeHtml,
+  setTitle: (value) => { title = value; },
+  loadHistory: () => Promise.resolve([]),
+  loadCurrentDocuments: () => Promise.reject(Object.assign(new Error('Not Found'), { status: 404 })),
+  loadWorkingTemplates: () => Promise.resolve([
+    { key: 'user-document-pdn-policy', title: 'Политика ПДН', version: 7, content: 'Server policy base' },
+    { key: 'user-document-pdn-consent', title: 'Согласие ПДН', version: 5, content: 'Server consent base' },
+    { key: 'user-document-messages-consent', title: 'Маркетинг', version: 6, content: 'Server marketing base' },
+  ]),
+  loadAccountTerms: () => Promise.resolve(null),
+});
+await oldBackendRender;
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(versionNodes[6].textContent, '7', 'Old backend: source policy version loads from existing endpoint');
+assert.equal(versionNodes[7].textContent, '5', 'Old backend: source consent version loads from existing endpoint');
+assert.equal(versionNodes[8].textContent, '6', 'Old backend: source marketing version loads from existing endpoint');
+assert.equal(versionNodes[9].textContent, '—', 'RKN guide remains unversioned');
+assert.equal(dateNodes[6].textContent, '04.11.2026', 'Fallback must not replace original source date with a tenant edit');
 console.log('Admin Document Registry: Professional 10 (6 legal + 4 working), User 2 legal, canonical DB sources, shared geometry PASS');
