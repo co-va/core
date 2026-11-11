@@ -74,6 +74,33 @@ jobs:
               }
             fi
           done
+      - name: Verify recovered Admin path bypasses stale branch preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://va-app-volokovykh.msk1.amvera.tech/admin/preview.html'
+          for n in 1 2 3; do
+            curl -fsSL --connect-timeout 8 --max-time 25 -D /tmp/recovery-headers "$url?probe=${GITHUB_RUN_ID}-${n}" -o /tmp/recovery-admin.html || continue
+            if grep -q 'content-sha256: 525aa2d4a6f8' /tmp/recovery-admin.html; then
+              echo 'Recovery Admin HTML served by live gateway'
+              break
+            fi
+            echo "Recovery path returned unexpected document on attempt ${n}"
+            sleep 2
+          done
+          grep -q 'content-sha256: 525aa2d4a6f8' /tmp/recovery-admin.html
+          test "$(grep -o '</body>' /tmp/recovery-admin.html | wc -l)" -eq 1
+          chrome_bin=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+            --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=390,844 --virtual-time-budget=12000 \
+            --dump-dom "$url" >/tmp/recovery-admin-dom.html 2>/tmp/recovery-admin-chrome.log
+          if ! grep -q 'admin-auth-screen' /tmp/recovery-admin-dom.html; then
+            echo 'Recovery page served, but the Admin login UI failed to mount'
+            grep -E 'CONSOLE:|SyntaxError|Uncaught' /tmp/recovery-admin-chrome.log | tail -n 10 || true
+            exit 1
+          fi
+          echo 'Recovery Admin browser smoke: PASS'
       - name: Verify production gateway serves latest single-request staging HTML
         shell: bash
         run: |
