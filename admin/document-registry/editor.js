@@ -27,6 +27,13 @@ export function openDocumentEditor({
   const existing = Boolean(item?.key || draft?.key);
   const edition = draft ? String(draft.edition || '') : nextEdition(item);
   const type = String(current.type || 'CUSTOM_LEGAL');
+  const statusValue = ['CUSTOM_WORKING', 'USER_DOCUMENT_BASE', 'RKN_GUIDE_TEMPLATE'].includes(type)
+    ? 'CUSTOM_WORKING' : 'CUSTOM_LEGAL';
+  // Source legal types carry fixed semantics. Custom documents can change their status.
+  const statusEditable = !existing || type === 'CUSTOM_LEGAL' || type === 'CUSTOM_WORKING';
+  const purposeValue = ['REQUIRED','OPTIONAL','READING','REFERENCE'].includes(String(current.purpose || ''))
+    ? String(current.purpose)
+    : current.requiredForRegistration ? 'REQUIRED' : 'OPTIONAL';
   const title = String(current.title || '');
   const content = String(current.content ?? item?.content ?? '');
   const layer = document.createElement('div');
@@ -41,9 +48,18 @@ export function openDocumentEditor({
     '<input id="editor-document-title" name="title" maxlength="250" required value="' + html(title) + '"></div>' +
     '<div class="admin-registry-editor-field"><label for="editor-document-edition">Редакция</label>' +
     '<input id="editor-document-edition" name="edition" maxlength="40" required value="' + html(edition) + '"></div>' +
-    (!existing ? '<div class="admin-registry-editor-field"><label for="editor-document-type">Тип</label>' +
-      '<select id="editor-document-type" name="type"><option value="CUSTOM_LEGAL">Правовой</option>' +
-      '<option value="CUSTOM_WORKING">Рабочий</option></select></div>' : '') +
+    '<div class="admin-registry-editor-field"><label for="editor-document-purpose">Назначение</label>' +
+    '<select id="editor-document-purpose" name="purpose" required>' +
+      '<option value="REQUIRED"' + (purposeValue === 'REQUIRED' ? ' selected' : '') + '>Обязательно</option>' +
+      '<option value="OPTIONAL"' + (purposeValue === 'OPTIONAL' ? ' selected' : '') + '>Необязательно</option>' +
+      '<option value="READING"' + (purposeValue === 'READING' ? ' selected' : '') + '>Ознакомление</option>' +
+      '<option value="REFERENCE"' + (purposeValue === 'REFERENCE' ? ' selected' : '') + '>Справочный</option>' +
+    '</select></div>' +
+    '<div class="admin-registry-editor-field"><label for="editor-document-type">Статус</label>' +
+    '<select id="editor-document-type" name="type" required' + (statusEditable ? '' : ' disabled title="Тип исходного документа защищён"') + '>' +
+      '<option value="CUSTOM_LEGAL"' + (statusValue === 'CUSTOM_LEGAL' ? ' selected' : '') + '>Правовой</option>' +
+      '<option value="CUSTOM_WORKING"' + (statusValue === 'CUSTOM_WORKING' ? ' selected' : '') + '>Рабочий</option>' +
+    '</select></div>' +
     '<div class="admin-registry-editor-field"><label for="editor-document-content">Текст документа</label>' +
     '<textarea id="editor-document-content" name="content" spellcheck="true" required>' + html(content) + '</textarea></div>' +
     '<p class="admin-registry-editor-error" role="alert" data-editor-error hidden></p>' +
@@ -88,8 +104,9 @@ export function openDocumentEditor({
       title: String(data.get('title') || '').trim(),
       edition: String(data.get('edition') || '').trim(),
       content: String(data.get('content') || '').trim(),
-      type: existing ? type : String(data.get('type') || 'CUSTOM_LEGAL'),
-      requiredForRegistration: Boolean(current.requiredForRegistration),
+      type: statusEditable ? String(data.get('type') || 'CUSTOM_LEGAL') : statusValue,
+      purpose: String(data.get('purpose') || 'OPTIONAL'),
+      requiredForRegistration: String(data.get('purpose') || '') === 'REQUIRED',
     };
     busy = true;
     controls.forEach((button) => { button.disabled = true; });
