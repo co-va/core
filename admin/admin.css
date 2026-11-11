@@ -308,13 +308,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview .admin-overview-heading{margin-bottom:4px}
 .admin-overview-heading h2{font-size:30px;letter-spacing:-.04em}
 .admin-overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.admin-overview-metric{position:relative;min-width:0;min-height:125px;padding:18px 20px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:18px;color:#18191A;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.045);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
+.admin-overview-metric{position:relative;min-width:0;min-height:149px;padding:18px 20px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:18px;color:#18191A;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.045);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
 .admin-overview-metric.is-primary{background:#F5F5F3}
 .admin-overview-metric:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.1)}
 .admin-overview-metric.is-selected{border-color:#4B555D;box-shadow:0 0 0 1px #4B555D}
 .admin-overview-metric:focus-visible,.admin-overview button:focus-visible{outline:2px solid #777F85;outline-offset:3px}
 .admin-overview-metric-label{font-size:14px;font-weight:680;line-height:1.25}
 .admin-overview-metric-value{font-size:50px;line-height:1.12;letter-spacing:-.06em;font-weight:760;margin:12px 0 0;font-variant-numeric:tabular-nums}
+.admin-overview-metric-hint{display:block;max-width:calc(100% - 28px);margin-top:auto;padding-top:9px;color:#767A7D;font-size:12px;line-height:1.3;font-weight:500}
 .admin-overview-metric-action{position:absolute;right:18px;bottom:15px;color:#51585B;font-size:20px;line-height:1}
 .admin-overview-panel,.admin-overview-detail{background:var(--white);border:1px solid var(--border);border-radius:18px;min-width:0;box-shadow:0 2px 8px rgba(0,0,0,.035)}
 .admin-overview-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(265px,1fr);gap:16px}
@@ -380,9 +381,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-overview{gap:11px;padding:14px 12px 22px}
   .admin-mobile-app .admin-overview-heading{display:none}
   .admin-mobile-app .admin-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-  .admin-mobile-app .admin-overview-metric{min-height:110px;padding:15px 13px;border-radius:15px;background:#F7F7F5;box-shadow:none}
-  .admin-mobile-app .admin-overview-metric-value{font-size:35px;margin:10px 0 0}
+  .admin-mobile-app .admin-overview-metric{min-height:128px;padding:15px 13px;border-radius:15px;background:#F7F7F5;box-shadow:none}
+  .admin-mobile-app .admin-overview-metric-value{font-size:35px;margin:9px 0 0}
   .admin-mobile-app .admin-overview-metric-label{font-size:12px}
+  .admin-mobile-app .admin-overview-metric-hint{font-size:10px;line-height:1.22;padding-top:8px;max-width:calc(100% - 17px)}
   .admin-mobile-app .admin-overview-metric-action{right:12px;bottom:12px;font-size:17px}
   .admin-mobile-app .admin-overview-layout{grid-template-columns:minmax(0,1fr);gap:11px}
   .admin-mobile-app .admin-overview-panel,.admin-mobile-app .admin-overview-detail{border:1px solid #E4E5E2;border-radius:15px;padding:17px 15px;box-shadow:none;background:var(--white)}
@@ -407,7 +409,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tools-by-app .admin-overview-head-suffix{color:#898D90}
 .admin-overview-user-section,.admin-overview-tools-section{display:grid;gap:14px;min-width:0;margin-top:17px}
 .admin-overview-user-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.admin-overview-user-metrics .admin-overview-metric{cursor:default;min-height:125px}
+.admin-overview-user-metrics .admin-overview-metric{cursor:default;min-height:149px}
 .admin-overview-user-metrics .admin-overview-metric:hover{transform:none;box-shadow:0 3px 10px rgba(0,0,0,.045)}
 .admin-overview-tools-by-app{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .admin-overview-tools-section .admin-overview-inline-link{color:#F5F5F3}
@@ -420,9 +422,20 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-overview-head-suffix{color:#7B8084}
   .admin-mobile-app .admin-overview-user-section,.admin-mobile-app .admin-overview-tools-section{margin-top:10px;gap:10px}
   .admin-mobile-app .admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-  .admin-mobile-app .admin-overview-user-metrics .admin-overview-metric{min-height:110px}
+  .admin-mobile-app .admin-overview-user-metrics .admin-overview-metric{min-height:128px}
   .admin-mobile-app .admin-overview-tools-by-app{grid-template-columns:minmax(0,1fr);gap:9px}
   .admin-mobile-app .admin-overview-tools-section .admin-overview-inline-link{color:#33383B;font-size:0;white-space:nowrap;padding:5px}
   .admin-mobile-app .admin-overview-tools-section .admin-overview-inline-link span{font-size:20px}
 }
 @media(max-width:420px){.admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Desktop Admin shell: H stays present; only its content scrolls. */
+@media(min-width:761px){
+  body:has(.admin-shell){height:100dvh;overflow:hidden}
+  #admin-app:has(.admin-shell){height:100dvh;min-height:0;overflow:hidden}
+  .admin-shell{height:100dvh;min-height:0;overflow:hidden}
+  .admin-sidebar{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+  .admin-toolbar{position:relative;z-index:2;min-height:68px;border-bottom:1px solid rgba(255,255,255,.14);box-shadow:0 5px 14px rgba(0,0,0,.07)}
+  .admin-main{min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable}
+  .admin-toolbar-user>span{min-width:0;max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
