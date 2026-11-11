@@ -256,6 +256,9 @@ export class SaasAdminService {
       if (!Object.values(TenantAccessStatus).includes(statusText as TenantAccessStatus)) {
         throw new BadRequestException('Неизвестный статус рабочего пространства');
       }
+      if (tenantAccess.isOwnerBook && statusText === TenantAccessStatus.SUSPENDED) {
+        throw new BadRequestException('Пространство администратора нельзя отключить');
+      }
       if (statusText !== tenantAccess.status) {
         await this.prisma.$transaction([
           this.prisma.tenantAccess.update({

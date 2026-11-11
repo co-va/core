@@ -299,7 +299,6 @@ async function refreshData() {
 
 const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
-  { id: 'owner', label: 'Моё пространство', icon: 'profile' },
   { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
@@ -430,7 +429,6 @@ function setActiveSection(title) {
 
 function renderCurrentSection() {
   if (state.section === 'overview') return renderOverview();
-  if (state.section === 'owner') return renderOwnerBook();
   if (state.section === 'document-registry') {
     return renderDocumentRegistry(app.querySelector('[data-content]'), {
       escapeHtml,
@@ -691,24 +689,6 @@ function renderOverview() {
   });
 }
 
-function renderOwnerBook() {
-  setActiveSection('Моё пространство');
-  const owner = state.tenants.find((item) => item.isOwnerBook);
-  const content = app.querySelector('[data-content]');
-  if (!owner) {
-    content.innerHTML = '<div class="admin-card" style="padding:20px">Личное рабочее пространство пока не определено.</div>';
-    return;
-  }
-  content.innerHTML = `
-    <div class="admin-heading"><div><h2>Моё пространство</h2><p>Личное рабочее пространство администратора остаётся отдельным от списка пользователей.</p></div></div>
-    <div class="admin-card" style="padding:20px">
-      <strong>${escapeHtml(owner.ownerProfile?.name || owner.tenantName)}</strong>
-      <p style="color:var(--muted)">${escapeHtml(owner.ownerProfile?.email || '')}</p>
-      <button class="admin-button" data-edit-owner>Настроить доступы</button>
-    </div>`;
-  content.querySelector('[data-edit-owner]').addEventListener('click', () => openAccessDrawer(owner.tenantId));
-}
-
 function openDeleteTenantModal(tenantId) {
   const tenant = state.tenants.find((item) => item.tenantId === tenantId);
   if (!tenant || tenant.isOwnerBook) return;
@@ -804,9 +784,10 @@ function selectedInvitationTools(root) {
 function renderTenants() {
   setActiveSection('Пользователи');
   const content = app.querySelector('[data-content]');
+  const owner = state.tenants.find((item) => item.isOwnerBook);
   const tenants = state.tenants.filter((item) => !item.isOwnerBook);
   content.innerHTML = `
-    <div class="admin-heading"><div><h2>Пользователи</h2><p>Режимы и доступ пользователей.</p></div></div>
+    <div class="admin-heading"><div><h2>Пользователи</h2><p>Аккаунты, режимы и доступы.</p></div></div>
     <section class="admin-invite-panel">
       <div class="admin-invite-head">
         <div>
@@ -833,7 +814,11 @@ function renderTenants() {
     <div class="admin-card">
       <table class="admin-table">
         <thead><tr><th>Пользователь</th><th>Email</th><th>Режим</th><th>Состояние</th></tr></thead>
-        <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="4">Пока нет созданных профилей.</td></tr>'}</tbody>
+        <tbody>
+          ${owner ? '<tr class="admin-table-group"><td colspan="4">Мой аккаунт</td></tr>' + tenantRow(owner) : ''}
+          <tr class="admin-table-group"><td colspan="4">Остальные пользователи</td></tr>
+          ${tenants.map(tenantRow).join('') || '<tr><td colspan="4">Пока нет других пользователей.</td></tr>'}
+        </tbody>
       </table>
     </div>`;
 
@@ -918,9 +903,11 @@ function tenantRow(item) {
   const statusClass = item.status === 'SUSPENDED' ? 'suspended' : pending ? 'pending' : 'active';
   const statusLabel = item.status === 'SUSPENDED' ? 'Отключён' : pending ? 'Ждёт регистрации' : item.ownerProfile ? 'Активен' : 'Создан';
   const modeClass = mode === 'LIVE' ? 'active' : 'pending';
-  const testerBadge = item.isTester ? ' <span class="admin-pill pending">Тестировщик</span>' : '';
-  const remove = `<button class="admin-button danger" data-delete-tenant="${escapeHtml(item.tenantId)}">Удалить</button>`;
-  return `<tr data-tenant="${escapeHtml(item.tenantId)}"><td><strong>${escapeHtml(name)}</strong>${testerBadge}</td><td>${email ? escapeHtml(email) : '—'}</td><td><span class="admin-pill ${modeClass}">${escapeHtml(mode)}</span></td><td><span class="admin-pill ${statusClass}">${statusLabel}</span> ${remove}</td></tr>`;
+  const roleBadge = item.isOwnerBook
+    ? ' <span class="admin-pill active">Администратор</span>'
+    : item.isTester ? ' <span class="admin-pill pending">Тестировщик</span>' : '';
+  const remove = item.isOwnerBook ? '' : `<button class="admin-button danger" data-delete-tenant="${escapeHtml(item.tenantId)}">Удалить</button>`;
+  return `<tr data-tenant="${escapeHtml(item.tenantId)}"><td><strong>${escapeHtml(name)}</strong>${roleBadge}</td><td>${email ? escapeHtml(email) : '—'}</td><td><span class="admin-pill ${modeClass}">${escapeHtml(mode)}</span></td><td><span class="admin-pill ${statusClass}">${statusLabel}</span> ${remove}</td></tr>`;
 }
 
 function renderCapabilities() {
@@ -1010,6 +997,7 @@ function openAccessDrawer(tenantId) {
 
       <section class="admin-section">
         <h4>Роль доступа</h4>
+        ${tenant.isOwnerBook ? `<div class="admin-capability"><div><strong>Администратор</strong><small>Защищённый аккаунт платформы.</small></div></div>` : `
         <div class="admin-capability">
           <div>
             <strong data-tester-label>${tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
@@ -1018,7 +1006,7 @@ function openAccessDrawer(tenantId) {
           <button type="button" class="admin-toggle${tenant.isTester ? ' is-on' : ''}"
             role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
             data-tester-toggle></button>
-        </div>
+        </div>`}
       </section>
 
       <section class="admin-section">
@@ -1029,10 +1017,10 @@ function openAccessDrawer(tenantId) {
         </div>
       </section>
 
-      <section class="admin-section">
+      ${tenant.isOwnerBook ? '' : `<section class="admin-section">
         <h4>Состояние пространства</h4>
         <button class="admin-button ${tenant.status === 'SUSPENDED' ? '' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
-      </section>
+      </section>`}
 
       ${tenant.ownerProfile?.email ? `
       <section class="admin-section">
@@ -1139,7 +1127,7 @@ function openAccessDrawer(tenantId) {
       }
     });
 
-    const testerChanged = (testerToggle?.getAttribute('aria-checked') === 'true') !== Boolean(tenant.isTester);
+    const testerChanged = !tenant.isOwnerBook && (testerToggle?.getAttribute('aria-checked') === 'true') !== Boolean(tenant.isTester);
     const message = backdrop.querySelector('[data-save-message]');
     if (!changes.length && !testerChanged) {
       message.textContent = 'Изменений нет.';

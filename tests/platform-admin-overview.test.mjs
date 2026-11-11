@@ -19,7 +19,7 @@ assert.match(adminController, /@Get\('overview\/user-accounts'\)/);
 
 
 const start = source.indexOf('let overviewWindowWeeks = 8;');
-const end = source.indexOf('function renderOwnerBook()', start);
+const end = source.indexOf('function openDeleteTenantModal(', start);
 assert.ok(start > 0 && end > start, 'Overview must remain independently testable');
 
 const newDate = (daysAgo) => new Date(Date.now() - daysAgo * 86400000).toISOString();
