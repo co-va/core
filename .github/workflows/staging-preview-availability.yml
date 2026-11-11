@@ -163,7 +163,17 @@ jobs:
             }
           if ! grep -Eq 'class="[^"]*(admin-auth-screen|admin-mobile-app)' /tmp/admin-mobile-preview-dom.html; then
             echo 'Preview did not render admin login or authenticated mobile shell'
-            grep -o '.\{0,120\}admin-app.\{0,300\}' /tmp/admin-mobile-preview-dom.html | head -n 2 || true
+            python3 - <<'PY'
+          from pathlib import Path
+          s = Path('/tmp/admin-mobile-preview-dom.html').read_text(errors='replace')
+          marker = '<div id="admin-app"'
+          index = s.find(marker)
+          print('DOM bytes:', len(s), 'App mount:', index)
+          print('App DOM snippet:', s[index:index+1800] if index >= 0 else 'MISSING')
+          print('HTML title:', s[s.find('<title'):s.find('</title>')+8][:350])
+          print('Has mobile CSS:', 'admin-mobile-app' in s)
+          print('Has preview bundle:', 'data-preview-module="admin.js"' in s)
+          PY
             tail -n 25 /tmp/admin-mobile-preview-browser.log || true
             exit 1
           fi
