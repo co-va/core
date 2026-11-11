@@ -148,8 +148,8 @@ fulfillCurrent([
   { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Current edition from the database' },
   { key: 'user-document-pdn-policy', title: 'Условия ПДН', type: 'USER_DOCUMENT_BASE', version: 4, content: 'Current User edition from the database' },
 ]);
-await Promise.resolve();
-await Promise.resolve();
+// Let the isolated VM Promise continuation complete after the mocked HTTP reply.
+await new Promise((resolve) => setImmediate(resolve));
 assert.equal(versionNodes[0].textContent, '17', 'Latest DB version replaces placeholder');
 assert.equal(versionNodes[6].textContent, '—', 'Missing current DB edition does not become a fake version');
 assert.equal(versionNodes[7].textContent, '4', 'User source also gets the current persisted version');
