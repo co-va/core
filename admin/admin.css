@@ -24,6 +24,7 @@ button,input,select,textarea{font:inherit}
 .admin-session-icon:hover:not(:disabled){background:rgba(255,255,255,.09)}
 .admin-session-icon:focus-visible{outline:2px solid var(--white);outline-offset:2px}
 .admin-session-icon:disabled{cursor:default;opacity:1}
+.admin-session-icon[hidden]{display:none}
 .admin-session-icon--push.is-enabled::after{
   content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;
   border-radius:50%;background:var(--v2-yellow,#FFFF00)
