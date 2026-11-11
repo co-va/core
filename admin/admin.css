@@ -361,9 +361,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tool-counts>span{display:flex;align-items:center;gap:8px}
 .admin-overview-tool-counts strong{font-variant-numeric:tabular-nums;color:#222;font-size:14px}
 .admin-overview-tool-counts i{width:9px;height:9px;border-radius:50%;display:inline-block}
-.admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:#FFFF00}
-.admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:var(--admin-pearl)}
-.admin-overview-tool-counts .is-not-ready,.admin-overview-tool-track .is-not-ready{background:#D7D7D3}
+.admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:var(--surface-dark)}
+.admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:#FFFF00}
+.admin-overview-tool-counts .is-not-ready,.admin-overview-tool-track .is-not-ready{background:var(--admin-pearl)}
 .admin-overview-tool-track{display:flex;gap:2px;height:9px;overflow:hidden;border-radius:20px;background:#EEE}
 .admin-overview-tool-track>span{display:block;min-width:0}
 .admin-overview-tool-track .is-empty{background:#EEE}
