@@ -628,3 +628,37 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-registry-section .admin-registry-table tbody tr{display:table-row}
   .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-title{font-size:12px}
 }
+
+/* Admin desktop/iPad: one section rhythm and heading hierarchy for Overview, Users and Document Registry.
+   Mobile (< 761px) keeps its separate layout and typography unchanged. */
+@media(min-width:761px){
+  .admin-shell{
+    --admin-section-spacing:33px;
+    --admin-section-title-size:25px;
+  }
+  .admin-overview-app-head h3,
+  .admin-users-section-title{
+    font-family:inherit;
+    font-size:var(--admin-section-title-size);
+    font-weight:720;
+    line-height:1.2;
+    letter-spacing:-.03em;
+    color:var(--white);
+  }
+  .admin-overview-head-suffix,
+  .admin-registry-app{
+    font-family:inherit;
+    font-size:.62em;
+    font-weight:550;
+    letter-spacing:0;
+    color:#A7AAAD;
+    white-space:nowrap;
+  }
+  .admin-users-layout,
+  .admin-registry-layout{gap:var(--admin-section-spacing)}
+  .admin-users-section-title{margin-bottom:14px}
+  .admin-overview-user-section,
+  .admin-overview-tools-section{
+    margin-top:calc(var(--admin-section-spacing) - 16px);
+  }
+}
