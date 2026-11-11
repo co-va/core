@@ -543,14 +543,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-table th,
 .admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-/* Registry table headings must use the same calm line height and ink as data rows.
-   Keep every existing column track across Professional, User and History unchanged. */
+/* Registry header: one graphite band above white records.
+   Equal fixed column tracks in Professional, User and History stay untouched. */
 .admin-registry-section .admin-registry-table thead th{
-  height:44px;
-  background:var(--white);
-  color:var(--text);
+  height:66px;
+  background:var(--surface-dark);
+  color:var(--white);
   font-size:13px;
-  font-weight:680;
+  font-weight:700;
   line-height:1.2;
   letter-spacing:0;
   text-transform:none;
