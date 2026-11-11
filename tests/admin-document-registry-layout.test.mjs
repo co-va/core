@@ -43,7 +43,7 @@ const userDocs = [
   { key: 'user-document-messages-consent', title: 'Согласие на сообщения', version: 1, content: 'J' },
 ];
 const history = [
-  { id: 'prof-event', subjectType: 'PLATFORM_ACCOUNT', documentKey: 'saas-agreement', documentTitle: 'Пользовательское соглашение / публичная оферта', documentVersion: 2, documentContent: 'Exact signed professional snapshot', accountEmail: 'professional@example.test', action: 'ACCEPTED', occurredAt: '2026-11-11T10:00:00.000Z' },
+  { id: 'prof-event', subjectType: 'PLATFORM_ACCOUNT', documentKey: 'saas-agreement', documentTitle: 'Пользовательское соглашение / публичная оферта', documentVersion: 3, documentContent: 'Book — юридическая редакция 1.2 от 18.09.2026\nExact signed professional snapshot', accountEmail: 'professional@example.test', action: 'ACCEPTED', occurredAt: '2026-11-11T10:00:00.000Z' },
   { id: 'user-event', subjectType: 'ACCOUNT', documentTitle: 'Согласие ПДН', documentVersion: 1, documentContent: 'Exact signed user snapshot', accountEmail: 'user@example.test', action: 'REVOKED', occurredAt: '2026-11-11T11:00:00.000Z' },
 ];
 const documents = new Map([...professionalDocs, ...guideDocs, ...userDocs].map((row) => [row.key, row]));
@@ -156,7 +156,8 @@ assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 10, 'E
 assert.equal((fullMarkup.match(/data-registry-date="/g) || []).length, 10, 'All 7+3 documents have a date column');
 assert.match(fullMarkup, /data-registry-date="privacy-policy">16\.09\.2026<\/time>/, 'Legal document issue date comes from its actual published header');
 assert.match(fullMarkup, /data-registry-date="saas-agreement">18\.09\.2026<\/time>/, 'Edition change date is shown in catalog');
-assert.match(fullMarkup, /data-registry-date="user-document-pdn-policy">—<\/time>/, 'Unknown template dates are not fabricated');
+assert.match(fullMarkup, /data-registry-date="user-document-pdn-policy">18\.09\.2026<\/time>/, 'User source file introduction date is grounded in Git');
+assert.match(fullMarkup, /data-registry-date="rkn-notification-guide-template">03\.10\.2026<\/time>/, 'RKN source last edit date is grounded in Git');
 assert.doesNotMatch(fullMarkup, /Подписать|подписать|Надо подписать/, 'Purpose is not an action and does not claim an existing signature');
 assert.match(fullMarkup, /admin-registry-title">Политика ПДН<\/strong>/, 'Short label is visible in registry');
 assert.match(fullMarkup, /admin-registry-title">Оферта<\/strong>/, 'Long legal heading never appears in the row');
@@ -177,7 +178,7 @@ assert.equal(versionNodes[6].textContent, '—', 'Missing current DB edition doe
 assert.equal(versionNodes[7].textContent, '—', 'No legal edition in User template means dash, even if technical index is 4');
 assert.equal(dateNodes[0].textContent, '11.11.2026', 'Document header revision date takes priority over technical save timestamp');
 assert.equal(dateNodes[7].textContent, '04.11.2026', 'User template date is taken from the persisted publishedAt');
-assert.equal(dateNodes[6].textContent, '—', 'Unsourced RKN creation date stays blank');
+assert.equal(dateNodes[6].textContent, '03.10.2026', 'RKN source date remains available without preview read endpoint');
 buttons[0].click();
 assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
@@ -190,7 +191,12 @@ await rendered;
 assert.equal((historyHost.innerHTML.match(/data-registry-history="/g) || []).length, 2, 'All legal events are preserved');
 assert.match(historyHost.innerHTML, /<th>Документ<\/th><th>Версия<\/th><th>Аккаунт<\/th><th>Дата<\/th><th>Событие<\/th><th aria-label="Открыть"><\/th>/, 'History follows requested six-column order');
 assert.match(historyHost.innerHTML, /admin-registry-title">Оферта<\/strong>/, 'History uses short titles without modifying signed data');
-assert.match(historyHost.innerHTML, /data-label="Версия"><span class="admin-registry-version">2<\/span>/, 'History version is its own cell');
+assert.match(historyHost.innerHTML, /data-label="Версия"><span class="admin-registry-version" title="Архивная копия 3">1\.2<\/span>/, 'Signed legal edition 1.2 is distinct from technical archive index 3');
+assert.match(historyHost.innerHTML, /admin-registry-history-moment[^>]*>[\s\S]*?admin-registry-event-date">11\.11\.2026<\/span>[\s\S]*?admin-registry-event-time">\d{2}:\d{2}<\/small>/, 'Event date is above the time');
+assert.match(historyHost.innerHTML, /admin-registry-account-email">professional@example\.test<\/span><small class="admin-registry-account-app">Professional<\/small>/, 'Account email is above muted app label');
+assert.match(css, /admin-registry-history-account\{display:flex;flex-direction:column/, 'Account stays in two rows');
+assert.match(css, /admin-registry-history-moment\{display:flex;flex-direction:column/, 'Date stays above muted time');
+assert.match(css, /admin-registry-history-table th:nth-child\(6\)[\s\S]*?\{width:6%;min-width:0\}/, 'Only viewer icon belongs in the far-right column');
 assert.equal((historyHost.innerHTML.match(/class="admin-registry-open-cell"/g) || []).length, 2, 'History viewer icons are right aligned');
 assert.match(historyHost.innerHTML, /professional@example\.test[\s\S]*Professional/);
 assert.match(historyHost.innerHTML, /user@example\.test[\s\S]*User/);
@@ -203,4 +209,4 @@ assert.deepEqual({ ...modalOptions }, { title: 'Документ', variant: 'q',
 assert.match(mounted.html, /Exact signed user snapshot/, 'History opens immutable saved document snapshot');
 assert.equal(opened.length, 1, 'Mobile document does not create another desktop drawer');
 assert.match(historySource, /documentContent: String\(item\.documentContent/, 'History retains immutable version content');
-console.log('Admin Document Registry: 7+3 sections, published document dates, signing timestamps, aligned columns and viewer PASS');
+console.log('Admin Document Registry: consistent signed legal editions, actual source dates and compact two-line history PASS');
