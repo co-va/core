@@ -27,6 +27,18 @@ jobs:
           node-version: 24
       - name: Verify read-only preview cache and gateway contract
         run: node tests/staging-preview.test.mjs
+      - name: Syntax-check the exact browser inline JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const html = readFileSync('admin/index.html', 'utf8');
+          const script = html.match(/<script type="module" data-preview-module="admin\\.js">\\n([\\s\\S]*?)\\n<\\/script>/)?.[1];
+          if (!script) throw new Error('Bundled Admin script missing');
+          writeFileSync('/tmp/preview-admin-check.mjs', script);
+          NODE
+          node --check /tmp/preview-admin-check.mjs
       - name: Resolve preview hostname
         shell: bash
         run: |
