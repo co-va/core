@@ -835,15 +835,15 @@ html:has(.admin-shell){background:var(--surface-dark)}
     font:inherit;
     font-size:14px;
   }
-  /* Safari must render select controls at the same full height as text inputs. */
+  /* Compact, identical single-line controls; document body stays independently sized. */
   .admin-registry-editor-field input,
   .admin-registry-editor-field select{
-    height:44px;
-    min-height:44px;
-    line-height:normal;
+    height:22px;
+    min-height:22px;
+    padding:0 8px;
+    line-height:20px;
   }
   .admin-registry-editor-field select{
-    padding:0 12px;
     -webkit-appearance:menulist;
     appearance:menulist;
   }
