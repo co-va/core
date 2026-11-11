@@ -91,6 +91,14 @@ jobs:
         run: |
           set -euo pipefail
           host='va-app-volokovykh.msk1.amvera.tech'
+          echo 'Compare backend latency with full Admin HTML (cold direct calls):'
+          for path in health admin/; do
+            for n in 1 2 3; do
+              curl -4 -sS --connect-timeout 6 --max-time 18 -o /dev/null \
+                -w "path=${path} n=${n} status=%{http_code} resolve=%{time_namelookup}s tcp=%{time_connect}s tls=%{time_appconnect}s first_byte=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}\\n" \
+                "https://${host}/${path}?fresh=${GITHUB_RUN_ID}-${n}" || echo "FAILED ${path} request ${n}"
+            done
+          done
           echo 'IPv4 address records:'
           getent ahostsv4 "$host" | awk '{print $1}' | sort -u
           echo 'IPv6 address records (empty means none or not resolved on runner):'
