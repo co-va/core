@@ -151,7 +151,7 @@ assert.match(css, /admin-registry-table\{width:100%;min-width:860px;table-layout
 assert.match(css, /admin-registry-section \.admin-registry-table\{\s*display:table;width:100%;min-width:860px/, 'Mobile keeps the same column geometry, without independent grid rows');
 const registryWidth = (section, index) => {
   const column = index === 1 ? 'first-child' : 'nth-child(' + index + ')';
-  const selector = '.admin-registry-section .admin-registry-' + section + '-table th:' + column + ',\\n' +
+  const selector = '.admin-registry-section .admin-registry-' + section + '-table th:' + column + ',\n' +
     '.admin-registry-section .admin-registry-' + section + '-table td:' + column + '{width:';
   const at = css.indexOf(selector);
   assert.ok(at !== -1, 'Missing shared geometry for ' + section + ' column ' + index);
