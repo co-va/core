@@ -406,7 +406,7 @@ function renderShell() {
     + '<div class="admin-toolbar-context"><span>Платформа</span><span class="admin-toolbar-divider">/</span><span data-toolbar-title>Пользователи</span></div>'
     + '<div class="admin-toolbar-user"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
     + adminSessionIcon('push')
-    + adminSessionIcon('logout') + '</div></header>';
+    + adminSessionIcon('logout') + '</div></header>'
     + '<main class="admin-main"><div class="admin-content" data-content></div></main>'
     + '</div>';
   app.querySelectorAll('[data-section]').forEach((button) => {
