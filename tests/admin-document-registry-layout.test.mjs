@@ -106,7 +106,7 @@ assert.match(fullMarkup, /Кабинет<span class="admin-registry-app"> \/ Pro
 assert.match(fullMarkup, /Записи<span class="admin-registry-app"> \/ User<\/span>/);
 assert.match(fullMarkup, /admin-users-section-title">История<\/h2>/);
 assert.equal((fullMarkup.match(/class="admin-users-section admin-registry-section"/g) || []).length, 3, 'Exactly three matching sections');
-assert.equal((fullMarkup.match(/class="admin-card"/g) || []).length, 3, 'Two list cards and one history loading card');
+assert.equal((fullMarkup.match(/class="admin-card(?:\s|\")/g) || []).length, 3, 'Two list cards and one history loading card');
 assert.ok(fullMarkup.indexOf('Кабинет<span') < fullMarkup.indexOf('Записи<span'), 'Professional first');
 assert.ok(fullMarkup.indexOf('Записи<span') < fullMarkup.indexOf('История</h2>'), 'User second, History third');
 const guideAt = fullMarkup.indexOf('Инструкция РКН');
