@@ -34,7 +34,7 @@ assert.match(editor, /name="type" required/, 'Legal/working status is a separate
 assert.match(editor, /'CUSTOM_LEGAL'|value="CUSTOM_LEGAL"/, 'Legal status supported');
 assert.match(editor, /value="CUSTOM_WORKING"/, 'Working status supported');
 assert.match(editor, /purpose: String\(data.get\('purpose'\)/, 'Form saves selected purpose');
-assert.match(css, /admin-registry-editor-field input,[\s\S]*?admin-registry-editor-field select\{\s*height:44px;/, 'Text inputs and dropdowns share 44px height');
+assert.match(css, /admin-registry-editor-field input,[\s\S]*?admin-registry-editor-field select\{\s*height:22px;\s*min-height:22px;\s*padding:0 8px;/, 'Single-line text inputs and dropdowns share compact 22px height');
 assert.match(css, /admin-registry-history-scroll\{[^}]*max-height:calc\(100dvh - 180px\);[^}]*overflow-y:auto;/, 'History list scrolls without moving the section title');
 assert.match(css, /admin-registry-history-table thead th\{[^}]*position:sticky;/, 'History column headers remain visible');
 assert.match(view, /admin-registry-history-section/, 'History section has the sticky-title scope');
