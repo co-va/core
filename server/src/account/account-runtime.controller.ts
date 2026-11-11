@@ -29,6 +29,11 @@ export class AccountRuntimeController {
     return this.accountDocuments.publicTerms();
   }
 
+  @Get('privacy-policy')
+  privacyPolicy() {
+    return this.accountDocuments.publicPrivacyPolicy();
+  }
+
   @Post('prepare')
   prepare(@Body() body: { identifier?: unknown; email?: unknown; phone?: unknown }) {
     return this.account.prepareGlobalAccount(body || {});
