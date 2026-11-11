@@ -117,13 +117,15 @@ function documentPurpose(item) {
   return item.requiredForRegistration ? 'Обязательно' : 'Необязательно';
 }
 
-function purposeMarkup(value) {
+function purposeMarkup(value, status) {
   const kind = value === 'Обязательно' ? 'required'
     : value === 'Необязательно' ? 'optional'
       : value === 'Справочный' ? 'reference' : 'reading';
   const symbol = kind === 'required' ? '✓' : kind === 'optional' ? '–'
     : kind === 'reference' ? 'i' : '•';
-  return '<span class="admin-registry-purpose is-' + kind + '"><span class="admin-registry-purpose-mark" aria-hidden="true">' + symbol +
+  return '<span class="admin-registry-purpose is-' + kind +
+    (status === 'Рабочий' ? ' is-working' : ' is-platform') +
+    '"><span class="admin-registry-purpose-mark" aria-hidden="true">' + symbol +
     '</span><span>' + value + '</span></span>';
 }
 
@@ -138,21 +140,34 @@ function documentStatusMarkup(item) {
   const status = documentStatus(item);
   // Reuse the same badge already used for History events and Users.
   return '<span class="admin-pill' +
-    (status === 'Правовой' ? ' active' : '') + '">' + status + '</span>';
+    (status === 'Правовой' ? ' active' : ' working') + '">' + status + '</span>';
+}
+
+// A platform-supplied working base has an explicit source version in
+// PlatformDocumentVersion. A Professional's private edits are NOT this version.
+// The RKN instruction stays unversioned as an informational helper.
+function sourceEdition(item) {
+  const legal = legalEdition(item?.content);
+  if (legal) return legal;
+  if (item?.type === 'USER_DOCUMENT_BASE') {
+    const version = Number(item?.version);
+    return Number.isSafeInteger(version) && version > 0 ? String(version) : '…';
+  }
+  return item?.edition || '—';
 }
 
 function documentTable(items, escapeHtml, application) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
     const shortTitle = escapeHtml(SHORT_TITLES[item.key] || item.title || 'Документ');
-    const edition = escapeHtml(legalEdition(item.content) || item.edition || '—');
+    const edition = escapeHtml(sourceEdition(item));
     const publicationDate = escapeHtml(publishedDocumentDate(item));
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item);
     return '<tr>' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
-      '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
+      '<td data-label="Назначение">' + purposeMarkup(purpose, documentStatus(item)) + '</td>' +
       '<td data-label="Дата"><time class="admin-registry-published-date" data-registry-date="' + key + '">' + publicationDate + '</time></td>' +
       '<td data-label="Статус">' + documentStatusMarkup(item) + '</td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
@@ -220,7 +235,8 @@ function openDocument(item) {
   const content = item.content || item.documentContent || '';
   // Both current and signed archived document readers show the revision
   // actually stated in that snapshot; the archive index is not a legal edition.
-  const version = legalEdition(content);
+  const version = legalEdition(content) ||
+    (item.type === 'USER_DOCUMENT_BASE' ? sourceEdition(item) : '');
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = '<aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Просмотр документа">' +
@@ -304,7 +320,7 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
         currentDocumentsByKey.set(item.key, item);
         enableDocumentButton(item.key);
         const badge = badges.find((node) => node.dataset.registryVersion === item.key);
-        if (badge) badge.textContent = legalEdition(item.content) || '—';
+        if (badge) badge.textContent = sourceEdition(item);
         const date = dates.find((node) => node.dataset.registryDate === item.key);
         if (date) date.textContent = publishedDocumentDate(item);
       }
