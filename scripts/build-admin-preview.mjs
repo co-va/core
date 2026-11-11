@@ -49,23 +49,20 @@ html = html.replace(/^\s*<script type="module" src="[^"]+"><\/script>\s*$/gm, ''
 if (/rel="stylesheet"|rel="modulepreload"|<script[^>]+src=/.test(html)) {
   throw new Error('Unexpected external CSS/JS dependency in preview HTML');
 }
-// Always use replacement callbacks: JS replacement strings expand 'html = html.replace('</head>', '<style data-preview-style>\n' + safeCss + '\n</style>\n</head>');
-html = html.replace('</body>', scripts.join('\n') + '\n</body>');
-const fingerprint = createHash('sha256').update(html).digest('hex').slice(0, 12);' to the matched
-// HTML tag. A minified expression like 'html = html.replace('</head>', '<style data-preview-style>\n' + safeCss + '\n</style>\n</head>');
-html = html.replace('</body>', scripts.join('\n') + '\n</body>');
-const fingerprint = createHash('sha256').update(html).digest('hex').slice(0, 12);&callback' previously became '</body>&callback',
-// silently corrupting the compiled JavaScript and leaving Admin with a blank screen.
+// Replacement callbacks are required: String.replace treats '$&' in a replacement string
+// as the matched HTML closing tag. Esbuild-generated variable names can contain '$&'
+// and that previously inserted literal HTML into valid JavaScript.
 html = html.replace('</head>', () => '<style data-preview-style>\n' + safeCss + '\n</style>\n</head>');
 html = html.replace('</body>', () => scripts.join('\n') + '\n</body>');
-if ((html.match(/<\\/body>/g) || []).length !== 1) {
-  throw new Error('Corrupt Admin preview: the closing body tag appeared inside the inline modules');
+if (html.split('</body>').length !== 2) {
+  throw new Error('Corrupt Admin preview: unexpected closing body tag inside a module');
 }
-const inlineModules = [...html.matchAll(/<script type="module" data-preview-module="[^"]+">\\n([\\s\\S]*?)\\n<\\/script>/g)];
-if (inlineModules.length !== entries.length) {
-  throw new Error('Corrupt Admin preview: wrong number of inlined modules');
-}
-for (const [, compiledModule] of inlineModules) {
+for (const entry of entries) {
+  const marker = '<script type="module" data-preview-module="' + entry + '">\n';
+  const from = html.indexOf(marker);
+  const to = html.indexOf('\n</script>', from + marker.length);
+  if (from < 0 || to < 0) throw new Error('Missing inlined Admin module: ' + entry);
+  const compiledModule = html.slice(from + marker.length, to);
   await transform(compiledModule, { loader: 'js', format: 'esm', target: 'es2022', logLevel: 'silent' });
 }
 const fingerprint = createHash('sha256').update(html).digest('hex').slice(0, 12);
