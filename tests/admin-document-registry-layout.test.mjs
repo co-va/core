@@ -199,10 +199,9 @@ assert.equal((fullMarkup.match(/is-reading/g) || []).length, 1, 'User privacy no
 assert.equal((fullMarkup.match(/is-reference/g) || []).length, 1, 'RKN is reference material, not consent');
 assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 11, 'All 11 entries have distinct legal edition fields');
 assert.equal((fullMarkup.match(/data-registry-date="/g) || []).length, 11, 'All source entries have publication date');
-assert.equal((fullMarkup.match(/class="admin-registry-document-status is-legal"/g) || []).length, 7, 'Six platform Professional documents and User terms are Правовой');
-assert.equal((fullMarkup.match(/class="admin-registry-document-status is-working"/g) || []).length, 4, 'RKN and three User-facing templates are Рабочий');
-assert.match(css, /admin-registry-document-status\.is-legal\{background:#303638/, 'Правовой has graphite marker');
-assert.match(css, /admin-registry-document-status\.is-working\{background:#F3E4A8/, 'Рабочий has warm yellow marker');
+assert.equal((fullMarkup.match(/<span class="admin-pill active">Правовой<\/span>/g) || []).length, 7, 'Legal documents reuse existing active pill');
+assert.equal((fullMarkup.match(/<span class="admin-pill pending">Рабочий<\/span>/g) || []).length, 4, 'Working documents reuse existing pending pill');
+assert.doesNotMatch(css, /admin-registry-document-status/, 'No separate status design or colors');
 assert.match(fullMarkup, /data-registry-date="privacy-policy">16\.09\.2026<\/time>/, 'Legal document issue date comes from its actual published header');
 assert.match(fullMarkup, /data-registry-date="saas-agreement">18\.09\.2026<\/time>/, 'Edition change date is shown in catalog');
 assert.match(fullMarkup, /data-registry-date="user-document-pdn-policy">18\.09\.2026<\/time>/, 'User source file introduction date is grounded in Git');
