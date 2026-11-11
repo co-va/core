@@ -922,8 +922,11 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-users-section .admin-account-email,
   .admin-users-section .admin-network-detail{margin-top:2px}
-  .admin-users-section .admin-inline-role-editor{display:inline-flex;margin:0 0 0 6px;vertical-align:middle}
-  .admin-users-section .admin-inline-role-select{min-height:24px;height:24px;padding:0 18px 0 6px}
+  .admin-users-section .admin-inline-role-editor{display:block;margin:0;line-height:1}
+  .admin-users-section .admin-inline-role-select{min-height:20px;height:20px;padding:0 18px 0 6px}
+  .admin-users-section .admin-account-email,
+  .admin-users-section .admin-network-detail{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 .admin-tool-register-layout{gap:44px}
 .admin-tool-register-card{margin:0;padding:0;min-width:0;overflow:hidden}
