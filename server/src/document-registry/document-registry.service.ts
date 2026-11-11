@@ -177,10 +177,10 @@ export class DocumentRegistryService {
       await tx.$executeRaw`
         INSERT INTO "PlatformDocumentVersion" (
           "id","documentId","version","contentSnapshot","contentHash",
-          "operatorIdentitySnapshot","publishedAt","supersededAt","editorEdition"
+          "operatorIdentitySnapshot","publishedAt","supersededAt","editorEdition","editorTitle"
         ) VALUES (
           ${randomUUID()},${documentId},${version},${draft.content},${contentHash},
-          '{}'::jsonb,CURRENT_TIMESTAMP,NULL,${draft.edition}
+          '{}'::jsonb,CURRENT_TIMESTAMP,NULL,${draft.edition},${draft.title}
         )
       `;
       await tx.$executeRaw`
@@ -199,7 +199,7 @@ export class DocumentRegistryService {
       documentContent: string; editorEdition: string | null; publishedAt: Date;
       supersededAt: Date; application: string;
     }>>`
-      SELECT v."id",d."key" AS "documentKey",d."title" AS "documentTitle",
+      SELECT v."id",d."key" AS "documentKey",COALESCE(v."editorTitle",d."title") AS "documentTitle",
              v."version" AS "documentVersion",v."contentSnapshot" AS "documentContent",
              v."editorEdition",v."publishedAt",v."supersededAt",
              COALESCE(ed."application",
