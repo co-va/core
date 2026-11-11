@@ -52,7 +52,7 @@ function legalEdition(content) {
 // publication timestamp. Unsigned templates without either stay undated.
 function legalEditionDate(content) {
   const header = String(content || '').split(/\r?\n/).slice(0, 8).join('\n');
-  const match = header.match(/(?:юридическая\s+)?редакция\s+\d+(?:\.\d+)+\s+от\s+(\d{2}\.\d{2}\.\d{4})(?=\s|$)/i);
+  const match = header.match(/(?:юридическая\s+)?редакция\s+\d+(?:\.\d+)*\s+от\s+(\d{2}\.\d{2}\.\d{4})(?=\s|$)/i);
   if (!match) return '';
   const [day, month, year] = match[1].split('.').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
