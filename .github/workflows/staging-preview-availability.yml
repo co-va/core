@@ -119,6 +119,11 @@ jobs:
             actual=$(head -n 2 /tmp/preview-served.html | grep -o 'content-sha256: [a-f0-9]*' | awk '{print $2}' || true)
             echo "Live gateway build attempt ${n}: ${actual:-missing}"
             if [ "$actual" = "$expected" ]; then
+              closing_tags=$(grep -o '</body>' /tmp/preview-served.html | wc -l)
+              if [ "$closing_tags" -ne 1 ]; then
+                echo "Live HTML has ${closing_tags} body close tags; generated JavaScript may be corrupted"
+                exit 1
+              fi
               if grep -Eq 'Каждый аккаунт отдельно, независимо от UEI|Статистика будет доступна после обновления API Core|Подтверждённые входы; не вся активность' /tmp/preview-served.html; then
                 echo 'Legacy explanatory text still present in live Admin HTML'
                 exit 1
