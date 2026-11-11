@@ -5,6 +5,7 @@ export const STAGING_PREVIEW_HOST = 'va-app-volokovykh.msk1.amvera.tech';
 const STAGING_RAW_BASE = 'https://raw.githubusercontent.com/co-va/core/staging';
 const PREVIEW_FETCH_TIMEOUT_MS = 8_000;
 const PREVIEW_CACHE_TTL_MS = 15_000;
+const PREVIEW_CACHE_MAX_STALE_MS = 5 * 60_000;
 const PREVIEW_CACHE_MAX_FILES = 96;
 const PREVIEW_CACHE_MAX_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -36,7 +37,10 @@ function fetchPreviewAsset(file: string): Promise<Buffer | null> {
         headers: { 'User-Agent': 'CO-VA-Staging-Preview' },
         signal: controller.signal,
       });
-      if (upstream.status === 404) return null;
+      if (upstream.status === 404) {
+        previewAssetCache.delete(file);
+        return null;
+      }
       if (!upstream.ok) throw new Error('Staging asset fetch failed');
       const body = Buffer.from(await upstream.arrayBuffer());
       rememberPreviewAsset(file, body);
@@ -147,7 +151,7 @@ export async function stagingPreviewMiddleware(
     if (method === 'HEAD') return response.status(200).end();
     return response.status(200).send(cached.body);
   }
-  if (cached) {
+  if (cached && Date.now() - cached.fetchedAt < PREVIEW_CACHE_MAX_STALE_MS) {
     // Serve a known-good snapshot immediately and refresh in the background.
     // Slow or temporarily unavailable GitHub must not block the Admin UI.
     void fetchPreviewAsset(file).catch(() => undefined);
@@ -165,5 +169,4 @@ export async function stagingPreviewMiddleware(
   } catch {
     return response.status(502).send('Staging preview unavailable');
   }
-
 }
