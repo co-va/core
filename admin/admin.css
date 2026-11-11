@@ -551,12 +551,12 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-registry-section .admin-registry-table thead th{
     height:66px;
     background:var(--admin-pearl);
-    color:var(--text-secondary);
-    font-size:13px;
-    font-weight:700;
+    color:#41484F;
+    font-size:15px;
+    font-weight:750;
     line-height:1.2;
-    letter-spacing:0;
-    text-transform:none;
+    letter-spacing:.05em;
+    text-transform:uppercase;
   }
 }
 .admin-registry-section .admin-registry-table tbody tr{height:44px}
