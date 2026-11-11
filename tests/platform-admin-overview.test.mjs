@@ -3,6 +3,20 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
+const adminService = readFileSync(new URL('../server/src/saas-admin/saas-admin.service.ts', import.meta.url), 'utf8');
+const adminController = readFileSync(new URL('../server/src/saas-admin/saas-admin.controller.ts', import.meta.url), 'utf8');
+const userSummaryStart = adminService.indexOf('async userAccountOverview()');
+const userSummaryEnd = adminService.indexOf('async tenants()', userSummaryStart);
+assert.ok(userSummaryStart !== -1 && userSummaryEnd > userSummaryStart);
+const userSummaryCode = adminService.slice(userSummaryStart, userSummaryEnd);
+assert.match(userSummaryCode, /FROM "Account"/, 'User registration metric reads account identities');
+assert.match(userSummaryCode, /COUNT\(DISTINCT e\."subjectAccountId"\)/, 'User login metric counts distinct identities');
+assert.match(userSummaryCode, /"profileData"->>'deletedAt'/, 'Deleted account tombstones excluded');
+assert.doesNotMatch(userSummaryCode, /FROM "Person"|FROM "BookingRequest"|FROM "AccountContact"/, 'Guest contacts and bookings must not count as registered users');
+assert.match(adminController, /@Controller\('saas-admin'\)[\s\S]*@UseGuards\(JwtAuthGuard, PlatformAdminGuard\)/);
+assert.match(adminController, /@Get\('overview\/user-accounts'\)/);
+
+
 const start = source.indexOf('let overviewWindowWeeks = 8;');
 const end = source.indexOf('function renderOwnerBook()', start);
 assert.ok(start > 0 && end > start, 'Overview must remain independently testable');
