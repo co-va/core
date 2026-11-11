@@ -373,7 +373,8 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       tbody.querySelectorAll('[data-registry-extra]').forEach((row) => row.remove());
       const extrasByKey = new Map();
       for (const item of currentDocumentsByKey.values()) {
-        if (!sourceByKey.has(item.key) && applicationFor(item) === application) extrasByKey.set(item.key, item);
+        if (!sourceByKey.has(item.key) && item.application === application &&
+          String(item.key || '').startsWith('admin-' + application + '-')) extrasByKey.set(item.key, item);
       }
       for (const draft of draftsByKey.values()) {
         if (!sourceByKey.has(draft.key) && applicationFor(draft) === application && !extrasByKey.has(draft.key)) {
