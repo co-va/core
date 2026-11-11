@@ -1043,10 +1043,19 @@ function tenantRow(item) {
     const lastVisit = rawLastVisit && Number.isFinite(rawLastVisit.getTime())
       ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
       : '';
-    // Last observed activity is a timestamp, not a login event.
-    // Cumulative credited online time belongs to analytics, not the status table.
+    // Only desktop/iPad changes presentation here; mobile Admin retains its current
+    // status detail until the separately planned mobile redesign.
+    const mobile = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 760px)').matches;
+    const rawTime = mobile ? Number(item.presence.totalOnlineMs) : 0;
+    const minutes = Number.isFinite(rawTime) && rawTime >= 60_000 ? Math.floor(rawTime / 60_000) : 0;
+    const duration = minutes >= 60 ? `${Math.floor(minutes / 60)} ч${minutes % 60 ? ` ${minutes % 60} мин` : ''}`
+      : minutes ? `${minutes} мин` : '';
+    // lastSeenAt is a verified activity timestamp, not necessarily login time.
+    const detail = mobile ? [lastVisit, duration].filter(Boolean).join(' — ') : lastVisit;
     network = `<span class="admin-account-presence ${connected ? 'is-online' : 'is-offline'}">${connected ? 'В сети' : 'Не в сети'}</span>
-      ${lastVisit ? `<small class="admin-network-detail" title="Последняя активность">${escapeHtml(lastVisit)}</small>` : ''}`;
+      ${detail ? `<small class="admin-network-detail"${mobile ? '' : ' title="Последняя активность"'}>${escapeHtml(detail)}</small>` : ''}`;
   }
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
