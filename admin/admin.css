@@ -824,9 +824,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-shell .admin-sidebar-foot{
     color:var(--admin-pearl);
   }
-
-  .admin-shell .admin-nav button:hover:not(.is-active){
-    background:rgba(224,214,214,.08);
+  .admin-shell .admin-nav button[data-section="document-registry"]{
     color:var(--white);
   }
   .admin-shell .admin-toolbar-context{
