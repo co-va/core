@@ -1,6 +1,6 @@
 import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { zonedDateTimeToDate } from '../../../core/time/zone.js';
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';

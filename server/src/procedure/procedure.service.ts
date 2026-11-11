@@ -98,7 +98,7 @@ export class ProcedureService {
     for (const value of arrayValue(proceduresValue)) {
       const procedure = objectValue(value);
       if (procedure.deletedAt || procedure.visibleInPublicBooking === false) continue;
-      const workplaces = arrayValue(procedure.workplaces)
+      const workplaces: JsonObject[] = arrayValue(procedure.workplaces)
         .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id))
           && assignment?.visibleInPublicBooking !== false)
         .map((assignment) => {
