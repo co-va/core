@@ -86,6 +86,32 @@ jobs:
           grep -q 'data-preview-module="admin.js"' /tmp/preview-served.html || exit 1
           grep -q 'data-preview-module="commercial-tenant.js"' /tmp/preview-served.html || exit 1
           echo "Gateway served inlined admin HTML: $(wc -c </tmp/preview-served.html) bytes"
+      - name: Verify live gateway serves the exact current Admin build
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://va-app-volokovykh.msk1.amvera.tech/admin/'
+          raw='https://raw.githubusercontent.com/co-va/core/staging/admin/index.html'
+          curl -fsSL --connect-timeout 8 --max-time 20 "$raw" -o /tmp/preview-expected.html
+          expected=$(head -n 2 /tmp/preview-expected.html | grep -o 'content-sha256: [a-f0-9]*' | awk '{print $2}')
+          test -n "$expected"
+          echo "Expected staging build: $expected"
+          for n in 1 2 3; do
+            curl -fsSL --connect-timeout 8 --max-time 20 "${url}?revision-check=${GITHUB_RUN_ID}-${n}" -o /tmp/preview-served.html
+            actual=$(head -n 2 /tmp/preview-served.html | grep -o 'content-sha256: [a-f0-9]*' | awk '{print $2}' || true)
+            echo "Live gateway build attempt ${n}: ${actual:-missing}"
+            if [ "$actual" = "$expected" ]; then
+              if grep -Eq 'Каждый аккаунт отдельно, независимо от UEI|Статистика будет доступна после обновления API Core|Подтверждённые входы; не вся активность' /tmp/preview-served.html; then
+                echo 'Legacy explanatory text still present in live Admin HTML'
+                exit 1
+              fi
+              echo 'Live Admin build matches staging'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Live preview did not serve the current staging build'
+          exit 1
       - name: Diagnose preview DNS and repeated navigation latency
         shell: bash
         run: |
