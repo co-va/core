@@ -543,17 +543,21 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-table th,
 .admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-/* Registry header: one graphite band above white records.
-   Equal fixed column tracks in Professional, User and History stay untouched. */
-.admin-registry-section .admin-registry-table thead th{
-  height:66px;
-  background:var(--surface-dark);
-  color:var(--white);
-  font-size:13px;
-  font-weight:700;
-  line-height:1.2;
-  letter-spacing:0;
-  text-transform:none;
+/* Preserve the original compact mobile header. */
+.admin-registry-section .admin-registry-table thead th{height:34px}
+/* Desktop and iPad: a 66px graphite title band over 44px white records.
+   Fixed tracks remain identical across Professional, User and History. */
+@media(min-width:761px){
+  .admin-registry-section .admin-registry-table thead th{
+    height:66px;
+    background:var(--surface-dark);
+    color:var(--white);
+    font-size:13px;
+    font-weight:700;
+    line-height:1.2;
+    letter-spacing:0;
+    text-transform:none;
+  }
 }
 .admin-registry-section .admin-registry-table tbody tr{height:44px}
 .admin-registry-section .admin-registry-table .admin-registry-title{display:block;min-width:0;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}
