@@ -23,6 +23,7 @@ assert.match(admin, /loadCurrentDocuments: \(\) => adminRequest\('\/document-reg
 assert.match(docController, /@Get\('document-registry\/current'\)/);
 assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredForRegistration"/);
 assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
+assert.match(docService, /v\."publishedAt"/, 'Publication date is supplied by current persisted version');
 assert.match(css, /admin-registry-table tbody tr\{height:44px\}/, 'Compact 44px rows for all three sections');
 assert.match(css, /admin-registry-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
 assert.match(css, /admin-registry-documents-table th:first-child/, 'Document names get remaining width instead of user identity 31%');
@@ -105,6 +106,7 @@ const root = {
   querySelectorAll(selector) {
     if (selector === '[data-registry-document]') return buttons;
     if (selector === '[data-registry-version]') return versionNodes;
+    if (selector === '[data-registry-date]') return dateNodes;
     return [];
   },
 };
@@ -113,6 +115,10 @@ let fulfillHistory;
 let fulfillCurrent;
 const versionNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
   dataset: { registryVersion: doc.key }, textContent: doc.key === 'privacy-policy' ? '1.1' : doc.key === 'saas-agreement' ? '1.2' : '—',
+}));
+const dateNodes = [...professionalDocs, ...guideDocs, ...userDocs].map((doc) => ({
+  dataset: { registryDate: doc.key },
+  textContent: doc.key === 'privacy-policy' ? '16.09.2026' : doc.key === 'saas-agreement' ? '18.09.2026' : '—',
 }));
 let title = '';
 const rendered = registry.renderDocumentRegistry(root, {
@@ -141,12 +147,16 @@ assert.equal((secondSection.match(/data-registry-document="/g) || []).length, 3,
 assert.match(css, /admin-registry-version\{font-size:14px;font-weight:750;color:var\(--text\)/, 'Version digits are strong dark text');
 assert.match(css, /admin-registry-history-scroll\{[^}]*overflow-x:auto/, 'Mobile history can scroll sideways without stacking rows');
 assert.doesNotMatch(fullMarkup, /document-tile|document-tiles--rail|Платформа ↔ пользователь|Шаблоны помощников/);
-assert.match(fullMarkup, /<th>Документ<\/th><th>Версия<\/th><th>Назначение<\/th><th aria-label="Открыть"><\/th>/, 'Catalog follows requested column order');
+assert.match(fullMarkup, /<th>Документ<\/th><th>Версия<\/th><th>Назначение<\/th><th>Дата<\/th><th aria-label="Открыть"><\/th>/, 'Catalog date follows purpose and precedes rightmost icon');
 assert.equal((fullMarkup.match(/is-required/g) || []).length, 5, 'Four mandatory Professional and one User PDN consent');
 assert.equal((fullMarkup.match(/is-optional/g) || []).length, 3, 'Two Professional options and User marketing');
 assert.equal((fullMarkup.match(/is-reading/g) || []).length, 1, 'User privacy notice is for familiarization');
 assert.equal((fullMarkup.match(/is-reference/g) || []).length, 1, 'RKN is reference material, not consent');
 assert.equal((fullMarkup.match(/data-registry-version="/g) || []).length, 10, 'Every document has a real-version placeholder');
+assert.equal((fullMarkup.match(/data-registry-date="/g) || []).length, 10, 'All 7+3 documents have a date column');
+assert.match(fullMarkup, /data-registry-date="privacy-policy">16\.09\.2026<\/time>/, 'Legal document issue date comes from its actual published header');
+assert.match(fullMarkup, /data-registry-date="saas-agreement">18\.09\.2026<\/time>/, 'Edition change date is shown in catalog');
+assert.match(fullMarkup, /data-registry-date="user-document-pdn-policy">—<\/time>/, 'Unknown template dates are not fabricated');
 assert.doesNotMatch(fullMarkup, /Подписать|подписать|Надо подписать/, 'Purpose is not an action and does not claim an existing signature');
 assert.match(fullMarkup, /admin-registry-title">Политика ПДН<\/strong>/, 'Short label is visible in registry');
 assert.match(fullMarkup, /admin-registry-title">Оферта<\/strong>/, 'Long legal heading never appears in the row');
@@ -157,14 +167,17 @@ assert.equal(versionNodes[1].textContent, '1.2');
 
 await Promise.resolve();
 fulfillCurrent([
-  { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Book — юридическая редакция 1.3 от 11.11.2026' },
-  { key: 'user-document-pdn-policy', title: 'Условия ПДН', type: 'USER_DOCUMENT_BASE', version: 4, content: 'Current User edition from the database' },
+  { key: 'privacy-policy', title: 'Политика', type: 'PRIVACY_POLICY', version: 17, content: 'Book — юридическая редакция 1.3 от 11.11.2026', publishedAt: '2026-11-12T00:00:00.000Z' },
+  { key: 'user-document-pdn-policy', title: 'Условия ПДН', type: 'USER_DOCUMENT_BASE', version: 4, content: 'Current User edition from the database', publishedAt: '2026-11-04T13:30:00.000Z' },
 ]);
 // Let the isolated VM Promise continuation complete after the mocked HTTP reply.
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(versionNodes[0].textContent, '1.3', 'Latest actual legal revision, not technical index 17');
 assert.equal(versionNodes[6].textContent, '—', 'Missing current DB edition does not become a fake version');
 assert.equal(versionNodes[7].textContent, '—', 'No legal edition in User template means dash, even if technical index is 4');
+assert.equal(dateNodes[0].textContent, '11.11.2026', 'Document header revision date takes priority over technical save timestamp');
+assert.equal(dateNodes[7].textContent, '04.11.2026', 'User template date is taken from the persisted publishedAt');
+assert.equal(dateNodes[6].textContent, '—', 'Unsourced RKN creation date stays blank');
 buttons[0].click();
 assert.equal(opened.length, 1, 'Desktop clicking a row opens one right-side drawer');
 assert.equal(opened[0].className, 'admin-drawer-backdrop admin-document-drawer-backdrop');
@@ -190,4 +203,4 @@ assert.deepEqual({ ...modalOptions }, { title: 'Документ', variant: 'q',
 assert.match(mounted.html, /Exact signed user snapshot/, 'History opens immutable saved document snapshot');
 assert.equal(opened.length, 1, 'Mobile document does not create another desktop drawer');
 assert.match(historySource, /documentContent: String\(item\.documentContent/, 'History retains immutable version content');
-console.log('Admin Document Registry: 7+3 sections, ordered columns, high-contrast versions, compact history and viewer PASS');
+console.log('Admin Document Registry: 7+3 sections, published document dates, signing timestamps, aligned columns and viewer PASS');
