@@ -34,7 +34,7 @@
       const beforeHeader = header.getBoundingClientRect();
       const beforeSide = side.getBoundingClientRect();
       main.scrollTop = 620;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
+      const verifyLayout = () => {
         const afterHeader = header.getBoundingClientRect();
         const afterSide = side.getBoundingClientRect();
         const pass = main.scrollTop >= 600
@@ -46,7 +46,13 @@
         document.documentElement.dataset.mainScroll = String(main.scrollTop);
         document.documentElement.dataset.headerStart = String(Math.round(beforeHeader.top));
         document.documentElement.dataset.headerEnd = String(Math.round(afterHeader.top));
-      }));
+      };
+      requestAnimationFrame(() => requestAnimationFrame(verifyLayout));
+      // Headless --dump-dom may finish before a second RAF. Verify the same
+      // actual scroll/position invariant on the timeout fallback, not a mock.
+      window.setTimeout(() => {
+        if (!document.documentElement.dataset.adminHScroll) verifyLayout();
+      }, 150);
     });
   </script>
 </body>

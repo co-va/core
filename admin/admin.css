@@ -513,7 +513,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-document-reading{min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:20px 0 35px;-webkit-overflow-scrolling:touch}
 .admin-document-reading .document-page{width:min(100%,700px);min-height:0;margin:0 auto;padding:0 12px 20px;background:var(--white)}
 .admin-document-reading .document-page h1{font-size:23px;line-height:1.3}
-.admin-document-reading .document-page__body{font-size:14px;line-height:1.65}
+.admin-document-reading .document-page__body{font-size:14px;line-height:1.65;overflow-wrap:anywhere}
 .admin-document-q .admin-document-drawer{width:100%;max-width:none;height:auto;min-height:0;max-height:none;padding:0;border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent}
 .admin-document-q .admin-document-drawer .admin-drawer-head{display:none}
 .admin-document-q .admin-document-reading{max-height:calc(var(--visual-vh,100dvh) - 155px);padding:10px 0 30px}
