@@ -543,7 +543,18 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-table th,
 .admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-.admin-registry-section .admin-registry-table thead th{height:34px}
+/* Registry table headings must use the same calm line height and ink as data rows.
+   Keep every existing column track across Professional, User and History unchanged. */
+.admin-registry-section .admin-registry-table thead th{
+  height:44px;
+  background:var(--white);
+  color:var(--text);
+  font-size:13px;
+  font-weight:680;
+  line-height:1.2;
+  letter-spacing:0;
+  text-transform:none;
+}
 .admin-registry-section .admin-registry-table tbody tr{height:44px}
 .admin-registry-section .admin-registry-table .admin-registry-title{display:block;min-width:0;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}
 .admin-registry-section .admin-registry-table .admin-registry-version{font-size:14px;font-weight:750;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:.01em}
