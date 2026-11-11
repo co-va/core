@@ -197,6 +197,20 @@ jobs:
           print('HTML title:', s[s.find('<title'):s.find('</title>')+8][:350])
           print('Has mobile CSS:', 'admin-mobile-app' in s)
           print('Has preview bundle:', 'data-preview-module="admin.js"' in s)
+          import re, hashlib
+          current = Path('/tmp/preview-served.html').read_text(errors='replace')
+          pattern = re.compile(r'<script type="module" data-preview-module="admin.js">\\n([\\s\\S]*?)\\n</script>')
+          m1, m2 = pattern.search(current), pattern.search(s)
+          expected = m1.group(1) if m1 else ''
+          browser = m2.group(1) if m2 else ''
+          print('JS SCRIPT raw/server lengths:', len(expected), len(browser))
+          print('JS SCRIPT matching:', expected == browser)
+          if expected != browser:
+              for i,(a,b) in enumerate(zip(expected,browser)):
+                  if a != b:
+                      print('JS SCRIPT first difference:',i,repr(expected[max(0,i-120):i+120]),repr(browser[max(0,i-120):i+120]))
+                      break
+          print('Has inline script close?', '</script' in browser.lower())
           PY
             grep -Ei 'CONSOLE|script|javascript|syntaxerror|typeerror|uncaught|Refused to execute|net::ERR_' /tmp/admin-mobile-preview-browser.log | tail -n 35 || true
             tail -n 25 /tmp/admin-mobile-preview-browser.log || true
