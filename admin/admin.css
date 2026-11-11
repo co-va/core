@@ -519,7 +519,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-document-q .admin-document-reading{max-height:calc(var(--visual-vh,100dvh) - 155px);padding:10px 0 30px}
 .admin-document-q .admin-document-reading .document-page{padding:0 2px 25px}
 /* Unified compact registries: the legal/archive data are unchanged. */
-.admin-registry-section .admin-registry-table{table-layout:fixed}
+.admin-registry-section .admin-registry-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-table th,
 .admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 .admin-registry-section .admin-registry-table thead th{height:34px}
@@ -550,7 +550,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-purpose.is-reference .admin-registry-purpose-mark,
 .admin-registry-purpose.is-reading .admin-registry-purpose-mark{border-radius:3px;font-size:9px}
 .admin-registry-history-card{overflow:hidden}
-.admin-registry-history-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.admin-registry-documents-scroll,.admin-registry-history-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-registry-section .admin-registry-history-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-history-table th:first-child,
 .admin-registry-section .admin-registry-history-table td:first-child{width:23%;min-width:0}
@@ -573,40 +573,46 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-event-date{font-size:12px;line-height:1.2;font-weight:650;color:var(--text)}
 .admin-registry-event-time{font-size:11px;line-height:1.2;font-weight:400;color:var(--text-secondary)}
 .admin-registry-history-table .admin-pill{white-space:nowrap;font-size:11px;padding:4px 7px}
+/* All three registers share the same table tracks even on narrow screens.
+   The scroll viewport belongs to each card, not to table cells. */
 @media(max-width:760px){
   .admin-mobile-app .admin-registry-layout{gap:20px}
-  .admin-mobile-app .admin-registry-section>.admin-card{padding:0 10px;overflow-x:auto;overflow-y:hidden}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table{min-width:650px;width:100%}
-  .admin-mobile-app .admin-registry-documents-table thead{display:none}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table tbody{display:block}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table tbody tr{
-    display:grid;grid-template-columns:minmax(185px,1fr) 65px 135px 125px 36px;gap:0 5px;
-    align-items:center;min-height:44px;height:44px;padding:0;border-bottom:1px solid var(--border)
+  .admin-mobile-app .admin-registry-section>.admin-card{padding:0;overflow:hidden}
+  .admin-mobile-app .admin-registry-section .admin-registry-table{
+    display:table;width:100%;min-width:860px;table-layout:fixed
   }
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table td{
-    display:flex;align-items:center;min-width:0;min-height:44px;height:44px;padding:0!important;border:0;overflow:hidden
+  .admin-mobile-app .admin-registry-section .admin-registry-table thead{
+    display:table-header-group;position:static;width:auto;height:auto;overflow:visible;clip-path:none
   }
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table td:first-child{grid-column:1;grid-row:1;width:auto;min-width:0}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table td:nth-child(2){grid-column:2;grid-row:1;width:auto;min-width:0}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table td:nth-child(3){grid-column:3;grid-row:1;width:auto;min-width:0}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table td:nth-child(4){grid-column:4;grid-row:1;width:auto;min-width:0}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table td:nth-child(5){grid-column:5;grid-row:1;width:auto;min-width:0}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-title{font-size:12px;white-space:nowrap}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-purpose{gap:4px;font-size:10px}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-version{font-size:13px;font-weight:750;color:var(--text)}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-open-cell{padding:0}
-  .admin-mobile-app .admin-registry-history-card{padding:0;overflow:hidden}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table{display:table;min-width:860px;width:100%;table-layout:fixed}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table thead{display:table-header-group;position:static;width:auto;height:auto;overflow:visible;clip-path:none}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody{display:table-row-group}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr{display:table-row;height:52px;min-height:52px;padding:0;border:0}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table td{display:table-cell;grid-column:auto;grid-row:auto;padding:7px 12px!important;height:52px;min-width:0;white-space:nowrap;overflow:hidden}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table th{display:table-cell;min-width:0;white-space:nowrap}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table td.admin-registry-open-cell{padding:0!important}
-  .admin-mobile-app .admin-registry-section .admin-registry-history-table td:not(:first-child)::before{display:none}
+  .admin-mobile-app .admin-registry-section .admin-registry-table tbody{display:table-row-group}
+  .admin-mobile-app .admin-registry-section .admin-registry-table tbody tr{
+    display:table-row;height:44px;min-height:44px;padding:0;background:transparent
+  }
+  .admin-mobile-app .admin-registry-section .admin-registry-table th,
+  .admin-mobile-app .admin-registry-section .admin-registry-table td{
+    display:table-cell;grid-column:auto;grid-row:auto;
+    padding:7px 12px!important;min-width:0;height:44px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;
+    line-height:1.2
+  }
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:first-child{font-size:13px}
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:nth-child(2){
+    color:var(--text);font-size:13px
+  }
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:nth-child(4){
+    display:table-cell;justify-content:initial;align-items:initial;flex-wrap:nowrap
+  }
+  .admin-mobile-app .admin-registry-section .admin-registry-table td:not(:first-child)::before{display:none}
+  .admin-mobile-app .admin-registry-section .admin-registry-table td.admin-registry-open-cell{
+    padding:0 5px!important;text-align:right
+  }
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr,
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody td{height:52px;min-height:52px}
+  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-title{
+    font-size:12px;white-space:nowrap
+  }
 }
 @media(max-width:360px){
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table tbody tr{grid-template-columns:minmax(185px,1fr) 65px 135px 125px 36px;gap:0 5px}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-title{font-size:11px}
-  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-purpose{font-size:9px}
+  .admin-mobile-app .admin-registry-section .admin-registry-table tbody tr{display:table-row}
+  .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-title{font-size:12px}
 }
