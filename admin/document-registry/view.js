@@ -4,6 +4,7 @@ import {
   getRegistryBookUserDocuments,
   getRegistryUserHelperTemplates,
   getRegistryUserLegalTemplates,
+  getRegistryPlatformUserDocuments,
   getRegistryDocument,
 } from './catalog.js';
 import {
@@ -27,6 +28,7 @@ const SHORT_TITLES = Object.freeze({
   'user-document-pdn-policy': 'Политика ПДН',
   'user-document-pdn-consent': 'Согласие ПДН',
   'user-document-messages-consent': 'Маркетинг',
+  'account-terms': 'Условия аккаунта',
 });
 
 // Source content provenance: Git commits that introduced/last changed these
@@ -37,6 +39,7 @@ const SOURCE_CONTENT_LAST_EDITED = Object.freeze({
   'user-document-pdn-consent': '18.09.2026', // 28223eb4658c
   'user-document-messages-consent': '18.09.2026', // 28223eb4658c
   'rkn-notification-guide-template': '03.10.2026', // f9564343a31a
+  'account-terms': '21.09.2026', // canonical 20260921143000_account_terms migration
 });
 
 // Only an explicitly published legal edition counts as a registry revision.
@@ -60,7 +63,7 @@ function legalEditionDate(content) {
 function publishedDocumentDate(item) {
   const fromLegalText = legalEditionDate(item?.content);
   if (fromLegalText) return fromLegalText;
-  if (!item?.publishedAt) return SOURCE_CONTENT_LAST_EDITED[item?.key] || '—';
+  if (!item?.publishedAt) return item?.issuedAt || SOURCE_CONTENT_LAST_EDITED[item?.key] || '—';
   const date = new Date(item.publishedAt);
   if (!Number.isFinite(date.getTime())) return SOURCE_CONTENT_LAST_EDITED[item?.key] || '—';
   return [String(date.getUTCDate()).padStart(2, '0'), String(date.getUTCMonth() + 1).padStart(2, '0'), String(date.getUTCFullYear())].join('.');
@@ -120,11 +123,24 @@ function purposeMarkup(value) {
     '</span><span>' + value + '</span></span>';
 }
 
+// Status describes the document's parties, not whether an individual signed it.
+function documentStatus(item) {
+  return item.key === 'rkn-notification-guide-template'
+    || item.type === 'USER_DOCUMENT_BASE'
+    ? 'Рабочий' : 'Правовой';
+}
+
+function documentStatusMarkup(item) {
+  const status = documentStatus(item);
+  return '<span class="admin-registry-document-status is-' +
+    (status === 'Рабочий' ? 'working' : 'legal') + '">' + status + '</span>';
+}
+
 function documentTable(items, escapeHtml, application) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
     const shortTitle = escapeHtml(SHORT_TITLES[item.key] || item.title || 'Документ');
-    const edition = escapeHtml(legalEdition(item.content) || '—');
+    const edition = escapeHtml(legalEdition(item.content) || item.edition || '—');
     const publicationDate = escapeHtml(publishedDocumentDate(item));
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item, application);
@@ -133,13 +149,14 @@ function documentTable(items, escapeHtml, application) {
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
       '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
       '<td data-label="Дата"><time class="admin-registry-published-date" data-registry-date="' + key + '">' + publicationDate + '</time></td>' +
+      '<td data-label="Статус">' + documentStatusMarkup(item) + '</td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
       '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><div class="admin-registry-documents-scroll"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
-    '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th>Дата</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
-    (rows || '<tr><td colspan="5" class="admin-history-empty">Документов пока нет.</td></tr>') +
+    '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th>Дата</th><th>Статус</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="6" class="admin-history-empty">Документов пока нет.</td></tr>') +
     '</tbody></table></div></div>';
 }
 
@@ -230,14 +247,20 @@ function openDocument(item) {
   return backdrop;
 }
 
-export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments }) {
+export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments, loadAccountTerms }) {
   if (!root) return;
   setTitle?.('Реестр документов');
 
   // RKN assistance concerns the Professional as data operator, not the User
   // application's consent screens.
-  const professional = [...getRegistryBookUserDocuments(), ...getRegistryUserHelperTemplates()];
-  const user = getRegistryUserLegalTemplates();
+  // All platform-provided templates belong to Professional, including bases
+  // intended for Professional ↔ User consents. User lists platform ↔ User only.
+  const professional = [
+    ...getRegistryBookUserDocuments(),
+    ...getRegistryUserLegalTemplates(),
+    ...getRegistryUserHelperTemplates(),
+  ];
+  const user = getRegistryPlatformUserDocuments();
   const currentDocumentsByKey = new Map();
   root.innerHTML = '<div class="admin-users-layout admin-registry-layout">' +
     sectionMarkup('Кабинет', 'Professional', documentTable(professional, escapeHtml, 'professional'), escapeHtml) +
@@ -251,7 +274,10 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   root.querySelectorAll('[data-registry-document]').forEach((button) => {
     button.addEventListener('click', () => {
       const key = button.dataset.registryDocument;
-      openDocument(currentDocumentsByKey.get(key) || getRegistryDocument(key));
+      const selected = currentDocumentsByKey.get(key) || getRegistryDocument(key);
+      // Account terms must come from the real platform snapshot, not a dummy
+      // legal body; source descriptors deliberately contain no document text.
+      if (selected?.content) openDocument(selected);
     });
   });
   if (typeof loadCurrentDocuments === 'function') {
@@ -268,8 +294,27 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
         if (date) date.textContent = publishedDocumentDate(item);
       }
     }).catch(() => {
-      // Older preview backend may lack this GET. Do not erase real source
-      // editions or replace them with unverified technical counters.
+      // Older preview backend may lack this GET. Source document metadata remains.
+    });
+  }
+  // Account terms are stored exclusively in the platform DB, not in the
+  // static template catalog. The public account endpoint returns the same
+  // authoritative legal snapshot even if Admin's guarded GET is unavailable.
+  if (typeof loadAccountTerms === 'function') {
+    void Promise.resolve().then(loadAccountTerms).then((item) => {
+      if (!item || typeof item.content !== 'string' || item.key !== 'account-terms'
+        || root.isConnected === false) return;
+      currentDocumentsByKey.set(item.key, item);
+      for (const badge of root.querySelectorAll('[data-registry-version]')) {
+        if (badge.dataset.registryVersion === item.key) {
+          badge.textContent = legalEdition(item.content) || '—';
+        }
+      }
+      for (const date of root.querySelectorAll('[data-registry-date]')) {
+        if (date.dataset.registryDate === item.key) date.textContent = publishedDocumentDate(item);
+      }
+    }).catch(() => {
+      // Keep known index metadata; never invent a document body.
     });
   }
 
