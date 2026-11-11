@@ -445,6 +445,34 @@ function renderCurrentSection() {
 // Dashboard state is local to Admin presentation; no new API, ledger or shadow counter.
 let overviewWindowWeeks = 8;
 let overviewDetailGroup = '';
+let overviewUserStats = null;
+let overviewUserStatsStatus = 'idle';
+
+function requestOverviewUserStats(force = false) {
+  if (overviewUserStatsStatus === 'loading' || (!force && overviewUserStatsStatus !== 'idle')) return;
+  overviewUserStatsStatus = 'loading';
+  void adminRequest('/overview/user-accounts')
+    .then((result) => {
+      if (![result?.registered, result?.newLast30Days, result?.loggedInLast30Days].every(Number.isFinite)) {
+        throw new Error('Некорректная статистика');
+      }
+      overviewUserStats = result;
+      overviewUserStatsStatus = 'ready';
+    })
+    .catch(() => {
+      overviewUserStatsStatus = 'unavailable';
+    })
+    .finally(() => {
+      if (state.section === 'overview') renderOverview();
+    });
+}
+
+function overviewToolSummary(rows) {
+  const ready = rows.filter((item) => item.status === 'READY').length;
+  const testing = rows.filter((item) => item.status === 'TESTING').length;
+  const notReady = rows.filter((item) => item.status === 'NOT_READY').length;
+  return { ready, testing, notReady, total: rows.length };
+}
 
 function overviewGroupRows(group, regular) {
   if (group === 'registered') return regular.filter((item) => Boolean(item.ownerProfile));
@@ -490,9 +518,14 @@ function renderOverview() {
   const pending = overviewGroupRows('pending', regular);
   const suspended = overviewGroupRows('suspended', regular);
   const toolRows = Array.isArray(state.toolReadiness) ? state.toolReadiness : [];
-  const toolsReady = toolRows.filter((item) => item.status === 'READY').length;
-  const toolsTesting = toolRows.filter((item) => item.status === 'TESTING').length;
-  const toolsNotReady = toolRows.filter((item) => item.status === 'NOT_READY').length;
+  const toolsByApp = [
+    { label: 'Кабинет', type: 'cabinet', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('cabinet.'))) },
+    { label: 'Записи', type: 'records', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('records.'))) },
+  ];
+  const userStats = overviewUserStatsStatus === 'ready' ? overviewUserStats : null;
+  const userStatusNote = overviewUserStatsStatus === 'unavailable'
+    ? 'Статистика будет доступна после обновления API Core. Сейчас нет подтверждённых данных.'
+    : 'Получаем показатели зарегистрированных аккаунтов…';
   const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
   const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
   const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
@@ -518,7 +551,11 @@ function renderOverview() {
       <div class="admin-heading admin-overview-heading">
         <div><h2>Состояние платформы</h2><p>Главные показатели и вопросы, требующие внимания</p></div>
       </div>
-      <section class="admin-overview-metrics" aria-label="Аккаунты платформы">
+      <div class="admin-overview-app-head">
+        <div><span class="admin-overview-eyebrow">PROFESSIONAL</span><h3>Кабинет</h3></div>
+        <p>Профессиональные аккаунты и их рабочие режимы</p>
+      </div>
+      <section class="admin-overview-metrics" aria-label="Аккаунты Кабинета">
         ${groupCards.map((item) => `
           <button type="button" class="admin-overview-metric${item.theme ? ' is-primary' : ''}${overviewDetailGroup === item.key ? ' is-selected' : ''}"
             data-overview-group="${item.key}" aria-pressed="${overviewDetailGroup === item.key}">
@@ -577,25 +614,61 @@ function renderOverview() {
           <button type="button" class="admin-overview-panel-link" data-overview-section="tenants">Открыть пользователей <span aria-hidden="true">↗</span></button>
         </section>
       </div>
-      <section class="admin-overview-panel admin-overview-tools">
-        <div class="admin-overview-panel-head">
+      <section class="admin-overview-user-section" aria-label="Статистика приложения Записи">
+        <div class="admin-overview-app-head">
+          <div><span class="admin-overview-eyebrow">USER</span><h3>Записи</h3></div>
+          <p>Аккаунты пользователей приложения, не контакты специалистов</p>
+        </div>
+        <div class="admin-overview-user-metrics">
+          <div class="admin-overview-metric">
+            <span class="admin-overview-metric-label">Зарегистрированы</span>
+            <strong class="admin-overview-metric-value">${userStats ? userStats.registered : '—'}</strong>
+            <span class="admin-overview-metric-bottom">Каждый аккаунт отдельно, независимо от UEI</span>
+          </div>
+          <div class="admin-overview-metric">
+            <span class="admin-overview-metric-label">Новые · 30 дней</span>
+            <strong class="admin-overview-metric-value">${userStats ? userStats.newLast30Days : '—'}</strong>
+            <span class="admin-overview-metric-bottom">Новые регистрации в приложении</span>
+          </div>
+          <div class="admin-overview-metric">
+            <span class="admin-overview-metric-label">Входили · 30 дней</span>
+            <strong class="admin-overview-metric-value">${userStats ? userStats.loggedInLast30Days : '—'}</strong>
+            <span class="admin-overview-metric-bottom">Подтверждённые входы; не вся активность</span>
+          </div>
+        </div>
+        ${!userStats ? `<div class="admin-overview-user-note"><span>${userStatusNote}</span>
+          ${overviewUserStatsStatus === 'unavailable' ? '<button type="button" data-overview-refresh-users>Повторить</button>' : ''}
+        </div>` : '<p class="admin-overview-footnote">Гостевые записи и контакты специалистов сюда не входят. Два самостоятельных аккаунта учитываются дважды.</p>'}
+      </section>
+      <section class="admin-overview-tools-section">
+        <div class="admin-overview-app-head">
           <div><span class="admin-overview-eyebrow">ИНСТРУМЕНТЫ</span><h3>Готовность функций</h3></div>
           <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Открыть инструменты <span aria-hidden="true">↗</span></button>
         </div>
-        <div class="admin-overview-tool-counts">
-          <span><i class="is-ready"></i>Готово <strong>${toolsReady}</strong></span>
-          <span><i class="is-testing"></i>Проверка <strong>${toolsTesting}</strong></span>
-          <span><i class="is-not-ready"></i>Не готово <strong>${toolsNotReady}</strong></span>
-        </div>
-        <div class="admin-overview-tool-track" role="img" aria-label="Готово: ${toolsReady}, проверка: ${toolsTesting}, не готово: ${toolsNotReady}">
-          ${toolRows.length ? `
-            <span class="is-ready" style="width:${100 * toolsReady / toolRows.length}%"></span>
-            <span class="is-testing" style="width:${100 * toolsTesting / toolRows.length}%"></span>
-            <span class="is-not-ready" style="width:${100 * toolsNotReady / toolRows.length}%"></span>
-          ` : '<span class="is-empty" style="width:100%"></span>'}
+        <div class="admin-overview-tools-by-app">
+          ${toolsByApp.map((group) => `
+            <div class="admin-overview-panel admin-overview-tools" data-overview-tool-app="${group.type}">
+              <div class="admin-overview-panel-head"><h3>${group.label}</h3></div>
+              <div class="admin-overview-tool-counts">
+                <span><i class="is-ready"></i>Готово <strong>${group.ready}</strong></span>
+                <span><i class="is-testing"></i>Проверка <strong>${group.testing}</strong></span>
+                <span><i class="is-not-ready"></i>Не готово <strong>${group.notReady}</strong></span>
+              </div>
+              <div class="admin-overview-tool-track" role="img" aria-label="${group.label}: готово ${group.ready}, проверка ${group.testing}, не готово ${group.notReady}">
+                ${group.total ? `
+                  <span class="is-ready" style="width:${100 * group.ready / group.total}%"></span>
+                  <span class="is-testing" style="width:${100 * group.testing / group.total}%"></span>
+                  <span class="is-not-ready" style="width:${100 * group.notReady / group.total}%"></span>
+                ` : '<span class="is-empty" style="width:100%"></span>'}
+              </div>
+            </div>
+          `).join('')}
         </div>
       </section>
     </div>`;
+
+  content.querySelector('[data-overview-refresh-users]')?.addEventListener('click', () => requestOverviewUserStats(true));
+  if (overviewUserStatsStatus === 'idle') requestOverviewUserStats();
 
   content.querySelectorAll('[data-overview-group]').forEach((button) => {
     button.addEventListener('click', () => {
