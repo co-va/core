@@ -188,6 +188,6 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Только Core; Professional/User, схема БД и production-данные не изменены. Выпуск отдельным PR #863 к main после зелёных проверок и разрешения владельца.
 
 ## Admin online presence and last visit — 2026-11-11
-- Admin **also** reports its own authenticated presence using the existing `POST /auth/presence` (the same Core record used by Professional). `core/presence.js` sends the signal on foreground entry / every 45 seconds, never blocks login, and stops on logout, login-screen entry or connection failure.
+- Admin **also** reports its own authenticated presence using the existing `POST /auth/presence` (the same Core record used by Professional). `admin/presence.js` sends the signal on foreground entry / every 45 seconds, never blocks login, and stops on logout, login-screen entry or connection failure.
 - On the first successful foreground signal, only the Users network cells refresh; the existing 30-second poll keeps them up to date without recreating the whole page. Background tabs skip both heartbeat and network polling.
 - The **В сети** column renders the state first, then one concise line: `DD.MM.YY HH:MM — N ч M мин`. Dates come exclusively from the canonical `TenantAccountPresence.lastSeenAt` and duration from that record's `totalOnlineMs`. If under 1 minute or no proven visit, no duration is claimed. Never render `Учтено: менее 1 мин`, and do not invent historical visits from account creation or login audit.

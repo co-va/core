@@ -1,4 +1,4 @@
-import { apiRequest, getAuthToken } from './auth.js';
+import { apiRequest, getAuthToken } from '../core/auth.js';
 
 // Same canonical authenticated POST /auth/presence as Professional.
 // Foreground telemetry never participates in login, page loading or data sync.

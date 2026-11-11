@@ -1,5 +1,5 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
-import { startAccountPresence, stopAccountPresence } from '../core/presence.js';
+import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
 import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
@@ -481,7 +481,10 @@ function renderCurrentSection() {
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();
-  return renderTenants();
+  renderTenants();
+  // On section entry, refresh network cells independently of the 30s poll.
+  void refreshTenantNetwork().catch(() => {});
+
 }
 
 // Dashboard state is local to Admin presentation; no new API, ledger or shadow counter.
