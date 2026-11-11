@@ -1,0 +1,46 @@
+name: Staging Preview Availability
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - '.github/workflows/staging-preview-availability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Resolve preview hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          getent ahostsv4 va-app-volokovykh.msk1.amvera.tech | head -n 3
+      - name: Probe deployed backend and preview assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://va-app-volokovykh.msk1.amvera.tech'
+          for path in /health /admin/ /admin/admin.js /ui/v2/v2.css; do
+            echo "== Checking ${path} =="
+            code=$(curl -sSL --connect-timeout 8 --max-time 20 -D /tmp/preview-headers -o /tmp/preview-body -w '%{http_code}' "${base}${path}") || {
+              echo "Request failed: ${path}"
+              exit 1
+            }
+            echo "HTTP ${code}"
+            grep -Ei '^(content-type|x-co-va-preview|location):' /tmp/preview-headers || true
+            if [ "${code}" != "200" ]; then
+              head -c 250 /tmp/preview-body || true
+              exit 1
+            fi
+            if [ "${path}" != "/health" ]; then
+              grep -Eiq '^x-co-va-preview: staging' /tmp/preview-headers || {
+                echo "Preview header missing: wrong host or gateway not activated"
+                exit 1
+              }
+            fi
+          done
