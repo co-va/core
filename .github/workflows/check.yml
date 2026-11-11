@@ -846,7 +846,25 @@ jobs:
           expect_redirect "va-app-temp-volokovykh.msk1.amvera.tech" "/" "https://prof.va-tools.ru/"
           expect_status "va-app-volokovykh.msk1.amvera.tech" "/" "302"
           expect_status "va-app-volokovykh.msk1.amvera.tech" "/health" "200"
-          echo "Platform-only API, Admin, landing, redirects and User isolation: PASS"
+          # Presence is the sole authenticated telemetry write from read-only
+          # Admin preview. No token: it must reach the JWT guard and return 401,
+          # not be intercepted as a 405. Business modifications remain 405.
+          preview_presence_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST -H 'Host: va-app-volokovykh.msk1.amvera.tech' \
+            "http://localhost:3000/auth/presence")
+          if [ "$preview_presence_code" != "401" ]; then
+            echo "Preview presence: expected 401 from JWT guard, got $preview_presence_code"
+            exit 1
+          fi
+          preview_mutation_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X PUT -H 'Host: va-app-volokovykh.msk1.amvera.tech' \
+            -H 'Content-Type: application/json' -d '{}' \
+            "http://localhost:3000/saas-admin/tenants/unreal/access")
+          if [ "$preview_mutation_code" != "405" ]; then
+            echo "Preview access mutation: expected 405, got $preview_mutation_code"
+            exit 1
+          fi
+          echo "Platform-only API, Admin, landing, redirects, scoped presence and User isolation: PASS"
       - name: Verify durable owner service Email with PostgreSQL and fake Postbox
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-service-email-outbox.mjs
       - name: Verify canonical data transfer with PostgreSQL

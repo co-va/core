@@ -124,8 +124,13 @@ export async function stagingPreviewMiddleware(
   const method = request.method.toUpperCase();
   const loginRequest = method === 'POST' && request.path === '/auth/login';
   const documentRegistrySync = method === 'POST' && request.path === '/saas-admin/document-registry/sync';
+  // The preview remains read-only for business mutations. Allow only the
+  // existing authenticated, membership-scoped presence heartbeat so the Admin
+  // can report its own online state on this host. JwtAuthGuard and membership
+  // validation run downstream unchanged; no unauthenticated write is permitted.
+  const authenticatedPresence = method === 'POST' && request.path === '/auth/presence';
   if (!['GET', 'HEAD'].includes(method)) {
-    if (loginRequest) return next();
+    if (loginRequest || authenticatedPresence) return next();
     if (documentRegistrySync) {
       response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       response.setHeader('X-CO-VA-Preview', 'staging');
