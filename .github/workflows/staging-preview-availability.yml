@@ -37,8 +37,9 @@ jobs:
           const tag = '<script type="module" data-preview-module="admin.js">';
           const tagAt = html.indexOf(tag);
           if (tagAt < 0) throw new Error('Bundled Admin script missing');
-          const from = html.indexOf('\\n', tagAt) + 1;
-          const to = html.indexOf('\\n</script>', from);
+          const nl = String.fromCharCode(10);
+          const from = html.indexOf(nl, tagAt) + 1;
+          const to = html.indexOf(nl + '</script>', from);
           if (to < from) throw new Error('Bundled Admin script does not end');
           const script = html.slice(from, to);
           writeFileSync('/tmp/preview-admin-check.mjs', script);
