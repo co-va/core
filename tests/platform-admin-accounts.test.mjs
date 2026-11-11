@@ -32,10 +32,16 @@ const user = {
   ownerProfile: { name: 'Пользователь', email: 'person@example.invalid' },
   access: { commercialMode: 'DEMO' },
 };
-assert.match(tenantRow(owner), /Администратор/);
-assert.doesNotMatch(tenantRow(owner), /data-delete-tenant|Тестировщик/, 'Owner row has no dangerous action or tester badge');
-assert.match(tenantRow(user), /data-delete-tenant="person-id"/);
-assert.match(tenantRow(user), /Тестировщик/);
+assert.match(tenantRow(owner), /data-label="Роль">Администратор/, 'Owner role is a dedicated cell');
+assert.match(tenantRow(owner), /data-label="Тестировщик">—/, 'Owner tester indicator is independent of role');
+assert.match(tenantRow(user), /data-label="Роль">Пользователь/);
+assert.match(tenantRow(user), /data-label="Тестировщик">Да/, 'Tester flag gets its own column');
+assert.match(tenantRow(user), /data-label="Режим"/);
+assert.match(tenantRow(user), /data-label="Тариф"/);
+assert.match(tenantRow(user), /data-label="Состояние"/);
+assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-delete-tenant|Удалить/, 'No destructive actions in table rows');
+assert.equal((tenantRow(user).match(/<td /g) || []).length, 7, 'Account table has seven aligned fields');
+assert.match(tenantRow(user), /tabindex="0"/, 'Account editor remains accessible from keyboard');
 
 const state = { tenants: [user, owner], capabilities: [] };
 let markup = '';
@@ -50,7 +56,7 @@ const tenantsEnd = source.indexOf('function tenantRow(', tenantsStart);
 assert.ok(tenantsStart > 0 && tenantsEnd > tenantsStart);
 runInNewContext(source.slice(tenantsStart, tenantsEnd) + '\nrenderTenants();', {
   app: { querySelector: () => content }, state, setActiveSection: () => {},
-  invitationToolSelector: () => '', tenantRow, escapeHtml,
+  updateRegistrationToolSummary: () => {}, openRegistrationToolDrawer: () => {}, tenantRow, escapeHtml,
 });
 const sectionTitles = [...markup.matchAll(/class="admin-users-section-title"[^>]*>([^<]+)/g)].map((match) => match[1]);
 assert.deepEqual(sectionTitles, ['Мой аккаунт', 'Регистрационная ссылка', 'Все пользователи'], 'Three independent cards in requested order');
@@ -63,15 +69,31 @@ assert.ok(markup.indexOf('Все пользователи') < markup.indexOf('da
 assert.equal((markup.match(/data-tenant="owner-id"/g) || []).length, 1, 'Existing owner tenant must be reused once');
 assert.equal((markup.match(/data-tenant="person-id"/g) || []).length, 1, 'Existing user must not be duplicated');
 assert.doesNotMatch(markup, /admin-table-group|Остальные пользователи|admin-heading/, 'No grey separators or duplicate page title');
-assert.match(source, /data-select-all-invite-tools/, 'Registration tool-selection actions remain wired');
+assert.doesNotMatch(markup, /admin-invite-access|data-select-all-invite-tools|data-clear-invite-tools/, 'Retired registration checkbox implementation is absent');
+assert.match(markup, /data-configure-invite-tools/, 'Registration config launches a modal');
+assert.match(markup, /data-invite-selection/, 'User can see selected tool count');
 assert.match(markup, /data-create-invite-link/);
 assert.match(markup, /data-copy-invite-link/);
+const inviteCode = source.slice(source.indexOf('function openRegistrationToolDrawer()'), source.indexOf('function renderTenants()'));
+assert.match(inviteCode, /renderTenantRegistry\(resolved\)/, 'Registration uses the exact account capability registry');
+assert.match(inviteCode, /modal\(backdrop.innerHTML, \{ title: 'Доступ', variant: 'q', className: 'admin-access-q' \}\)/, 'Registration and account editor share mobile modal');
+assert.match(inviteCode, /querySelectorAll\('\[data-type="LIMIT"\]'\)/, 'Invitation excludes capacity overrides');
+assert.match(inviteCode, /data-apply-invite/, 'Invitation selection is committed on apply');
+assert.match(source, /const tools = \[\.\.\.selectedRegistrationToolKeys\]/, 'Link submits selected tools');
+assert.doesNotMatch(source, /function invitationToolSelector\(/, 'Retired second tool catalog is gone');
+const invitations = readFileSync(new URL('../server/src/tenant-invitation/tenant-invitation.service.ts', import.meta.url), 'utf8');
+const link = invitations.slice(invitations.indexOf('async createRegistrationLink('), invitations.indexOf('async resendInvitation(', invitations.indexOf('async createRegistrationLink(')));
+assert.match(link, /const tools = normalizeToolSelection\(input\?\.tools\)/);
+assert.match(link, /createPendingInvitation\(adminId,[\s\S]*?tools,\s*\}\)/, 'Selected tools must reach the new Tenant access overrides');
+assert.match(invitations, /enabled: selectedTools\.includes\(capability\.key\)/, 'Backend persists selected capability overrides');
 
 const drawer = source.slice(source.indexOf('function openAccessDrawer('), source.indexOf('document.addEventListener(\'admin:tool-readiness-changed\''));
 assert.match(drawer, /tenant\.isOwnerBook \? '' :/, 'Owner has no suspend control');
 assert.match(drawer, /tenant\.isOwnerBook \? `<div class="admin-capability"/, 'Owner has a fixed administrator role');
 assert.match(drawer, /const testerChanged = !tenant\.isOwnerBook &&/, 'Owner tester role must not be saved');
 assert.match(source, /if \(!tenant \|\| tenant\.isOwnerBook\) return;/, 'Owner cannot be deleted in UI');
+assert.match(drawer, /data-delete-account/, 'Non-owner deletion is only inside account editor');
+assert.match(drawer, /openDeleteTenantModal\(tenantId, close\)/, 'Deleting an account closes its editor');
 assert.match(service, /if \(access\.isOwnerBook\) throw new BadRequestException/, 'Owner deletion prohibited server-side');
 assert.match(service, /if \(tenantAccess\.isOwnerBook && statusText === TenantAccessStatus\.SUSPENDED\)/, 'Owner suspension prohibited server-side');
 console.log('Platform Admin unified Users, protected owner and account badges: PASS');
