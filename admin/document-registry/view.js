@@ -35,6 +35,27 @@ function legalEdition(content) {
   return header.match(/(?:юридическая\s+)?редакция\s+(\d+(?:\.\d+)+)(?=\s|$)/i)?.[1] || '';
 }
 
+// The document header's issue date takes precedence over its technical
+// publication timestamp. Unsigned templates without either stay undated.
+function legalEditionDate(content) {
+  const header = String(content || '').split(/\r?\n/).slice(0, 8).join('\n');
+  const match = header.match(/(?:юридическая\s+)?редакция\s+\d+(?:\.\d+)+\s+от\s+(\d{2}\.\d{2}\.\d{4})(?=\s|$)/i);
+  if (!match) return '';
+  const [day, month, year] = match[1].split('.').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+    ? match[1] : '';
+}
+
+function publishedDocumentDate(item) {
+  const fromLegalText = legalEditionDate(item?.content);
+  if (fromLegalText) return fromLegalText;
+  if (!item?.publishedAt) return '—';
+  const date = new Date(item.publishedAt);
+  if (!Number.isFinite(date.getTime())) return '—';
+  return [String(date.getUTCDate()).padStart(2, '0'), String(date.getUTCMonth() + 1).padStart(2, '0'), String(date.getUTCFullYear())].join('.');
+}
+
 function formatMoment(value) {
   const date = new Date(value || '');
   return Number.isFinite(date.getTime())
@@ -92,19 +113,21 @@ function documentTable(items, escapeHtml, application) {
     const title = escapeHtml(item.title || 'Документ');
     const shortTitle = escapeHtml(SHORT_TITLES[item.key] || item.title || 'Документ');
     const edition = escapeHtml(legalEdition(item.content) || '—');
+    const publicationDate = escapeHtml(publishedDocumentDate(item));
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item, application);
     return '<tr>' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
       '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
+      '<td data-label="Дата"><time class="admin-registry-published-date" data-registry-date="' + key + '">' + publicationDate + '</time></td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
       '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
-    '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
-    (rows || '<tr><td colspan="4" class="admin-history-empty">Документов пока нет.</td></tr>') +
+    '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th>Дата</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="5" class="admin-history-empty">Документов пока нет.</td></tr>') +
     '</tbody></table></div>';
 }
 
@@ -220,11 +243,14 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
     void Promise.resolve().then(loadCurrentDocuments).then((items) => {
       if (!Array.isArray(items) || root.isConnected === false) return;
       const badges = Array.from(root.querySelectorAll('[data-registry-version]'));
+      const dates = Array.from(root.querySelectorAll('[data-registry-date]'));
       for (const item of items) {
         if (!item || typeof item.key !== 'string' || typeof item.content !== 'string') continue;
         currentDocumentsByKey.set(item.key, item);
         const badge = badges.find((node) => node.dataset.registryVersion === item.key);
         if (badge) badge.textContent = legalEdition(item.content) || '—';
+        const date = dates.find((node) => node.dataset.registryDate === item.key);
+        if (date) date.textContent = publishedDocumentDate(item);
       }
     }).catch(() => {
       // Older preview backend may lack this GET. Do not erase real source
