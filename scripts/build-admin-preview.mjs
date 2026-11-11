@@ -39,9 +39,13 @@ for (const entry of entries) {
   if (result.outputFiles.length !== 1) {
     throw new Error('Preview bundle must be a single inline script: ' + entry);
   }
-  // Never allow the HTML parser to treat bundled JS string content as closing script markup.
-  const safeJs = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-  scripts.push('<script type="module" data-preview-module="' + entry + '">\n' + safeJs + '\n</script>');
+  // Keep HTML syntax entirely separate from bundled JavaScript: an inline HTML
+  // tokenizer can corrupt a template-heavy module even when the JS is valid.
+  // Data URL imports preserve the single-request preview with no eval or
+  // additional network request and no exposure to embedded HTML tag sequences.
+  const encodedJs = Buffer.from(result.outputFiles[0].text, 'utf8').toString('base64');
+  scripts.push('<script type="module" data-preview-module="' + entry
+    + '">import "data:text/javascript;base64,' + encodedJs + '";</script>');
 }
 
 html = html.replace(/^\s*<link rel="modulepreload"[^>]*>\s*$/gm, '');
