@@ -155,3 +155,9 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Professional sends foreground-only heartbeat every 45 seconds. A signal less than 120 seconds old means online. Timed out/background/closed sessions expire without a network disconnect event.
 - Admin reads the presence under the **Доступ** column and displays two lines. Without the new API presence field the second line is omitted, not replaced with a fabricated placeholder.
 - User and guest booking do not use the Professional presence endpoint. Backend migration and deployment are prerequisites to production availability; staging changes do not deploy Core production.
+
+## Unified account duration (2026-11-11, staging)
+- Extend the **same** `POST /auth/presence` heartbeat and `TenantAccountPresence`. There is no second presence endpoint, worker, client timer or browser recorder.
+- Serialise membership updates using a DB row lock; update the last seen timestamp and cumulative milliseconds together. Credit only gaps under 120 seconds; split credited gaps into `TenantAccountPresenceDay` UTC date buckets for future daily/monthly reporting. Multiple browser tabs cannot double count elapsed time.
+- Retain `AUTH_LOGIN_SUCCEEDED` as the separate immutable security/login audit (not a presence calculation). No legacy competing online-duration implementation was found in the current staging code.
+- The incremental migration `20261111160000_account_online_duration` preserves the already-created presence table migration/checksum. Aggregate durations start at first recorded heartbeats after this migration; historical time cannot be reconstructed from old login events.

@@ -15,6 +15,21 @@ assert.equal(isAccountOnline(new Date(now - 119_999), now), true);
 assert.equal(isAccountOnline(new Date(now - 120_000), now), false);
 assert.equal(isAccountOnline(new Date(now + 600_000), now), false);
 assert.equal(isAccountOnline('invalid', now), false);
+const splitSource = policy.slice(policy.indexOf('export function creditPresenceDays('));
+const creditBody = splitSource.replace('export function creditPresenceDays(lastSeenAt: Date | string | null | undefined, seenAt: Date): Array<{ day: Date; milliseconds: number }> {',
+  'function creditPresenceDays(lastSeenAt, seenAt) {')
+  .replace('const slices: Array<{ day: Date; milliseconds: number }> = [];', 'const slices = [];')
+  .replace('lastSeenAt!', 'lastSeenAt');
+const creditPresenceDays = runInNewContext(creditBody + '\\ncreditPresenceDays;', { Date, Math, isAccountOnline });
+assert.equal(creditPresenceDays(null, new Date(now)).length, 0, 'First beat cannot invent elapsed time');
+assert.equal(creditPresenceDays(new Date(now - 121_000), new Date(now)).length, 0, 'Closed tab/outage never counts unobserved time');
+const measured = creditPresenceDays(new Date(now - 45_000), new Date(now));
+assert.equal(measured.reduce((sum, day) => sum + day.milliseconds, 0), 45_000);
+const midnight = Date.parse('2026-11-12T00:00:15Z');
+const split = creditPresenceDays(new Date(midnight - 45_000), new Date(midnight));
+assert.equal(split.length, 2, 'Crossing midnight produces two daily aggregates');
+assert.deepEqual(Array.from(split, x => x.milliseconds), [30_000, 15_000]);
+assert.deepEqual(Array.from(split, x => x.day.toISOString().slice(0, 10)), ['2026-11-11', '2026-11-12']);
 const schema = read('server/prisma/schema.prisma');
 const migration = read('server/prisma/migrations/20261111150000_tenant_account_presence/migration.sql');
 assert.match(schema, /model TenantAccountPresence \{/);

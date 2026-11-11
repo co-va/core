@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { PrismaService } from '../prisma.service';
+import { creditPresenceDays } from './presence-policy';
 import { LoginRequestContext, recordLoginAttempt } from '../history/login-audit';
 
 type PlatformPhoneRow = { platformAccountId: string };
@@ -124,13 +125,38 @@ export class AuthService {
     });
     if (!member) throw new UnauthorizedException('Учётная запись не привязана к пространству');
 
-    // Idempotent across devices. Missing heartbeats expire; no unsafe logout
-    // update can mark another active browser tab offline.
-    const seenAt = new Date();
-    await this.prisma.tenantAccountPresence.upsert({
-      where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
-      create: { tenantId, platformAccountId, lastSeenAt: seenAt },
-      update: { lastSeenAt: seenAt },
+    // Serialise concurrent tabs/devices by locking the same membership presence row.
+    // One authoritative lastSeenAt drives both presence and elapsed-time accounting.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        INSERT INTO "TenantAccountPresence" ("tenantId", "platformAccountId", "lastSeenAt")
+        VALUES (${tenantId}, ${platformAccountId}, CURRENT_TIMESTAMP)
+        ON CONFLICT ("tenantId", "platformAccountId") DO NOTHING
+      `;
+      const rows = await tx.$queryRaw<Array<{ lastSeenAt: Date }>>`
+        SELECT "lastSeenAt" FROM "TenantAccountPresence"
+        WHERE "tenantId" = ${tenantId} AND "platformAccountId" = ${platformAccountId}
+        FOR UPDATE
+      `;
+      const previous = rows[0]?.lastSeenAt || null;
+      const seenAt = new Date();
+      const days = creditPresenceDays(previous, seenAt);
+      const elapsedMs = days.reduce((total, entry) => total + entry.milliseconds, 0);
+      // Duplicate/overlapping requests cannot double-count the time elapsed.
+      await tx.tenantAccountPresence.update({
+        where: { tenantId_platformAccountId: { tenantId, platformAccountId } },
+        data: {
+          lastSeenAt: seenAt,
+          ...(elapsedMs ? { totalOnlineMs: { increment: BigInt(elapsedMs) } } : {}),
+        },
+      });
+      for (const { day, milliseconds } of days) {
+        await tx.tenantAccountPresenceDay.upsert({
+          where: { tenantId_platformAccountId_day: { tenantId, platformAccountId, day } },
+          create: { tenantId, platformAccountId, day, onlineMs: BigInt(milliseconds) },
+          update: { onlineMs: { increment: BigInt(milliseconds) } },
+        });
+      }
     });
     return { accepted: true };
   }

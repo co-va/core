@@ -102,7 +102,7 @@ export class SaasAdminService {
             memberships: {
               include: {
                 account: { select: { id: true, email: true, createdAt: true } },
-                presence: { select: { lastSeenAt: true } },
+                presence: { select: { lastSeenAt: true, totalOnlineMs: true } },
               },
               orderBy: { createdAt: 'asc' },
             },
@@ -135,7 +135,11 @@ export class SaasAdminService {
         isOwnerBook: row.isOwnerBook,
         isTester: row.isTester,
         plan: row.plan,
-        presence: membership ? { online: isAccountOnline(membership.presence?.lastSeenAt) } : null,
+        presence: membership ? {
+          online: isAccountOnline(membership.presence?.lastSeenAt),
+          lastSeenAt: membership.presence?.lastSeenAt?.toISOString() || null,
+          totalOnlineMs: Number(membership.presence?.totalOnlineMs || 0n),
+        } : null,
         ownerProfile: membership ? {
           platformAccountId: membership.account.id,
           email: membership.account.email,
