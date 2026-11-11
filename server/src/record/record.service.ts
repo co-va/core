@@ -1,6 +1,6 @@
 import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { zonedDateTimeToDate } from '../../../core/time/zone.js';
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
@@ -208,9 +208,18 @@ export class RecordService {
     const procedureIds = [...new Set(arrayValue(input.procedureIds).map(text).filter(Boolean).length
       ? arrayValue(input.procedureIds).map(text).filter(Boolean)
       : requestedProcedures.map((item) => text(item?.id)).filter(Boolean))];
+    // The public Account and guest paths must honor the same Service visibility
+    // flags. Professional Journal creates internal Records without this filter.
+    const publicBooking = text(input.source) === 'online-booking' || text(input.source) === 'account-journal';
+    if (publicBooking) {
+      const workplace = await this.prisma.workplace.findUnique({ where: { tenantId_key: { tenantId, key: workplaceId } } });
+      if (!workplace || workplace.deletedAt || workplace.visibleInPublicBooking === false) {
+        throw new BadRequestException('Рабочее пространство недоступно для онлайн-записи');
+      }
+    }
     let procedureSnapshots = requestedProcedures.map((item) => clone(objectValue(item)));
     if (procedureIds.length) {
-      const canonical = await this.procedures.snapshots(tenantId, workplaceId, procedureIds);
+      const canonical = await this.procedures.snapshots(tenantId, workplaceId, procedureIds, publicBooking);
       const requestedById = new Map(requestedProcedures.map((item) => [text(item?.id), objectValue(item)]));
       procedureSnapshots = canonical.map((item) => {
         const requested = requestedById.get(item.id);

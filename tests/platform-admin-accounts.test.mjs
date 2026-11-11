@@ -74,14 +74,14 @@ const tenantsEnd = source.indexOf('function tenantRow(', tenantsStart);
 assert.ok(tenantsStart > 0 && tenantsEnd > tenantsStart);
 runInNewContext(source.slice(tenantsStart, tenantsEnd) + '\nrenderTenants();', {
   app: { querySelector: () => content }, state, setActiveSection: () => {},
-  updateRegistrationToolSummary: () => {}, openRegistrationToolDrawer: () => {}, tenantRow, escapeHtml,
+  syncRegistrationLinkAction: () => {}, selectedRegistrationToolKeys: new Set(), openRegistrationToolDrawer: () => {}, tenantRow, escapeHtml,
 });
 const sectionTitles = [...markup.matchAll(/class="admin-users-section-title"[^>]*>([^<]+)/g)].map((match) => match[1]);
-assert.deepEqual(sectionTitles, ['Мой аккаунт', 'Регистрационная ссылка', 'Все пользователи'], 'Three independent cards in requested order');
+assert.deepEqual(sectionTitles, ['Регистрационная ссылка', 'Мой аккаунт', 'Все пользователи'], 'Registration is first, before owner and users');
 assert.equal((markup.match(/class="admin-users-section"/g) || []).length, 3, 'Exactly three working sections');
 assert.equal((markup.match(/class="admin-card"/g) || []).length, 2, 'Owner and users have separate cards');
 assert.equal((markup.match(/class="admin-invite-panel"/g) || []).length, 1, 'Registration card is independent');
-assert.ok(markup.indexOf('data-tenant="owner-id"') < markup.indexOf('Регистрационная ссылка'), 'Owner always above invitation');
+assert.ok(markup.indexOf('Регистрационная ссылка') < markup.indexOf('data-tenant="owner-id"'), 'Registration is the first section');
 assert.ok(markup.indexOf('data-create-invite-link') < markup.indexOf('Все пользователи'), 'Invitation actions before user list');
 assert.ok(markup.indexOf('Все пользователи') < markup.indexOf('data-tenant="person-id"'), 'Other accounts in the final growing block');
 assert.equal((markup.match(/data-tenant="owner-id"/g) || []).length, 1, 'Existing owner tenant must be reused once');
@@ -94,16 +94,28 @@ assert.match(source, /if \(state\.section === 'tenants'\) await refreshTenantNet
 assert.match(source, /startAccountPresence\(\{[\s\S]*?onForegroundReport:/, 'Admin reports its own online presence via the canonical heartbeat');
 assert.match(source, /stopAccountPresence\(\)/, 'Admin logout or login screen stops heartbeats');
 assert.doesNotMatch(markup, /admin-invite-access|data-select-all-invite-tools|data-clear-invite-tools/, 'Retired registration checkbox implementation is absent');
-assert.match(markup, /data-configure-invite-tools/, 'Registration config launches a modal');
-assert.match(markup, /data-invite-selection/, 'User can see selected tool count');
+assert.match(markup, /data-invite-strip/, 'One compact surface for tool settings and link creation');
+assert.match(markup, /data-configure-invite-tools/, 'Surface is keyboard-accessible and opens the existing modal');
+assert.match(markup, /data-create-invite-link disabled/, 'Create is disabled until tools are applied');
+assert.doesNotMatch(markup, /Инструменты не выбраны|Выбрано инструментов|Настрой доступ для нового аккаунта|Настроить инструменты<\/button>/, 'No redundant explanation or secondary configuration button');
 assert.match(markup, /data-create-invite-link/);
 assert.match(markup, /data-copy-invite-link/);
+assert.match(markup, /aria-label="Ссылка для регистрации"/, 'Copy field remains accessible without repeating the section title');
+assert.doesNotMatch(markup, /<span>Регистрационная ссылка<\/span>/, 'No redundant title in generated-link row');
 const inviteCode = source.slice(source.indexOf('function openRegistrationToolDrawer()'), source.indexOf('function renderTenants()'));
 assert.match(inviteCode, /renderTenantRegistry\(resolved\)/, 'Registration uses the exact account capability registry');
 assert.match(inviteCode, /modal\(backdrop.innerHTML, \{ title: 'Доступ', variant: 'q', className: 'admin-access-q' \}\)/, 'Registration and account editor share mobile modal');
 assert.match(inviteCode, /querySelectorAll\('\[data-type="LIMIT"\]'\)/, 'Invitation excludes capacity overrides');
 assert.match(inviteCode, /data-apply-invite/, 'Invitation selection is committed on apply');
 assert.match(source, /const tools = \[\.\.\.selectedRegistrationToolKeys\]/, 'Link submits selected tools');
+assert.match(source, /function syncRegistrationLinkAction\(root\)/, 'One enable/disable rule used on render and apply');
+assert.match(source, /button\.disabled = selectedRegistrationToolKeys\.size === 0/, 'Create cannot be clicked before tools exist');
+assert.match(source, /syncRegistrationLinkAction\(content\)/, 'Applying settings updates create availability immediately');
+assert.match(source, /if \(createLinkButton\.disabled \|\| !tools\.length\) return;/, 'Disabled click is inert');
+assert.doesNotMatch(source, /Сначала настрой инструменты нового аккаунта|Ссылка готова\. Она действует/, 'No artificial error or success note');
+assert.match(source, /await adminRequest\('\/invitations\/link'/, 'Create directly invokes the existing invitation endpoint');
+assert.match(source, /message\.hidden = false/, 'Only actual server errors are presented');
+assert.doesNotMatch(source, /function updateRegistrationToolSummary\(/, 'Old redundant selection summary removed');
 assert.doesNotMatch(source, /function invitationToolSelector\(/, 'Retired second tool catalog is gone');
 const invitations = readFileSync(new URL('../server/src/tenant-invitation/tenant-invitation.service.ts', import.meta.url), 'utf8');
 const link = invitations.slice(invitations.indexOf('async createRegistrationLink('), invitations.indexOf('async resendInvitation(', invitations.indexOf('async createRegistrationLink(')));

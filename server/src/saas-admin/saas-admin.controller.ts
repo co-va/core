@@ -53,6 +53,11 @@ export class SaasAdminController {
     return this.admin.deleteTenant(tenantId);
   }
 
+  @Get('document-registry/current')
+  documentRegistryCurrent() {
+    return this.admin.documentRegistryCurrent();
+  }
+
   @Get('document-registry/history')
   documentRegistryHistory() {
     return this.admin.documentRegistryHistory();

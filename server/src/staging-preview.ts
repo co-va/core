@@ -129,8 +129,12 @@ export async function stagingPreviewMiddleware(
   // can report its own online state on this host. JwtAuthGuard and membership
   // validation run downstream unchanged; no unauthenticated write is permitted.
   const authenticatedPresence = method === 'POST' && request.path === '/auth/presence';
+  // The owner explicitly generates one-use registration links from Admin preview.
+  // Forward only this exact route to JwtAuthGuard + PlatformAdminGuard.
+  // Other business mutations on the preview host remain blocked.
+  const authenticatedInvitationLink = method === 'POST' && request.path === '/saas-admin/invitations/link';
   if (!['GET', 'HEAD'].includes(method)) {
-    if (loginRequest || authenticatedPresence) return next();
+    if (loginRequest || authenticatedPresence || authenticatedInvitationLink) return next();
     if (documentRegistrySync) {
       response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       response.setHeader('X-CO-VA-Preview', 'staging');

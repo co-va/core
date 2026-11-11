@@ -72,7 +72,9 @@ export class AccountContactRecordService {
     const selected = requestedWorkplace
       ? sourceWorkplaces.find((item) => text(item.key) === requestedWorkplace)
       : null;
-    if (requestedWorkplace && !selected) throw new BadRequestException('Рабочее пространство не найдено');
+    if (requestedWorkplace && (!selected || selected.visibleInPublicBooking === false)) {
+      throw new BadRequestException('Рабочее пространство не найдено');
+    }
 
     const generalWorkplaces = sourceWorkplaces.filter((item) => item.visibleInPublicBooking !== false);
     const workplaces = selected ? [selected] : generalWorkplaces;
@@ -89,6 +91,10 @@ export class AccountContactRecordService {
         workplaces: arrayValue(procedure.workplaces).map((assignment) => ({
           workplaceId: text(assignment.workplaceId ?? assignment.key ?? assignment.id),
           price: assignment.bookingPrice,
+          duration: Math.max(0, Number(assignment.duration) || 0),
+          breakDuration: Math.max(0, Number(assignment.breakDuration) || 0),
+          description: String(assignment.description ?? ''),
+          groupBooking: assignment.groupBooking,
         })),
       }));
 
@@ -165,7 +171,9 @@ export class AccountContactRecordService {
       this.prisma.workplace.findFirst({ where: { tenantId, key: workplaceKey, deletedAt: null } }),
     ]);
     if (!account) throw new UnauthorizedException('Аккаунт не найден');
-    if (!workplace) throw new BadRequestException('Рабочее пространство недоступно');
+    if (!workplace || workplace.visibleInPublicBooking === false) {
+      throw new BadRequestException('Рабочее пространство недоступно');
+    }
     if (this.time.isPastZonedStart(date, from, workplace.timeZone)) {
       throw new ConflictException('Это время уже прошло');
     }

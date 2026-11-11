@@ -864,7 +864,15 @@ jobs:
             echo "Preview access mutation: expected 405, got $preview_mutation_code"
             exit 1
           fi
-          echo "Platform-only API, Admin, landing, redirects, scoped presence and User isolation: PASS"
+          preview_invite_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -X POST -H 'Host: va-app-volokovykh.msk1.amvera.tech' \
+            -H 'Content-Type: application/json' -d '{}' \
+            "http://localhost:3000/saas-admin/invitations/link")
+          if [ "$preview_invite_code" != "401" ]; then
+            echo "Preview registration link: expected 401 from JwtAuthGuard, got $preview_invite_code"
+            exit 1
+          fi
+          echo "Platform-only API, Admin, landing, redirects, scoped presence and invitation, User isolation: PASS"
       - name: Verify durable owner service Email with PostgreSQL and fake Postbox
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-service-email-outbox.mjs
       - name: Verify canonical data transfer with PostgreSQL

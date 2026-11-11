@@ -112,7 +112,7 @@ await assert.rejects(service.snapshots('tenant-a', 'missing', ['shared']), /не
 const recordSource = readFileSync('server/src/record/record.service.ts', 'utf8');
 assert.doesNotMatch(source, /catalogAt\(|historicalMoment\(/);
 assert.doesNotMatch(recordSource, /procedureSnapshotsForDate\(/);
-assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds\)/);
+assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds, publicBooking\)/);
 assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, incomingWorkplaceId, newIds\)/);
 assert.doesNotMatch(recordSource, /this\.procedures\.snapshots\([^;\n]*,\s*date\)/);
 assert.equal((await service.snapshots('tenant-a', 'salon-a', ['base']))[0].cost, 1200);
@@ -153,4 +153,63 @@ assert.deepEqual(catalogRequests, [['base']], 'Only newly added service IDs are 
 assert.equal(combined[0].cost, 2500);
 assert.equal(combined[1].cost, 1200);
 assert.deepEqual(await edit([]), [], 'Removing an item from the Record is an explicit edit');
-console.log('PASS: one live price catalog, existing bookings survive deletion, editable Record prices and new-service validation');
+// One canonical owner computes overrides for each workplace, including zero/empty
+// values, while the public-only visibility policy never affects Journal snapshots.
+procedure.breakDuration = 15;
+procedure.description = 'Общее описание';
+procedure.groupBooking = { enabled: false, capacity: 2 };
+procedure.workplaces[0].duration = 35;
+procedure.workplaces[0].breakDuration = 0;
+procedure.workplaces[0].description = '';
+procedure.workplaces[0].groupBooking = { enabled: true, capacity: 4 };
+procedure.workplaces[1].duration = 75;
+procedure.workplaces[1].breakDuration = 20;
+procedure.workplaces[1].groupBooking = { enabled: false, capacity: 7 };
+const multi = service.publicBookingCatalog(records, ['salon-a', 'salon-b']).find(item => item.id === 'shared');
+assert.deepEqual(multi.workplaces.map(item => item.duration), [35, 75]);
+assert.deepEqual(multi.workplaces.map(item => item.breakDuration), [0, 20]);
+assert.equal(multi.workplaces[0].description, '');
+assert.equal(multi.workplaces[1].description, 'Общее описание');
+assert.deepEqual(multi.workplaces[0].groupBooking, { enabled: true, capacity: 4 });
+assert.deepEqual(multi.workplaces[1].groupBooking, { enabled: false, capacity: 1 });
+const single = service.publicBookingCatalog(records, ['salon-b']).find(item => item.id === 'shared');
+assert.equal(single.duration, 75, 'One-workplace guest context receives the effective top-level duration');
+const snapshotA = (await service.snapshots('tenant-a', 'salon-a', ['shared']))[0];
+const snapshotB = (await service.snapshots('tenant-a', 'salon-b', ['shared']))[0];
+assert.equal(snapshotA.duration, 35);
+assert.equal(snapshotA.breakDuration, 0);
+assert.equal(snapshotA.description, '');
+assert.deepEqual(snapshotA.groupBooking, { enabled: true, capacity: 4 });
+assert.equal(snapshotB.duration, 75);
+assert.equal(snapshotB.breakDuration, 20);
+assert.deepEqual(snapshotB.groupBooking, { enabled: false, capacity: 1 });
+
+const hiddenGlobal = { id: 'hidden-global', name: 'Внутренняя услуга', duration: 60,
+  visibleInPublicBooking: false, workplaces: [{ workplaceId: 'salon-a', visibleInPublicBooking: true }] };
+const hiddenLocal = { id: 'hidden-local', name: 'Индивидуальная видимость', duration: 50,
+  workplaces: [
+    { workplaceId: 'salon-a', visibleInPublicBooking: false },
+    { workplaceId: 'salon-b', visibleInPublicBooking: true },
+  ] };
+records.push(hiddenGlobal, hiddenLocal);
+const visiblePublic = service.publicBookingCatalog(records, ['salon-a', 'salon-b']);
+assert.equal(visiblePublic.some(item => item.id === 'hidden-global'), false,
+  'The global flag must prevent public publication even with an explicit local true');
+assert.deepEqual(visiblePublic.find(item => item.id === 'hidden-local').workplaces.map(item => item.workplaceId), ['salon-b']);
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['hidden-global'], true), /недоступна/);
+await assert.rejects(service.snapshots('tenant-a', 'salon-a', ['hidden-local'], true), /недоступна/);
+assert.equal((await service.snapshots('tenant-a', 'salon-a', ['hidden-global']))[0].duration, 60,
+  'A hidden public service remains available for internal Journal Records');
+assert.equal((await service.snapshots('tenant-a', 'salon-a', ['hidden-local']))[0].duration, 50);
+assert.equal((await service.snapshots('tenant-a', 'salon-b', ['hidden-local'], true))[0].duration, 50);
+
+const guestSource = readFileSync('server/src/online-booking/online-booking.service.ts', 'utf8');
+const accountSource = readFileSync('server/src/account/account-contact-record.service.ts', 'utf8');
+assert.match(guestSource, /this\.procedures\.publicBookingCatalog\(operational\.procedures, \[\.\.\.allowedKeys\]\)/);
+assert.match(guestSource, /this\.procedures\.snapshots\(tenantId, workplaceKey, requestedIds, true\)/);
+assert.match(accountSource, /this\.procedures\.publicBookingCatalog\(operational\.procedures, \[\.\.\.allowedKeys\]\)/);
+assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds, publicBooking\)/);
+assert.match(recordSource, /text\(input\.source\) === 'online-booking' \|\| text\(input\.source\) === 'account-journal'/);
+assert.match(guestSource, /selected\.visibleInPublicBooking === false/);
+assert.match(accountSource, /selected\.visibleInPublicBooking === false/);
+console.log('PASS: canonical Service overrides, public visibility and internal Record isolation');

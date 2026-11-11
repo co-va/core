@@ -109,6 +109,38 @@ export class AccountDocumentService {
     };
   }
 
+  // Canonical User PDN policy: one current legal snapshot in core DB.
+  // This is an informational document; no signature event is required.
+  async publicPrivacyPolicy() {
+    const rows = await this.prisma.$queryRaw<Array<{
+      key: string; title: string; version: number;
+      content: string; publishedAt: Date;
+    }>>`
+      SELECT d."key", d."title", v."version",
+             v."contentSnapshot" AS "content", v."publishedAt"
+      FROM "PlatformDocument" d
+      JOIN LATERAL (
+        SELECT "version", "contentSnapshot", "publishedAt"
+        FROM "PlatformDocumentVersion"
+        WHERE "documentId" = d."id"
+        ORDER BY "version" DESC, "publishedAt" DESC
+        LIMIT 1
+      ) v ON true
+      WHERE d."key" = 'platform-privacy-policy'
+        AND d."isActive" = true
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null; // Migration may not yet be deployed to this backend.
+    return {
+      key: row.key,
+      title: row.title,
+      version: row.version,
+      content: row.content,
+      publishedAt: row.publishedAt.toISOString(),
+    };
+  }
+
   async state(accountIdValue: unknown) {
     const accountId = text(accountIdValue);
     const current = await this.currentTerms();
@@ -116,6 +148,7 @@ export class AccountDocumentService {
     const acceptance = accountId ? await this.latestAcceptance(accountId, current.documentId) : null;
     const acceptedVersion = Math.max(0, Number(acceptance?.version || 0));
     return {
+      privacyPolicy: await this.publicPrivacyPolicy(),
       document: {
         key: current.key,
         title: current.title,

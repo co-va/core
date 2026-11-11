@@ -21,7 +21,8 @@ assert.equal(resolveStagingPreviewFile('/admin/secret.exe'), null);
 assert.equal(resolveStagingPreviewFile('/user.html'), null);
 assert.match(gateway, /request\.path === '\/' \|\| request\.path === '\/admin'/);
 assert.match(gateway, /request\.path === '\/auth\/login'/);
-assert.match(gateway, /request\.path === '\/auth\/presence'/, 'Preview must forward only canonical authenticated presence');
+assert.match(gateway, /request\.path === '\/auth\/presence'/, 'Preview forwards canonical authenticated presence');
+assert.match(gateway, /request\.path === '\/saas-admin\/invitations\/link'/, 'Preview forwards only the guarded one-time link creation route');
 assert.match(gateway, /request\.path === '\/saas-admin\/document-registry\/sync'/);
 assert.match(gateway, /status\(405\)/, 'Preview writes must be refused');
 assert.match(gateway, /Cache-Control', 'no-store, no-cache, must-revalidate'/);
@@ -109,6 +110,15 @@ try {
     () => { presenceForwarded = true; },
   );
   assert.equal(presenceForwarded, true, 'Presence request must reach JwtAuthGuard and canonical account handler');
+  let invitationForwarded = false;
+  await stagingPreviewMiddleware(
+    { headers: { host: STAGING_PREVIEW_HOST }, path: '/saas-admin/invitations/link', method: 'POST' },
+    responseProbe(),
+    () => { invitationForwarded = true; },
+  );
+  assert.equal(invitationForwarded, true, 'Registration creation reaches the protected Admin handler');
+  const blockedInvitationModification = await previewRequest('/saas-admin/invitations/link', 'PUT');
+  assert.equal(blockedInvitationModification.statusCode, 405, 'Only the POST registration-link action is allowed');
 } finally {
   Date.now = originalNow;
   globalThis.fetch = originalFetch;

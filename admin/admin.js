@@ -478,6 +478,25 @@ function renderCurrentSection() {
       escapeHtml,
       setTitle: setActiveSection,
       loadHistory: () => adminRequest('/document-registry/history'),
+      loadCurrentDocuments: () => adminRequest('/document-registry/current'),
+      // This published core endpoint already exists on the live backend and
+      // returns source versions of the 3 Professional working templates.
+      // The new Admin current endpoint may not yet be deployed there.
+      loadWorkingTemplates: async () => {
+        const response = await apiRequest('/tenant-document-archive/platform-bases');
+        const items = await response.json().catch(() => []);
+        if (!response.ok || !Array.isArray(items)) {
+          throw new Error('Не удалось загрузить версии рабочих документов');
+        }
+        return items;
+      },
+      // Canonical global User agreement: public snapshot endpoint is already
+      // used by the User registration flow, not the Professional template base.
+      loadAccountTerms: async () => {
+        const response = await apiRequest('/account/terms');
+        if (!response.ok) throw new Error('Не удалось загрузить Условия аккаунта');
+        return response.json();
+      },
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();
@@ -789,11 +808,11 @@ function openDeleteTenantModal(tenantId, onDeleted = () => {}) {
 // Reuse the account capability hierarchy for invitations; never maintain a second tool catalog.
 const selectedRegistrationToolKeys = new Set();
 
-function updateRegistrationToolSummary(root) {
-  const summary = root.querySelector('[data-invite-selection]');
-  if (summary) summary.textContent = selectedRegistrationToolKeys.size
-    ? 'Выбрано инструментов: ' + selectedRegistrationToolKeys.size
-    : 'Инструменты не выбраны';
+function syncRegistrationLinkAction(root) {
+  const button = root?.querySelector('[data-create-invite-link]');
+  if (button && button.dataset.pending !== 'true') {
+    button.disabled = selectedRegistrationToolKeys.size === 0;
+  }
 }
 
 function openRegistrationToolDrawer() {
@@ -841,7 +860,7 @@ function openRegistrationToolDrawer() {
       .forEach((button) => selectedRegistrationToolKeys.add(button.dataset.capability));
     close();
     const content = app.querySelector('[data-content]');
-    updateRegistrationToolSummary(content);
+    syncRegistrationLinkAction(content);
     const oldLink = content.querySelector('[data-invite-link]');
     if (oldLink) oldLink.hidden = true;
     const linkValue = content.querySelector('[data-invite-link-value]');
@@ -850,6 +869,7 @@ function openRegistrationToolDrawer() {
     if (message) {
       message.textContent = '';
       message.classList.remove('error');
+      message.hidden = true;
     }
   });
 }
@@ -861,6 +881,22 @@ function renderTenants() {
   const tenants = state.tenants.filter((item) => !item.isOwnerBook);
   content.innerHTML = `
     <div class="admin-users-layout">
+      <section class="admin-users-section" aria-labelledby="admin-registration-link-title">
+        <h2 class="admin-users-section-title" id="admin-registration-link-title">Регистрационная ссылка</h2>
+        <div class="admin-invite-panel">
+          <div class="admin-invite-strip" data-invite-strip>
+            <button class="admin-invite-open" type="button" data-configure-invite-tools aria-label="Настроить инструменты нового аккаунта">
+              <span>Инструменты</span><span class="admin-invite-arrow" aria-hidden="true">›</span>
+            </button>
+            <button class="admin-button admin-invite-create" type="button" data-create-invite-link disabled>Создать ссылку</button>
+          </div>
+          <div class="admin-invite-link" data-invite-link hidden>
+            <input class="admin-invite-link-value" type="text" readonly data-invite-link-value aria-label="Ссылка для регистрации">
+            <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
+          </div>
+          <p class="admin-inline-message" data-invite-message role="status" hidden></p>
+        </div>
+      </section>
       <section class="admin-users-section" aria-labelledby="admin-my-account-title">
         <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
         <div class="admin-card">
@@ -868,25 +904,6 @@ function renderTenants() {
             <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
             <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="6">Административный аккаунт не найден.</td></tr>'}</tbody>
           </table>
-        </div>
-      </section>
-      <section class="admin-users-section" aria-labelledby="admin-registration-link-title">
-        <h2 class="admin-users-section-title" id="admin-registration-link-title">Регистрационная ссылка</h2>
-        <div class="admin-invite-panel">
-          <p class="admin-service-note">Настрой доступ для нового аккаунта и создай одноразовую ссылку.</p>
-          <p class="admin-service-note" data-invite-selection>Инструменты не выбраны</p>
-          <div class="admin-invite-primary-actions">
-            <button class="admin-button secondary" type="button" data-configure-invite-tools>Настроить инструменты</button>
-            <button class="admin-button" type="button" data-create-invite-link>Создать ссылку</button>
-          </div>
-          <div class="admin-invite-link" data-invite-link hidden>
-            <label class="admin-field">
-              <span>Ссылка для регистрации</span>
-              <input type="text" readonly data-invite-link-value>
-            </label>
-            <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
-          </div>
-          <p class="admin-inline-message" data-invite-message></p>
         </div>
       </section>
       <section class="admin-users-section" aria-labelledby="admin-all-users-title">
@@ -906,19 +923,20 @@ function renderTenants() {
   const inviteLinkInput = content.querySelector('[data-invite-link-value]');
   const copyLinkButton = content.querySelector('[data-copy-invite-link]');
 
-  updateRegistrationToolSummary(content);
-  content.querySelector('[data-configure-invite-tools]')?.addEventListener('click', openRegistrationToolDrawer);
+  syncRegistrationLinkAction(content);
+  content.querySelector('[data-invite-strip]')?.addEventListener('click', (event) => {
+    if (!event.target.closest('[data-create-invite-link]')) openRegistrationToolDrawer();
+  });
 
-  createLinkButton?.addEventListener('click', async () => {
+  createLinkButton?.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    const tools = [...selectedRegistrationToolKeys];
+    // Disabled until the modal applies at least one tool. No error and no modal.
+    if (createLinkButton.disabled || !tools.length) return;
     message.textContent = '';
     message.classList.remove('error');
-    const tools = [...selectedRegistrationToolKeys];
-    if (!tools.length) {
-      message.textContent = 'Сначала настрой инструменты нового аккаунта.';
-      message.classList.add('error');
-      openRegistrationToolDrawer();
-      return;
-    }
+    message.hidden = true;
+    createLinkButton.dataset.pending = 'true';
     createLinkButton.disabled = true;
     createLinkButton.textContent = 'Создаём…';
     try {
@@ -931,14 +949,16 @@ function renderTenants() {
       if (!url) throw new Error('Ссылка не получена');
       inviteLinkInput.value = url;
       inviteLinkBox.hidden = false;
-      message.textContent = 'Ссылка готова. Она действует 7 дней и используется один раз.';
-      await refreshData();
+      // The link already exists; a background list refresh cannot turn success into an error.
+      void refreshData().catch(() => {});
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : 'Не удалось создать ссылку';
       message.classList.add('error');
+      message.hidden = false;
     } finally {
-      createLinkButton.disabled = false;
+      delete createLinkButton.dataset.pending;
       createLinkButton.textContent = 'Создать ссылку';
+      syncRegistrationLinkAction(content);
     }
   });
 
