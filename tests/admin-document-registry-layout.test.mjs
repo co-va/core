@@ -35,7 +35,7 @@ const professionalDocs = [
   { key: 'public-profile-consent', title: 'Публичный профиль', version: 1, content: 'E', requiredForRegistration: false },
   { key: 'dpa', title: 'Поручение', version: 1, content: 'F', requiredForRegistration: true },
 ];
-const guideDocs = [{ key: 'rkn-notification-guide-template', title: 'Инструкция РКН', version: 1, content: 'G' }];
+const guideDocs = [{ key: 'rkn-notification-guide-template', type: 'RKN_GUIDE_TEMPLATE', title: 'Инструкция РКН', version: 1, content: 'G' }];
 const userDocs = [
   { key: 'user-document-pdn-policy', title: 'Условия ПДН', version: 1, content: 'H' },
   { key: 'user-document-pdn-consent', title: 'Согласие ПДН', version: 1, content: 'I' },
