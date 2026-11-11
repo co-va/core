@@ -811,7 +811,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 /* Desktop Admin shell: shared Professional color hierarchy (canonical yellow, pearl and white). */
 @media(min-width:761px){
   .admin-shell .admin-brand{
-    color:var(--v2-yellow);
+    color:#FFFF00;
   }
   .admin-shell .admin-brand span{
     color:var(--admin-pearl);
