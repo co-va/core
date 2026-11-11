@@ -308,15 +308,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview .admin-overview-heading{margin-bottom:4px}
 .admin-overview-heading h2{font-size:30px;letter-spacing:-.04em}
 .admin-overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.admin-overview-metric{min-width:0;min-height:170px;padding:21px 22px 18px;display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:18px;color:#18191A;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.045);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
+.admin-overview-metric{position:relative;min-width:0;min-height:125px;padding:18px 20px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:18px;color:#18191A;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.045);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
 .admin-overview-metric.is-primary{background:#F5F5F3}
 .admin-overview-metric:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.1)}
 .admin-overview-metric.is-selected{border-color:#4B555D;box-shadow:0 0 0 1px #4B555D}
 .admin-overview-metric:focus-visible,.admin-overview button:focus-visible{outline:2px solid #777F85;outline-offset:3px}
 .admin-overview-metric-label{font-size:14px;font-weight:680;line-height:1.25}
-.admin-overview-metric-value{font-size:50px;line-height:1.12;letter-spacing:-.06em;font-weight:760;margin:14px 0 10px;font-variant-numeric:tabular-nums}
-.admin-overview-metric-bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;width:100%;margin-top:auto;font-size:12px;color:#64686B;line-height:1.3}
-.admin-overview-metric-bottom>span:last-child{color:#3F454A;font-size:21px;line-height:1}
+.admin-overview-metric-value{font-size:50px;line-height:1.12;letter-spacing:-.06em;font-weight:760;margin:12px 0 0;font-variant-numeric:tabular-nums}
+.admin-overview-metric-action{position:absolute;right:18px;bottom:15px;color:#51585B;font-size:20px;line-height:1}
 .admin-overview-panel,.admin-overview-detail{background:var(--white);border:1px solid var(--border);border-radius:18px;min-width:0;box-shadow:0 2px 8px rgba(0,0,0,.035)}
 .admin-overview-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(265px,1fr);gap:16px}
 .admin-overview-panel{padding:24px}
@@ -381,11 +380,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-overview{gap:11px;padding:14px 12px 22px}
   .admin-mobile-app .admin-overview-heading{display:none}
   .admin-mobile-app .admin-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-  .admin-mobile-app .admin-overview-metric{min-height:138px;padding:15px 13px 13px;border-radius:15px;background:#F7F7F5;box-shadow:none}
-  .admin-mobile-app .admin-overview-metric-value{font-size:35px;margin:12px 0 9px}
+  .admin-mobile-app .admin-overview-metric{min-height:110px;padding:15px 13px;border-radius:15px;background:#F7F7F5;box-shadow:none}
+  .admin-mobile-app .admin-overview-metric-value{font-size:35px;margin:10px 0 0}
   .admin-mobile-app .admin-overview-metric-label{font-size:12px}
-  .admin-mobile-app .admin-overview-metric-bottom{font-size:10px}
-  .admin-mobile-app .admin-overview-metric-bottom>span:last-child{font-size:17px}
+  .admin-mobile-app .admin-overview-metric-action{right:12px;bottom:12px;font-size:17px}
   .admin-mobile-app .admin-overview-layout{grid-template-columns:minmax(0,1fr);gap:11px}
   .admin-mobile-app .admin-overview-panel,.admin-mobile-app .admin-overview-detail{border:1px solid #E4E5E2;border-radius:15px;padding:17px 15px;box-shadow:none;background:var(--white)}
   .admin-mobile-app .admin-overview-panel-head h3{font-size:18px}
@@ -403,17 +401,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 
 
 /* Platform overview: Professional/User separation */
-.admin-overview-app-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin:9px 0 0}
-.admin-overview-app-head h3{margin:0;color:var(--white);font-size:25px;line-height:1.2;letter-spacing:-.03em}
-.admin-overview-app-head .admin-overview-eyebrow{color:#C6C8C9;margin-bottom:5px}
-.admin-overview-app-head p{margin:0 0 2px;color:#C6C8C9;font-size:13px;line-height:1.4}
+.admin-overview-app-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;margin:9px 0 0;min-width:0}
+.admin-overview-app-head h3{min-width:0;margin:0;color:var(--white);font-size:25px;line-height:1.2;letter-spacing:-.03em;white-space:nowrap}
+.admin-overview-head-suffix{color:#A7AAAD;font-size:.62em;font-weight:550;letter-spacing:0;white-space:nowrap}
+.admin-overview-tools-by-app .admin-overview-head-suffix{color:#898D90}
 .admin-overview-user-section,.admin-overview-tools-section{display:grid;gap:14px;min-width:0;margin-top:17px}
 .admin-overview-user-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.admin-overview-user-metrics .admin-overview-metric{cursor:default;min-height:154px}
+.admin-overview-user-metrics .admin-overview-metric{cursor:default;min-height:125px}
 .admin-overview-user-metrics .admin-overview-metric:hover{transform:none;box-shadow:0 3px 10px rgba(0,0,0,.045)}
-.admin-overview-user-note{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;color:#D9DADC;font-size:12px;line-height:1.45}
-.admin-overview-user-note button{border:1px solid #B9BEC2;border-radius:10px;padding:8px 13px;color:#FFF;background:transparent;cursor:pointer;font-weight:650}
-.admin-overview-user-section>.admin-overview-footnote{margin:0;color:#C9CCCE}
 .admin-overview-tools-by-app{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .admin-overview-tools-section .admin-overview-inline-link{color:#F5F5F3}
 .admin-overview-tools-by-app .admin-overview-panel-head h3{font-size:19px}
@@ -421,16 +416,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
 @media(max-width:1100px){.admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){
   .admin-mobile-app .admin-overview-app-head{margin:3px 0 1px;gap:6px;align-items:start}
-  .admin-mobile-app .admin-overview-app-head h3{color:#232526;font-size:20px}
-  .admin-mobile-app .admin-overview-app-head .admin-overview-eyebrow{color:#7B7F82}
-  .admin-mobile-app .admin-overview-app-head p{color:#6D7376;font-size:11px}
+  .admin-mobile-app .admin-overview-app-head h3{color:#232526;font-size:clamp(17px,5vw,20px)}
+  .admin-mobile-app .admin-overview-head-suffix{color:#7B8084}
   .admin-mobile-app .admin-overview-user-section,.admin-mobile-app .admin-overview-tools-section{margin-top:10px;gap:10px}
   .admin-mobile-app .admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-  .admin-mobile-app .admin-overview-user-metrics .admin-overview-metric{min-height:134px}
+  .admin-mobile-app .admin-overview-user-metrics .admin-overview-metric{min-height:110px}
   .admin-mobile-app .admin-overview-tools-by-app{grid-template-columns:minmax(0,1fr);gap:9px}
-  .admin-mobile-app .admin-overview-user-note{color:#666A6D}
-  .admin-mobile-app .admin-overview-user-note button{color:#33383B;border-color:#8D9295}
-  .admin-mobile-app .admin-overview-user-section>.admin-overview-footnote{color:#717579}
-  .admin-mobile-app .admin-overview-tools-section .admin-overview-inline-link{color:#33383B}
+  .admin-mobile-app .admin-overview-tools-section .admin-overview-inline-link{color:#33383B;font-size:0;white-space:nowrap;padding:5px}
+  .admin-mobile-app .admin-overview-tools-section .admin-overview-inline-link span{font-size:20px}
 }
 @media(max-width:420px){.admin-overview-user-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
