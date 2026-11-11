@@ -807,3 +807,45 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-registry-editor-error{min-height:18px;color:#a13e31;font-size:12px}
   .admin-registry-draft-badge{display:inline-flex;margin-left:6px;padding:3px 7px;border-radius:6px;background:#FFF1BA;color:#765600;font-size:11px;font-weight:680}
 }
+
+/* Desktop Admin shell: shared Professional color hierarchy (canonical yellow, pearl and white). */
+@media(min-width:761px){
+  .admin-shell .admin-brand{
+    color:var(--v2-yellow);
+  }
+  .admin-shell .admin-brand span{
+    color:var(--admin-pearl);
+    font-size:15px;
+    font-weight:550;
+    line-height:1.2;
+    letter-spacing:0;
+  }
+  .admin-shell .admin-nav button,
+  .admin-shell .admin-sidebar-foot{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-nav button.is-active{
+    background:transparent;
+    color:var(--white);
+    box-shadow:inset 0 0 0 2px var(--v2-yellow);
+  }
+  .admin-shell .admin-nav button:hover:not(.is-active){
+    background:rgba(224,214,214,.08);
+    color:var(--white);
+  }
+  .admin-shell .admin-toolbar-context{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-toolbar-context [data-toolbar-title]{
+    color:var(--white);
+  }
+  .admin-shell .admin-toolbar-divider{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-toolbar-user{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-session-icon{
+    color:var(--admin-pearl);
+  }
+}
