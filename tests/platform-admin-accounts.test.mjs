@@ -100,6 +100,8 @@ assert.match(markup, /data-create-invite-link disabled/, 'Create is disabled unt
 assert.doesNotMatch(markup, /Инструменты не выбраны|Выбрано инструментов|Настрой доступ для нового аккаунта|Настроить инструменты<\/button>/, 'No redundant explanation or secondary configuration button');
 assert.match(markup, /data-create-invite-link/);
 assert.match(markup, /data-copy-invite-link/);
+assert.match(markup, /aria-label="Ссылка для регистрации"/, 'Copy field remains accessible without repeating the section title');
+assert.doesNotMatch(markup, /<span>Регистрационная ссылка<\/span>/, 'No redundant title in generated-link row');
 const inviteCode = source.slice(source.indexOf('function openRegistrationToolDrawer()'), source.indexOf('function renderTenants()'));
 assert.match(inviteCode, /renderTenantRegistry\(resolved\)/, 'Registration uses the exact account capability registry');
 assert.match(inviteCode, /modal\(backdrop.innerHTML, \{ title: 'Доступ', variant: 'q', className: 'admin-access-q' \}\)/, 'Registration and account editor share mobile modal');

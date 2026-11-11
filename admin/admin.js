@@ -872,10 +872,7 @@ function renderTenants() {
             <button class="admin-button admin-invite-create" type="button" data-create-invite-link disabled>Создать ссылку</button>
           </div>
           <div class="admin-invite-link" data-invite-link hidden>
-            <label class="admin-field">
-              <span>Регистрационная ссылка</span>
-              <input type="text" readonly data-invite-link-value>
-            </label>
+            <input class="admin-invite-link-value" type="text" readonly data-invite-link-value aria-label="Ссылка для регистрации">
             <button class="admin-button secondary" type="button" data-copy-invite-link>Копировать</button>
           </div>
           <p class="admin-inline-message" data-invite-message role="status" hidden></p>

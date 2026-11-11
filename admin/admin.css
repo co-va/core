@@ -86,6 +86,7 @@ button,input,select,textarea{font:inherit}
 .admin-invite-arrow{font-size:26px;line-height:1;color:var(--text-secondary);font-weight:400}
 .admin-invite-create{min-width:142px;white-space:nowrap}
 .admin-invite-panel .admin-invite-link{margin:0 4px 12px;padding-top:12px}
+.admin-invite-link-value{width:100%;min-width:0;min-height:42px;border:1px solid var(--border);border-radius:9px;padding:9px 11px;background:var(--white);color:var(--text);font:inherit;font-size:13px}
 .admin-invite-panel .admin-inline-message{margin:0 4px 12px}
 .admin-invite-panel .admin-inline-message[hidden]{display:none}
 @media(max-width:760px){
