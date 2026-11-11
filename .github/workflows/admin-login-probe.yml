@@ -91,3 +91,23 @@ jobs:
           else
             echo 'PRESENCE_ADMIN_UI_UNREACHABLE'
           fi
+
+      - name: Verify actual Admin heartbeat files in production
+        shell: bash
+        run: |
+          set -uo pipefail
+          script_code="$(curl --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            --output /tmp/live-admin-presence.js --write-out '%{http_code}' \
+            'https://admin.va-tools.ru/admin/presence.js' 2>/dev/null)" || script_code='000'
+          admin_code="$(curl --silent --show-error --location --connect-timeout 5 --max-time 15 \
+            --output /tmp/live-admin-entry.js --write-out '%{http_code}' \
+            'https://admin.va-tools.ru/admin/admin.js' 2>/dev/null)" || admin_code='000'
+          echo "ADMIN_PRESENCE_FILES_HTTP=${script_code}/${admin_code}"
+          if [ "${script_code}" = '200' ] && [ "${admin_code}" = '200' ] \
+            && grep -q 'startAccountPresence' /tmp/live-admin-presence.js \
+            && grep -q 'startAccountPresence' /tmp/live-admin-entry.js \
+            && grep -q "auth/presence" /tmp/live-admin-presence.js; then
+            echo 'ADMIN_HEARTBEAT_CLIENT_PUBLISHED'
+          else
+            echo 'ADMIN_HEARTBEAT_CLIENT_NOT_VERIFIED'
+          fi
