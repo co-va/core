@@ -1,4 +1,4 @@
-:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;--line:var(--border);--muted:var(--text-secondary);--accent:var(--surface-dark);--sidebar:var(--surface-dark);--app-max-width:1240px;--visual-vh:100dvh}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;--line:var(--border);--muted:var(--text-secondary);--accent:var(--surface-dark);--sidebar:var(--surface-dark);--app-max-width:1240px;--visual-vh:100dvh;--admin-pearl:#E0D6D6}
 *{box-sizing:border-box}
 body{margin:0;min-width:320px;background:var(--app-bg)}
 button,input,select,textarea{font:inherit}
@@ -545,13 +545,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 /* Preserve the original compact mobile header. */
 .admin-registry-section .admin-registry-table thead th{height:34px}
-/* Desktop and iPad: a warm-light 66px header above 44px white records.
-   Keep the same column tracks throughout Professional, User and History. */
+/* Desktop/iPad registry: one approved pearl background and existing secondary ink.
+   All six column tracks remain aligned across Professional, User and History. */
 @media(min-width:761px){
   .admin-registry-section .admin-registry-table thead th{
     height:66px;
-    background:#EDE8E1;
-    color:#735E49;
+    background:var(--admin-pearl);
+    color:var(--text-secondary);
     font-size:13px;
     font-weight:700;
     line-height:1.2;
@@ -688,8 +688,11 @@ html:has(.admin-shell){background:var(--surface-dark)}
     font-size:.62em;
     font-weight:550;
     letter-spacing:0;
-    color:#A7AAAD;
+    color:var(--admin-pearl);
     white-space:nowrap;
+  }
+  .admin-overview-tools-by-app .admin-overview-head-suffix{
+    color:var(--admin-pearl);
   }
   .admin-users-layout,
   .admin-registry-layout{
