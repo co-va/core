@@ -112,7 +112,7 @@ await assert.rejects(service.snapshots('tenant-a', 'missing', ['shared']), /не
 const recordSource = readFileSync('server/src/record/record.service.ts', 'utf8');
 assert.doesNotMatch(source, /catalogAt\(|historicalMoment\(/);
 assert.doesNotMatch(recordSource, /procedureSnapshotsForDate\(/);
-assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds\)/);
+assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, workplaceId, procedureIds, publicBooking\)/);
 assert.match(recordSource, /this\.procedures\.snapshots\(tenantId, incomingWorkplaceId, newIds\)/);
 assert.doesNotMatch(recordSource, /this\.procedures\.snapshots\([^;\n]*,\s*date\)/);
 assert.equal((await service.snapshots('tenant-a', 'salon-a', ['base']))[0].cost, 1200);
