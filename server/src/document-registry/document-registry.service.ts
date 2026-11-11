@@ -138,6 +138,12 @@ export class DocumentRegistryService {
       if (!draft.title.trim() || !draft.content.trim() || !draft.edition.trim()) {
         throw new BadRequestException('Для публикации нужны название, редакция и текст');
       }
+      const publishedHeader = draft.content.split(/\r?\n/).slice(0, 8).join('\n');
+      const declaredEditions = [...publishedHeader.matchAll(/(?:юридическая\s+)?редакция\s+(\d+(?:\.\d+)*)/gi)]
+        .map((match) => match[1]);
+      if (declaredEditions.some((edition) => edition !== draft.edition)) {
+        throw new BadRequestException('Номер редакции в тексте документа отличается от редакции в заголовке');
+      }
       const existing = await tx.$queryRaw<Array<{ id: string; type: string }>>`
         SELECT "id","type" FROM "PlatformDocument" WHERE "key" = ${key} FOR UPDATE
       `;
