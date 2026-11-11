@@ -128,7 +128,16 @@ jobs:
                 echo 'Legacy explanatory text still present in live Admin HTML'
                 exit 1
               fi
-              echo 'Live Admin build matches staging'
+              # The public page must contain both the readable KPI context and fixed-H layout.
+              grep -q 'admin-overview-metric-hint' /tmp/preview-served.html || {
+                echo 'Live Admin lacks readable metric descriptions'
+                exit 1
+              }
+              grep -q 'scrollbar-gutter:stable' /tmp/preview-served.html || {
+                echo 'Live Admin lacks independent desktop content scrolling'
+                exit 1
+              }
+              echo 'Live Admin build matches staging with KPI context and fixed H'
               exit 0
             fi
             sleep 2
