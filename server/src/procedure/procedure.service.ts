@@ -36,6 +36,23 @@ export class ProcedureService {
       .find((item) => text(item?.workplaceId ?? item?.key ?? item?.id) === workplaceId) || null;
   }
 
+  // Canonical effective settings for one procedure in one workplace.
+  // Preserve explicit 0, empty description and disabled group overrides.
+  private effectiveFor(procedure: JsonObject, workplaceId: string) {
+    const assignment = this.assignmentFor(procedure, workplaceId);
+    const group = assignment?.groupBooking ?? procedure?.groupBooking;
+    const groupEnabled = group?.enabled === true;
+    return {
+      duration: Math.max(0, Number(assignment?.duration ?? procedure?.duration ?? 0) || 0),
+      breakDuration: Math.max(0, Number(assignment?.breakDuration ?? procedure?.breakDuration ?? 0) || 0),
+      description: String(assignment?.description ?? procedure?.description ?? ''),
+      groupBooking: {
+        enabled: groupEnabled,
+        capacity: groupEnabled ? Math.max(2, Math.min(999, Math.floor(Number(group?.capacity) || 2))) : 1,
+      },
+    };
+  }
+
   private costSourceFor(procedure: JsonObject, workplaceId: string) {
     const assignment = this.assignmentFor(procedure, workplaceId);
     const assigned = assignment?.cost;
@@ -80,17 +97,27 @@ export class ProcedureService {
     const result: JsonObject[] = [];
     for (const value of arrayValue(proceduresValue)) {
       const procedure = objectValue(value);
-      if (procedure.deletedAt) continue;
+      if (procedure.deletedAt || procedure.visibleInPublicBooking === false) continue;
       const workplaces = arrayValue(procedure.workplaces)
-        .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id)))
+        .filter((assignment) => allowed.has(text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id))
+          && assignment?.visibleInPublicBooking !== false)
         .map((assignment) => {
           const workplaceId = text(assignment?.workplaceId ?? assignment?.key ?? assignment?.id);
           return {
             ...objectValue(assignment),
+            ...this.effectiveFor(procedure, workplaceId),
             bookingPrice: this.bookingPriceFor(procedure, workplaceId),
           };
         });
-      if (workplaces.length) result.push({ ...procedure, workplaces });
+      if (workplaces.length) {
+        // One-workplace contexts keep the historical top-level duration API.
+        // Multi-workplace contexts expose distinct effective fields per assignment.
+        result.push({
+          ...procedure,
+          ...(workplaces.length === 1 ? this.effectiveFor(procedure, text(workplaces[0].workplaceId ?? workplaces[0].key ?? workplaces[0].id)) : {}),
+          workplaces,
+        });
+      }
     }
     return result;
   }
@@ -150,7 +177,7 @@ export class ProcedureService {
     return found[0];
   }
 
-  async snapshots(tenantId: string, workplaceId: string, procedureIds: string[]) {
+  async snapshots(tenantId: string, workplaceId: string, procedureIds: string[], publicBooking = false) {
     const ids = [...new Set(procedureIds.map(text).filter(Boolean))];
     if (!ids.length) throw new BadRequestException('Выберите хотя бы одну процедуру');
 
@@ -161,21 +188,18 @@ export class ProcedureService {
 
     return ids.map((id) => {
       const procedure = catalog.find((item) => text(item?.id) === id);
-      if (!procedure || procedure.deletedAt || !this.assignmentFor(procedure, workplaceId)) {
+      const assignment = procedure && this.assignmentFor(procedure, workplaceId);
+      if (!procedure || procedure.deletedAt || !assignment
+        || (publicBooking && (procedure.visibleInPublicBooking === false || assignment.visibleInPublicBooking === false))) {
         throw new BadRequestException('Одна из услуг недоступна в этом рабочем пространстве');
       }
-      const groupEnabled = procedure?.groupBooking?.enabled === true;
       const price = this.bookingPriceFor(procedure, workplaceId);
       return {
         id,
         name: text(procedure?.name),
-        duration: Math.max(0, Number(procedure?.duration || 0)),
+        ...this.effectiveFor(procedure, workplaceId),
         cost: price.free ? '' : price.minimum,
         priceText: price.display,
-        groupBooking: {
-          enabled: groupEnabled,
-          capacity: groupEnabled ? Math.max(2, Math.min(999, Math.floor(Number(procedure?.groupBooking?.capacity) || 2))) : 1,
-        },
       };
     });
   }

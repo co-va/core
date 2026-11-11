@@ -442,7 +442,9 @@ export class OnlineBookingService {
     const selected = requestedWorkplace
       ? sourceWorkplaces.find((item) => text(item?.key) === requestedWorkplace)
       : null;
-    if (requestedWorkplace && !selected) throw new NotFoundException('Рабочее пространство не найдено');
+    if (requestedWorkplace && (!selected || selected.visibleInPublicBooking === false)) {
+      throw new NotFoundException('Рабочее пространство не найдено');
+    }
 
     const generalWorkplaces = sourceWorkplaces.filter((item) => item?.visibleInPublicBooking !== false);
     const workplaces = selected ? [selected] : generalWorkplaces;
@@ -456,10 +458,7 @@ export class OnlineBookingService {
       to: text(workplace?.to),
     }));
     const allowedKeys = new Set(workplaces.map((item) => text(item?.key)).filter(Boolean));
-    const procedures = arrayValue(operational.procedures).filter((procedure) => {
-      const assignments = arrayValue(procedure?.workplaces);
-      return assignments.some((item) => allowedKeys.has(text(item?.workplaceId ?? item?.key ?? item?.id)));
-    });
+    const procedures = this.procedures.publicBookingCatalog(operational.procedures, [...allowedKeys]);
     const days = arrayValue(operational.days).filter((day) => allowedKeys.has(text(day?.workplaceId)));
     const [recordOccupancy, eventOccupancy, pending] = await Promise.all([
       this.records.publicOccupancy(tenantId),
@@ -714,13 +713,15 @@ export class OnlineBookingService {
     if (!workplaceKey || !date || this.time.timeToMinutes(from) == null) throw new BadRequestException('Не выбраны дата, время или рабочее пространство');
 
     const workplace = arrayValue(data.workplaces).find((item) => text(item?.key) === workplaceKey);
-    if (!workplace) throw new BadRequestException('Рабочее пространство недоступно');
+    if (!workplace || workplace.visibleInPublicBooking === false) {
+      throw new BadRequestException('Рабочее пространство недоступно');
+    }
     if (this.time.isPastZonedStart(date, from, workplace?.timeZone)) {
       throw new ConflictException('Это время уже прошло');
     }
 
     const requestedIds = [...new Set(arrayValue(body.procedureIds).map((value) => text(value)).filter(Boolean))];
-    const procedureSnapshots = await this.procedures.snapshots(tenantId, workplaceKey, requestedIds);
+    const procedureSnapshots = await this.procedures.snapshots(tenantId, workplaceKey, requestedIds, true);
     const duration = procedureSnapshots.reduce((sum, procedure) => sum + Math.max(0, Number(procedure?.duration || 0)), 0);
     if (duration <= 0) throw new BadRequestException('Не удалось определить длительность процедур');
     const start = this.time.timeToMinutes(from)!;
