@@ -50,12 +50,12 @@ jobs:
         run: |
           set -euo pipefail
           getent ahostsv4 va-app-volokovykh.msk1.amvera.tech | head -n 3
-      - name: Probe deployed backend and preview assets
+      - name: Probe backend and single-request Admin entry (no separate JS/CSS requests)
         shell: bash
         run: |
           set -euo pipefail
           base='https://va-app-volokovykh.msk1.amvera.tech'
-          for path in /health /admin/ /admin/admin.js /ui/v2/v2.css; do
+          for path in /health /admin/; do
             echo "== Checking ${path} =="
             code=$(curl -sSL --connect-timeout 8 --max-time 20 -D /tmp/preview-headers -o /tmp/preview-body -w '%{http_code}' "${base}${path}") || {
               echo "Request failed: ${path}"
