@@ -15,6 +15,20 @@ import {
 // persisted signing history stay canonical and are never copied into this view.
 const DOCUMENT_ICON = '<svg class="admin-registry-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h6"/></svg>';
 
+// Short labels belong only to the Admin table. Canonical legal titles stay in the catalog and persisted snapshots.
+const REGISTRY_SHORT_TITLES = Object.freeze({
+  'privacy-policy': 'Политика ПДН',
+  'saas-agreement': 'Оферта',
+  'platform-processor-consent': 'Согласие Амвера',
+  'marketing-consent': 'Маркетинг',
+  'public-profile-consent': 'Публичный профиль',
+  'dpa': 'Поручение ПДН',
+  'rkn-notification-guide-template': 'Инструкция РКН',
+  'user-document-pdn-policy': 'Политика ПДН',
+  'user-document-pdn-consent': 'Согласие ПДН',
+  'user-document-messages-consent': 'Маркетинг',
+});
+
 function formatMoment(value) {
   const date = new Date(value || '');
   return Number.isFinite(date.getTime())
@@ -70,14 +84,15 @@ function purposeMarkup(value) {
 function documentTable(items, escapeHtml, application) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
+    const shortTitle = escapeHtml(REGISTRY_SHORT_TITLES[item.key] || item.title || 'Документ');
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item, application);
     return '<tr>' +
       '<td data-label="Документ"><button type="button" class="admin-registry-open" data-registry-document="' + key +
       '" aria-label="Открыть документ ' + title + '" title="' + title + '">' + DOCUMENT_ICON +
-      '<strong class="admin-registry-title">' + title + '</strong></button></td>' +
+      '<strong class="admin-registry-title">' + shortTitle + '</strong></button></td>' +
       '<td data-label="Назначение">' + purposeMarkup(purpose) + '</td>' +
-      '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">—</span></td>' +
+      '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '" aria-label="Загрузка версии">…</span></td>' +
       '</tr>';
   }).join('');
   return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
@@ -175,20 +190,41 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
       openDocument(currentDocumentsByKey.get(key) || getRegistryDocument(key));
     });
   });
+  // A dash is an authoritative absence of a published version, never a loading/error state.
+  const versionNodes = Array.from(root.querySelectorAll('[data-registry-version]'));
   if (typeof loadCurrentDocuments === 'function') {
     void Promise.resolve().then(loadCurrentDocuments).then((items) => {
-      if (!Array.isArray(items)) return;
+      if (!Array.isArray(items)) throw new Error('Некорректный ответ реестра');
+      if (root.isConnected === false) return;
+      for (const node of versionNodes) {
+        node.textContent = '—';
+        node.setAttribute?.('aria-label', 'Версия не опубликована');
+      }
       for (const item of items) {
-        if (!item || typeof item.key !== 'string' || !Number.isSafeInteger(item.version) || item.version < 1) continue;
-        currentDocumentsByKey.set(item.key, item);
-        const badge = Array.from(root.querySelectorAll('[data-registry-version]'))
-          .find((node) => node.dataset.registryVersion === item.key);
-        if (badge) badge.textContent = String(item.version);
+        const version = Number(item?.version);
+        if (typeof item?.key !== 'string' || !Number.isSafeInteger(version) || version < 1) continue;
+        currentDocumentsByKey.set(item.key, { ...item, version });
+        const badge = versionNodes.find((node) => node.dataset.registryVersion === item.key);
+        if (badge) {
+          badge.textContent = String(version);
+          badge.setAttribute?.('aria-label', 'Актуальная версия ' + version);
+        }
       }
     }).catch(() => {
-      // Older staging preview backends can lack this read route. Never invent
-      // a version from the text's legal revision or an unrelated signing event.
+      if (root.isConnected === false) return;
+      for (const node of versionNodes) {
+        node.textContent = 'Ошибка';
+        node.setAttribute?.('aria-label', 'Не удалось загрузить актуальную версию');
+        node.setAttribute?.('title', 'Не удалось загрузить актуальную версию');
+        node.classList?.add('is-error');
+      }
     });
+  } else {
+    for (const node of versionNodes) {
+      node.textContent = 'Ошибка';
+      node.setAttribute?.('aria-label', 'Источник версий недоступен');
+      node.classList?.add('is-error');
+    }
   }
 
   const host = root.querySelector('[data-registry-history-content]');
