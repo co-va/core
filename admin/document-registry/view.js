@@ -137,10 +137,10 @@ function documentTable(items, escapeHtml, application) {
       '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '">' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
-  return '<div class="admin-card"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
+  return '<div class="admin-card"><div class="admin-registry-documents-scroll"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
     '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th>Дата</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
     (rows || '<tr><td colspan="5" class="admin-history-empty">Документов пока нет.</td></tr>') +
-    '</tbody></table></div>';
+    '</tbody></table></div></div>';
 }
 
 // Short presentation labels never replace the original immutable signed title.
