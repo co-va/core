@@ -745,7 +745,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
     justify-content:space-between;
     align-items:center;
     gap:16px;
+    margin-bottom:14px;
   }
+  .admin-registry-section-title-line .admin-users-section-title{margin:0}
   .admin-registry-add{
     display:grid;
     place-items:center;
