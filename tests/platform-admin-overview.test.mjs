@@ -75,9 +75,24 @@ const context = {
 };
 runInNewContext(source.slice(start, end) + '\nrenderOverview();', context);
 assert.match(markup, /Состояние платформы/);
-assert.match(markup, /<h3>Кабинет<\/h3>/);
-assert.match(markup, /<h3>Записи<\/h3>/);
-assert.match(markup, /Аккаунты пользователей приложения, не контакты специалистов/);
+assert.match(markup, /<h3>Кабинет <span class="admin-overview-head-suffix">\/ Professional<\/span><\/h3>/);
+assert.match(markup, /<h3>Записи <span class="admin-overview-head-suffix">\/ User<\/span><\/h3>/);
+assert.match(markup, /Готовность функций <span class="admin-overview-head-suffix">\/ Инструменты<\/span>/);
+assert.match(markup, /data-overview-tool-app="cabinet"/);
+assert.match(markup, /data-overview-tool-app="records"/);
+for (const serviceCopy of [
+  'Аккаунты пользователей приложения, не контакты специалистов',
+  'Статистика будет доступна после обновления API Core',
+  'Главные показатели и вопросы, требующие внимания',
+  'Профессиональные аккаунты и их рабочие режимы',
+  'Каждый аккаунт отдельно, независимо от UEI',
+  'Новые регистрации в приложении',
+  'Подтверждённые входы; не вся активность',
+  'Повторить',
+  'Создан аккаунт и профиль',
+  'Демонстрационный режим',
+]) assert.ok(!markup.includes(serviceCopy), `Overview must not show service copy: ${serviceCopy}`);
+
 assert.match(markup, /Входили · 30 дней/);
 assert.match(markup, /\u2014/, 'Unavailable User metrics must not claim zero');
 assert.match(markup, /data-overview-tool-app="cabinet"/);
@@ -87,7 +102,7 @@ assert.match(markup, /<span class="admin-overview-metric-label">LIVE<\/span>\s*<
 assert.match(markup, /<span class="admin-overview-metric-label">DEMO<\/span>\s*<strong[^>]*>2<\/strong>/);
 assert.match(markup, /<span class="admin-overview-metric-label">Ожидают<\/span>\s*<strong[^>]*>1<\/strong>/);
 assert.match(markup, /Новые регистрации/);
-assert.match(markup, /Это не показатель активности в приложении/);
+assert.doesNotMatch(markup, /Это не показатель активности в приложении/);
 assert.match(markup, /Готово <strong>1<\/strong>/);
 assert.match(markup, /Проверка <strong>1<\/strong>/);
 assert.match(markup, /Не готово <strong>1<\/strong>/);
