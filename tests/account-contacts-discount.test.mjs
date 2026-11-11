@@ -19,13 +19,14 @@ function between(source, from, to) {
 }
 
 const accountHelpers = between(service, 'function text(value: unknown)', 'function profilePhones(');
+const publicCardHelpers = between(service, 'function publicCardAppearance(', 'function publicDiscountText(');
 const depositHelpers = between(deposits, 'function objectValue(value: unknown)', 'export function depositPersonKey(');
 const depositProjection = between(deposits, 'export function depositPriceSourcesFromRows(', 'export async function activeDepositPriceSources(');
 const contactProjection = between(service, 'function personBelongsToAccount(', 'function completedRecord(');
 const contactsMethod = between(service, '  private async accountDiscounts(', '  private async projectedRecords(')
   .replace('  private async accountDiscounts(', 'async function accountDiscounts(');
 
-const fixtureSource = [accountHelpers, depositHelpers, depositProjection, contactProjection, contactsMethod]
+const fixtureSource = [accountHelpers, publicCardHelpers, depositHelpers, depositProjection, contactProjection, contactsMethod]
   .join('\n').replaceAll('export function ', 'function ');
 const runnable = stripTypeScriptTypes(fixtureSource, { mode: 'strip' });
 const runtime = runInNewContext(
