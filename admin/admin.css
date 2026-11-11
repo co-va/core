@@ -633,7 +633,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
    Mobile (< 761px) keeps its separate layout and typography unchanged. */
 @media(min-width:761px){
   .admin-shell{
-    --admin-section-spacing:33px;
+    --admin-section-spacing:44px;
+    --admin-section-top-spacing:14px;
     --admin-section-title-size:25px;
   }
   .admin-overview-app-head h3,
@@ -655,7 +656,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
     white-space:nowrap;
   }
   .admin-users-layout,
-  .admin-registry-layout{gap:var(--admin-section-spacing)}
+  .admin-registry-layout{
+    gap:var(--admin-section-spacing);
+    padding-top:var(--admin-section-top-spacing);
+  }
   .admin-users-section-title{margin-bottom:14px}
   .admin-overview-user-section,
   .admin-overview-tools-section{
