@@ -23,8 +23,8 @@ assert.match(admin, /loadCurrentDocuments: \(\) => adminRequest\('\/document-reg
 assert.match(docController, /@Get\('document-registry\/current'\)/);
 assert.match(docService, /SELECT d\."key", d\."title", d\."type", d\."requiredForRegistration"/);
 assert.match(docService, /v\."version", v\."contentSnapshot" AS "content"/);
-assert.match(css, /admin-registry-documents-table tbody tr\{height:44px\}/, 'Compact 44px document rows');
-assert.match(css, /admin-registry-documents-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
+assert.match(css, /admin-registry-table tbody tr\{height:44px\}/, 'Compact 44px rows for all three sections');
+assert.match(css, /admin-registry-table \.admin-registry-title\{[^}]*white-space:nowrap/, 'Short document labels never wrap');
 assert.match(css, /admin-registry-documents-table th:first-child/, 'Document names get remaining width instead of user identity 31%');
 
 const professionalDocs = [
@@ -133,8 +133,15 @@ const userAt = fullMarkup.indexOf('Записи<span');
 assert.ok(guideAt > 0 && guideAt < userAt, 'RKN help is Professional, not User consent');
 assert.equal((fullMarkup.match(/data-registry-document="/g) || []).length, 10, 'All ten canonical registry documents remain');
 assert.equal((fullMarkup.match(/class="admin-registry-icon"/g) || []).length, 10, 'Each document has one small line icon');
+assert.equal((fullMarkup.match(/class="admin-registry-open-cell"/g) || []).length, 10, 'Icons use their own last column');
+const firstSection = fullMarkup.slice(fullMarkup.indexOf('Кабинет<span'), fullMarkup.indexOf('Записи<span'));
+const secondSection = fullMarkup.slice(fullMarkup.indexOf('Записи<span'), fullMarkup.indexOf('История</h2>'));
+assert.equal((firstSection.match(/data-registry-document="/g) || []).length, 7, 'Professional retains six documents and RKN');
+assert.equal((secondSection.match(/data-registry-document="/g) || []).length, 3, 'User retains exactly three documents');
+assert.match(css, /admin-registry-version\{font-size:14px;font-weight:750;color:var\(--text\)/, 'Version digits are strong dark text');
+assert.match(css, /admin-registry-history-scroll\{[^}]*overflow-x:auto/, 'Mobile history can scroll sideways without stacking rows');
 assert.doesNotMatch(fullMarkup, /document-tile|document-tiles--rail|Платформа ↔ пользователь|Шаблоны помощников/);
-assert.match(fullMarkup, /<th>Документ<\/th><th>Назначение<\/th><th>Версия<\/th>/);
+assert.match(fullMarkup, /<th>Документ<\/th><th>Версия<\/th><th>Назначение<\/th><th aria-label="Открыть"><\/th>/, 'Catalog follows requested column order');
 assert.equal((fullMarkup.match(/is-required/g) || []).length, 5, 'Four mandatory Professional and one User PDN consent');
 assert.equal((fullMarkup.match(/is-optional/g) || []).length, 3, 'Two Professional options and User marketing');
 assert.equal((fullMarkup.match(/is-reading/g) || []).length, 1, 'User privacy notice is for familiarization');
@@ -168,6 +175,10 @@ assert.ok(subscribed > 0);
 fulfillHistory(history);
 await rendered;
 assert.equal((historyHost.innerHTML.match(/data-registry-history="/g) || []).length, 2, 'All legal events are preserved');
+assert.match(historyHost.innerHTML, /<th>Документ<\/th><th>Версия<\/th><th>Аккаунт<\/th><th>Дата<\/th><th>Событие<\/th><th aria-label="Открыть"><\/th>/, 'History follows requested six-column order');
+assert.match(historyHost.innerHTML, /admin-registry-title">Оферта<\/strong>/, 'History uses short titles without modifying signed data');
+assert.match(historyHost.innerHTML, /data-label="Версия"><span class="admin-registry-version">2<\/span>/, 'History version is its own cell');
+assert.equal((historyHost.innerHTML.match(/class="admin-registry-open-cell"/g) || []).length, 2, 'History viewer icons are right aligned');
 assert.match(historyHost.innerHTML, /professional@example\.test[\s\S]*Professional/);
 assert.match(historyHost.innerHTML, /user@example\.test[\s\S]*User/);
 assert.match(historyHost.innerHTML, /Принято/);
@@ -179,4 +190,4 @@ assert.deepEqual({ ...modalOptions }, { title: 'Документ', variant: 'q',
 assert.match(mounted.html, /Exact signed user snapshot/, 'History opens immutable saved document snapshot');
 assert.equal(opened.length, 1, 'Mobile document does not create another desktop drawer');
 assert.match(historySource, /documentContent: String\(item\.documentContent/, 'History retains immutable version content');
-console.log('Admin Document Registry: short single-line rows, legal editions, side drawer, mobile Q and signing history PASS');
+console.log('Admin Document Registry: 7+3 sections, ordered columns, high-contrast versions, compact history and viewer PASS');
