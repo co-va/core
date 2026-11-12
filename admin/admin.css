@@ -929,31 +929,28 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 .admin-tool-register-layout{gap:44px}
-.admin-tool-register-card{margin:0;padding:0;min-width:0;overflow:hidden}
+.admin-tool-register-card{margin:0;padding:0;width:860px;max-width:100%;min-width:0;overflow:hidden}
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
-.admin-tool-register-table{width:100%;min-width:860px;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* One table grid for both Professional and User.
-   Type 50px, disclosure 44px, readiness/payment/price 65px each.
-   The tool-name column takes all remaining table width. */
+.admin-tool-register-table{width:860px;min-width:860px;max-width:860px;table-layout:fixed;border-collapse:collapse;color:var(--text)}
+/* One fixed 860px grid for both tool sections: 50 + 340 + 50 + 140 + 140 + 140. */
+.admin-tool-register-table col.admin-tool-col-expand{width:50px}
+.admin-tool-register-table col.admin-tool-col-name{width:340px}
 .admin-tool-register-table col.admin-tool-col-kind{width:50px}
-.admin-tool-register-table col.admin-tool-col-expand{width:44px}
-.admin-tool-register-table col.admin-tool-col-name{width:auto}
 .admin-tool-register-table col.admin-tool-col-status,
 .admin-tool-register-table col.admin-tool-col-payment,
-.admin-tool-register-table col.admin-tool-col-price{width:65px}
-.admin-tool-register-table :is(th,td):first-child{
+.admin-tool-register-table col.admin-tool-col-price{width:140px}
+.admin-tool-register-table :is(th,td):first-child,
+.admin-tool-register-table :is(th,td):nth-child(3){
   box-sizing:border-box;width:50px;min-width:50px;max-width:50px;
   padding:4px 0;text-align:center
 }
 .admin-tool-register-table :is(th,td):nth-child(2){
-  box-sizing:border-box;width:44px;min-width:44px;max-width:44px;
-  padding:4px 0;text-align:center
+  box-sizing:border-box;width:340px;min-width:340px;max-width:340px;
+  padding:4px 12px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(n+4){
-  width:65px;min-width:65px;max-width:65px;padding-inline:2px;text-align:center
-}
-.admin-tool-register-table thead :is(th):nth-child(n+4){
-  font-size:10px;letter-spacing:0
+  box-sizing:border-box;width:140px;min-width:140px;max-width:140px;
+  padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
 .admin-tool-register-table td{
@@ -998,34 +995,29 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-table .admin-tool-readiness-editor,
 .admin-tool-register-table .admin-tool-readiness{justify-self:auto;text-align:left}
 .admin-tool-register-table .admin-tool-readiness-editor .admin-tool-readiness-select{
-  box-sizing:border-box;width:61px;max-width:100%;height:26px;min-height:26px;
-  padding:0 10px 0 2px;border:1px solid var(--border);
-  border-radius:5px;font-size:10px;letter-spacing:-.2px;background:#fff;color:var(--text)
+  box-sizing:border-box;width:116px;max-width:100%;height:26px;min-height:26px;
+  padding:0 24px 0 7px;border:1px solid var(--border);
+  border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
 .admin-tool-register-table [data-commercial-mode]{
-  width:61px;max-width:100%;height:26px;min-height:26px;
-  padding:0 10px 0 2px;box-sizing:border-box;
+  width:110px;max-width:100%;height:26px;min-height:26px;
+  padding:0 24px 0 7px;box-sizing:border-box;
   border:1px solid var(--border);border-radius:5px;
-  font-size:10px;letter-spacing:-.2px;background:#fff;color:var(--text)
+  font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-registry-cost{display:flex;flex-direction:column;align-items:center;gap:0;min-width:0}
-.admin-tool-registry-price{display:flex;align-items:center;gap:0;min-width:0}
-.admin-tool-register-table .admin-tool-registry-price span{display:none}
+.admin-tool-registry-cost{display:flex;align-items:center;gap:5px;min-width:0}
+.admin-tool-registry-price{display:flex;align-items:center;gap:4px;min-width:0}
 .admin-tool-registry-price input{
-  box-sizing:border-box;width:58px;max-width:100%;height:24px;min-height:24px;
-  padding:0 3px;border:1px solid var(--border);
+  box-sizing:border-box;width:64px;max-width:100%;height:26px;min-height:26px;
+  padding:0 5px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
 .admin-tool-registry-price span{font-size:12px;color:var(--text-secondary)}
 .admin-tool-register-table :is(input,select):disabled{opacity:.55}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
-  display:block;min-width:0;max-width:61px;max-height:12px;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;line-height:12px;font-size:9px;color:var(--text-secondary)
-}
-.admin-tool-register-table .admin-tool-readiness{
-  display:block;max-width:61px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;font-size:10px
+  display:block;min-width:0;max-width:74px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text-secondary)
 }
 .admin-tool-register-footer{display:flex;align-items:center;flex-wrap:wrap;gap:14px;color:var(--admin-pearl);font-size:12px}
 .admin-tool-register-footer [data-commercial-publish]{min-height:28px;padding:5px 11px}
@@ -1040,11 +1032,15 @@ html:has(.admin-shell){background:var(--surface-dark)}
     display:table-cell;grid-column:auto;grid-row:auto;padding:4px 12px!important;
     height:44px;white-space:nowrap;line-height:1.2
   }
-  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(-n+2){
+  .admin-mobile-app .admin-tool-register-table :is(th,td):first-child,
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(3){
     padding:4px 0!important
   }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(2){
+    padding:4px 12px!important
+  }
   .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(n+4){
-    padding-inline:2px!important
+    padding-inline:8px!important
   }
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr,
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody td{height:44px;min-height:44px}
