@@ -2,7 +2,7 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
+import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS } from './commercial-catalog.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
@@ -1136,69 +1136,101 @@ function toolChildren(area, item) {
       : child);
 }
 
+// Match commercial-catalog.js: F is a root card, E an embedded card,
+// R a mode, and K a component. No second definition of the tool tree.
+function accountToolKey(area, item, parentKey = '') {
+  if (item.readinessKey) return item.readinessKey;
+  if (item.id) return area + '.' + item.id;
+  if (parentKey === 'cabinet.finance' && item.label === 'Касса') return 'cabinet.finance.cash';
+  return parentKey + '.' + String(item.label || '').toLowerCase().replace(/[^a-zа-яё0-9]+/g, '-');
+}
+
+function accountToolKind(item, depth) {
+  return depth === 0 ? 'F' : item.kind === 'e' ? 'E' : item.kind === 'mode' ? 'R' : 'K';
+}
+
 function toolControl(capability, resolved, locked) {
-  if (!capability) return '<button type="button" class="admin-toggle" disabled aria-label="Недоступно" aria-checked="false" role="switch"></button>';
+  if (!capability) return '';
   if (capability.valueType === 'LIMIT') {
     const value = resolved?.limit == null ? '' : String(resolved.limit);
     return '<input class="admin-limit" type="number" min="0" data-capability="' +
       escapeHtml(capability.key) + '" data-type="LIMIT" data-original="' + escapeHtml(value) +
-      '" value="' + escapeHtml(value) + '" placeholder="∞" aria-label="' +
-      escapeHtml(capability.name) + '"' + (locked ? ' disabled' : '') + '>';
+      '" value="' + escapeHtml(value) + '" placeholder="∞" aria-label="Количество рабочих пространств"' +
+      (locked ? ' disabled' : '') + '>';
   }
   const enabled = resolved?.enabled !== false;
-  // Do not present a blocked capability as an active switch. Preserve its
-  // actual stored value for the change detector; a blocked row cannot save.
-  const presentedEnabled = enabled && !locked;
-  return '<button type="button" class="admin-toggle' + (presentedEnabled ? ' is-on' : '') +
+  return '<button type="button" class="admin-toggle' + (enabled ? ' is-on' : '') +
     '" data-toggle data-capability="' + escapeHtml(capability.key) +
     '" data-type="BOOLEAN" data-original="' + enabled + '" data-current="' + enabled +
-    '" role="switch" aria-checked="' + presentedEnabled + '" aria-label="' + escapeHtml(capability.name) +
+    '" role="switch" aria-checked="' + enabled + '" aria-label="' + escapeHtml(capability.name) +
     '"' + (locked ? ' disabled' : '') + '></button>';
 }
 
-function toolControls(item, resolved, readonly, tenant) {
+function toolControls(item, resolved, tenant) {
   const keys = [
     ...(item.capabilityKey ? [String(item.capabilityKey)] : []),
     ...(TOOL_CAPABILITY_BINDINGS[item.readinessKey || ''] || []),
   ];
-  const controls = [...new Set(keys)]
-    .map((key) => state.capabilities.find((capability) => capability.key === key))
-    .filter(Boolean);
-  const locked = !toolReadable(item, readonly, tenant);
-  if (!controls.length) return toolControl(null, null, true);
-  if (controls.length === 1) return toolControl(controls[0], resolved.get(controls[0].key), locked);
-  return '<div class="admin-access-tool-multi">' + controls.map((capability) =>
-    '<label class="admin-access-tool-option"><span>' + escapeHtml(capability.name) +
-    '</span>' + toolControl(capability, resolved.get(capability.key), locked) +
-    '</label>').join('') + '</div>';
+  const caps = [...new Set(keys)].map((key) => state.capabilities.find((row) => row.key === key)).filter(Boolean);
+  const disabled = !toolReadable(item, false, tenant);
+  const grants = caps.filter((cap) => cap.valueType !== 'LIMIT');
+  const limit = caps.find((cap) => cap.valueType === 'LIMIT');
+  if (!grants.length) return { grant: '', limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '' };
+  if (grants.length === 1) return {
+    grant: toolControl(grants[0], resolved.get(grants[0].key), disabled),
+    limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '',
+  };
+  // A composite E-row is one instrument. One UI switch drives all of its
+  // existing Boolean capability keys; the data model is not replaced.
+  const enabled = grants.every((cap) => resolved.get(cap.key)?.enabled !== false);
+  const hidden = grants.map((cap) =>
+    '<input type="hidden" data-capability="' + escapeHtml(cap.key) +
+    '" data-type="BOOLEAN" data-original="' + String(resolved.get(cap.key)?.enabled !== false) +
+    '" data-current="' + String(resolved.get(cap.key)?.enabled !== false) + '">').join('');
+  return {
+    grant: '<span class="admin-access-grant-group">' + hidden +
+      '<button type="button" class="admin-toggle' + (enabled ? ' is-on' : '') +
+      '" data-toggle-group role="switch" aria-checked="' + enabled +
+      '" aria-label="' + escapeHtml(toolName(item)) + '"' + (disabled ? ' disabled' : '') + '></button></span>',
+    limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '',
+  };
 }
 
-function renderRegistryLeaf(item, resolved, readonly = false, tenant = null) {
-  const control = toolControls(item, resolved, readonly, tenant);
-  const locked = !toolReadable(item, readonly, tenant);
-  return '<div class="admin-access-tool-row' + (locked ? ' is-unavailable' : '') + '">' +
-    '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>' +
-    control + '</div>';
+function accountToolRow(item, resolved, tenant, area, depth, parentKey, hasChildren, allowCommercial) {
+  const key = accountToolKey(area, item, parentKey);
+  const kind = accountToolKind(item, depth);
+  const { grant, limit } = toolControls(item, resolved, tenant);
+  const locked = !toolReadable(item, false, tenant);
+  // Commercial conditions use the same row as the actual tool. The tenant
+  // commercial service fills these slots; it never creates a second list.
+  const product = allowCommercial ? (TOOL_COMMERCIAL_BINDINGS[key] || '') : '';
+  const title = '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>';
+  return '<div class="admin-access-tool-row' + (locked && grant ? ' is-unavailable' : '') +
+    '" data-tool-kind="' + kind + '" data-tool-key="' + escapeHtml(key) + '">' +
+    '<span class="admin-access-tool-identity">' + title + (limit ? '<span class="admin-access-inline-limit">' + limit + '</span>' : '') + '</span>' +
+    '<span class="admin-access-tool-grant">' + grant + '</span>' +
+    '<span class="admin-access-tool-commercial"' + (product ? ' data-commercial-slot="' + escapeHtml(product) + '"' : '') + '></span>' +
+    '</div>';
 }
 
-function renderRegistrySection(item, resolved, readonly = false, tenant = null, area = 'cabinet') {
+function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', depth = 0, parentKey = '', allowCommercial = true) {
+  const key = accountToolKey(area, item, parentKey);
   const children = toolChildren(area, item);
-  if (!children.length) return renderRegistryLeaf(item, resolved, readonly, tenant);
-  const shared = item.capabilityKey || (TOOL_CAPABILITY_BINDINGS[item.readinessKey || ''] || [])[0];
-  const capability = shared ? state.capabilities.find((row) => row.key === shared) : null;
-  const control = capability ? toolControl(capability, resolved.get(capability.key), !toolReadable(item, readonly, tenant)) : '';
-  return '<details class="admin-access-tool-group"><summary class="admin-access-tool-row">' +
-    '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>' +
-    control + '</summary><div class="admin-access-tool-children">' +
-    children.map((child) => renderRegistrySection(child, resolved, readonly, tenant, area)).join('') +
+  const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, children.length > 0, allowCommercial);
+  if (!children.length) return row;
+  // Details controls only the structural hierarchy, never its grants.
+  return '<details class="admin-access-tool-group" open><summary class="admin-access-tool-group-title">' +
+    '<span>' + escapeHtml(toolName(item)) + '</span></summary>' +
+    '<div class="admin-access-tool-group-body">' +
+      row + children.map((child) => renderRegistrySection(child, resolved, tenant, area, depth + 1, key, allowCommercial)).join('') +
     '</div></details>';
 }
 
-function renderTenantRegistry(resolved, tenant = null) {
-  return '<div class="admin-access-tool-category"><strong>Кабинет / Professional</strong>' +
-    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, false, tenant, 'cabinet')).join('') +
-    '</div><div class="admin-access-tool-category"><strong>Записи / User</strong>' +
-    TOOL_MAP.records.map((item) => renderRegistrySection(item, resolved, true, tenant, 'records')).join('') +
+function renderTenantRegistry(resolved, tenant = null, allowCommercial = true) {
+  return '<div class="admin-access-tool-category" data-account-tools="professional">' +
+    '<div class="admin-access-tool-head"><span>Кабинет / Professional</span><span>Доступ</span><span>' +
+      (allowCommercial ? 'Условия' : '') + '</span></div>' +
+    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, tenant, 'cabinet', 0, '', allowCommercial)).join('') +
     '</div>';
 }
 
