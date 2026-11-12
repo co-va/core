@@ -500,11 +500,12 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     // canonical Admin tool key, not by a parallel registry or a UI-only state.
     const productKey = area === 'cabinet' && INLINE_COMMERCIAL_KEYS[key]
       ? INLINE_COMMERCIAL_KEYS[key] : 'ui.' + key;
+    const tierPrefix = area === 'records' ? 'tariff.records.' : 'tariff.';
     const tier = '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
-      escapeHtml(toolDisplayName(item)) + '" disabled>' +
-      '<option value="tariff.start">Start</option>' +
-      '<option value="tariff.start-plus">Start+</option>' +
-      '<option value="tariff.pro" selected>Pro</option>' +
+      escapeHtml(toolDisplayName(item)) + '" data-default-tier="' + tierPrefix + 'pro" disabled>' +
+      '<option value="' + tierPrefix + 'start">Start</option>' +
+      '<option value="' + tierPrefix + 'start-plus">Start+</option>' +
+      '<option value="' + tierPrefix + 'pro" selected>Pro</option>' +
       '</select><small class="admin-tool-registry-save-state" aria-live="polite"></small></div>';
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
@@ -609,7 +610,7 @@ function hydrateTariffAssignments(content, tariffs) {
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
     const select = row.querySelector('[data-tool-tariff]');
     if (!select) return;
-    select.value = assignments[row.dataset.tariffProduct] || 'tariff.pro';
+    select.value = assignments[row.dataset.tariffProduct] || select.dataset.defaultTier;
     select.dataset.previous = select.value;
     select.disabled = false;
   });
@@ -629,6 +630,7 @@ function bindTariffAssignments(content) {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             productKey: row.dataset.tariffProduct, minimumTariff: select.value,
+            name: row.querySelector('.admin-tool-registry-label')?.textContent || '',
           }),
         });
         tariffsCache = tariffs;
