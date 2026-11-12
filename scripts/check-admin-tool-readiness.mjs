@@ -139,7 +139,7 @@ if (!ui.includes("table.querySelectorAll('[data-tool-expand]').forEach((button) 
     !ui.includes("const expand = event.currentTarget.getAttribute('aria-expanded') !== 'true'") ||
     !ui.includes('syncToolHierarchy(table);') ||
     !ui.includes('expandButtons.every((button) => button.getAttribute(\'aria-expanded\') === \'true\')')) {
-  throw new Error('Per-table master expand/collapse must synchronize all nested toggles');
+  throw new Error('Per-table all expand/collapse must synchronize all nested toggles');
 }
 if (css.includes('.admin-users-section .admin-table th:first-child') ||
     css.includes('.admin-mobile-app .admin-users-section .admin-table')) {
@@ -162,7 +162,7 @@ const makeToggle = (id) => {
 const rootToggle = makeToggle('root');
 const childToggle = makeToggle('child');
 const nestedToggle = makeToggle('nested');
-const masterToggle = makeToggle('master');
+const allToggle = makeToggle('all');
 const rows = ['', 'root', 'root child', 'root child nested', 'other'].map((ancestors) => ({
   dataset: { toolAncestors: ancestors }, hidden: false,
 }));
@@ -170,16 +170,16 @@ const table = {
   querySelectorAll: (selector) =>
     selector === '[data-tool-expand]' ? [rootToggle, childToggle, nestedToggle] :
     selector === '[data-tool-ancestors]' ? rows : [],
-  querySelector: (selector) => selector === '[data-tool-expand-all]' ? masterToggle : null,
+  querySelector: (selector) => selector === '[data-tool-expand-all]' ? allToggle : null,
 };
 syncHierarchy(table);
 assert.deepEqual(rows.map((row) => row.hidden), [false, false, false, false, false]);
-assert.equal(masterToggle.getAttribute('aria-expanded'), 'true');
+assert.equal(allToggle.getAttribute('aria-expanded'), 'true');
 rootToggle.setAttribute('aria-expanded', 'false');
 syncHierarchy(table);
 assert.deepEqual(rows.map((row) => row.hidden), [false, true, true, true, false],
   'A collapsed parent must hide all levels of descendants, not adjacent root tools');
-assert.equal(masterToggle.getAttribute('aria-expanded'), 'false');
+assert.equal(allToggle.getAttribute('aria-expanded'), 'false');
 rootToggle.setAttribute('aria-expanded', 'true');
 childToggle.setAttribute('aria-expanded', 'false');
 syncHierarchy(table);
@@ -188,7 +188,7 @@ assert.deepEqual(rows.map((row) => row.hidden), [false, false, true, true, false
 childToggle.setAttribute('aria-expanded', 'true');
 syncHierarchy(table);
 assert.deepEqual(rows.map((row) => row.hidden), [false, false, false, false, false]);
-assert.equal(masterToggle.getAttribute('aria-expanded'), 'true');
+assert.equal(allToggle.getAttribute('aria-expanded'), 'true');
 
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
 
