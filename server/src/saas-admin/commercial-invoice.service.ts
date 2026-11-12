@@ -9,6 +9,9 @@ type CommercialOrder = Record<string, unknown> & {
   status?: string;
   totalMinor?: number;
   currency?: string;
+  accessDays?: number;
+  tariffKey?: string;
+  periodMonths?: number;
 };
 
 function text(value: unknown) {
@@ -67,6 +70,8 @@ export class CommercialInvoiceService {
     const status = text(order?.status);
     const totalMinor = Math.max(0, Number(order?.totalMinor || 0));
     const currency = text(order?.currency) || 'RUB';
+    const accessDays = Number.isInteger(Number(order?.accessDays)) && Number(order?.accessDays) > 0
+      ? Number(order?.accessDays) : 30;
     if (!orderId || status !== 'PENDING' || totalMinor <= 0) {
       return { sent: false, skipped: true, alreadySent: false, paymentDetailsConfigured: false };
     }
@@ -108,10 +113,10 @@ export class CommercialInvoiceService {
       const result = await this.email.send({
         to: emailAddress,
         toName: displayName,
-        subject: `Счёт LIVE · 30 дней · ${amount} ${currency}`,
+        subject: `Счёт LIVE · ${accessDays} дней · ${amount} ${currency}`,
         tag: 'commercial-live-invoice',
-        text: `Счёт ${orderId}\nСумма: ${amount} ${currency}\nПериод: 30 дней платного доступа после подтверждения оплаты.\n\nБесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.\n\n${paymentText}`,
-        html: `<p>Счёт <strong>${html(orderId)}</strong></p><p>Сумма: <strong>${html(amount)} ${html(currency)}</strong></p><p>Период: <strong>30 дней платного доступа</strong> после подтверждения оплаты.</p><p>Бесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.</p>${paymentHtml}`,
+        text: `Счёт ${orderId}\nСумма: ${amount} ${currency}\nПериод: ${accessDays} дней платного доступа после подтверждения оплаты.\n\nБесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.\n\n${paymentText}`,
+        html: `<p>Счёт <strong>${html(orderId)}</strong></p><p>Сумма: <strong>${html(amount)} ${html(currency)}</strong></p><p>Период: <strong>${accessDays} дней платного доступа</strong> после подтверждения оплаты.</p><p>Бесплатный LIVE уже включён и продолжает работать. Оплаченные инструменты включатся после подтверждения оплаты.</p>${paymentHtml}`,
       });
 
       await this.audit(tenantId, 'COMMERCIAL_INVOICE_SENT', orderId, {
@@ -119,7 +124,7 @@ export class CommercialInvoiceService {
         messageId: result.messageId,
         amountMinor: totalMinor,
         currency,
-        paidAccessPeriodDays: 30,
+        paidAccessPeriodDays: accessDays,
         paymentUrlConfigured: Boolean(details.url),
         paymentInstructionsConfigured: Boolean(details.instructions),
       });
@@ -127,8 +132,8 @@ export class CommercialInvoiceService {
       await this.notices.createForTenantOwner(tenantId, {
         type: 'COMMERCIAL_INVOICE_SENT',
         title: 'Счёт отправлен · бесплатный LIVE работает',
-        body: `Счёт на ${amount} ${currency} за 30 дней платного доступа отправлен на email. Платные инструменты включатся после оплаты.`,
-        metadata: { orderId, amountMinor: totalMinor, currency, paidAccessPeriodDays: 30 },
+        body: `Счёт на ${amount} ${currency} за ${accessDays} дней платного доступа отправлен на email. Платные инструменты включатся после оплаты.`,
+        metadata: { orderId, amountMinor: totalMinor, currency, paidAccessPeriodDays: accessDays },
       }).catch(() => null);
 
       return {
