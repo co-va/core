@@ -494,9 +494,10 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const row = '<tr data-tool-id="' + escapeHtml(id) + '" data-tool-ancestors="' +
       escapeHtml(ancestorIds.join(' ')) + '"' +
       (canPrice ? ' data-commercial-key="' + escapeHtml(INLINE_COMMERCIAL_KEYS[key]) + '"' : '') +
-      '><td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
+      '><td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
+      '<td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
       '<td><div class="admin-tool-registry-name" style="--tool-depth:' + depth + '">' +
-      toggle + '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
+      '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
       '<td>' + readiness + '</td><td>' + payment + '</td><td><div class="admin-tool-registry-cost">' + price +
       '<small class="admin-tool-registry-save-state" aria-live="polite"></small></div></td></tr>';
     return row + (expandable
@@ -512,7 +513,12 @@ function renderToolRegister(area, label, suffix) {
       ' <span class="admin-registry-app">/ ' + suffix + '</span></h2>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table" data-admin-tool-map="' + area + '">' +
-    '<thead><tr><th scope="col" aria-label="Тип карточки"></th><th>Инструмент</th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
+    '<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-kind">' +
+      '<col class="admin-tool-col-name"><col class="admin-tool-col-status">' +
+      '<col class="admin-tool-col-payment"><col class="admin-tool-col-price"></colgroup>' +
+    '<thead><tr><th scope="col" aria-label="Раскрыть или свернуть"></th>' +
+      '<th scope="col" aria-label="Тип карточки"></th><th>Инструменты</th>' +
+      '<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
     '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) + '</tbody></table></div></div></section>';
 }
 
