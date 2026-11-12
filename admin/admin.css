@@ -1032,14 +1032,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Seven evenly spaced Tools zones: preserve disclosure/name tracks,
-   move Type and the three tariff squares left, leave a separate 20% zone for
-   Readiness on the right. Header and body share the same 44px geometry. */
+/* Table bands aligned to the marked reference: established disclosure/name,
+   a compact Type column, three equal wide-spaced tariff columns and readiness.
+   The header and body use the same colgroup; rows remain 44px high. */
 .admin-tool-register-table col.admin-tool-col-expand{width:13%}
 .admin-tool-register-table col.admin-tool-col-name{width:32%}
-.admin-tool-register-table col.admin-tool-col-kind{width:8%}
-.admin-tool-register-table col.admin-tool-col-tier{width:9%}
-.admin-tool-register-table col.admin-tool-col-status{width:20%}
+.admin-tool-register-table col.admin-tool-col-kind{width:5.8%}
+.admin-tool-register-table col.admin-tool-col-tier{width:12.5%}
+.admin-tool-register-table col.admin-tool-col-status{width:11.7%}
 .admin-tool-register-table :is(th,td):first-child{
   box-sizing:border-box;width:13%;min-width:0;max-width:none;
   padding:4px 0;text-align:left
@@ -1049,17 +1049,17 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:4px 8px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(3){
-  box-sizing:border-box;width:8%;min-width:0;max-width:none;
+  box-sizing:border-box;width:5.8%;min-width:0;max-width:none;
   padding:4px 0 4px 22px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(4),
 .admin-tool-register-table :is(th,td):nth-child(5),
 .admin-tool-register-table :is(th,td):nth-child(6){
-  box-sizing:border-box;width:9%;min-width:0;max-width:none;
+  box-sizing:border-box;width:12.5%;min-width:0;max-width:none;
   padding-inline:8px;text-align:center
 }
 .admin-tool-register-table :is(th,td):nth-child(7){
-  box-sizing:border-box;width:20%;min-width:0;max-width:none;
+  box-sizing:border-box;width:11.7%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
@@ -1142,24 +1142,34 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-table .admin-tool-tier-checkbox:disabled + .admin-tool-tier-mark{
   cursor:default
 }
+/* The quantity is 0-999 or infinity, in one compact field. The infinity
+   action lives INSIDE that field, not as a second attached input/button. */
 .admin-tool-limit-control{
-  display:flex;align-items:center;justify-content:center;gap:3px;max-width:110px;margin-inline:auto
+  display:flex;position:relative;align-items:center;justify-content:center;
+  box-sizing:border-box;width:56px;max-width:100%;height:26px;
+  margin-inline:auto;border:1px solid var(--border);border-radius:5px;
+  background:#fff
 }
 .admin-tool-limit-control [data-tool-limit-tier]{
-  box-sizing:border-box;width:calc(100% - 25px);max-width:74px;min-width:0;height:26px;min-height:26px;
-  padding:0 3px;border:1px solid var(--border);border-radius:5px;
-  background:#fff;color:var(--text);font-size:12px;font-weight:700;text-align:center
+  box-sizing:border-box;width:100%;min-width:0;height:24px;min-height:24px;
+  padding:0 17px 0 4px;border:0;border-radius:5px;
+  background:transparent;color:var(--text);font-size:12px;font-weight:600;
+  text-align:center;outline:0
 }
+.admin-tool-limit-control [data-tool-limit-tier]::placeholder{color:var(--text-secondary)}
 .admin-tool-limit-infinity{
-  display:grid;place-items:center;box-sizing:border-box;
-  width:22px;min-width:22px;height:26px;padding:0;
-  border:1px solid var(--border);border-radius:5px;
-  color:var(--text);background:#fff;font-size:17px;font-weight:700;cursor:pointer
+  position:absolute;right:2px;top:2px;display:grid;place-items:center;
+  box-sizing:border-box;width:16px;height:20px;padding:0;border:0;
+  background:transparent;color:var(--text-secondary);font-size:13px;
+  font-weight:600;cursor:pointer
 }
-.admin-tool-limit-infinity:hover:not(:disabled){background:var(--admin-pearl)}
+.admin-tool-limit-control[data-infinite="true"] [data-tool-limit-tier]{padding-right:4px}
+.admin-tool-limit-control[data-infinite="true"] .admin-tool-limit-infinity{display:none}
+.admin-tool-limit-infinity:hover:not(:disabled){color:var(--text)}
+.admin-tool-limit-control:focus-within{outline:1px solid var(--text);outline-offset:0}
 .admin-tool-limit-control [data-tool-limit-tier]:disabled,
 .admin-tool-limit-infinity:disabled{opacity:.75;cursor:default}
-.admin-tool-register-table .admin-tool-limit-infinity:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.admin-tool-register-table .admin-tool-limit-infinity:focus-visible{outline:1px solid var(--text);outline-offset:0}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
   display:block;min-width:0;max-width:74px;overflow:hidden;
