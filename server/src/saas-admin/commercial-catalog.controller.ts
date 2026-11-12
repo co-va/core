@@ -29,6 +29,11 @@ export class CommercialCatalogController {
     return this.catalog.assignTariff(body || {}, request.platformAdminId!);
   }
 
+  @Put('tariffs/limit')
+  updateTariffLimit(@Req() request: AdminRequest, @Body() body: Record<string, unknown>) {
+    return this.catalog.updateTariffLimit(body || {}, request.platformAdminId!);
+  }
+
   @Put(':key')
   update(
     @Req() request: AdminRequest,
