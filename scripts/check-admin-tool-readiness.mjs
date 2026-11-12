@@ -137,7 +137,7 @@ for (const kind of [
   if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
 }
 for (const rule of [
-  '.admin-tool-register-card{',,
+  '.admin-tool-register-card{',
   '.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed',
   '.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}',
   '.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}',
