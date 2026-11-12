@@ -16,6 +16,7 @@ type PreparedLine = {
   expectedQuantity: number | null;
   actualQuantity: number | null;
   supplier: string;
+  offerId: string;
   listPrice: number | null;
   discountPercent: number | null;
   note: string;
@@ -102,6 +103,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
       expectedQuantity: nullableNonNegative(row.expectedQuantity),
       actualQuantity: nullableNonNegative(row.actualQuantity),
       supplier: optionalText(row.supplier),
+      offerId: text(row.offerId),
       listPrice: nullableNonNegative(row.listPrice),
       discountPercent: nullablePercent(row.discountPercent),
       note: optionalText(row.note),
@@ -365,7 +367,7 @@ export class InventoryService {
     return db ? { itemId } : this.snapshot(tenantId);
   }
 
-  private async findCatalogItem(owner: Tx, tenantId: string, itemId: string) {
+  private async findCatalogItem(owner: Tx | PrismaService, tenantId: string, itemId: string) {
     const item = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!item) throw new NotFoundException('Продукт не найден');
     return item;
@@ -772,6 +774,14 @@ export class InventoryService {
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
 
+    const selectedOfferIds = [...new Set(lines
+      .filter((line) => line.direction === 'IN' && line.offerId && !raw.historicalTransfer)
+      .map((line) => line.offerId))];
+    const selectedOffers = selectedOfferIds.length ? await tx.inventorySupplierOffer.findMany({
+      where: { tenantId, isActive: true, offerId: { in: selectedOfferIds } },
+    }) : [];
+    const offerById = new Map((selectedOffers as AnyRecord[]).map((offer) => [offer.offerId, offer]));
+
     const movement = await tx.inventoryMovement.create({
       data: {
         tenantId,
@@ -798,7 +808,19 @@ export class InventoryService {
       affectedInternalIds.add(item.id);
 
       if (line.direction === 'IN') {
-        const unitCost = line.unitCost ?? (raw.historicalTransfer ? 0 : decimalNumber(item.lastPurchasePrice));
+        const offer = line.offerId && !raw.historicalTransfer ? offerById.get(line.offerId) : null;
+        if (line.offerId && !raw.historicalTransfer && (!offer || offer.inventoryItemId !== item.id)) {
+          throw new BadRequestException('Предложение не принадлежит выбранному продукту');
+        }
+        // Purchase quantities and costs are always expressed in this item's stock unit.
+        // User-supplied actual cost wins; the selected offer supplies only a default.
+        const offerUnitPrice = offer ? supplierOfferUnitPrice(offer) : null;
+        const unitCost = line.unitCost ?? offerUnitPrice ?? (raw.historicalTransfer ? 0 : decimalNumber(item.lastPurchasePrice));
+        const packSize = offer ? decimalNumber(offer.unitsPerOffer) || 1 : 1;
+        const offeredListPrice = offer?.listPrice == null ? null : decimalNumber(offer.listPrice) / packSize;
+        const lotListPrice = line.listPrice ?? offeredListPrice;
+        const lotDiscount = line.discountPercent ?? (offer?.discountPercent == null ? null : decimalNumber(offer.discountPercent));
+        const lotSupplier = line.supplier || offer?.supplier || optionalText(raw.supplier) || item.supplier;
         const lineRow = await tx.inventoryMovementLine.create({
           data: {
             tenantId,
@@ -825,11 +847,11 @@ export class InventoryService {
             quantityReceived: line.quantity,
             quantityRemaining: line.quantity,
             unitCost,
-            listPrice: line.listPrice,
-            discountPercent: line.discountPercent,
+            listPrice: lotListPrice,
+            discountPercent: lotDiscount,
             receivedAt: movement.occurredAt,
             expiresAt: raw.expiresAt ? dateValue(raw.expiresAt) : null,
-            supplier: line.supplier || optionalText(raw.supplier) || item.supplier,
+            supplier: lotSupplier,
             note: line.note,
           },
         });
