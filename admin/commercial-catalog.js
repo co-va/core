@@ -494,8 +494,8 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const row = '<tr data-tool-id="' + escapeHtml(id) + '" data-tool-ancestors="' +
       escapeHtml(ancestorIds.join(' ')) + '"' +
       (canPrice ? ' data-commercial-key="' + escapeHtml(INLINE_COMMERCIAL_KEYS[key]) + '"' : '') +
-      '><td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
-      '<td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
+      '><td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
+      '<td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
       '<td><div class="admin-tool-registry-name" style="--tool-depth:' + depth + '">' +
       '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
       '<td>' + readiness + '</td><td>' + payment + '</td><td><div class="admin-tool-registry-cost">' + price +
@@ -513,21 +513,31 @@ function renderToolRegister(area, label, suffix) {
       ' <span class="admin-registry-app">/ ' + suffix + '</span></h2>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table" data-admin-tool-map="' + area + '">' +
-    '<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-kind">' +
+    '<colgroup><col class="admin-tool-col-kind"><col class="admin-tool-col-expand">' +
       '<col class="admin-tool-col-name"><col class="admin-tool-col-status">' +
       '<col class="admin-tool-col-payment"><col class="admin-tool-col-price"></colgroup>' +
-    '<thead><tr><th scope="col" aria-label="Раскрыть или свернуть"></th>' +
-      '<th scope="col" aria-label="Тип карточки"></th><th>Инструменты</th>' +
-      '<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
+    '<thead><tr><th scope="col" aria-label="Тип карточки"></th>' +
+      '<th scope="col" class="admin-tool-registry-expand-header">' +
+      '<button type="button" class="admin-tool-registry-expand admin-tool-registry-expand-all"' +
+      ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
+      '<th>Инструменты</th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
     '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) + '</tbody></table></div></div></section>';
 }
 
-function syncToolHierarchy(content) {
-  const closed = new Set([...content.querySelectorAll('[data-tool-expand][aria-expanded="false"]')]
+function syncToolHierarchy(table) {
+  const expandButtons = [...table.querySelectorAll('[data-tool-expand]')];
+  const closed = new Set(expandButtons.filter((button) => button.getAttribute('aria-expanded') === 'false')
     .map((button) => button.dataset.toolExpand));
-  content.querySelectorAll('[data-tool-ancestors]').forEach((row) => {
+  table.querySelectorAll('[data-tool-ancestors]').forEach((row) => {
     row.hidden = String(row.dataset.toolAncestors || '').split(' ').some((id) => closed.has(id));
   });
+  const expandAll = table.querySelector('[data-tool-expand-all]');
+  if (expandAll) {
+    const allExpanded = expandButtons.every((button) => button.getAttribute('aria-expanded') === 'true');
+    expandAll.setAttribute('aria-expanded', String(allExpanded));
+    expandAll.setAttribute('aria-label', allExpanded ? 'Свернуть все строки' : 'Раскрыть все строки');
+    expandAll.title = allExpanded ? 'Свернуть всё' : 'Раскрыть всё';
+  }
 }
 
 function hydrateInlineCommercial(content, products) {
@@ -613,11 +623,21 @@ export function renderAdminTools(content) {
     '<button type="button" class="admin-button secondary" data-commercial-publish disabled>Опубликовать изменения</button>' +
     '<span data-commercial-publish-message aria-live="polite"></span></div></div>';
   bindArchitecture(content);
-  content.querySelectorAll('[data-tool-expand]').forEach((button) => {
-    button.addEventListener('click', () => {
-      button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
-      syncToolHierarchy(content);
+  content.querySelectorAll('.admin-tool-register-table').forEach((table) => {
+    table.querySelectorAll('[data-tool-expand]').forEach((button) => {
+      button.addEventListener('click', () => {
+        button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
+        syncToolHierarchy(table);
+      });
     });
+    table.querySelector('[data-tool-expand-all]')?.addEventListener('click', (event) => {
+      const expand = event.currentTarget.getAttribute('aria-expanded') !== 'true';
+      table.querySelectorAll('[data-tool-expand]').forEach((button) => {
+        button.setAttribute('aria-expanded', String(expand));
+      });
+      syncToolHierarchy(table);
+    });
+    syncToolHierarchy(table);
   });
   bindInlineCommercial(content);
   void loadToolReadiness().then((items) => {
