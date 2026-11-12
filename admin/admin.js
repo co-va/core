@@ -3,6 +3,7 @@ import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
 import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
+import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
@@ -1100,43 +1101,91 @@ function readinessLabel(key) {
   return ({ NOT_READY: 'Не готово', TESTING: 'Проверка', READY: 'Готово' })[item?.status] || 'Не готово';
 }
 
-function renderRegistryLeaf(item, resolved, readonly = false) {
-  const key = item.readinessKey || '';
-  const keys = TOOL_CAPABILITY_BINDINGS[key] || [];
-  const capabilities = readonly ? [] : keys.map((name) => state.capabilities.find((capability) => capability.key === name)).filter(Boolean);
-  const controls = capabilities.map((capability) => capabilityEditor(capability, resolved.get(capability.key))).join('');
-  const note = readonly
-    ? 'Управляется отдельно в приложении «Записи».'
-    : 'Отдельное индивидуальное разрешение пока не предусмотрено.';
-  return '<div class="admin-capability-order-row" data-readiness-key="' + escapeHtml(key) + '">' +
-    '<div class="admin-capability-control">' +
-    '<div class="admin-capability"><div><strong>' + escapeHtml(item.label) +
-    '</strong><small>' + escapeHtml(readinessLabel(key)) + ' · ' + escapeHtml(key) + '</small></div></div>' +
-    (controls || '<p class="admin-service-note">' + note + '</p>') +
-    '</div></div>';
+// A single catalog and capability binding power both the main Tools registry and
+// this compact account presentation. Access permissions remain owned by Core.
+function toolReadable(item, readonly, tenant) {
+  if (readonly) return false;
+  const key = String(item.readinessKey || '');
+  if (!key) return true;
+  const status = state.toolReadiness.find((row) => row.key === key)?.status || 'NOT_READY';
+  return status === 'READY' || (status === 'TESTING' && (tenant?.isTester || tenant?.isOwnerBook));
 }
 
-function renderRegistrySection(item, resolved, readonly = false) {
+function toolName(item) {
+  if (item.readinessKey === 'cabinet.profile.workspaces') return 'Рабочее пространство';
+  return String(item.label || '').startsWith('График (') ? 'График' : String(item.label || '');
+}
+
+function toolChildren(area, item) {
   const children = Array.isArray(item.items) ? item.items : [];
-  if (!children.length) return renderRegistryLeaf(item, resolved, readonly);
-  const sharedKey = readonly ? '' : String(item.capabilityKey || '');
-  const shared = sharedKey ? state.capabilities.find((capability) => capability.key === sharedKey) : null;
-  const sharedControl = shared
-    ? '<div class="admin-capability-order-row">' + capabilityEditor(shared, resolved.get(shared.key)) + '</div>'
-    : '';
-  return '<details class="admin-section"><summary><strong>' + escapeHtml(item.label) +
-    '</strong> · ' + children.length + '</summary>' +
-    sharedControl +
-    children.map((child) => renderRegistryLeaf(child, resolved, readonly)).join('') +
-    '</details>';
+  if (area !== 'cabinet' || item.id !== 'journal') return children;
+  return children.filter((child) => child.readinessKey !== 'cabinet.timetable')
+    .map((child) => child.readinessKey === 'cabinet.journal.month'
+      ? { ...child, items: children.filter((nested) => nested.readinessKey === 'cabinet.timetable') }
+      : child);
 }
 
-function renderTenantRegistry(resolved) {
-  return '<section class="admin-section"><h4>Кабинет</h4>' +
-    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved)).join('') +
-    '</section><details class="admin-section"><summary><strong>Записи</strong> · отдельное приложение</summary>' +
-    TOOL_MAP.records.map((item) => renderRegistrySection(item, resolved, true)).join('') +
-    '</details>';
+function toolControl(capability, resolved, locked) {
+  if (!capability) return '<button type="button" class="admin-toggle" disabled aria-label="Недоступно" aria-checked="false" role="switch"></button>';
+  if (capability.valueType === 'LIMIT') {
+    const value = resolved?.limit == null ? '' : String(resolved.limit);
+    return '<input class="admin-limit" type="number" min="0" data-capability="' +
+      escapeHtml(capability.key) + '" data-type="LIMIT" data-original="' + escapeHtml(value) +
+      '" value="' + escapeHtml(value) + '" placeholder="∞" aria-label="' +
+      escapeHtml(capability.name) + '"' + (locked ? ' disabled' : '') + '>';
+  }
+  const enabled = resolved?.enabled !== false;
+  return '<button type="button" class="admin-toggle' + (enabled ? ' is-on' : '') +
+    '" data-toggle data-capability="' + escapeHtml(capability.key) +
+    '" data-type="BOOLEAN" data-original="' + enabled + '" data-current="' + enabled +
+    '" role="switch" aria-checked="' + enabled + '" aria-label="' + escapeHtml(capability.name) +
+    '"' + (locked ? ' disabled' : '') + '></button>';
+}
+
+function toolControls(item, resolved, readonly, tenant) {
+  const keys = [
+    ...(item.capabilityKey ? [String(item.capabilityKey)] : []),
+    ...(TOOL_CAPABILITY_BINDINGS[item.readinessKey || ''] || []),
+  ];
+  const controls = [...new Set(keys)]
+    .map((key) => state.capabilities.find((capability) => capability.key === key))
+    .filter(Boolean);
+  const locked = !toolReadable(item, readonly, tenant);
+  if (!controls.length) return toolControl(null, null, true);
+  if (controls.length === 1) return toolControl(controls[0], resolved.get(controls[0].key), locked);
+  return '<div class="admin-access-tool-multi">' + controls.map((capability) =>
+    '<label class="admin-access-tool-option"><span>' + escapeHtml(capability.name) +
+    '</span>' + toolControl(capability, resolved.get(capability.key), locked) +
+    '</label>').join('') + '</div>';
+}
+
+function renderRegistryLeaf(item, resolved, readonly = false, tenant = null) {
+  const control = toolControls(item, resolved, readonly, tenant);
+  const locked = !toolReadable(item, readonly, tenant);
+  return '<div class="admin-access-tool-row' + (locked ? ' is-unavailable' : '') + '">' +
+    '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>' +
+    control + '</div>';
+}
+
+function renderRegistrySection(item, resolved, readonly = false, tenant = null, area = 'cabinet') {
+  const children = toolChildren(area, item);
+  if (!children.length) return renderRegistryLeaf(item, resolved, readonly, tenant);
+  const shared = item.capabilityKey || (TOOL_CAPABILITY_BINDINGS[item.readinessKey || ''] || [])[0];
+  const capability = shared ? state.capabilities.find((row) => row.key === shared) : null;
+  const control = capability ? toolControl(capability, resolved.get(capability.key), !toolReadable(item, readonly, tenant)) : '';
+  return '<details class="admin-access-tool-group"><summary class="admin-access-tool-row">' +
+    '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>' +
+    control + '</summary><div class="admin-access-tool-children">' +
+    children.map((child) => renderRegistrySection(child, resolved, readonly, tenant, area)).join('') +
+    '</div></details>';
+}
+
+function renderTenantRegistry(resolved, tenant = null) {
+  return '<div class="admin-access-tool-category"><strong>Кабинет / Professional</strong>' +
+    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, false, tenant, 'cabinet')).join('') +
+    '</div><div class="admin-access-tool-category"><strong>Записи / User</strong>' +
+    TOOL_MAP.records.map((item) => renderRegistrySection(item, resolved, true, tenant, 'records')).join('') +
+    '</div>';
 }
 
 function openAccessDrawer(tenantId) {
