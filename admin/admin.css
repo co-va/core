@@ -990,8 +990,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-registry-kind{text-align:center}
 .admin-tool-registry-kind span{
   display:inline-grid;place-items:center;width:22px;height:22px;
-  border:1px solid var(--border);border-radius:3px;
   font-size:11px;font-weight:750;color:var(--text)
+}
+.admin-tool-registry-kind span.is-card{
+  border:1px solid var(--border);border-radius:3px
 }
 .admin-tool-register-table .admin-tool-readiness-editor,
 .admin-tool-register-table .admin-tool-readiness{justify-self:auto;text-align:left}
