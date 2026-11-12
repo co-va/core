@@ -642,7 +642,6 @@ export async function updateTariffSettings(tariffKey, priceMinor, bonus6, bonus1
   tariffsCache = result;
   catalogCache = null;
   catalogPromise = null;
-  document.dispatchEvent(new Event('admin:tariff-changed'));
   return result;
 }
 
