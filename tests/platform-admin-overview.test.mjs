@@ -138,7 +138,7 @@ assert.doesNotMatch(markup, /7 активных/, 'Dashboard cannot equate a rec
 
 // The tariff editor must explain the 30-day base, provide both editable bonus
 // periods, and keep the instrument assignment in the existing Tools registry.
-const tariffSource = source.slice(start, end) + `
+const tariffSource = `
 overviewTariffData = {
   tiers: [
     {key:'tariff.start',name:'Start',priceMinor:0,connected:4,tools:[]},
