@@ -2,7 +2,7 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS } from './commercial-catalog.js';
+import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
@@ -1143,16 +1143,11 @@ function toolName(item) {
 }
 
 function toolChildren(area, item) {
-  const children = Array.isArray(item.items) ? item.items : [];
-  if (area !== 'cabinet' || item.id !== 'journal') return children;
-  return children.filter((child) => child.readinessKey !== 'cabinet.timetable')
-    .map((child) => child.readinessKey === 'cabinet.journal.month'
-      ? { ...child, items: children.filter((nested) => nested.readinessKey === 'cabinet.timetable') }
-      : child);
+  return visibleToolChildren(area, item);
 }
 
-// Match commercial-catalog.js: F is a root card, E an embedded card,
-// R a mode, and K a component. No second definition of the tool tree.
+// Same F/E/R visible hierarchy as the Tools registry. K components are metadata,
+// not independently selectable rows. Their Core readiness records are untouched.
 function accountToolKey(area, item, parentKey = '') {
   if (item.readinessKey) return item.readinessKey;
   if (item.id) return area + '.' + item.id;
@@ -1161,7 +1156,7 @@ function accountToolKey(area, item, parentKey = '') {
 }
 
 function accountToolKind(item, depth) {
-  return depth === 0 ? 'F' : item.kind === 'e' ? 'E' : item.kind === 'mode' ? 'R' : 'K';
+  return depth === 0 ? 'F' : item.kind === 'e' ? 'E' : 'R';
 }
 
 function toolControl(capability, resolved, locked) {
