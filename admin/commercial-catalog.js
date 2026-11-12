@@ -519,12 +519,11 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
           '<button type="button" class="admin-tool-limit-infinity" data-tool-limit-infinity ' +
             'title="Без ограничения" aria-label="Установить ∞" disabled>∞</button></div></td>';
       }
-      return '<td class="admin-tool-tier-cell"><button type="button" ' +
-        'class="admin-tool-tier-switch" data-tier-level="' + level + '" data-tariff-tier="' + tierKey +
-        '" role="switch" aria-checked="true" disabled title="' + ['Start','Start+','Pro'][tierIndex] +
+      return '<td class="admin-tool-tier-cell"><input type="checkbox" ' +
+        'class="admin-tool-tier-checkbox" data-tier-level="' + level + '" data-tariff-tier="' + tierKey +
+        '" checked disabled title="' + ['Start','Start+','Pro'][tierIndex] +
         '" aria-label="' + escapeHtml(toolDisplayName(item)) + ', ' +
-        ['Start','Start+','Pro'][tierIndex] + '">' +
-        '<span class="admin-tool-tier-switch-thumb" aria-hidden="true"></span></button></td>';
+        ['Start','Start+','Pro'][tierIndex] + '"></td>';
     }).join('');
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
@@ -626,17 +625,17 @@ export async function updateTariffPrice(key, priceMinor) {
 function hydrateTariffAssignments(content, tariffs) {
   const assignments = tariffs?.assignments || {};
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
-    const buttons = [...row.querySelectorAll('[data-tariff-tier]')];
-    if (!buttons.length) return; // Numeric limits do not have enable switches.
+    const checkboxes = [...row.querySelectorAll('[data-tariff-tier]')];
+    if (!checkboxes.length) return; // Numeric limits use counts instead of checkboxes.
     const key = row.dataset.tariffProduct;
     const hasValue = Object.prototype.hasOwnProperty.call(assignments, key);
-    const selected = hasValue ? assignments[key] : buttons[0].dataset.tariffTier;
-    const minIndex = selected == null ? 3 :
-      buttons.findIndex((button) => button.dataset.tariffTier === selected);
-    buttons.forEach((button, index) => {
-      button.setAttribute('aria-checked', String(index >= (minIndex < 0 ? 3 : minIndex)));
-      button.dataset.previous = selected == null ? '' : selected;
-      button.disabled = false;
+    const selected = hasValue ? assignments[key] : checkboxes[0].dataset.tariffTier;
+    const minIndex = selected == null ? checkboxes.length :
+      checkboxes.findIndex((box) => box.dataset.tariffTier === selected);
+    checkboxes.forEach((box, index) => {
+      box.checked = index >= (minIndex < 0 ? checkboxes.length : minIndex);
+      box.dataset.previous = selected == null ? '' : selected;
+      box.disabled = false;
     });
   });
 }
@@ -704,20 +703,21 @@ function bindTariffLimits(content) {
 
 function bindTariffAssignments(content) {
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
-    const buttons = [...row.querySelectorAll('[data-tariff-tier]')];
-    if (!buttons.length) return;
-    buttons.forEach((button, index) => {
-      button.addEventListener('click', async () => {
-        const current = buttons.findIndex((b) => b.getAttribute('aria-checked') === 'true');
-        const active = button.getAttribute('aria-checked') === 'true';
-        // Inheritance: Start => Start+ => Pro. Switching a tier off disables
-        // all lower tiers; turning one on also enables all higher tiers.
-        const nextIndex = active ? index + 1 : index;
-        const next = nextIndex < buttons.length ? buttons[nextIndex].dataset.tariffTier : '';
-        const previous = current >= 0 && current < buttons.length
-          ? buttons[current].dataset.tariffTier : '';
-        const message = row.querySelector('.admin-tool-registry-save-state');
-        buttons.forEach((b) => { b.disabled = true; });
+    const checkboxes = [...row.querySelectorAll('[data-tariff-tier]')];
+    if (!checkboxes.length) return;
+    checkboxes.forEach((box, index) => {
+      box.addEventListener('change', async () => {
+        // One minimum tariff per tool. Checking a square includes every
+        // higher tier; unchecking it excludes this and all lower tiers.
+        const previous = checkboxes[0].dataset.previous || '';
+        const nextIndex = box.checked ? index : index + 1;
+        const next = nextIndex < checkboxes.length
+          ? checkboxes[nextIndex].dataset.tariffTier : '';
+        const previousIndex = checkboxes.findIndex((item) => item.dataset.tariffTier === previous);
+        checkboxes.forEach((item, i) => {
+          item.checked = i >= nextIndex;
+          item.disabled = true;
+        });
         try {
           const tariffs = await commercialRequest('/tariffs/assignment', {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -730,15 +730,13 @@ function bindTariffAssignments(content) {
           tariffsCache = tariffs;
           hydrateTariffAssignments(content, tariffs);
           document.dispatchEvent(new Event('admin:tariff-changed'));
-          if (message) message.textContent = '';
         } catch (error) {
-          buttons.forEach((b, i) => {
-            b.setAttribute('aria-checked', String(previous !== '' &&
-              i >= buttons.findIndex((entry) => entry.dataset.tariffTier === previous)));
+          checkboxes.forEach((item, i) => {
+            item.checked = previousIndex >= 0 && i >= previousIndex;
+            item.title = error instanceof Error ? error.message : 'Не удалось сохранить тариф';
           });
-          if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка';
         } finally {
-          buttons.forEach((b) => { b.disabled = false; });
+          checkboxes.forEach((item) => { item.disabled = false; });
         }
       });
     });
@@ -788,8 +786,8 @@ export function renderAdminTools(content) {
       hydrateTariffLimits(content, tariffs);
     }
   }).catch(() => {
-    content.querySelectorAll('[data-tariff-tier]').forEach((button) => {
-      button.title = 'Тарифы пока недоступны';
+    content.querySelectorAll('[data-tariff-tier]').forEach((box) => {
+      box.title = 'Тарифы пока недоступны';
     });
     content.querySelectorAll('[data-tool-limit-tier]').forEach((input) => {
       input.title = 'Лимиты пока недоступны';
