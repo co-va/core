@@ -636,10 +636,8 @@ function renderTariffs() {
   content.innerHTML = `
     <div class="admin-overview admin-tariff-section">
       <div class="admin-heading"><h2>Тарифы</h2></div>
-      <p class="admin-tariff-context">Состав и лимиты определяются в «Инструментах». Здесь настраиваются цена за 30 дней и бонусные дни.</p>
       <div class="admin-overview-tariffs-heading">
-        <strong>Тарифы <span>/ Professional</span></strong>
-        <span>Выберите Start+ или Pro для настройки цены и срока</span>
+        <strong>Кабинет <span>/ Professional</span></strong>
       </div>
       <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
         ${tariffCards.map((item) => `
