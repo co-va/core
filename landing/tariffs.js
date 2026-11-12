@@ -22,13 +22,13 @@ function currency(minor) {
 
 function render() {
   const months = Number(periodSelect?.value || 1);
-  const chosen = offers?.periods?.find((item) => item.months === months);
   for (const link of links) {
     const key = link.dataset.tariffEntry;
     link.href = registrationUrl(key, months);
     if (key === 'demo' || key === 'start') continue;
     const offer = offers?.professional?.find((item) => item.key === 'tariff.' + key);
-    const available = offer?.purchasable === true && chosen;
+    const chosen = offer?.periods?.find((item) => item.months === months);
+    const available = offer?.purchasable === true && Boolean(chosen);
     link.setAttribute('aria-disabled', String(!available));
     link.tabIndex = available ? 0 : -1;
     const node = [...priceNodes].find((item) => item.dataset.tariffPrice === 'tariff.' + key);
