@@ -15,6 +15,7 @@ const TARIFF_TOOL_KEYS = new Set<string>([
   ...READINESS_KEYS,
   // Structural F rows are visible Admin instruments but not readiness leaves.
   'cabinet.journal', 'cabinet.loyalty', 'cabinet.settings',
+  'cabinet.profile', 'cabinet.service', 'cabinet.finance', 'cabinet.inventory',
   'records.journal', 'records.integrations',
 ]);
 
