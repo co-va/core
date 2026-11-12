@@ -1032,25 +1032,33 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Full available card width, like Users. The original expand/name/type tracks
-   are unchanged; the remaining space is split evenly between Tariff and
-   Readiness, with no unused commercial column. Rows stay exactly 44px. */
-.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}
-.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}
-.admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}
-.admin-tool-register-table col.admin-tool-col-status,
-.admin-tool-register-table col.admin-tool-col-tariff{width:24.418604652%}
-.admin-tool-register-table :is(th,td):first-child,
-.admin-tool-register-table :is(th,td):nth-child(3){
-  box-sizing:border-box;width:5.813953488%;min-width:0;max-width:none;
-  padding:4px 0;text-align:center
+/* Approved five-column layout: distinct content zones separated by
+   deliberate free space, as indicated in the Admin reference screenshot.
+   Shared by Professional and User. Header/body tracks remain identical;
+   existing 44px row heights and horizontal scrolling remain unchanged. */
+.admin-tool-register-table col.admin-tool-col-expand{width:13%}
+.admin-tool-register-table col.admin-tool-col-name{width:32%}
+.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}
+.admin-tool-register-table col.admin-tool-col-tariff{width:20%}
+.admin-tool-register-table col.admin-tool-col-status{width:21.5%}
+.admin-tool-register-table :is(th,td):first-child{
+  box-sizing:border-box;width:13%;min-width:0;max-width:none;
+  padding:4px 0;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(2){
-  box-sizing:border-box;width:39.534883721%;min-width:0;max-width:none;
-  padding:4px 12px;text-align:left
+  box-sizing:border-box;width:32%;min-width:0;max-width:none;
+  padding:4px 8px;text-align:left
 }
-.admin-tool-register-table :is(th,td):nth-child(n+4){
-  box-sizing:border-box;width:24.418604652%;min-width:0;max-width:none;
+.admin-tool-register-table :is(th,td):nth-child(3){
+  box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
+  padding:4px 0 4px 22px;text-align:left
+}
+.admin-tool-register-table :is(th,td):nth-child(4){
+  box-sizing:border-box;width:20%;min-width:0;max-width:none;
+  padding-inline:8px;text-align:left
+}
+.admin-tool-register-table :is(th,td):nth-child(5){
+  box-sizing:border-box;width:21.5%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
@@ -1082,6 +1090,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
   width:20px;height:22px;padding:0;border:0;
   background:transparent;color:var(--text);font-size:18px;cursor:pointer
 }
+.admin-tool-register-table .admin-tool-registry-expand{
+  margin:0 0 0 32px
+}
+.admin-tool-register-table .admin-tool-registry-kind{text-align:left}
 .admin-tool-registry-expand[aria-expanded="false"]{transform:rotate(-90deg)}
 .admin-tool-register-table .admin-tool-registry-expand-header{padding:4px 0;text-align:center}
 .admin-tool-registry-expand-cell,
@@ -1132,6 +1144,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(2){
     padding:4px 12px!important
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(3){
+    padding-left:22px!important
   }
   .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(n+4){
     padding-inline:8px!important
