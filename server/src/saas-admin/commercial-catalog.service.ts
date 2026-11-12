@@ -201,6 +201,13 @@ export class CommercialCatalogService {
     const products = catalog.products;
     const byKey = new Map(products.map((product) => [product.key, product]));
     const assignments: Record<string, string> = {};
+    const limits: Record<string, Record<string, number | null>> = {};
+    const limitRows = await this.prisma.$queryRawUnsafe<Array<{toolKey:string;tariffKey:string;maxCount:number|null}>>(
+      `SELECT "toolKey","tariffKey","maxCount" FROM "CommercialTariffLimit" ORDER BY "toolKey","tariffKey"`,
+    );
+    for (const row of limitRows) {
+      (limits[row.toolKey] ||= {})[row.tariffKey] = row.maxCount;
+    }
     for (const tierKey of ALL_TARIFF_KEYS) {
       for (const child of byKey.get(tierKey)?.includedProducts || []) {
         if (!ALL_TARIFF_KEYS.includes(child.key as TariffKey)) assignments[child.key] = tierKey;
@@ -251,7 +258,65 @@ export class CommercialCatalogService {
           .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
       })),
       assignments,
+      limits,
     };
+  }
+
+  async updateTariffLimit(input: Record<string, unknown>, actorAdminId: string) {
+    const toolKey = text(input.toolKey);
+    const tariffKey = text(input.tariffKey);
+    if (!TARIFF_TOOL_KEYS.has(toolKey)) {
+      throw new BadRequestException('Инструмент не найден');
+    }
+    const keys: readonly string[] = toolKey.startsWith('records.') ? USER_TARIFF_KEYS : TARIFF_KEYS;
+    if (!keys.includes(tariffKey)) {
+      throw new BadRequestException('Тариф не относится к выбранному приложению');
+    }
+    const raw = input.limit;
+    const unset = raw === 'unset';
+    let maxCount: number | null = null;
+    if (!unset && raw !== null) {
+      if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) {
+        throw new BadRequestException('Лимит должен быть целым неотрицательным числом или ∞');
+      }
+      maxCount = raw;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      // Check the resulting tier ladder rather than silently accepting a
+      // lower maximum in a higher tariff. Undefined tiers remain configurable.
+      const rows = await tx.$queryRawUnsafe<Array<{tariffKey:string;maxCount:number|null}>>(
+        `SELECT "tariffKey","maxCount" FROM "CommercialTariffLimit" WHERE "toolKey"=$1 AND "tariffKey" = ANY($2::text[])`,
+        toolKey, [...keys],
+      );
+      const ladder = new Map(rows.map((row) => [row.tariffKey, row.maxCount]));
+      if (unset) ladder.delete(tariffKey);
+      else ladder.set(tariffKey, maxCount);
+      for (let index=1; index<keys.length; index++) {
+        const prev = ladder.get(keys[index-1]);
+        const next = ladder.get(keys[index]);
+        if (prev === undefined || next === undefined) continue;
+        if ((prev === null ? Infinity : prev) > (next === null ? Infinity : next)) {
+          throw new BadRequestException('Лимит следующего тарифа не может быть меньше предыдущего');
+        }
+      }
+      if (unset) {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM "CommercialTariffLimit" WHERE "toolKey"=$1 AND "tariffKey"=$2`,
+          toolKey,tariffKey,
+        );
+      } else {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "CommercialTariffLimit" ("toolKey","tariffKey","maxCount")
+           VALUES ($1,$2,$3)
+           ON CONFLICT ("tariffKey","toolKey") DO UPDATE SET
+             "maxCount"=EXCLUDED."maxCount","updatedAt"=CURRENT_TIMESTAMP`,
+          toolKey,tariffKey,maxCount,
+        );
+      }
+    });
+    await this.audit(actorAdminId,'TARIFF_QUANTITY_LIMIT_UPDATED','TOOL',toolKey,
+      {tariffKey,limit:unset?'unset':maxCount});
+    return this.tariffs();
   }
 
   async assignTariff(input: Record<string, unknown>, actorAdminId: string) {
