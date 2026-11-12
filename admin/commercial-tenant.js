@@ -106,26 +106,26 @@ function auditRows(events) {
 
 function selectedProductKeys(section) {
   const drawer = section.closest('.admin-access-drawer') || section;
-  return [...drawer.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')]
+  return [...drawer.querySelectorAll('[data-commercial-tenant-product]:checked')]
     .map((button) => button.dataset.commercialTenantProduct)
     .filter(Boolean);
 }
 
 function commercialProductSwitch(product) {
-  const selected = Boolean(product.selected);
-  const price = Number(product.priceMinor || 0);
-  return '<span class="admin-access-commercial-choice">' +
-    (price > 0 ? '<span class="admin-access-commercial-price">' + escapeHtml(rubles(price)) + '</span>' : '') +
-    '<button type="button" class="admin-toggle commercial-tenant-product' + (selected ? ' is-on' : '') +
-    '" data-commercial-tenant-product="' + escapeHtml(product.key) +
+  // Commercial selection is a checkbox, not a second identical access switch.
+  // Use the existing Admin checkbox UI; access remains the rightmost toggle.
+  return '<label class="admin-access-commercial-choice">' +
+    '<input type="checkbox" data-commercial-tenant-product="' + escapeHtml(product.key) +
     '" data-price-minor="' + escapeHtml(product.priceMinor) +
-    '" aria-pressed="' + selected + '" aria-label="Условия: ' + escapeHtml(product.name) +
-    '"></button></span>';
+    '" aria-label="Включить в оплату: ' + escapeHtml(product.name) + '"' +
+    (product.selected ? ' checked' : '') + '>' +
+    '<span class="admin-access-commercial-price">' + escapeHtml(rubles(product.priceMinor)) + '</span>' +
+    '</label>';
 }
 
 function updateQuote(section) {
   const drawer = section.closest('.admin-access-drawer') || section;
-  const selected = [...drawer.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')];
+  const selected = [...drawer.querySelectorAll('[data-commercial-tenant-product]:checked')];
   const subtotal = selected.reduce((sum, button) => sum + Number(button.dataset.priceMinor || 0), 0);
   const discountControl = section.querySelector('[data-commercial-tenant-discount]');
   const freeForever = section.querySelector('[data-commercial-tenant-free]')?.getAttribute('aria-pressed') === 'true';
@@ -239,16 +239,12 @@ export async function enhanceCommercialTenantTools(section, tenantId) {
       <details class="commercial-tenant-details" open><summary>Расчёты и покупки</summary><div data-commercial-tenant-orders>${orderRows(orders)}</div></details>
       <details class="commercial-tenant-details"><summary>История действий</summary>${auditRows(commercial.audit)}</details>`;
 
-    drawer.querySelectorAll('[data-commercial-tenant-product]').forEach((button) => {
-      button.addEventListener('click', (event) => {
-        // Tool-row summaries must not collapse when changing commercial terms.
+    drawer.querySelectorAll('[data-commercial-tenant-product]').forEach((input) => {
+      input.addEventListener('click', (event) => {
+        // Commercial checkboxes must not collapse their F/E/R/K summary.
         event.stopPropagation();
-        event.preventDefault();
-        const next = button.getAttribute('aria-pressed') !== 'true';
-        button.setAttribute('aria-pressed', String(next));
-        button.classList.toggle('is-on', next);
-        updateQuote(section);
       });
+      input.addEventListener('change', () => updateQuote(section));
     });
 
     const freeButton = section.querySelector('[data-commercial-tenant-free]');
