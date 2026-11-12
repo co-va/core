@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
@@ -29,6 +29,43 @@ export class InventoryController {
     @Body() body: unknown,
   ) {
     return this.inventory.updateItem(request.auth!.tenantId, itemId, body);
+  }
+
+  @Post('items/:itemId/offers')
+  createSupplierOffer(
+    @Req() request: AuthenticatedRequest,
+    @Param('itemId') itemId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inventory.createSupplierOffer(request.auth!.tenantId, itemId, body);
+  }
+
+  @Put('items/:itemId/offers/:offerId')
+  updateSupplierOffer(
+    @Req() request: AuthenticatedRequest,
+    @Param('itemId') itemId: string,
+    @Param('offerId') offerId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inventory.updateSupplierOffer(request.auth!.tenantId, itemId, offerId, body);
+  }
+
+  @Delete('items/:itemId/offers/:offerId')
+  archiveSupplierOffer(
+    @Req() request: AuthenticatedRequest,
+    @Param('itemId') itemId: string,
+    @Param('offerId') offerId: string,
+  ) {
+    return this.inventory.archiveSupplierOffer(request.auth!.tenantId, itemId, offerId);
+  }
+
+  @Put('items/:itemId/primary-offer')
+  setPrimarySupplierOffer(
+    @Req() request: AuthenticatedRequest,
+    @Param('itemId') itemId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inventory.setPrimarySupplierOffer(request.auth!.tenantId, itemId, body);
   }
 
   @Post('movements')
