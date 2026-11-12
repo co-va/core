@@ -1226,12 +1226,12 @@ function accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCom
   // commercial service fills these slots; it never creates a second list.
   const product = allowCommercial ? (TOOL_COMMERCIAL_BINDINGS[key] || '') : '';
   const title = '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>';
-  return '<div class="admin-access-tool-row' + (locked && grant ? ' is-unavailable' : '') +
+  return '<span class="admin-access-tool-row' + (locked && grant ? ' is-unavailable' : '') +
     '" data-tool-kind="' + kind + '" data-tool-key="' + escapeHtml(key) + '">' +
     '<span class="admin-access-tool-identity">' + title + (limit ? '<span class="admin-access-inline-limit">' + limit + '</span>' : '') + '</span>' +
     '<span class="admin-access-tool-grant">' + grant + '</span>' +
     '<span class="admin-access-tool-commercial"' + (product ? ' data-commercial-slot="' + escapeHtml(product) + '"' : '') + '></span>' +
-    '</div>';
+    '</span>';
 }
 
 function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', depth = 0, parentKey = '', allowCommercial = true, seen = new Set()) {
