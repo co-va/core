@@ -496,7 +496,9 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const groupedChildren = visibleToolChildren(area, item);
     const expandable = groupedChildren.length > 0;
     const productKey = area === 'cabinet' ? INLINE_COMMERCIAL_KEYS[key] : '';
-    const tier = productKey
+    const tier = productKey === 'system.profile' || productKey === 'system.workplace'
+      ? 'Start'
+      : productKey
       ? '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
         escapeHtml(toolDisplayName(item)) + '" disabled>' +
         '<option value="">Не входит</option><option value="tariff.start">Start</option>' +
