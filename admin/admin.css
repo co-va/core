@@ -1140,13 +1140,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
   display:flex;align-items:center;justify-content:center;gap:3px;max-width:110px;margin-inline:auto
 }
 .admin-tool-limit-control [data-tool-limit-tier]{
-  box-sizing:border-box;width:42px;min-width:0;height:26px;min-height:26px;
+  box-sizing:border-box;width:calc(100% - 25px);max-width:74px;min-width:0;height:26px;min-height:26px;
   padding:0 3px;border:1px solid var(--border);border-radius:5px;
   background:#fff;color:var(--text);font-size:12px;font-weight:700;text-align:center
 }
 .admin-tool-limit-infinity{
   display:grid;place-items:center;box-sizing:border-box;
-  width:26px;min-width:26px;height:26px;padding:0;
+  width:22px;min-width:22px;height:26px;padding:0;
   border:1px solid var(--border);border-radius:5px;
   color:var(--text);background:#fff;font-size:17px;font-weight:700;cursor:pointer
 }
