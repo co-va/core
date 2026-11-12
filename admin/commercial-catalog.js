@@ -496,7 +496,7 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       (canPrice ? ' data-commercial-key="' + escapeHtml(INLINE_COMMERCIAL_KEYS[key]) + '"' : '') +
       '><td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
       '<td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
-      '<td><div class="admin-tool-registry-name" style="--tool-depth:' + depth + '">' +
+      '<td><div class="admin-tool-registry-name" data-tool-depth="' + depth + '" style="--tool-depth:' + depth + '">' +
       '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
       '<td>' + readiness + '</td><td>' + payment + '</td><td><div class="admin-tool-registry-cost">' + price +
       '<small class="admin-tool-registry-save-state" aria-live="polite"></small></div></td></tr>';
