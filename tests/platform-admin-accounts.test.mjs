@@ -249,6 +249,13 @@ assert.match(commercialUi, /<input type="checkbox" data-commercial-tenant-produc
 assert.match(commercialUi, /data-commercial-tenant-product\]:checked/, 'Commercial calculation reads checkbox state');
 assert.match(adminCss, /\.admin-access-commercial-price\{font-size:13px/, 'Money remains legible in the row');
 assert.match(registryHtml, /data-toggle-group/, 'Composite Finance tools have one switch for several grants');
+assert.match(registryHtml,
+  /data-tool-key="cabinet\.journal\.day\.events"[\s\S]*?disabled role="switch"/,
+  'A K component without a separate entitlement shows an inherited disabled switch');
+assert.match(registry, /title="Доступ наследуется от родительского инструмента"/,
+  'Inherited state is disclosed instead of pretending to be independently editable');
+assert.match(adminCss, /\.admin-access-tool-grant \.admin-toggle:disabled\{opacity:\.45/,
+  'Inherited switches are visibly muted');
 assert.match(source, /if \(!tenant \|\| tenant\.isOwnerBook\) return;/, 'Owner cannot be deleted in UI');
 assert.match(drawer, /data-delete-account/, 'Non-owner deletion is only inside account editor');
 assert.match(drawer, /openDeleteTenantModal\(tenantId, close\)/, 'Deleting an account closes its editor');
