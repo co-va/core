@@ -253,7 +253,9 @@ for (const key of ['finance.cash.access', 'finance.dds.access', 'services.access
   assert.equal((registryHtml.match(new RegExp('data-capability="' + key.replaceAll('.', '\\.') + '"', 'g')) || []).length, 1,
     'Shared capability appears once: ' + key);
 }
-for (const key of ['folder.finance', 'tool.finance.cash', 'tool.finance.dds', 'tool.finance.z-report', 'tool.inventory']) {
+// Finance F is structural: sale options attach to the existing E tools, not the parent folder.
+assert.doesNotMatch(registryHtml, /data-commercial-slot="folder\.finance"/, 'Finance parent is not a second paid option');
+for (const key of ['tool.finance.cash', 'tool.finance.dds', 'tool.finance.z-report', 'tool.inventory']) {
   assert.equal((registryHtml.match(new RegExp('data-commercial-slot="' + key.replaceAll('.', '\\.') + '"', 'g')) || []).length, 1,
     'Commercial conditions have one actual tool row: ' + key);
 }
