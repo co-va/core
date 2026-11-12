@@ -2,6 +2,7 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
+import { renderCommercialFinance } from './commercial-finance.js';
 import { renderAdminTools, loadTariffs, updateTariffPrice, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
@@ -346,6 +347,7 @@ const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
+  { id: 'finance', label: 'Финансы', icon: 'finance' },
   { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
 ];
 
@@ -512,6 +514,7 @@ function renderCurrentSection() {
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();
+  if (state.section === 'finance') return renderFinanceSection();
   renderTenants();
   // On section entry, refresh network cells independently of the 30s poll.
   void refreshTenantNetwork().catch(() => {});
@@ -610,6 +613,36 @@ function overviewRegistrationWeeks(registered, weeks = 8, now = new Date()) {
     if (index >= 0 && index < weeks) buckets[index].count += 1;
   }
   return buckets;
+}
+
+function renderFinanceSection() {
+  setActiveSection('Финансы');
+  const content = app.querySelector('[data-content]');
+  if (!content) return;
+  content.innerHTML = '<div class="admin-heading"><h2>Финансы</h2></div>' +
+    '<section class="admin-card admin-empty-card">Загружаем счета и платежи…</section>';
+  void adminRequest('/finance/overview')
+    .then((data) => {
+      if (state.section !== 'finance') return;
+      const tenantName = (id) => {
+        const entry = state.tenants.find((item) => item.tenantId === id);
+        return entry?.ownerProfile?.name || entry?.invitation?.name || entry?.tenantName || id;
+      };
+      renderCommercialFinance(content, data, {
+        escapeHtml, tenantName,
+        onTenant: (tenantId) => {
+          state.section = 'tenants';
+          renderCurrentSection();
+          openAccessDrawer(tenantId);
+        },
+      });
+    })
+    .catch((error) => {
+      if (state.section !== 'finance') return;
+      content.innerHTML = '<div class="admin-heading"><h2>Финансы</h2></div>' +
+        '<section class="admin-card admin-empty-card" role="alert">' +
+        escapeHtml(error instanceof Error ? error.message : 'Данные финансов недоступны') + '</section>';
+    });
 }
 
 function renderOverview() {
