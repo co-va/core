@@ -10,7 +10,7 @@ import { PlatformAdminGuard } from './platform-admin.guard';
 import { SaasAdminController } from './saas-admin.controller';
 import { SaasAdminService } from './saas-admin.service';
 import { PlatformNoticeModule } from '../platform-notice/platform-notice.module';
-import { CommercialCatalogController } from './commercial-catalog.controller';
+import { CommercialCatalogController, CommercialPublicController } from './commercial-catalog.controller';
 import { CommercialCatalogService } from './commercial-catalog.service';
 import { CommercialTenantController } from './commercial-tenant.controller';
 import { CommercialTenantService } from './commercial-tenant.service';
@@ -23,7 +23,7 @@ import { ToolReadinessService } from './tool-readiness.service';
 
 @Module({
   imports: [AuthModule, HistoryModule, SaasAccessModule, TenantInvitationModule, DocumentRegistryModule, TransactionalEmailModule, PlatformNoticeModule],
-  controllers: [SaasAdminController, AccountToolsController, ToolReadinessController, CommercialCatalogController, CommercialTenantController, CommercialSelfServiceController],
+  controllers: [SaasAdminController, AccountToolsController, ToolReadinessController, CommercialCatalogController, CommercialPublicController, CommercialTenantController, CommercialSelfServiceController],
   providers: [SaasAdminService, ToolReadinessService, CommercialCatalogService, CommercialTenantService, CommercialReceiptService, CommercialInvoiceService, PlatformAdminGuard, PrismaService],
 })
 export class SaasAdminModule {}
