@@ -1113,19 +1113,34 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:0 24px 0 7px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
-/* Tariff controls are plain, neutral checkboxes. Brand/tier colors belong
-   to the tariff presentation elsewhere, never to the Tools registry. */
-.admin-tool-register-table .admin-tool-tier-heading{
-  font-weight:750;text-align:center;color:var(--text)
-}
+/* Tools share the existing Admin typography and F/E outline palette.
+   A checked tariff is a white square with a text-colour checkmark. */
+.admin-tool-register-table .admin-tool-tier-heading{text-align:center}
 .admin-tool-register-table .admin-tool-tier-cell{text-align:center}
-.admin-tool-register-table .admin-tool-tier-checkbox{
-  appearance:auto;-webkit-appearance:checkbox;
-  box-sizing:border-box;width:18px;height:18px;margin:0;
-  vertical-align:middle;accent-color:var(--text);cursor:pointer
+.admin-tool-register-table .admin-tool-tier-check{
+  display:inline-flex;position:relative;align-items:center;justify-content:center;
+  width:18px;height:18px;vertical-align:middle;cursor:pointer
 }
-.admin-tool-register-table .admin-tool-tier-checkbox:disabled{
-  opacity:.7;cursor:default
+.admin-tool-register-table .admin-tool-tier-checkbox{
+  position:absolute;inset:0;margin:0;width:100%;height:100%;
+  opacity:0;cursor:inherit;z-index:1
+}
+.admin-tool-register-table .admin-tool-tier-mark{
+  box-sizing:border-box;width:18px;height:18px;
+  border:1px solid var(--border);border-radius:3px;
+  background:#fff;display:grid;place-items:center;pointer-events:none
+}
+.admin-tool-register-table .admin-tool-tier-checkbox:checked + .admin-tool-tier-mark::after{
+  content:"";display:block;width:8px;height:5px;
+  border-left:2px solid var(--text);border-bottom:2px solid var(--text);
+  transform:translateY(-1px) rotate(-45deg)
+}
+.admin-tool-register-table .admin-tool-tier-checkbox:focus-visible + .admin-tool-tier-mark{
+  outline:2px solid var(--text);outline-offset:2px
+}
+.admin-tool-register-table .admin-tool-tier-checkbox:disabled,
+.admin-tool-register-table .admin-tool-tier-checkbox:disabled + .admin-tool-tier-mark{
+  cursor:default
 }
 .admin-tool-limit-control{
   display:flex;align-items:center;justify-content:center;gap:3px;max-width:110px;margin-inline:auto
@@ -1144,7 +1159,6 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-limit-infinity:hover:not(:disabled){background:var(--admin-pearl)}
 .admin-tool-limit-control [data-tool-limit-tier]:disabled,
 .admin-tool-limit-infinity:disabled{opacity:.75;cursor:default}
-.admin-tool-register-table .admin-tool-tier-checkbox:focus-visible,
 .admin-tool-register-table .admin-tool-limit-infinity:focus-visible{outline:2px solid var(--text);outline-offset:2px}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
