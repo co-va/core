@@ -1252,7 +1252,9 @@ function toolName(item) {
 }
 
 function toolChildren(area, item) {
-  return visibleToolChildren(area, item);
+  // Commercial K tools are configured in Tools, not duplicated in an
+  // individual account's capability hierarchy.
+  return visibleToolChildren(area, item).filter((child) => child.kind !== 'check');
 }
 
 // Same F/E/R visible hierarchy as the Tools registry. K components are metadata,
