@@ -834,15 +834,16 @@ function openRegistrationToolDrawer() {
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop';
   backdrop.innerHTML = `
-    <aside class="admin-drawer">
+    <aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Инструменты регистрации">
       <div class="admin-drawer-head">
-        <div><h3>Инструменты нового аккаунта</h3><p>Настройки доступа по регистрационной ссылке</p></div>
+        <div><h3>Инструменты регистрации</h3><p>Доступ нового аккаунта</p></div>
         <button type="button" class="admin-close" data-close aria-label="Закрыть">×</button>
       </div>
-      <div data-capability-order-list>${renderTenantRegistry(resolved)}</div>
-      <div class="admin-actions">
-        <button type="button" class="admin-button secondary" data-close>Отмена</button>
-        <button type="button" class="admin-button" data-apply-invite>Применить</button>
+      <div class="admin-document-reading">
+        <div data-capability-order-list>${renderTenantRegistry(resolved, { isTester: true })}</div>
+        <div class="admin-inline-actions">
+          <button type="button" class="admin-button" data-apply-invite>Применить</button>
+        </div>
       </div>
     </aside>`;
   // Registration links accept Boolean capability switches, never capacity overrides.
@@ -851,7 +852,7 @@ function openRegistrationToolDrawer() {
   });
   const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
   if (sharedQ) {
-    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const html = modal(backdrop.innerHTML, { title: 'Инструменты', variant: 'q', className: 'admin-access-q admin-document-q' });
     const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
     if (!mounted) return;
     backdrop = mounted;
@@ -863,7 +864,7 @@ function openRegistrationToolDrawer() {
     button.addEventListener('click', () => {
       button.classList.toggle('is-on');
       button.dataset.current = String(button.classList.contains('is-on'));
-      button.setAttribute('aria-pressed', button.dataset.current);
+      button.setAttribute('aria-checked', button.dataset.current);
     });
   });
   backdrop.querySelector('[data-apply-invite]')?.addEventListener('click', () => {
