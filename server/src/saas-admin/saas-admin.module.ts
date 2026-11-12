@@ -17,13 +17,15 @@ import { CommercialTenantService } from './commercial-tenant.service';
 import { CommercialSelfServiceController } from './commercial-self-service.controller';
 import { CommercialReceiptService } from './commercial-receipt.service';
 import { CommercialInvoiceService } from './commercial-invoice.service';
+import { CommercialFinanceService } from './commercial-finance.service';
+import { CommercialFinanceController } from './commercial-finance.controller';
 import { AccountToolsController } from './account-tools.controller';
 import { ToolReadinessController } from './tool-readiness.controller';
 import { ToolReadinessService } from './tool-readiness.service';
 
 @Module({
   imports: [AuthModule, HistoryModule, SaasAccessModule, TenantInvitationModule, DocumentRegistryModule, TransactionalEmailModule, PlatformNoticeModule],
-  controllers: [SaasAdminController, AccountToolsController, ToolReadinessController, CommercialCatalogController, CommercialPublicController, CommercialTenantController, CommercialSelfServiceController],
-  providers: [SaasAdminService, ToolReadinessService, CommercialCatalogService, CommercialTenantService, CommercialReceiptService, CommercialInvoiceService, PlatformAdminGuard, PrismaService],
+  controllers: [SaasAdminController, AccountToolsController, ToolReadinessController, CommercialCatalogController, CommercialPublicController, CommercialTenantController, CommercialSelfServiceController, CommercialFinanceController],
+  providers: [SaasAdminService, ToolReadinessService, CommercialCatalogService, CommercialTenantService, CommercialReceiptService, CommercialInvoiceService, CommercialFinanceService, PlatformAdminGuard, PrismaService],
 })
 export class SaasAdminModule {}

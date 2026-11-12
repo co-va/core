@@ -1204,3 +1204,40 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr,
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody td{height:44px;min-height:44px}
 }
+
+/* Admin Finance reuses Admin cards, metrics and the shared table — no parallel UI kit. */
+.admin-finance{display:grid;gap:16px}
+.admin-finance>.admin-heading{margin-bottom:2px}
+.admin-finance-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.admin-finance-metrics .admin-stat{display:flex;flex-direction:column;gap:8px;min-width:0}
+.admin-finance-metrics .admin-stat strong{font-size:26px;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.admin-finance-info{padding:20px 24px}
+.admin-finance-info h3,.admin-finance-ledger h3{margin:0;font-size:17px;font-weight:700;color:var(--text)}
+.admin-finance-info p{margin:16px 0 0;color:var(--text-secondary);font-size:13px;line-height:1.5}
+.admin-finance-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px}
+.admin-finance-status-grid>div{display:grid;gap:5px;min-width:0}
+.admin-finance-status-grid span{color:var(--text-secondary);font-size:12px}
+.admin-finance-status-grid strong{color:var(--text);font-size:14px}
+.admin-finance-ledger{padding:0}
+.admin-finance-ledger h3{padding:19px 22px 13px}
+.admin-finance-ledger h3 span{font-size:12px;font-weight:500;color:var(--text-secondary)}
+.admin-finance-table-scroll{width:100%;overflow:auto}
+.admin-finance-table{min-width:690px}
+.admin-finance-table tbody tr{cursor:default}
+.admin-finance-table th{white-space:nowrap}
+.admin-finance-table td{white-space:nowrap}
+.admin-finance-table td:nth-child(2){white-space:normal;min-width:120px}
+.admin-finance-table td small{display:block;color:var(--text-secondary);font-size:11px;margin-top:3px}
+.admin-finance-amount{font-variant-numeric:tabular-nums;font-weight:650}
+.admin-finance-tenant{border:0;padding:3px 0;background:transparent;color:var(--text);font:inherit;cursor:pointer;text-align:left;text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}
+.admin-finance-tenant:hover{color:var(--text-secondary)}
+@media(max-width:900px){
+  .admin-finance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .admin-finance-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:620px){
+  .admin-finance-metrics,.admin-finance-status-grid{grid-template-columns:1fr}
+  .admin-finance-info{padding:17px 15px}
+  .admin-finance-metrics .admin-stat strong{font-size:23px}
+  .admin-finance-ledger h3{padding:16px 15px 10px}
+}
