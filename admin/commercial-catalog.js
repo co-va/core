@@ -64,10 +64,11 @@ export const TOOL_MAP = Object.freeze({
     },
     {
       id: 'inventory', label: 'Склад', nesting: 'e', items: [
-        { label: 'Остатки', kind: 'e', readinessKey: 'cabinet.inventory.stock' },
+        { label: 'Остатки', kind: 'e', nesting: 'composition', readinessKey: 'cabinet.inventory.stock', items: [
+          { label: 'Инвентаризация', kind: 'mode', readinessKey: 'cabinet.inventory.stocktake' },
+        ] },
         { label: 'Движения', kind: 'e', readinessKey: 'cabinet.inventory.movements' },
         { label: 'Заказ', kind: 'e', readinessKey: 'cabinet.inventory.order' },
-        { label: 'Инвентаризация', kind: 'e', readinessKey: 'cabinet.inventory.stocktake' },
       ],
     },
     {
@@ -257,8 +258,12 @@ function readinessSelect(readinessKey, byKey, className) {
 function aggregateKeys(item) {
   // Parent count follows its immediate children: Finance is E × 3, whereas
   // Cash is Composition × 3. A nested E counts ready when any member is ready.
-  return (item.items || []).map((child) => child.readinessKey ||
+  const children = (item.items || []).map((child) => child.readinessKey ||
     (child.items?.length ? aggregateKeys(child).join(',') : null)).filter(Boolean);
+  // Stock remains an independent E tool; stocktake is an optional nested mode.
+  // Include both statuses rather than replacing the Stock readiness with its child.
+  return item.readinessKey === 'cabinet.inventory.stock'
+    ? [item.readinessKey, ...children] : children;
 }
 
 function isReadinessGroupReady(keyGroup, byKey) {
