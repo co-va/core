@@ -1032,14 +1032,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Shared seven-track Tools layout: established disclosure/name/type (58.5%),
-   three equal tier columns and unchanged Readiness track on the right.
-   Rows and sticky header both retain the existing 44px geometry. */
+/* Seven evenly spaced Tools zones: preserve disclosure/name tracks,
+   move Type and the three tariff squares left, leave a separate 20% zone for
+   Readiness on the right. Header and body share the same 44px geometry. */
 .admin-tool-register-table col.admin-tool-col-expand{width:13%}
 .admin-tool-register-table col.admin-tool-col-name{width:32%}
-.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}
-.admin-tool-register-table col.admin-tool-col-tier{width:9.333333333%}
-.admin-tool-register-table col.admin-tool-col-status{width:13.5%}
+.admin-tool-register-table col.admin-tool-col-kind{width:8%}
+.admin-tool-register-table col.admin-tool-col-tier{width:9%}
+.admin-tool-register-table col.admin-tool-col-status{width:20%}
 .admin-tool-register-table :is(th,td):first-child{
   box-sizing:border-box;width:13%;min-width:0;max-width:none;
   padding:4px 0;text-align:left
@@ -1049,17 +1049,17 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:4px 8px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(3){
-  box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
+  box-sizing:border-box;width:8%;min-width:0;max-width:none;
   padding:4px 0 4px 22px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(4),
 .admin-tool-register-table :is(th,td):nth-child(5),
 .admin-tool-register-table :is(th,td):nth-child(6){
-  box-sizing:border-box;width:9.333333333%;min-width:0;max-width:none;
+  box-sizing:border-box;width:9%;min-width:0;max-width:none;
   padding-inline:8px;text-align:center
 }
 .admin-tool-register-table :is(th,td):nth-child(7){
-  box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
+  box-sizing:border-box;width:20%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
