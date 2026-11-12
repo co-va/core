@@ -138,6 +138,7 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.settings.data-transfer': ['data_transfer.access'],
   'cabinet.service': ['services.access'],
   'cabinet.chat': ['chat.access'],
+  'cabinet.finance.cash': ['finance.cash.access'],
   'cabinet.finance.cash.wallets': ['finance.cash.access'],
   'cabinet.finance.cash.loans': ['finance.special.access'],
   'cabinet.finance.cash.investments': ['finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
