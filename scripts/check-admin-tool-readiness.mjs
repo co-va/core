@@ -109,7 +109,8 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// Both tool tables use the exact fixed 860px grid: 50 + 340 + 50 + 140 + 140 + 140.
+// Both tool tables fill the entire available card width, preserving the
+// 860px reference proportions: 50 + 340 + 50 + 140 + 140 + 140.
 if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">') ||
     !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-status">') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
@@ -136,18 +137,23 @@ for (const kind of [
   if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
 }
 for (const rule of [
-  '.admin-tool-register-card{margin:0;padding:0;width:860px;max-width:100%;min-width:0;overflow:hidden}',
-  '.admin-tool-register-table{width:860px;min-width:860px;max-width:860px;table-layout:fixed',
-  '.admin-tool-register-table col.admin-tool-col-expand{width:50px}',
-  '.admin-tool-register-table col.admin-tool-col-name{width:340px}',
-  '.admin-tool-register-table col.admin-tool-col-kind{width:50px}',
-  '.admin-tool-register-table col.admin-tool-col-status,',
-  '.admin-tool-register-table col.admin-tool-col-price{width:140px}',
+  '.admin-tool-register-card{margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden}',
+  '.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed',
+  '.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}',
+  '.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}',
+  '.admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}',
+  '.admin-tool-register-table col.admin-tool-col-price{width:16.279069768%}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
-  if (!css.includes(rule)) throw new Error('Fixed 860px geometry/hierarchy missing: ' + rule);
+  if (!css.includes(rule)) throw new Error('Full-width registry proportions/hierarchy missing: ' + rule);
 }
+const tracks = [50, 340, 50, 140, 140, 140];
+assert.equal(tracks.reduce((total, value) => total + value, 0), 860,
+  'Tool reference grid must have an exact 860px base');
+const weights = [5.813953488, 39.534883721, 5.813953488, 16.279069768, 16.279069768, 16.279069768];
+assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
+  'Scaled columns must exactly fill the available table width');
 if (!ui.includes('R — режим, K — компонент') ||
     !css.includes('.admin-tool-registry-kind span.is-card{')) {
   throw new Error('R/K must be Latin and have no F/E card outline');
