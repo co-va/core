@@ -2,7 +2,7 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, loadTariffs, updateTariffPrice, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderAdminTools, loadTariffs, updateTariffSettings, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
@@ -710,14 +710,45 @@ function renderOverview() {
             <button type="button" class="admin-overview-close" data-overview-tariff-close aria-label="Свернуть тариф">×</button>
           </div>
           ${selectedTariff.key !== 'tariff.start' ? `
-            <div class="admin-overview-tariff-controls">
-              <label class="admin-field"><span>Стоимость, ₽</span>
-                <input type="number" min="1" step="0.01" inputmode="decimal" data-overview-tariff-price
-                  value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Установить цену">
-              </label>
-              <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить цену</button>
-              <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
-            </div>` : ''}
+            <div class="admin-overview-tariff-editor">
+              <div class="admin-overview-tariff-controls">
+                <label class="admin-field"><span>Цена за 30 дней, ₽</span>
+                  <input type="number" min="0" step="0.01" inputmode="decimal" data-overview-tariff-price
+                    value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Цена не установлена">
+                </label>
+              </div>
+              <div class="admin-overview-tariff-periods">
+                <div class="admin-overview-tariff-period-row is-heading">
+                  <span>Оплата</span><span>Бонус времени</span><span>Всего дней</span><span>Стоимость, ₽</span>
+                </div>
+                ${[1, 6, 12].map((months) => {
+                  const period = selectedTariff.periods?.find((item) => item.months === months);
+                  const percent = period?.bonusPercent ?? (months === 6 ? 20 : months === 12 ? 50 : 0);
+                  const bonusDays = Math.round(months * 30 * percent / 100);
+                  const fullDays = months * 30 + bonusDays;
+                  return `<div class="admin-overview-tariff-period-row" data-overview-tariff-months="${months}">
+                    <span>${months} ${months === 1 ? 'месяц' : 'месяцев'} <small>${months * 30} дней</small></span>
+                    <span>${months === 1 ? '—' : `
+                      <label class="admin-overview-tariff-percent">
+                        <input type="number" min="0" max="100" step="1" inputmode="numeric"
+                          data-overview-tariff-bonus="${months}" value="${percent}" aria-label="Бонус за ${months} месяцев"> %
+                      </label>`}</span>
+                    <span data-overview-tariff-days="${months}">${fullDays} дней${bonusDays ? ` (+${bonusDays})` : ''}</span>
+                    <span data-overview-tariff-sum="${months}">${selectedTariff.priceMinor
+                      ? escapeHtml(new Intl.NumberFormat('ru-RU').format(selectedTariff.priceMinor * months / 100)) + ' ₽'
+                      : '—'}</span>
+                  </div>`;
+                }).join('')}
+              </div>
+              <div class="admin-overview-tariff-footer">
+                <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
+                <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
+              </div>
+            </div>` : '<p class="admin-overview-tariff-free">Бесплатный LIVE Start без ограничения срока. Цена и бонусы не требуются.</p>'}
+          <div class="admin-overview-tariff-tools-heading">
+            <strong>Состав тарифа</strong>
+            <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Настроить в «Инструментах» <span aria-hidden="true">↗</span></button>
+          </div>
           <div class="admin-overview-detail-list admin-overview-tariff-list">
             ${selectedTariff.tools?.length ? selectedTariff.tools.map((tool) => `
               <div class="admin-overview-person">
@@ -839,25 +870,47 @@ function renderOverview() {
     overviewSelectedTariff = '';
     renderOverview();
   });
+  const tariffPriceInput = content.querySelector('[data-overview-tariff-price]');
+  const tariffBonusInputs = [...content.querySelectorAll('[data-overview-tariff-bonus]')];
+  const refreshTariffPreview = () => {
+    const amount = Number(String(tariffPriceInput?.value || '').replace(',', '.'));
+    const validPrice = tariffPriceInput?.value !== '' && Number.isFinite(amount) && amount > 0;
+    for (const months of [1,6,12]) {
+      const bonus = months === 1 ? 0 :
+        Number(content.querySelector('[data-overview-tariff-bonus="' + months + '"]')?.value || 0);
+      const safeBonus = Number.isFinite(bonus) && bonus >= 0 ? bonus : 0;
+      const gift = Math.round(months * 30 * safeBonus / 100);
+      const days = content.querySelector('[data-overview-tariff-days="' + months + '"]');
+      const cost = content.querySelector('[data-overview-tariff-sum="' + months + '"]');
+      if (days) days.textContent = (months * 30 + gift) + ' дней' + (gift ? ' (+' + gift + ')' : '');
+      if (cost) cost.textContent = validPrice
+        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽' : '—';
+    }
+  };
+  tariffPriceInput?.addEventListener('input', refreshTariffPreview);
+  tariffBonusInputs.forEach((input) => input.addEventListener('input', refreshTariffPreview));
   content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
-    const input = content.querySelector('[data-overview-tariff-price]');
     const message = content.querySelector('[data-overview-tariff-message]');
-    const price = Number(String(input?.value || '').replace(',', '.'));
+    const rawPrice = String(tariffPriceInput?.value || '').trim();
+    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : 0;
     const priceMinor = Math.round(price * 100);
-    if (!Number.isFinite(price) || price <= 0 || Math.abs(price * 100 - priceMinor) > 0.000001) {
-      if (message) { message.textContent = 'Укажите корректную цену'; message.classList.add('error'); }
+    const bonus6 = Number(content.querySelector('[data-overview-tariff-bonus="6"]')?.value);
+    const bonus12 = Number(content.querySelector('[data-overview-tariff-bonus="12"]')?.value);
+    const validBonuses = [bonus6,bonus12].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 100);
+    if (!Number.isFinite(price) || price < 0 || Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
+      if (message) { message.textContent = 'Проверьте цену и бонусы (0–100%)'; message.classList.add('error'); }
       return;
     }
     button.disabled = true;
     if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
     try {
-      overviewTariffData = await updateTariffPrice(button.dataset.overviewTariffSave, priceMinor);
+      overviewTariffData = await updateTariffSettings(button.dataset.overviewTariffSave, priceMinor, bonus6, bonus12);
       overviewTariffStatus = 'ready';
-      overviewTariffMessage = 'Цена сохранена';
+      overviewTariffMessage = priceMinor > 0 ? 'Тариф сохранён' : 'Бонусы сохранены; цена ещё не установлена';
       renderOverview();
     } catch (error) {
-      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить цену'; message.classList.add('error'); }
+      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить тариф'; message.classList.add('error'); }
       button.disabled = false;
     }
   });
