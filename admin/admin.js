@@ -691,6 +691,10 @@ function renderOverview() {
               </button>`).join('') : '<p class="admin-overview-empty">В этой категории пока никого нет.</p>'}
           </div>
         </section>` : ''}
+      <div class="admin-overview-tariffs-heading">
+        <strong>Тарифы <span>/ Professional</span></strong>
+        <span>Выберите Start+ или Pro для настройки цены и срока</span>
+      </div>
       <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
         ${tariffCards.map((item) => `
           <button type="button" class="admin-overview-metric${overviewSelectedTariff === item.key ? ' is-selected' : ''}"
