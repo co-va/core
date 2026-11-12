@@ -200,13 +200,18 @@ export class CommercialCatalogService {
     const catalog = await this.catalog();
     const products = catalog.products;
     const byKey = new Map(products.map((product) => [product.key, product]));
-    const assignments: Record<string, string> = {};
+    const assignments: Record<string, string | null> = {};
     const limits: Record<string, Record<string, number | null>> = {};
     const limitRows = await this.prisma.$queryRawUnsafe<Array<{toolKey:string;tariffKey:string;maxCount:number|null}>>(
       `SELECT "toolKey","tariffKey","maxCount" FROM "CommercialTariffLimit" ORDER BY "toolKey","tariffKey"`,
     );
     for (const row of limitRows) {
       (limits[row.toolKey] ||= {})[row.tariffKey] = row.maxCount;
+    }
+    for (const product of products) {
+      // No membership is a legacy/unconfigured Start until explicitly disabled.
+      // An all-off selection must survive refresh without a fourth tariff.
+      if (product.tariffExcluded) assignments[product.key] = null;
     }
     for (const tierKey of ALL_TARIFF_KEYS) {
       for (const child of byKey.get(tierKey)?.includedProducts || []) {
@@ -365,6 +370,12 @@ export class CommercialCatalogService {
            VALUES ($1,$2,500) ON CONFLICT DO NOTHING`, parent.id, product.id,
         );
       }
+      // Existing catalog record holds explicit "all three off" without
+      // introducing a fourth tariff or modifying account permissions.
+      await tx.$executeRawUnsafe(
+        `UPDATE "CommercialProduct" SET "tariffExcluded"=$2,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$1`,
+        product.id, !minimumTariff,
+      );
     });
     await this.audit(actorAdminId, 'TARIFF_TOOL_ASSIGNED', 'PRODUCT', product.id, { productKey, minimumTariff });
     return this.tariffs();
