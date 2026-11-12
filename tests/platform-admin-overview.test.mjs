@@ -134,6 +134,35 @@ assert.match(markup, /Не готово <strong>1<\/strong>/, 'Readiness cards m
 assert.doesNotMatch(markup, /Готово <strong>2<\/strong>/, 'Readiness counts must not combine apps');
 assert.doesNotMatch(markup, /7 активных/, 'Dashboard cannot equate a record status with product activity');
 
+// The tariff editor must explain the 30-day base, provide both editable bonus
+// periods, and keep the instrument assignment in the existing Tools registry.
+const tariffSource = source.slice(start, end) + `
+overviewTariffData = {
+  tiers: [
+    {key:'tariff.start',name:'Start',priceMinor:0,connected:4,tools:[]},
+    {key:'tariff.start-plus',name:'Start+',priceMinor:100000,connected:0,
+      tools:[{key:'tool.loyalty.deposit',name:'Депозит'}],
+      periods:[
+        {months:1,paidDays:30,bonusPercent:0,bonusDays:0,accessDays:30},
+        {months:6,paidDays:180,bonusPercent:20,bonusDays:36,accessDays:216},
+        {months:12,paidDays:360,bonusPercent:50,bonusDays:180,accessDays:540},
+      ]},
+    {key:'tariff.pro',name:'Pro',priceMinor:0,connected:0,tools:[]},
+  ]
+};
+overviewTariffStatus = 'ready';
+overviewSelectedTariff = 'tariff.start-plus';
+renderOverview();
+`;
+runInNewContext(tariffSource, context);
+assert.match(markup, /Цена за 30 дней, ₽/, 'The tariff editor defines the monthly unit');
+assert.match(markup, /data-overview-tariff-bonus="6"/);
+assert.match(markup, /data-overview-tariff-bonus="12"/);
+assert.match(markup, /216 дней \(\+36\)/, '6-month gift is paid days plus bonus');
+assert.match(markup, /540 дней \(\+180\)/, '12-month gift is paid days plus bonus');
+assert.match(markup, /Сохранить тариф/, 'Price and bonus settings are saved as one configuration');
+assert.match(markup, /data-overview-section="capabilities"/, 'Tools composition has one canonical editor');
+
 listeners.get('group')();
 assert.match(markup, /Ирина/, 'KPI drilldown must show matching person');
 assert.doesNotMatch(markup, /Пётр/, 'LIVE drilldown must not include DEMO');
