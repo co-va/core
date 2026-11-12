@@ -96,6 +96,14 @@ async function bootstrap() {
       if (request.path === '/landing' || request.path === '/landing/') {
         return response.redirect(302, '/');
       }
+      // Only the public read-only price feed and its own script are exposed
+      // on the landing host. Other API endpoints stay host-isolated.
+      if (request.path === '/saas-commercial-public/tariffs') return next();
+      if (request.path === '/tariffs.js') {
+        return response.sendFile(resolve(siteRoot, 'landing/tariffs.js'), {
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
       if (request.path.startsWith('/css/') || request.path.startsWith('/ui/')) {
         return staticSite(request, response, () => response.status(404).send('Not Found'));
       }
