@@ -164,7 +164,7 @@ const toolState = { toolReadiness: [
   { key: 'cabinet.service.procedures', status: 'NOT_READY' },
   { key: 'cabinet.service.products', status: 'READY' },
 ] };
-const helpers = runInNewContext(registryHelpers + '\\n({ toolReadable, toolChildren })'.replace('\\\\n', '\\n'), { state: toolState });
+const helpers = runInNewContext(registryHelpers + '\n({ toolReadable, toolChildren })', { state: toolState });
 const day = { readinessKey: 'cabinet.journal.day' };
 assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'DEMO' } }), true, 'DEMO can use testing tools');
 assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'LIVE' }, isTester: false }), false, 'Normal LIVE accounts cannot use testing tools');
