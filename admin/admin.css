@@ -287,8 +287,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-tool-mark{border-color:var(--border)}
   
 }
-/* Account and document readers use the same document drawer surface, fixed header
-   and scrollable body. Only the content layout differs. */
+/* Account and document readers use one common document drawer surface, header,
+   scroll region and buttons. Only the account CONTENT layout is specific. */
 .admin-access-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .admin-access-summary .admin-overview-metric.admin-access-summary-card{
   box-sizing:border-box;min-height:126px;padding:16px 18px;cursor:default;
@@ -305,43 +305,79 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-access-tools{margin-top:20px;padding-top:17px}
 .admin-access-tools>h4{margin-bottom:12px;font-size:17px}
 .admin-access-tool-category{margin-top:10px}
-.admin-access-tool-category>strong{display:block;margin-bottom:4px;padding:10px 0 6px;font-size:13px}
+.admin-access-tool-head,.admin-access-tool-row{
+  box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) 66px 140px;
+  align-items:center;column-gap:12px;min-width:0
+}
+.admin-access-tool-head{
+  padding:9px 0;border-bottom:1px solid var(--admin-pearl);
+  font-size:12px;font-weight:700;color:var(--text-secondary)
+}
+.admin-access-tool-head>span:nth-child(n+2){text-align:center}
 .admin-access-tool-row{
-  box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;
-  gap:14px;min-height:43px;padding:7px 0;border-bottom:1px solid var(--admin-pearl);
+  min-height:43px;padding:7px 0;border-bottom:1px solid var(--admin-pearl);
   color:var(--text);font-size:13px
 }
-.admin-access-tool-row.is-unavailable{opacity:.48}
-.admin-access-tool-name{display:block;flex:1;min-width:0;overflow-wrap:anywhere}
-.admin-access-tool-row .admin-toggle{flex:0 0 46px}
-.admin-access-tool-row .admin-limit{width:88px;flex:0 0 88px;min-width:0}
-.admin-access-tool-group>summary{cursor:pointer;list-style:none}
+.admin-access-tool-row.is-unavailable .admin-access-tool-grant{opacity:.5}
+.admin-access-tool-identity{display:flex;align-items:center;gap:8px;min-width:0}
+.admin-access-tool-name{display:block;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-access-tool-grant,.admin-access-tool-commercial{
+  display:flex;align-items:center;justify-content:center;min-width:0
+}
+.admin-access-tool-grant .admin-toggle,.admin-access-tool-commercial .admin-toggle{flex:0 0 46px}
+.admin-access-tool-commercial{justify-content:flex-end}
+.admin-access-commercial-choice{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.admin-access-commercial-price{font-size:11px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.admin-access-tool-identity .admin-access-inline-limit{display:flex;flex:0 0 58px}
+.admin-access-tool-identity .admin-limit{
+  box-sizing:border-box;width:58px;height:30px;min-width:0;padding:2px 5px;
+  font-size:12px;text-align:center
+}
+.admin-access-grant-group{display:flex;align-items:center}
+.admin-access-grant-group input[type="hidden"]{display:none}
+.admin-access-tool-group>summary{list-style:none;cursor:pointer}
 .admin-access-tool-group>summary::-webkit-details-marker{display:none}
 .admin-access-tool-group>summary::marker{content:""}
-.admin-access-tool-group>summary>.admin-access-tool-name::before{content:"⌄";display:inline-block;margin-right:8px;color:var(--text-secondary)}
-.admin-access-tool-group:not([open])>summary>.admin-access-tool-name::before{transform:rotate(-90deg)}
-.admin-access-tool-children{padding-left:18px}
-.admin-access-tool-multi{display:grid;gap:5px;min-width:0;max-width:60%}
-.admin-access-tool-option{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:11px}
-.admin-access-tool-option>span{text-align:right}
-.admin-access-tool-conditions{margin:16px 0 0;padding:0;border-bottom:1px solid var(--admin-pearl)}
-.admin-access-tool-conditions>summary,
-.admin-access-account-actions>summary,
-.admin-access-email>summary{padding:12px 0;cursor:pointer;font-size:14px;font-weight:700}
-.admin-access-tool-conditions .commercial-tenant-section{padding:8px 0 16px}
-.admin-access-tool-conditions .commercial-tenant-products{min-width:0}
+.admin-access-tool-group>summary .admin-access-tool-name::before{
+  content:"⌄";display:inline-block;min-width:14px;margin-right:5px;
+  color:var(--text-secondary);font-size:12px
+}
+.admin-access-tool-group:not([open])>summary .admin-access-tool-name::before{transform:rotate(-90deg)}
+.admin-access-tool-group-body{padding-left:18px}
+.admin-access-tool-conditions{
+  margin:22px 0 0;padding:17px 0 0;border-top:1px solid var(--admin-pearl)
+}
+.admin-access-tool-conditions>h4{margin:0 0 12px;font-size:17px}
+.admin-access-tool-conditions .commercial-tenant-section{min-width:0;gap:12px}
+.admin-access-tool-conditions .commercial-tenant-extra{min-width:0}
+.admin-access-tool-conditions .commercial-tenant-fields{
+  display:grid;grid-template-columns:minmax(0,110px) minmax(0,1fr) auto;
+  gap:10px;align-items:end
+}
+.admin-access-tool-conditions .commercial-tenant-quote span{border-color:var(--admin-pearl)}
+.admin-access-tool-conditions .commercial-tenant-details{border-top-color:var(--admin-pearl)}
+.admin-access-tool-conditions .commercial-tenant-history-row{border-top-color:var(--admin-pearl)}
+.admin-access-tool-conditions .commercial-tenant-extra>.admin-access-tool-row{border-bottom-color:var(--admin-pearl)}
 .admin-access-save-actions{margin-top:16px}
-.admin-access-account-actions>.admin-inline-actions{padding:8px 0 16px;justify-content:flex-start}
-.admin-access-email>.admin-form{padding:8px 0 18px}
+.admin-access-account-actions>.admin-inline-actions{padding:4px 0 8px;justify-content:flex-start}
+.admin-access-email>.admin-form{padding:4px 0 12px}
+.admin-access-email .admin-form>.admin-button{width:auto;justify-self:start}
+.admin-access-drawer .admin-inline-actions>.admin-button{width:auto;flex:0 0 auto}
 @media(max-width:760px){
   .admin-access-summary{gap:8px}
   .admin-access-summary .admin-overview-metric.admin-access-summary-card{
-    min-height:116px;padding:12px 12px
+    min-height:116px;padding:12px
   }
   .admin-access-summary-value{font-size:19px}
   .admin-access-role-toggle{right:9px;bottom:10px}
-  .admin-access-tool-children{padding-left:12px}
-  .admin-access-tool-multi{max-width:65%}
+  .admin-access-tool-head,.admin-access-tool-row{
+    grid-template-columns:minmax(0,1fr) 50px 108px;column-gap:5px
+  }
+  .admin-access-tool-group-body{padding-left:12px}
+  .admin-access-commercial-choice{gap:5px}
+  .admin-access-commercial-price{font-size:10px}
+  .admin-access-tool-conditions .commercial-tenant-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .admin-access-tool-conditions .commercial-tenant-fields>.commercial-toggle{grid-column:1/-1;justify-self:start}
 }
 
 /* Platform Admin overview — scoped to this section, preserving the existing shell. */
