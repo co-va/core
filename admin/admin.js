@@ -1270,31 +1270,31 @@ function openAccessDrawer(tenantId) {
         <section class="admin-section admin-access-tools">
           <h4>Инструменты</h4>
           <div data-capability-order-list>${renderTenantRegistry(resolved, tenant)}</div>
-          ${tenant.isOwnerBook ? '' : `<details class="admin-access-tool-conditions">
-            <summary>Условия и оплата</summary>
-            <div class="commercial-tenant-section" data-commercial-tenant-tools></div>
-          </details>`}
           <div class="admin-inline-actions admin-access-save-actions">
             <button type="button" class="admin-button" data-save>Сохранить доступ</button>
           </div>
           <p class="admin-inline-message" data-save-message role="status"></p>
+          ${tenant.isOwnerBook ? '' : `<section class="admin-access-tool-conditions">
+            <h4>Условия и оплата</h4>
+            <div class="commercial-tenant-section" data-commercial-tenant-tools></div>
+          </section>`}
         </section>
-        ${tenant.isOwnerBook ? '' : `<details class="admin-section admin-access-account-actions">
-          <summary>Управление аккаунтом</summary>
+        ${tenant.isOwnerBook ? '' : `<section class="admin-section admin-access-account-actions">
+          <h4>Управление аккаунтом</h4>
           <div class="admin-inline-actions">
             <button type="button" class="admin-button ${tenant.status === 'SUSPENDED' ? 'secondary' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
             <button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button>
           </div>
-        </details>`}
-        ${tenant.ownerProfile?.email ? `<details class="admin-section admin-access-email">
-          <summary>Написать email</summary>
+        </section>`}
+        ${tenant.ownerProfile?.email ? `<section class="admin-section admin-access-email">
+          <h4>Написать email</h4>
           <form class="admin-form" data-technical-email-form>
             <label class="admin-field"><span>Тема</span><input name="subject" maxlength="200" required></label>
             <label class="admin-field"><span>Сообщение</span><textarea name="body" rows="5" maxlength="20000" required></textarea></label>
-            <button class="admin-button secondary" type="submit">Отправить письмо</button>
+            <button class="admin-button" type="submit">Отправить письмо</button>
             <p class="admin-inline-message" data-technical-email-message role="status"></p>
           </form>
-        </details>` : ''}
+        </section>` : ''}
       </div>
     </aside>`;
   const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
@@ -1322,9 +1322,23 @@ function openAccessDrawer(tenantId) {
   backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation();
+      event.preventDefault(); // A switch must not collapse its F/E/R parent.
+      if (button.disabled) return;
       button.classList.toggle('is-on');
       button.dataset.current = button.classList.contains('is-on') ? 'true' : 'false';
       button.setAttribute('aria-checked', button.dataset.current);
+    });
+  });
+  backdrop.querySelectorAll('[data-toggle-group]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (button.disabled) return;
+      const on = button.getAttribute('aria-checked') !== 'true';
+      button.classList.toggle('is-on', on);
+      button.setAttribute('aria-checked', String(on));
+      button.closest('.admin-access-grant-group').querySelectorAll('[data-capability][data-type="BOOLEAN"]')
+        .forEach((input) => { input.dataset.current = String(on); });
     });
   });
 
