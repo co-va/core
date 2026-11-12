@@ -64,10 +64,11 @@ export const TOOL_MAP = Object.freeze({
     },
     {
       id: 'inventory', label: 'Склад', nesting: 'e', items: [
-        { label: 'Остатки', kind: 'e', readinessKey: 'cabinet.inventory.stock' },
+        { label: 'Остатки', kind: 'e', nesting: 'composition', readinessKey: 'cabinet.inventory.stock', items: [
+          { label: 'Инвентаризация', kind: 'mode', readinessKey: 'cabinet.inventory.stocktake' },
+        ] },
         { label: 'Движения', kind: 'e', readinessKey: 'cabinet.inventory.movements' },
         { label: 'Заказ', kind: 'e', readinessKey: 'cabinet.inventory.order' },
-        { label: 'Инвентаризация', kind: 'e', readinessKey: 'cabinet.inventory.stocktake' },
       ],
     },
     {
@@ -257,8 +258,12 @@ function readinessSelect(readinessKey, byKey, className) {
 function aggregateKeys(item) {
   // Parent count follows its immediate children: Finance is E × 3, whereas
   // Cash is Composition × 3. A nested E counts ready when any member is ready.
-  return (item.items || []).map((child) => child.readinessKey ||
+  const children = (item.items || []).map((child) => child.readinessKey ||
     (child.items?.length ? aggregateKeys(child).join(',') : null)).filter(Boolean);
+  // Stock remains an independent E tool; stocktake is an optional nested mode.
+  // Include both statuses rather than replacing the Stock readiness with its child.
+  return item.readinessKey === 'cabinet.inventory.stock'
+    ? [item.readinessKey, ...children] : children;
 }
 
 function isReadinessGroupReady(keyGroup, byKey) {
@@ -626,6 +631,23 @@ export async function updateTariffPrice(key, priceMinor) {
   catalogCache = null;
   catalogPromise = null;
   return loadTariffs(true);
+}
+
+export async function updateTariffSettings(tariffKey, priceMinor, bonus6, bonus12) {
+  if (!['tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
+      !Number.isSafeInteger(priceMinor) || priceMinor < 0 ||
+      ![bonus6, bonus12].every((value) =>
+        Number.isSafeInteger(value) && value >= 0 && value <= 100)) {
+    throw new Error('Проверьте цену за 30 дней и проценты бонусов');
+  }
+  const result = await commercialRequest('/tariffs/settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tariffKey, priceMinor, bonus6, bonus12 }),
+  });
+  tariffsCache = result;
+  catalogCache = null;
+  catalogPromise = null;
+  return result;
 }
 
 function hydrateTariffAssignments(content, tariffs) {

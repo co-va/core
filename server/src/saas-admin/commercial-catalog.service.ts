@@ -11,6 +11,15 @@ const TARIFF_KEYS = ['tariff.start', 'tariff.start-plus', 'tariff.pro'] as const
 const USER_TARIFF_KEYS = ['tariff.records.start', 'tariff.records.start-plus', 'tariff.records.pro'] as const;
 const ALL_TARIFF_KEYS = [...TARIFF_KEYS, ...USER_TARIFF_KEYS] as const;
 type TariffKey = typeof ALL_TARIFF_KEYS[number];
+const DEFAULT_TARIFF_BONUSES: Readonly<Record<number, number>> = {6:20,12:50};
+function tariffPeriods(bonuses: Map<number, number>) {
+  return [1,6,12].map((months) => {
+    const paidDays = months * 30;
+    const bonusPercent = months === 1 ? 0 : (bonuses.get(months) ?? DEFAULT_TARIFF_BONUSES[months]);
+    const bonusDays = Math.round(paidDays * bonusPercent / 100);
+    return { months, paidDays, bonusPercent, bonusDays, accessDays: paidDays + bonusDays };
+  });
+}
 const TARIFF_TOOL_KEYS = new Set<string>([
   ...READINESS_KEYS,
   // Structural F rows are visible Admin instruments but not readiness leaves.
@@ -204,6 +213,15 @@ export class CommercialCatalogService {
     const byKey = new Map(products.map((product) => [product.key, product]));
     const assignments: Record<string, string | null> = {};
     const limits: Record<string, Record<string, number | null>> = {};
+    const bonusRows = await this.prisma.$queryRawUnsafe<Array<{tariffKey:string;months:number;bonusPercent:number}>>(
+      `SELECT "tariffKey","months","bonusPercent" FROM "CommercialTariffPeriod"`,
+    );
+    const bonuses = new Map<string, Map<number, number>>();
+    for (const row of bonusRows) {
+      if (!bonuses.has(row.tariffKey)) bonuses.set(row.tariffKey, new Map());
+      bonuses.get(row.tariffKey)!.set(row.months, row.bonusPercent);
+    }
+    const periodFor = (tariffKey: string) => tariffPeriods(bonuses.get(tariffKey) || new Map());
     const limitRows = await this.prisma.$queryRawUnsafe<Array<{toolKey:string;tariffKey:string;maxCount:number|null}>>(
       `SELECT "toolKey","tariffKey","maxCount" FROM "CommercialTariffLimit" ORDER BY "toolKey","tariffKey"`,
     );
@@ -250,6 +268,7 @@ export class CommercialCatalogService {
         key,
         name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
         priceMinor: byKey.get(key)?.priceMinor ?? 0,
+        periods: periodFor(key),
         connected: counts[index],
         tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
           .map((childKey) => byKey.get(childKey)).filter((item) => item && item.isActive)
@@ -259,6 +278,7 @@ export class CommercialCatalogService {
         key,
         name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
         priceMinor: byKey.get(key)?.priceMinor ?? 0,
+        periods: periodFor(key),
         connected: null, // User subscriptions are not in TenantAccess; never infer a count.
         tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
           .map((childKey) => byKey.get(childKey)).filter((item) => item && item.isActive)
@@ -276,11 +296,8 @@ export class CommercialCatalogService {
     const catalog = await this.tariffs();
     return {
       daysPerMonth: 30,
-      periods: [
-        { months: 1, paidDays: 30, bonusPercent: 0, bonusDays: 0, accessDays: 30 },
-        { months: 6, paidDays: 180, bonusPercent: 20, bonusDays: 36, accessDays: 216 },
-        { months: 12, paidDays: 360, bonusPercent: 50, bonusDays: 180, accessDays: 540 },
-      ],
+      // Backward-compatible period list; every paid offer has its own periods.
+      periods: catalog.tiers.find((tier) => tier.key === 'tariff.start-plus')?.periods || tariffPeriods(new Map()),
       professional: catalog.tiers.map((tier, index) => ({
         ...tier,
         free: index === 0,
@@ -292,6 +309,48 @@ export class CommercialCatalogService {
         purchasable: index === 0 || tier.priceMinor > 0,
       })),
     };
+  }
+
+  // One atomic configuration operation for the Overview's tariff editor.
+  // An unset price (0) stays unpurchasable until the admin approves a price.
+  async updateTariffSettings(input: Record<string, unknown>, actorAdminId: string) {
+    await this.syncAppCatalog();
+    const tariffKey = text(input.tariffKey);
+    if (!['tariff.start-plus','tariff.pro'].includes(tariffKey)) {
+      throw new BadRequestException('Настройки цены доступны только для Start+ и Pro');
+    }
+    const priceMinor = input.priceMinor;
+    if (typeof priceMinor !== 'number' || !Number.isSafeInteger(priceMinor) ||
+        priceMinor < 0 || priceMinor > 100000000) {
+      throw new BadRequestException('Цена за 30 дней должна быть от 0 до 1 000 000 ₽');
+    }
+    const bonus6 = input.bonus6;
+    const bonus12 = input.bonus12;
+    for (const [months, bonus] of [[6, bonus6],[12, bonus12]]) {
+      if (typeof bonus !== 'number' || !Number.isSafeInteger(bonus) || bonus < 0 || bonus > 100) {
+        throw new BadRequestException(`Бонус за ${months} месяцев должен быть от 0 до 100%`);
+      }
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.$executeRawUnsafe(
+        `UPDATE "CommercialProduct" SET "priceMinor"=$1,"updatedAt"=CURRENT_TIMESTAMP
+         WHERE "key"=$2 AND "type"='PACKAGE'`,
+        priceMinor, tariffKey,
+      );
+      if (changed !== 1) throw new BadRequestException('Тариф не найден в каталоге');
+      for (const [months, bonus] of [[6, bonus6],[12, bonus12]]) {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "CommercialTariffPeriod" ("tariffKey","months","bonusPercent")
+           VALUES ($1,$2,$3)
+           ON CONFLICT ("tariffKey","months") DO UPDATE SET
+             "bonusPercent"=EXCLUDED."bonusPercent","updatedAt"=CURRENT_TIMESTAMP`,
+          tariffKey, months, bonus,
+        );
+      }
+    });
+    await this.audit(actorAdminId,'TARIFF_SETTINGS_UPDATED','TARIFF',tariffKey,
+      {priceMinor,bonus6,bonus12});
+    return this.tariffs();
   }
 
   async updateTariffLimit(input: Record<string, unknown>, actorAdminId: string) {
