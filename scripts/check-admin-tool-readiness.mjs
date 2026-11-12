@@ -112,7 +112,7 @@ for (const service of ['google-calendar','yandex-calendar']) {
 // Both tool tables share six columns: 50px Type, 44px disclosure,
 // fluid name, and three fixed 65px commercial/readiness fields.
 if (!ui.includes('<colgroup><col class="admin-tool-col-kind"><col class="admin-tool-col-expand">') ||
-    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, Р — режим, К — компонент">Тип</th>') ||
+    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим, K — компонент">Тип</th>') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
     !ui.includes('<th>Инструменты</th><th title="Готовность" aria-label="Готовность">Готов.</th>')) {
