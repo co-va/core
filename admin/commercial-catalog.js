@@ -107,6 +107,7 @@ export const TOOL_MAP = Object.freeze({
 // Binding to the existing capability model. Catalog hierarchy and labels stay owned by TOOL_MAP.
 export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.people': ['people.access'],
+  'cabinet.profile.data': ['profile.access'],
   'cabinet.journal.day': ['journal.day.access'],
   'cabinet.journal.month': ['journal.month.access'],
   'cabinet.timetable': ['timetable.access'],
@@ -124,6 +125,7 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.inventory.stocktake': ['inventory.stocktake.access'],
   'cabinet.settings.data-transfer': ['data_transfer.access'],
   'cabinet.service': ['services.access'],
+  'cabinet.chat': ['chat.access'],
   'cabinet.finance.cash.wallets': ['finance.cash.access'],
   'cabinet.finance.cash.loans': ['finance.special.access'],
   'cabinet.finance.cash.investments': ['finance.investment.self.access', 'finance.investment.raise.access', 'finance.investment.external.access'],
