@@ -518,6 +518,11 @@ export class InventoryService {
       include: { lines: { include: { item: true } } },
     });
     if (!original) throw new NotFoundException('Движение не найдено');
+    // A physically counted stocktake is an absolute observation. Editing it
+    // retroactively would silently invalidate later tube receipts/stocktakes.
+    if (original.lines.some((line: AnyRecord) => line.actualContainerCount != null)) {
+      throw new BadRequestException('Физическую инвентаризацию корректируйте новой инвентаризацией.');
+    }
 
     const desired = normalizedMovementLines(original.kind, source.lines);
     if (!desired.length) throw new BadRequestException('В корректировке нет позиций');
@@ -820,6 +825,26 @@ export class InventoryService {
       where: { tenantId, isActive: true, offerId: { in: selectedOfferIds } },
     }) : [];
     const offerById = new Map((selectedOffers as AnyRecord[]).map((offer) => [offer.offerId, offer]));
+
+    // Check expected gram balances inside the same transaction before
+    // adjusting either grams or physical tubes (not only in the UI).
+    if (kind === 'ADJUSTMENT' && lines.some(line => line.expectedQuantity !== null)) {
+      const previous = await tx.inventoryMovementLine.findMany({
+        where: { tenantId, inventoryItemId: { in: items.map((item: AnyRecord) => item.id) } },
+        select: { inventoryItemId: true, direction: true, quantity: true },
+      });
+      const totals = new Map<string, number>();
+      for (const row of previous as AnyRecord[]) {
+        const amount = (row.direction === 'OUT' ? -1 : 1) * decimalNumber(row.quantity);
+        totals.set(row.inventoryItemId, (totals.get(row.inventoryItemId) || 0) + amount);
+      }
+      for (const line of lines) {
+        if (line.expectedQuantity === null) continue;
+        const item = itemById.get(line.itemId) as AnyRecord;
+        if (Math.abs((totals.get(item.id) || 0) - line.expectedQuantity) > EPSILON)
+          throw new BadRequestException('Учётные граммы изменились. Повторите инвентаризацию.');
+      }
+    }
 
     const movement = await tx.inventoryMovement.create({
       data: {
