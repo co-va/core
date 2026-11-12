@@ -929,7 +929,21 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 .admin-tool-register-layout{gap:44px}
-.admin-tool-register-card{margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden}
+/* The sticky element belongs to each section, so its own header leaves the
+   viewport as the next section arrives; horizontal clipping is only inside it. */
+.admin-tool-register-sticky{
+  position:sticky;top:0;z-index:3;background:var(--surface-dark)
+}
+.admin-tool-register-sticky>.admin-users-section-title{margin:0;padding:0 0 12px}
+.admin-tool-register-head-scroll{
+  box-sizing:border-box;width:100%;overflow:hidden;
+  border-inline:1px solid var(--line);
+  background:var(--admin-pearl);border-radius:14px 14px 0 0
+}
+.admin-tool-register-card{
+  margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden;
+  border-top:0;border-radius:0 0 14px 14px
+}
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
 /* Full available card width, like Users. At 860px the six tracks equal the
