@@ -6,7 +6,7 @@ import { excessWorkplaceIds } from './workplace-capacity';
 
 const DEMO_DAYS = 14;
 
-type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED' | 'READINESS';
+type ResolutionSource = 'TENANT_OVERRIDE' | 'PLAN' | 'DEFAULT' | 'OWNER' | 'SUSPENDED' | 'DEMO' | 'DEMO_EXPIRED' | 'COMMERCIAL_EXPIRED' | 'READINESS' | 'TARIFF';
 
 type CommercialPaidState = {
   startsAt: Date | null;
@@ -347,6 +347,71 @@ export class SaasAccessService {
     };
   }
 
+
+  // Existing commercial package graph is the only tariff entitlement source.
+  // Old accounts without a selected tariff keep their established grants.
+  // No capability values are written by this resolver.
+  private async effectiveTariffRights(tenantId: string) {
+    const [selection] = await this.prisma.$queryRawUnsafe<Array<{
+      tierKey: string;
+      paidAccessEndsAt: Date | null;
+      freeForever: boolean | null;
+      discountPercent: number | null;
+      freeUntil: Date | null;
+    }>>(
+      `SELECT p."key" AS "tierKey",terms."paidAccessEndsAt",
+         terms."freeForever",terms."discountPercent",terms."freeUntil"
+       FROM "CommercialTenantProduct" choice
+       JOIN "CommercialProduct" p ON p."id"=choice."productId"
+       LEFT JOIN "CommercialTenantTerms" terms ON terms."tenantId"=choice."tenantId"
+       WHERE choice."tenantId"=$1
+         AND p."key" IN ('tariff.start','tariff.start-plus','tariff.pro')
+       ORDER BY CASE p."key" WHEN 'tariff.pro' THEN 3
+            WHEN 'tariff.start-plus' THEN 2 ELSE 1 END DESC LIMIT 1`,
+      tenantId,
+    );
+    if (!selection) return null;
+    const tierKeys = ['tariff.start', 'tariff.start-plus', 'tariff.pro'];
+    const paidNow = Boolean(selection.freeForever ||
+      Number(selection.discountPercent || 0) >= 100 ||
+      (selection.freeUntil && selection.freeUntil.getTime() > Date.now()) ||
+      (selection.paidAccessEndsAt && selection.paidAccessEndsAt.getTime() > Date.now()));
+    const activeTier = paidNow ? selection.tierKey : 'tariff.start';
+    const rank = tierKeys.indexOf(activeTier);
+    const rows = await this.prisma.$queryRawUnsafe<Array<{
+      capabilityKey: string; tariffExcluded: boolean; minimumTariff: string | null;
+    }>>(
+      `SELECT link."capabilityKey",
+         p."tariffExcluded",
+         (SELECT parent."key"
+          FROM "CommercialProductInclusion" edge
+          JOIN "CommercialProduct" parent ON parent."id"=edge."parentProductId"
+          WHERE edge."childProductId"=p."id"
+            AND parent."key" IN ('tariff.start','tariff.start-plus','tariff.pro')
+          LIMIT 1) AS "minimumTariff"
+       FROM "CommercialProduct" p
+       JOIN "CommercialProductCapability" link ON link."productId"=p."id"
+       WHERE p."isActive"=true
+         AND p."type" NOT IN ('SYSTEM','PACKAGE','FOLDER')`,
+    );
+    const rights = new Map<string, boolean>();
+    for (const row of rows) {
+      const min = row.minimumTariff ? tierKeys.indexOf(row.minimumTariff) : 0;
+      const allowed = !row.tariffExcluded && min >= 0 && rank >= min;
+      rights.set(row.capabilityKey, Boolean(rights.get(row.capabilityKey) || allowed));
+    }
+    const quota = await this.prisma.$queryRawUnsafe<Array<{ maxCount: number | null }>>(
+      `SELECT "maxCount" FROM "CommercialTariffLimit"
+       WHERE "toolKey"='cabinet.profile.workspaces' AND "tariffKey"=$1 LIMIT 1`,
+      activeTier,
+    );
+    return {
+      rights,
+      hasWorkplaceLimit: quota.length > 0,
+      workplaceLimit: quota[0]?.maxCount ?? null,
+    };
+  }
+
   async resolveCapability(tenantId: string, capabilityKey: string): Promise<ResolvedCapability> {
     const resolved = await this.resolveCapabilityWithoutReadiness(tenantId, capabilityKey);
     if (resolved.valueType !== CapabilityValueType.BOOLEAN || resolved.enabled !== true) return resolved;
@@ -414,7 +479,18 @@ export class SaasAccessService {
     if (this.demoExpired(access)) return this.demoExpiredValue(capability.key, capability.valueType);
 
     const commercialPaid = await this.commercialPaidState(tenantId);
-    if (!access.isOwnerBook && access.commercialMode === 'LIVE' && commercialPaid.expired && commercialPaid.paidCapabilityKeys.has(capability.key)) {
+    const tariffRights = access.commercialMode === 'LIVE' && !access.isOwnerBook
+      ? await this.effectiveTariffRights(tenantId) : null;
+    if (tariffRights?.rights.has(capability.key) && capability.valueType === CapabilityValueType.BOOLEAN) {
+      return { key: capability.key, valueType: capability.valueType,
+        enabled: tariffRights.rights.get(capability.key)!, limit: null, source: 'TARIFF' };
+    }
+    if (tariffRights?.hasWorkplaceLimit && capability.key === 'workplaces.max') {
+      return { key: capability.key, valueType: capability.valueType,
+        enabled: null, limit: tariffRights.workplaceLimit, source: 'TARIFF' };
+    }
+    if (!tariffRights && !access.isOwnerBook && access.commercialMode === 'LIVE' &&
+        commercialPaid.expired && commercialPaid.paidCapabilityKeys.has(capability.key)) {
       return this.commercialExpiredValue(capability.key, capability.valueType);
     }
 
@@ -509,6 +585,8 @@ export class SaasAccessService {
     }
 
     const commercialPaid = await this.commercialPaidState(tenantId);
+    const tariffRights = access.commercialMode === 'LIVE' && !access.isOwnerBook
+      ? await this.effectiveTariffRights(tenantId) : null;
     const planValues = new Map(access.plan?.capabilityValues.map((value) => [value.capabilityId, value]) || []);
     const overrides = new Map(access.overrides.map((value) => [value.capabilityId, value]));
     const customOrder = new Map(access.capabilityOrder.map((value, index) => [value.capabilityId, index]));
@@ -549,7 +627,16 @@ export class SaasAccessService {
       }
       if (this.demoExpired(access)) return this.demoExpiredValue(capability.key, capability.valueType);
 
-      if (!access.isOwnerBook && access.commercialMode === 'LIVE' && commercialPaid.expired && commercialPaid.paidCapabilityKeys.has(capability.key)) {
+      if (tariffRights?.rights.has(capability.key) && capability.valueType === CapabilityValueType.BOOLEAN) {
+        return { key: capability.key, valueType: capability.valueType,
+          enabled: tariffRights.rights.get(capability.key)!, limit: null, source: 'TARIFF' };
+      }
+      if (tariffRights?.hasWorkplaceLimit && capability.key === 'workplaces.max') {
+        return { key: capability.key, valueType: capability.valueType,
+          enabled: null, limit: tariffRights.workplaceLimit, source: 'TARIFF' };
+      }
+      if (!tariffRights && !access.isOwnerBook && access.commercialMode === 'LIVE' &&
+          commercialPaid.expired && commercialPaid.paidCapabilityKeys.has(capability.key)) {
         return this.commercialExpiredValue(capability.key, capability.valueType);
       }
 
