@@ -109,31 +109,43 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// Six aligned columns on both Professional and User: F/E 44px, disclosure 60px,
-// Tools 55% of the remainder, and three compact 15% columns.
+// Both tool tables share six columns: 50px Type, 44px disclosure,
+// fluid name, and three fixed 65px commercial/readiness fields.
 if (!ui.includes('<colgroup><col class="admin-tool-col-kind"><col class="admin-tool-col-expand">') ||
-    !ui.includes('<th scope="col" aria-label="Тип карточки"></th>') ||
+    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, Р — режим, К — компонент">Тип</th>') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
-    !ui.includes('<th>Инструменты</th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th>')) {
-  throw new Error('Professional/User tool registries require a shared F/E–disclosure–tools–status–payment–price header');
+    !ui.includes('<th>Инструменты</th><th title="Готовность" aria-label="Готовность">Готов.</th>')) {
+  throw new Error('Professional/User tool registries need a shared Type–disclosure–tools–readiness–payment–price header');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
 const kindCell = toolRows.indexOf('admin-tool-registry-kind');
 const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
 const nameCell = toolRows.indexOf('admin-tool-registry-name" data-tool-depth=');
 if (kindCell < 0 || expandCell <= kindCell || nameCell <= expandCell) {
-  throw new Error('F/E must be the first body cell, disclosure second, nested tool name third');
+  throw new Error('Type must precede disclosure, which must precede the nested tool name');
+}
+for (const kind of [
+  "depth === 0 ? 'F'",
+  "item.kind === 'e' ? 'E'",
+  "item.kind === 'mode' ? 'Р' : 'К'",
+  "marker === 'Р' ? 'Режим' : 'Компонент'",
+]) {
+  if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
 }
 for (const rule of [
-  '.admin-tool-register-table col.admin-tool-col-kind{width:44px}',
-  '.admin-tool-register-table col.admin-tool-col-expand{width:60px}',
-  '.admin-tool-register-table col.admin-tool-col-name{width:calc(55% - 57.2px)}',
-  '.admin-tool-register-table col.admin-tool-col-price{width:calc(15% - 15.6px)}',
+  '.admin-tool-register-table col.admin-tool-col-kind{width:50px}',
+  '.admin-tool-register-table col.admin-tool-col-expand{width:44px}',
+  '.admin-tool-register-table col.admin-tool-col-name{width:auto}',
+  '.admin-tool-register-table col.admin-tool-col-price{width:65px}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
   if (!css.includes(rule)) throw new Error('Tool registry sizing / hierarchy missing: ' + rule);
+}
+if (!ui.includes("node.closest('.admin-tool-register-table')") ||
+    !ui.includes("toolStatus(item, byKey, true)")) {
+  throw new Error('Group readiness labels must fit inside the 65px status column');
 }
 if (!ui.includes("table.querySelectorAll('[data-tool-expand]').forEach((button) => {") ||
     !ui.includes("const expand = event.currentTarget.getAttribute('aria-expanded') !== 'true'") ||
