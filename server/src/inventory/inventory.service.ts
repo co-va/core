@@ -15,6 +15,9 @@ type PreparedLine = {
   unitCost: number | null;
   expectedQuantity: number | null;
   actualQuantity: number | null;
+  containerDelta: number | null;
+  expectedContainerCount: number | null;
+  actualContainerCount: number | null;
   supplier: string;
   offerId: string;
   listPrice: number | null;
@@ -68,6 +71,16 @@ function optionalOfferAmount(value: unknown, label: string, maximum = Infinity):
   return parsed;
 }
 
+// Do not infer the number of tubes from grams. Count is an exact integer or unknown.
+function optionalContainerInteger(value: unknown, label: string, nonnegative = true): number | null {
+  if (value == null || value === '') return null;
+  const numeric = Number(String(value).replace(',', '.'));
+  if (!Number.isSafeInteger(numeric) || (nonnegative && numeric < 0)) {
+    throw new BadRequestException(`${label}: укажите целое число тюбиков.`);
+  }
+  return numeric;
+}
+
 function offerPackSize(value: unknown): number {
   const result = optionalOfferAmount(value, 'Количество в предложении');
   if (result === null || result <= 0) {
@@ -102,13 +115,18 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
       unitCost: nullableNonNegative(row.unitCost ?? row.actualPrice),
       expectedQuantity: nullableNonNegative(row.expectedQuantity),
       actualQuantity: nullableNonNegative(row.actualQuantity),
+      containerDelta: optionalContainerInteger(row.containerDelta, 'Изменение тюбиков', false),
+      expectedContainerCount: optionalContainerInteger(row.expectedContainerCount, 'Учётные тюбики'),
+      actualContainerCount: optionalContainerInteger(row.actualContainerCount, 'Фактические тюбики'),
       supplier: optionalText(row.supplier),
       offerId: text(row.offerId),
       listPrice: nullableNonNegative(row.listPrice),
       discountPercent: nullablePercent(row.discountPercent),
       note: optionalText(row.note),
     };
-  }).filter((row) => row.itemId && row.quantity > 0);
+  }).filter((row) => row.itemId && (row.quantity > 0
+    || row.containerDelta !== null && row.containerDelta !== 0
+    || kind === 'ADJUSTMENT' && row.actualContainerCount !== null));
 }
 
 function decimalNumber(value: unknown): number {
@@ -193,6 +211,9 @@ export class InventoryService {
         amount: line.costKnown === false ? null : decimalNumber(line.amount),
         expectedQuantity: line.expectedQuantity == null ? null : decimalNumber(line.expectedQuantity),
         actualQuantity: line.actualQuantity == null ? null : decimalNumber(line.actualQuantity),
+        containerDelta: line.containerDelta == null ? null : Number(line.containerDelta),
+        expectedContainerCount: line.expectedContainerCount == null ? null : Number(line.expectedContainerCount),
+        actualContainerCount: line.actualContainerCount == null ? null : Number(line.actualContainerCount),
         note: line.note,
       });
       linesByMovement.set(line.inventoryMovementId, group);
@@ -218,6 +239,7 @@ export class InventoryService {
           minStock: item.minStock == null ? null : decimalNumber(item.minStock),
           targetStock: item.targetStock == null ? null : decimalNumber(item.targetStock),
           packageQuantity: item.packageQuantity == null ? null : decimalNumber(item.packageQuantity),
+          containerCount: item.containerCount == null ? null : Number(item.containerCount),
           grossWeight,
           tareWeight,
           netPackageWeight: grossWeight != null && tareWeight != null ? Math.max(0, grossWeight - tareWeight) : null,
@@ -298,6 +320,7 @@ export class InventoryService {
           minStock: nullableNonNegative(source.minStock),
           targetStock: nullableNonNegative(source.targetStock),
           packageQuantity: nullableNonNegative(source.packageQuantity),
+          containerCount: optionalContainerInteger(source.containerCount, 'Количество тюбиков'),
           grossWeight,
           tareWeight,
           referencePrice: optionalOfferAmount(source.referencePrice, 'Базовая цена'),
@@ -499,21 +522,23 @@ export class InventoryService {
     const desired = normalizedMovementLines(original.kind, source.lines);
     if (!desired.length) throw new BadRequestException('В корректировке нет позиций');
 
-    const currentByItem = new Map<string, { signed: number; unitCost: number }>();
+    const currentByItem = new Map<string, { signed: number; unitCost: number; containers: number }>();
     (original.lines as AnyRecord[]).forEach((line) => {
       const itemId = String(line.item?.itemId || '');
       const signed = line.direction === 'OUT' ? -decimalNumber(line.quantity) : decimalNumber(line.quantity);
-      const row = currentByItem.get(itemId) || { signed: 0, unitCost: decimalNumber(line.unitCost) };
+      const row = currentByItem.get(itemId) || { signed: 0, unitCost: decimalNumber(line.unitCost), containers: 0 };
       row.signed += signed;
+      row.containers += line.containerDelta == null ? 0 : Number(line.containerDelta);
       if (!row.unitCost) row.unitCost = decimalNumber(line.unitCost);
       currentByItem.set(itemId, row);
     });
 
-    const desiredByItem = new Map<string, { signed: number; unitCost: number | null }>();
+    const desiredByItem = new Map<string, { signed: number; unitCost: number | null; containers: number }>();
     desired.forEach((line) => {
       const signed = line.direction === 'OUT' ? -line.quantity : line.quantity;
-      const row = desiredByItem.get(line.itemId) || { signed: 0, unitCost: line.unitCost };
+      const row = desiredByItem.get(line.itemId) || { signed: 0, unitCost: line.unitCost, containers: 0 };
       row.signed += signed;
+      row.containers += line.containerDelta == null ? 0 : line.containerDelta;
       if (row.unitCost == null && line.unitCost != null) row.unitCost = line.unitCost;
       desiredByItem.set(line.itemId, row);
     });
@@ -524,10 +549,12 @@ export class InventoryService {
       const before = currentByItem.get(itemId)?.signed || 0;
       const after = desiredByItem.get(itemId)?.signed || 0;
       const delta = after - before;
-      if (Math.abs(delta) < EPSILON) return;
+      const containerDelta = (desiredByItem.get(itemId)?.containers || 0) - (currentByItem.get(itemId)?.containers || 0);
+      if (Math.abs(delta) < EPSILON && containerDelta === 0) return;
       deltaLines.push({
         itemId,
         quantity: delta,
+        ...(containerDelta !== 0 ? { containerDelta } : {}),
         unitCost: delta > 0
           ? (desiredByItem.get(itemId)?.unitCost ?? currentByItem.get(itemId)?.unitCost ?? null)
           : null,
@@ -593,7 +620,7 @@ export class InventoryService {
     if (!input.occurredAt) throw new BadRequestException('Не указана дата складского движения');
     const existing = await tx.inventoryMovement.findFirst({ where: { tenantId, movementId }, include: { lines: true } });
     const raw = { ...input, movementId, historicalTransfer: true, lines: [{ itemId: item.itemId, quantity,
-      unitCost: input.unitCost, listPrice: input.listPrice, discountPercent: input.discountPercent, supplier: input.supplier, direction:input.direction, expectedQuantity:input.expectedQuantity,actualQuantity:input.actualQuantity }] };
+      unitCost: input.unitCost, listPrice: input.listPrice, discountPercent: input.discountPercent, supplier: input.supplier, direction:input.direction, expectedQuantity:input.expectedQuantity,actualQuantity:input.actualQuantity, containerDelta:input.containerDelta, expectedContainerCount:input.expectedContainerCount, actualContainerCount:input.actualContainerCount }] };
     if (!existing) {
       if (targetId && !initialStock) throw new NotFoundException('Перенесённое складское движение не найдено');
       await this.createMovementInTx(tx, tenantId, raw);
@@ -817,6 +844,48 @@ export class InventoryService {
     for (let position = 0; position < lines.length; position += 1) {
       const line = lines[position];
       const item = itemById.get(line.itemId) as AnyRecord;
+      // Count is a separately audited physical dimension. For an unknown legacy
+      // count, a delta alone must never invent a total number of containers.
+      const beforeContainers = item.containerCount == null ? null : Number(item.containerCount);
+      let nextContainers = beforeContainers;
+      let containerDelta = line.containerDelta;
+      if (containerDelta !== null && line.actualContainerCount === null) {
+        if (kind === 'RECEIPT' && containerDelta < 0) throw new BadRequestException('Приход не может уменьшать число тюбиков.');
+        if (['CONSUMPTION', 'SALE', 'WRITE_OFF'].includes(kind) && containerDelta > 0)
+          throw new BadRequestException('Расход не может увеличивать число тюбиков.');
+      }
+      if (kind === 'ADJUSTMENT' && line.actualContainerCount !== null) {
+        if (line.expectedContainerCount !== beforeContainers)
+          throw new BadRequestException('Количество тюбиков изменилось. Повторите инвентаризацию.');
+        nextContainers = line.actualContainerCount;
+        containerDelta = beforeContainers === null ? null : nextContainers - beforeContainers;
+      } else if (line.actualContainerCount !== null) {
+        throw new BadRequestException('Фактическое число тюбиков задаётся только инвентаризацией.');
+      } else if (containerDelta !== null && beforeContainers !== null) {
+        nextContainers = beforeContainers + containerDelta;
+        if (nextContainers < 0) throw new BadRequestException('Нельзя списать больше тюбиков, чем числится.');
+      }
+      if (nextContainers !== beforeContainers) {
+        await tx.inventoryItem.update({ where: { id: item.id }, data: { containerCount: nextContainers } });
+        item.containerCount = nextContainers;
+      }
+      const physical = {
+        containerDelta,
+        expectedContainerCount: kind === 'ADJUSTMENT' && line.actualContainerCount !== null
+          ? beforeContainers : line.expectedContainerCount,
+        actualContainerCount: line.actualContainerCount,
+      };
+      if (line.quantity === 0) {
+        // Tube-only stocktake changes no mass, lot, purchase cost, or allocation.
+        await tx.inventoryMovementLine.create({ data: {
+          tenantId, inventoryMovementId: movement.id, inventoryItemId: item.id,
+          lineId: randomUUID(), position, direction: line.direction,
+          quantity: 0, costKnown: false, unitCost: 0, amount: 0,
+          expectedQuantity: line.expectedQuantity, actualQuantity: line.actualQuantity,
+          ...physical, note: line.note,
+        } });
+        continue;
+      }
       affectedInternalIds.add(item.id);
 
       if (line.direction === 'IN') {
@@ -847,6 +916,7 @@ export class InventoryService {
             amount: line.quantity * unitCost,
             expectedQuantity: line.expectedQuantity,
             actualQuantity: line.actualQuantity,
+            ...physical,
             note: line.note,
           },
         });
@@ -895,6 +965,7 @@ export class InventoryService {
           amount: raw.historicalTransfer ? line.quantity * (line.unitCost ?? 0) : 0,
           expectedQuantity: line.expectedQuantity,
           actualQuantity: line.actualQuantity,
+          ...physical,
           note: line.note,
         },
       });
