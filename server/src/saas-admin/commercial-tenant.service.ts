@@ -304,16 +304,12 @@ export class CommercialTenantService {
     if (!['tariff.start-plus','tariff.pro'].includes(tariffKey)) {
       throw new BadRequestException('Нужно выбрать Start+ или Pro');
     }
-    const periods = {
-      1: { paidDays: 30, bonusDays: 0 },
-      6: { paidDays: 180, bonusDays: 36 },
-      12: { paidDays: 360, bonusDays: 180 },
-    } as const;
     if (periodMonths !== 1 && periodMonths !== 6 && periodMonths !== 12) {
       throw new BadRequestException('Оплата возможна за 1, 6 или 12 месяцев');
     }
-    const period = periods[periodMonths];
     const tariff = (await this.catalogService.tariffs()).tiers.find((item) => item.key === tariffKey);
+    const period = tariff?.periods?.find((item) => item.months === periodMonths);
+    if (!period) throw new BadRequestException('Условия периода не найдены');
     const monthlyPriceMinor = tariff?.priceMinor ?? 0;
     if (!Number.isSafeInteger(monthlyPriceMinor) || monthlyPriceMinor <= 0) {
       throw new BadRequestException('Цена тарифа ещё не установлена администратором');
