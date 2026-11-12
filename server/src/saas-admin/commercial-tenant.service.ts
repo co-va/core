@@ -227,6 +227,11 @@ export class CommercialTenantService {
       },
       quote,
       access,
+      // The package is a commercial selection, not an individually saleable tool.
+      currentTariffKey: products.find((product) =>
+        selectedIds.has(product.id) &&
+        ['tariff.start', 'tariff.start-plus', 'tariff.pro'].includes(product.key)
+      )?.key || 'tariff.start',
       products: products.filter((product) => product.isActive && product.isSaleable).map((product) => ({
         ...product,
         selected: selectedIds.has(product.id),
