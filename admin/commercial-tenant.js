@@ -105,13 +105,27 @@ function auditRows(events) {
 }
 
 function selectedProductKeys(section) {
-  return [...section.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')]
+  const drawer = section.closest('.admin-access-drawer') || section;
+  return [...drawer.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')]
     .map((button) => button.dataset.commercialTenantProduct)
     .filter(Boolean);
 }
 
+function commercialProductSwitch(product) {
+  const selected = Boolean(product.selected);
+  const price = Number(product.priceMinor || 0);
+  return '<span class="admin-access-commercial-choice">' +
+    (price > 0 ? '<span class="admin-access-commercial-price">' + escapeHtml(rubles(price)) + '</span>' : '') +
+    '<button type="button" class="admin-toggle commercial-tenant-product' + (selected ? ' is-on' : '') +
+    '" data-commercial-tenant-product="' + escapeHtml(product.key) +
+    '" data-price-minor="' + escapeHtml(product.priceMinor) +
+    '" aria-pressed="' + selected + '" aria-label="Условия: ' + escapeHtml(product.name) +
+    '"></button></span>';
+}
+
 function updateQuote(section) {
-  const selected = [...section.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')];
+  const drawer = section.closest('.admin-access-drawer') || section;
+  const selected = [...drawer.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')];
   const subtotal = selected.reduce((sum, button) => sum + Number(button.dataset.priceMinor || 0), 0);
   const discountControl = section.querySelector('[data-commercial-tenant-discount]');
   const freeForever = section.querySelector('[data-commercial-tenant-free]')?.getAttribute('aria-pressed') === 'true';
@@ -189,10 +203,23 @@ export async function enhanceCommercialTenantTools(section, tenantId) {
       request(`/${encodeURIComponent(tenantId)}/orders`),
     ]);
     const products = Array.isArray(commercial.products) ? commercial.products : [];
+    const drawer = section.closest('.admin-access-drawer') || section;
+    const extraProducts = [];
+    for (const product of products) {
+      const slot = drawer.querySelector('[data-commercial-slot="' + CSS.escape(product.key) + '"]');
+      if (!slot) {
+        extraProducts.push(product);
+        continue;
+      }
+      slot.innerHTML = commercialProductSwitch(product);
+    }
     section.innerHTML = `
-      <div class="commercial-tenant-products">
-        ${products.map((product) => `<div class="admin-capability"><div><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(rubles(product.priceMinor))}</small></div><button type="button" class="admin-toggle commercial-tenant-product${product.selected ? ' is-on' : ''}" data-commercial-tenant-product="${escapeHtml(product.key)}" data-price-minor="${escapeHtml(product.priceMinor)}" aria-pressed="${Boolean(product.selected)}" aria-label="Условия: ${escapeHtml(product.name)}"></button></div>`).join('')}
-      </div>
+      ${extraProducts.length ? '<div class="commercial-tenant-extra">' +
+        extraProducts.map((product) =>
+          '<div class="admin-access-tool-row"><span class="admin-access-tool-identity">' +
+          escapeHtml(product.name) + '</span><span class="admin-access-tool-grant"></span>' +
+          '<span class="admin-access-tool-commercial">' + commercialProductSwitch(product) +
+          '</span></div>').join('') + '</div>' : ''}
       <div class="commercial-tenant-fields">
         <label class="admin-field"><span>Скидка, %</span><input type="number" min="0" max="100" step="1" value="${escapeHtml(commercial.terms?.discountPercent || 0)}" data-commercial-tenant-discount></label>
         <label class="admin-field"><span>Бесплатно до</span><input type="date" value="${escapeHtml(dateInputValue(commercial.terms?.freeUntil))}" data-commercial-tenant-free-until></label>
@@ -212,7 +239,7 @@ export async function enhanceCommercialTenantTools(section, tenantId) {
       <details class="commercial-tenant-details" open><summary>Расчёты и покупки</summary><div data-commercial-tenant-orders>${orderRows(orders)}</div></details>
       <details class="commercial-tenant-details"><summary>История действий</summary>${auditRows(commercial.audit)}</details>`;
 
-    section.querySelectorAll('[data-commercial-tenant-product]').forEach((button) => {
+    drawer.querySelectorAll('[data-commercial-tenant-product]').forEach((button) => {
       button.addEventListener('click', () => {
         const next = button.getAttribute('aria-pressed') !== 'true';
         button.setAttribute('aria-pressed', String(next));
