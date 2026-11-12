@@ -242,8 +242,10 @@ for (const area of ['cabinet', 'records']) {
   const visit = (items) => {
     for (const item of items) {
       const children = visibleToolChildren(area, item);
-      assert.ok(children.every((child) => child.kind === 'e' || child.kind === 'mode'),
-        'Only separately selectable E/R nodes remain visible');
+      assert.ok(children.every((child) => child.kind === 'e' || child.kind === 'mode' ||
+        (child.kind === 'check' && item.readinessKey === area + '.journal.day' &&
+         [area + '.journal.day.events', area + '.journal.day.notes'].includes(child.readinessKey))),
+        'Only E/R plus the two commercial K tools under Day are visible in Tools');
       visit(children);
     }
   };
