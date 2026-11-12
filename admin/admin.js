@@ -1107,9 +1107,19 @@ function readinessLabel(key) {
 function toolReadable(item, readonly, tenant) {
   if (readonly) return false;
   const key = String(item.readinessKey || '');
-  if (!key) return true;
-  const status = state.toolReadiness.find((row) => row.key === key)?.status || 'NOT_READY';
-  return status === 'READY' || (status === 'TESTING' && (tenant?.isTester || tenant?.isOwnerBook));
+  // Workplace creation is governed by its account grant, not by readiness.
+  if (!key || key === 'cabinet.profile.workspaces') {
+    if (item.id !== 'service') return true;
+  }
+  const mode = String(tenant?.access?.commercialMode || 'DEMO').toUpperCase();
+  const allowed = (status) => status === 'READY' ||
+    (status === 'TESTING' && (mode === 'DEMO' || tenant?.isTester || tenant?.isOwnerBook));
+  // Service has one actual services.access grant, and two independent mode statuses.
+  if (item.id === 'service' && !key) {
+    return ['cabinet.service.procedures', 'cabinet.service.products']
+      .some((modeKey) => allowed(state.toolReadiness.find((row) => row.key === modeKey)?.status));
+  }
+  return allowed(state.toolReadiness.find((row) => row.key === key)?.status || 'NOT_READY');
 }
 
 function toolName(item) {
