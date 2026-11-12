@@ -52,11 +52,12 @@ export function supplierOfferUnitPrice(offer: OfferPrice): number | null {
 export function resolveInventoryBasePricing(item: ItemPrice, offers: OfferPrice[] = []) {
   const nominalUnits = positiveNumber(item.packageQuantity) ?? 1;
   const primary = offers.find((offer) => offer.isActive !== false && offer.offerId === item.primaryOfferId);
-  const primaryUnitPrice = primary ? supplierOfferUnitPrice(primary) : null;
-  if (primary && primaryUnitPrice !== null) {
+  const primaryPackPrice = primary ? effectiveSupplierOfferPrice(primary) : null;
+  if (primary && primaryPackPrice !== null) {
+    const preciseUnitPrice = primaryPackPrice / (positiveNumber(primary.unitsPerOffer) ?? 1);
     return {
-      basePrice: money(primaryUnitPrice * nominalUnits),
-      baseUnitPrice: primaryUnitPrice,
+      basePrice: money(preciseUnitPrice * nominalUnits),
+      baseUnitPrice: money(preciseUnitPrice),
       basePriceSource: 'primary-offer',
       primarySupplier: primary.supplier || '',
     };
