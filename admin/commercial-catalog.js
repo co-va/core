@@ -2,6 +2,8 @@ import { apiRequest } from '../core/auth.js';
 
 let catalogCache = null;
 let catalogPromise = null;
+let tariffsCache = null;
+let tariffsPromise = null;
 let toolReadinessCache = [];
 let toolReadinessPromise = null;
 let accountToolsCache = [];
@@ -108,7 +110,7 @@ export const TOOL_MAP = Object.freeze({
 // not an additional tool or an independently rendered list.
 export const TOOL_COMMERCIAL_BINDINGS = Object.freeze({
   'cabinet.profile.workspaces': 'capacity.workplace.extra',
-  'cabinet.finance': 'folder.finance',
+  // Finance is a structural F row; its E tools receive tariffs individually.
   'cabinet.finance.cash': 'tool.finance.cash',
   'cabinet.finance.dds': 'tool.finance.dds',
   'cabinet.finance.cash.investments': 'tool.finance.investment',
@@ -493,17 +495,20 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const id = (ancestorIds[ancestorIds.length - 1] || area) + '-' + index;
     const groupedChildren = visibleToolChildren(area, item);
     const expandable = groupedChildren.length > 0;
-    const canPrice = area === 'cabinet' && INLINE_COMMERCIAL_KEYS[key];
-    const price = canPrice ? '<div class="admin-tool-registry-price"><input type="number" min="0" step="0.01" inputmode="decimal" data-commercial-price aria-label="Цена ' +
-      escapeHtml(toolDisplayName(item)) + '" disabled><span>₽</span></div>' : '—';
-    const payment = canPrice ? '<select data-commercial-mode aria-label="Оплата ' + escapeHtml(toolDisplayName(item)) +
-      '" disabled><option value="free">Бесплатно</option><option value="paid">Платно</option></select>' : '—';
+    const productKey = area === 'cabinet' ? INLINE_COMMERCIAL_KEYS[key] : '';
+    const tier = productKey
+      ? '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
+        escapeHtml(toolDisplayName(item)) + '" disabled>' +
+        '<option value="">Не входит</option><option value="tariff.start">Start</option>' +
+        '<option value="tariff.start-plus">Start+</option><option value="tariff.pro">Pro</option>' +
+        '</select><small class="admin-tool-registry-save-state" aria-live="polite"></small></div>'
+      : '—';
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
       : expandable
         ? toolStatus(item, byKey, true)
         : '—';
-    // Structural type is independent of the readiness state.
+    // Structural type is independent of readiness and commercial tier.
     const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : 'R';
     const markerTitle = marker === 'F' ? 'Основная карточка'
       : marker === 'E' ? 'Вложенная карточка' : 'Режим';
@@ -518,14 +523,13 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       : '';
     const row = '<tr data-tool-id="' + escapeHtml(id) + '" data-tool-ancestors="' +
       escapeHtml(ancestorIds.join(' ')) + '"' +
-      (canPrice ? ' data-commercial-key="' + escapeHtml(INLINE_COMMERCIAL_KEYS[key]) + '"' : '') +
+      (productKey ? ' data-tariff-product="' + escapeHtml(productKey) + '"' : '') +
       '><td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
       '<td><div class="admin-tool-registry-name" data-tool-depth="' + depth + '" style="--tool-depth:' + depth + '">' +
       '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
       '<td class="admin-tool-registry-kind"><span class="' + (marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain') + '" title="' + markerTitle +
       '" aria-label="' + markerTitle + '">' + marker + '</span></td>' +
-      '<td>' + readiness + '</td><td>' + payment + '</td><td><div class="admin-tool-registry-cost">' + price +
-      '<small class="admin-tool-registry-save-state" aria-live="polite"></small></div></td></tr>';
+      '<td>' + readiness + '</td><td colspan="2">' + tier + '</td></tr>';
     return row + (expandable
       ? toolRegisterRows(area, groupedChildren, byKey, depth + 1, [...ancestorIds, id], key)
       : '');
@@ -534,9 +538,11 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
 
 function renderToolRegister(area, label, suffix) {
   const items = TOOL_MAP[area] || [];
+  // Preserve the approved six-track / 44px table geometry. The last two
+  // tracks are one visible Tariff cell instead of Payment + Price.
   const columns = '<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">' +
     '<col class="admin-tool-col-kind"><col class="admin-tool-col-status">' +
-    '<col class="admin-tool-col-payment"><col class="admin-tool-col-price"></colgroup>';
+    '<col class="admin-tool-col-tariff"><col class="admin-tool-col-tariff-tail"></colgroup>';
   return '<section class="admin-users-section admin-tool-register-section">' +
     '<div class="admin-tool-register-sticky">' +
     '<h2 class="admin-users-section-title">' + label +
@@ -548,7 +554,7 @@ function renderToolRegister(area, label, suffix) {
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
       '<th>Инструменты</th>' +
       '<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>' +
-      '<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead></table></div></div>' +
+      '<th>Готовность</th><th colspan="2">Тариф</th></tr></thead></table></div></div>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table admin-tool-register-body-table" data-admin-tool-map="' + area + '">' +
     columns + '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) +
@@ -571,77 +577,68 @@ function syncToolHierarchy(section) {
   }
 }
 
-function hydrateInlineCommercial(content, products) {
-  const indexed = new Map((Array.isArray(products) ? products : []).map((product) => [product.key, product]));
-  content.querySelectorAll('[data-commercial-key]').forEach((row) => {
-    const product = indexed.get(row.dataset.commercialKey);
-    const price = row.querySelector('[data-commercial-price]');
-    const mode = row.querySelector('[data-commercial-mode]');
-    if (!product || !price || !mode) return;
-    row.dataset.saleable = String(Boolean(product.isSaleable));
-    price.value = rubles(product.priceMinor);
-    price.dataset.previous = price.value;
-    mode.value = product.isFree ? 'free' : 'paid';
-    mode.dataset.previous = mode.value;
-    price.disabled = false;
-    mode.disabled = false;
+export async function loadTariffs(force = false) {
+  if (force) { tariffsCache = null; tariffsPromise = null; }
+  if (tariffsCache) return tariffsCache;
+  if (tariffsPromise) return tariffsPromise;
+  tariffsPromise = commercialRequest('/tariffs').then((result) => {
+    tariffsCache = result;
+    return result;
+  }).finally(() => { tariffsPromise = null; });
+  return tariffsPromise;
+}
+
+export async function updateTariffPrice(key, priceMinor) {
+  if (!['tariff.start-plus', 'tariff.pro'].includes(key) ||
+      !Number.isSafeInteger(priceMinor) || priceMinor <= 0) {
+    throw new Error('Укажите положительную стоимость тарифа');
+  }
+  await commercialRequest('/' + encodeURIComponent(key), {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ priceMinor }),
+  });
+  catalogCache = null;
+  catalogPromise = null;
+  return loadTariffs(true);
+}
+
+function hydrateTariffAssignments(content, tariffs) {
+  const assignments = tariffs?.assignments || {};
+  content.querySelectorAll('[data-tariff-product]').forEach((row) => {
+    const select = row.querySelector('[data-tool-tariff]');
+    if (!select) return;
+    select.value = assignments[row.dataset.tariffProduct] || '';
+    select.dataset.previous = select.value;
+    select.disabled = false;
   });
 }
 
-function bindInlineCommercial(content) {
-  const pending = new WeakMap();
-  content.querySelectorAll('[data-commercial-key]').forEach((row) => {
-    const price = row.querySelector('[data-commercial-price]');
-    const mode = row.querySelector('[data-commercial-mode]');
+function bindTariffAssignments(content) {
+  content.querySelectorAll('[data-tariff-product]').forEach((row) => {
+    const select = row.querySelector('[data-tool-tariff]');
+    if (!select) return;
     const message = row.querySelector('.admin-tool-registry-save-state');
-    if (!price || !mode) return;
-    const save = async (event) => {
-      const isPrice = event.currentTarget === price;
-      if (pending.has(row)) {
-        // A later edit is written after the current request, never raced over it.
-        try { await pending.get(row); } catch { /* The first handler shows the error. */ }
-        if (!row.isConnected) return;
-      }
-      const rub = Number(String(price.value).replace(',', '.'));
-      if (isPrice && (!Number.isFinite(rub) || rub < 0 || !Number.isInteger(Math.round(rub * 100)))) {
-        price.value = price.dataset.previous || '0';
-        if (message) message.textContent = 'Неверная цена';
-        return;
-      }
-      const data = isPrice
-        ? { priceMinor: Math.round(rub * 100) }
-        : { isFree: mode.value === 'free', isSaleable: mode.value === 'paid' };
-      price.disabled = true;
-      mode.disabled = true;
+    select.addEventListener('change', async () => {
+      const previous = select.dataset.previous || '';
+      select.disabled = true;
       if (message) message.textContent = 'Сохранение…';
-      const request = commercialRequest('/' + encodeURIComponent(row.dataset.commercialKey), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      pending.set(row, request);
       try {
-        const catalog = await request;
-        catalogCache = catalog;
-        const updated = catalog?.products?.find((item) => item.key === row.dataset.commercialKey);
-        if (updated) {
-          row.dataset.saleable = String(Boolean(updated.isSaleable));
-          price.dataset.previous = rubles(updated.priceMinor);
-          mode.dataset.previous = updated.isFree ? 'free' : 'paid';
-        }
+        const tariffs = await commercialRequest('/tariffs/assignment', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productKey: row.dataset.tariffProduct, minimumTariff: select.value,
+          }),
+        });
+        tariffsCache = tariffs;
+        select.dataset.previous = select.value;
         if (message) message.textContent = 'Сохранено';
       } catch (error) {
-        price.value = price.dataset.previous || '0';
-        mode.value = mode.dataset.previous || 'free';
-        if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка сохранения';
+        select.value = previous;
+        if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка';
       } finally {
-        if (pending.get(row) === request) pending.delete(row);
-        price.disabled = false;
-        mode.disabled = false;
+        select.disabled = false;
       }
-    };
-    price.addEventListener('change', save);
-    mode.addEventListener('change', save);
+    });
   });
 }
 
@@ -650,14 +647,12 @@ export function renderAdminTools(content) {
   content.innerHTML = '<div class="admin-users-layout admin-tool-register-layout">' +
     renderToolRegister('cabinet', 'Кабинет', 'Professional') +
     renderToolRegister('records', 'Записи', 'User') +
-    '<div class="admin-tool-register-footer"><span data-commercial-publication></span>' +
-    '<button type="button" class="admin-button secondary" data-commercial-publish disabled>Опубликовать изменения</button>' +
-    '<span data-commercial-publish-message aria-live="polite"></span></div></div>';
+    '</div>';
   bindArchitecture(content);
   content.querySelectorAll('.admin-tool-register-section').forEach((section) => {
     const bodyScroll = section.querySelector('.admin-tool-register-scroll');
     const headScroll = section.querySelector('.admin-tool-register-head-scroll');
-    // Keep the sticky header columns aligned when the narrow viewport scrolls horizontally.
+    // The two synchronized tables retain their approved physical tracks.
     bodyScroll?.addEventListener('scroll', () => {
       if (headScroll) headScroll.scrollLeft = bodyScroll.scrollLeft;
     }, { passive: true });
@@ -676,41 +671,19 @@ export function renderAdminTools(content) {
     });
     syncToolHierarchy(section);
   });
-  bindInlineCommercial(content);
+  bindTariffAssignments(content);
   void loadToolReadiness().then((items) => {
     if (content.isConnected) hydrateAllReadiness(content, items);
   }).catch(() => {});
   void accountToolsRequest().then((tools) => {
     if (content.isConnected) hydrateAccountTools(content, tools);
   }).catch(() => {});
-  void loadCatalog().then((catalog) => {
-    if (!content.isConnected) return;
-    hydrateInlineCommercial(content, catalog?.products);
-    const publication = content.querySelector('[data-commercial-publication]');
-    if (publication) publication.textContent = catalog?.publication
-      ? 'Каталог: версия ' + catalog.publication.version : 'Каталог ещё не опубликован';
-    const publish = content.querySelector('[data-commercial-publish]');
-    if (publish) publish.disabled = false;
+  void loadTariffs(true).then((tariffs) => {
+    if (content.isConnected) hydrateTariffAssignments(content, tariffs);
   }).catch(() => {
-    const message = content.querySelector('[data-commercial-publish-message]');
-    if (message) message.textContent = 'Коммерческие условия недоступны';
-  });
-  content.querySelector('[data-commercial-publish]')?.addEventListener('click', async (event) => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    const message = content.querySelector('[data-commercial-publish-message]');
-    try {
-      await commercialRequest('/publish', { method: 'POST' });
-      catalogCache = null;
-      const current = await loadCatalog();
-      const publication = content.querySelector('[data-commercial-publication]');
-      if (publication) publication.textContent = 'Каталог: версия ' + current?.publication?.version;
-      if (message) message.textContent = 'Опубликовано';
-    } catch (error) {
-      if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка публикации';
-    } finally {
-      button.disabled = false;
-    }
+    content.querySelectorAll('[data-tool-tariff]').forEach((select) => {
+      select.title = 'Тарифы пока недоступны';
+    });
   });
 }
 
