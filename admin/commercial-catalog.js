@@ -477,11 +477,16 @@ function toolDisplayName(item) {
   return String(item.label || '').startsWith('График (') ? 'График' : item.label;
 }
 
-// K denotes non-card components. They remain in the internal catalog for
-// runtime/readiness logic, but are not selectable rows in either Admin list.
+// Only Events and Notes are selectable K components inside Journal / Day.
+// Record stays an automatic Day function with its readiness key intact but
+// without an independent tariff row. Other internal K components stay hidden.
 export function visibleToolChildren(area, item) {
+  const dayKey = area + '.journal.day';
   const children = (Array.isArray(item.items) ? item.items : [])
-    .filter((child) => child.kind === 'e' || child.kind === 'mode');
+    .filter((child) => child.kind === 'e' || child.kind === 'mode' ||
+      (item.readinessKey === dayKey && child.kind === 'check' &&
+        (child.readinessKey === dayKey + '.events' ||
+         child.readinessKey === dayKey + '.notes')));
   if (area !== 'cabinet' || item.id !== 'journal') return children;
   return children.filter((child) => child.readinessKey !== 'cabinet.timetable')
     .map((child) => child.readinessKey === 'cabinet.journal.month'
@@ -528,9 +533,10 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
       : expandable ? toolStatus(item, byKey, true) : '—';
-    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : 'R';
+    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : item.kind === 'check' ? 'K' : 'R';
     const markerTitle = marker === 'F' ? 'Основная карточка'
-      : marker === 'E' ? 'Вложенная карточка' : 'Режим';
+      : marker === 'E' ? 'Вложенная карточка'
+      : marker === 'K' ? 'Инструмент внутри режима' : 'Режим';
     const toggle = expandable
       ? '<button type="button" class="admin-tool-registry-expand" data-tool-expand="' + escapeHtml(id) +
         '" aria-expanded="true" aria-label="Свернуть или раскрыть ' + escapeHtml(toolDisplayName(item)) + '">⌄</button>'
