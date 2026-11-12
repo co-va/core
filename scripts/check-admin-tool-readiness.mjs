@@ -159,10 +159,15 @@ for (const rule of [
 const weights = [13, 32, 13.5, 9.333333333, 9.333333333, 9.333333333, 13.5];
 assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
   'Scaled columns must exactly fill the available table width');
-for (const tier of ['start', 'start-plus', 'pro']) {
-  if (!css.includes('[data-tier-level="' + tier + '"][aria-checked="true"]')) {
-    throw new Error('Tariff switch lacks a distinct visible color: ' + tier);
-  }
+// Tariff membership is presented with neutral native square checkboxes,
+// including Deposit; no unrelated tier colors or sliding switches in Tools.
+if (!ui.includes('class="admin-tool-tier-checkbox"') ||
+    !ui.includes('type="checkbox"') ||
+    !ui.includes('data-tariff-tier') ||
+    !css.includes('.admin-tool-tier-checkbox{') ||
+    css.includes('.admin-tool-tier-switch') ||
+    !ui.includes("'cabinet.loyalty.deposit': 'tool.loyalty.deposit'")) {
+  throw new Error('Tariff controls must be neutral checkboxes for every tool, including Deposit');
 }
 if (!ui.includes("key === 'cabinet.profile.workspaces'") ||
     !ui.includes("key === 'cabinet.service.products'") ||
