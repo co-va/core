@@ -324,7 +324,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-access-tool-row[data-tool-depth="1"] .admin-access-tool-identity{padding-left:20px}
 .admin-access-tool-row[data-tool-depth="2"] .admin-access-tool-identity{padding-left:40px}
 .admin-access-tool-row[data-tool-depth="3"] .admin-access-tool-identity{padding-left:60px}
-.admin-access-tool-name{display:block;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-access-tool-name{display:block;position:relative;flex:1;min-width:0;white-space:nowrap;overflow:visible;text-overflow:ellipsis}
 .admin-access-tool-grant,.admin-access-tool-commercial{
   display:flex;align-items:center;justify-content:center;min-width:0
 }
@@ -346,10 +346,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-access-tool-group>summary::-webkit-details-marker{display:none}
 .admin-access-tool-group>summary::marker{content:""}
 .admin-access-tool-group>summary .admin-access-tool-name::before{
-  content:"⌄";display:inline-block;min-width:14px;margin-right:5px;
-  color:var(--text-secondary);font-size:12px
+  content:"⌄";position:absolute;left:-17px;top:50%;
+  display:block;width:14px;text-align:center;margin:0;
+  color:var(--text-secondary);font-size:12px;transform:translateY(-50%)
 }
-.admin-access-tool-group:not([open])>summary .admin-access-tool-name::before{transform:rotate(-90deg)}
+.admin-access-tool-group:not([open])>summary .admin-access-tool-name::before{
+  transform:translateY(-50%) rotate(-90deg)
+}
 .admin-access-tool-group-body{padding-left:0}
 .admin-access-tool-conditions{
   margin:22px 0 0;padding:17px 0 0;border-top:1px solid var(--admin-pearl)
