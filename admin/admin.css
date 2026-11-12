@@ -1032,14 +1032,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Shared six-column table. The first four tracks retain the approved
-   alignment; the new limit track sits between Tariff and Readiness. Header
-   and rows use identical proportions, with fixed 44px height. */
+/* Shared seven-track Tools layout: established disclosure/name/type (58.5%),
+   three equal tier columns and unchanged Readiness track on the right.
+   Rows and sticky header both retain the existing 44px geometry. */
 .admin-tool-register-table col.admin-tool-col-expand{width:13%}
 .admin-tool-register-table col.admin-tool-col-name{width:32%}
 .admin-tool-register-table col.admin-tool-col-kind{width:13.5%}
-.admin-tool-register-table col.admin-tool-col-tariff{width:15%}
-.admin-tool-register-table col.admin-tool-col-limits{width:13%}
+.admin-tool-register-table col.admin-tool-col-tier{width:9.333333333%}
 .admin-tool-register-table col.admin-tool-col-status{width:13.5%}
 .admin-tool-register-table :is(th,td):first-child{
   box-sizing:border-box;width:13%;min-width:0;max-width:none;
@@ -1053,15 +1052,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
   box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
   padding:4px 0 4px 22px;text-align:left
 }
-.admin-tool-register-table :is(th,td):nth-child(4){
-  box-sizing:border-box;width:15%;min-width:0;max-width:none;
-  padding-inline:8px;text-align:left
-}
-.admin-tool-register-table :is(th,td):nth-child(5){
-  box-sizing:border-box;width:13%;min-width:0;max-width:none;
-  padding-inline:4px;text-align:left
-}
+.admin-tool-register-table :is(th,td):nth-child(4),
+.admin-tool-register-table :is(th,td):nth-child(5),
 .admin-tool-register-table :is(th,td):nth-child(6){
+  box-sizing:border-box;width:9.333333333%;min-width:0;max-width:none;
+  padding-inline:8px;text-align:center
+}
+.admin-tool-register-table :is(th,td):nth-child(7){
   box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
@@ -1116,51 +1113,48 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:0 24px 0 7px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-register-table [data-tool-tariff]{
-  width:110px;max-width:100%;height:26px;min-height:26px;
-  padding:0 24px 0 7px;box-sizing:border-box;
+/* Existing tier meaning: selected green / blue / violet. */
+.admin-tool-register-table .admin-tool-tier-heading{font-weight:750;text-align:center}
+.admin-tool-register-table .admin-tool-tier-heading[data-tier-level="start"]{color:#276D57}
+.admin-tool-register-table .admin-tool-tier-heading[data-tier-level="start-plus"]{color:#27579B}
+.admin-tool-register-table .admin-tool-tier-heading[data-tier-level="pro"]{color:#6F3E99}
+.admin-tool-register-table .admin-tool-tier-cell{text-align:center}
+.admin-tool-tier-switch{
+  display:inline-flex;align-items:center;box-sizing:border-box;position:relative;
+  width:38px;height:23px;padding:2px;border:1px solid var(--border);
+  border-radius:14px;background:#E7E7E7;cursor:pointer;
+  vertical-align:middle;transition:background-color .15s
+}
+.admin-tool-tier-switch-thumb{
+  display:block;width:17px;height:17px;flex:0 0 17px;
+  border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px #0003;transform:translateX(0);
+  transition:transform .15s
+}
+.admin-tool-tier-switch[data-tier-level="start"][aria-checked="true"]{background:#2B8265;border-color:#2B8265}
+.admin-tool-tier-switch[data-tier-level="start-plus"][aria-checked="true"]{background:#3568B5;border-color:#3568B5}
+.admin-tool-tier-switch[data-tier-level="pro"][aria-checked="true"]{background:#8151A5;border-color:#8151A5}
+.admin-tool-tier-switch[aria-checked="true"] .admin-tool-tier-switch-thumb{transform:translateX(15px)}
+.admin-tool-register-table .admin-tool-tier-switch:disabled{opacity:1;cursor:default}
+.admin-tool-limit-control{
+  display:flex;align-items:center;justify-content:center;gap:3px;max-width:110px;margin-inline:auto
+}
+.admin-tool-limit-control [data-tool-limit-tier]{
+  box-sizing:border-box;width:42px;min-width:0;height:26px;min-height:26px;
+  padding:0 3px;border:1px solid var(--border);border-radius:5px;
+  background:#fff;color:var(--text);font-size:12px;font-weight:700;text-align:center
+}
+.admin-tool-limit-infinity{
+  display:grid;place-items:center;box-sizing:border-box;
+  width:26px;min-width:26px;height:26px;padding:0;
   border:1px solid var(--border);border-radius:5px;
-  font-size:12px;background:#fff;color:var(--text)
+  color:var(--text);background:#fff;font-size:17px;font-weight:700;cursor:pointer
 }
-.admin-tool-tariff{display:flex;align-items:center;gap:7px;min-width:0}
-/* Tier choice is a status indicator, not muted secondary text. */
-.admin-tool-register-table [data-tool-tariff]{
-  font-weight:700;opacity:1;cursor:pointer;
-  -webkit-text-fill-color:currentColor
-}
-.admin-tool-register-table [data-tool-tariff][data-tier-level="start"]{
-  background:#E0EFE9;color:#19584E;border-color:#A4D2C3
-}
-.admin-tool-register-table [data-tool-tariff][data-tier-level="start-plus"]{
-  background:#E2ECFB;color:#214E90;border-color:#AEC5ED
-}
-.admin-tool-register-table [data-tool-tariff][data-tier-level="pro"]{
-  background:#F0E6FA;color:#623681;border-color:#D3BAEA
-}
-.admin-tool-register-table [data-tool-tariff]:disabled{
-  opacity:1;color:inherit;cursor:default
-}
-.admin-tool-register-table [data-tool-tariff][data-tier-level="start"]:disabled{
-  color:#19584E;-webkit-text-fill-color:#19584E
-}
-.admin-tool-register-table [data-tool-tariff][data-tier-level="start-plus"]:disabled{
-  color:#214E90;-webkit-text-fill-color:#214E90
-}
-.admin-tool-register-table [data-tool-tariff][data-tier-level="pro"]:disabled{
-  color:#623681;-webkit-text-fill-color:#623681
-}
-.admin-tool-limits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;max-width:162px;min-width:0}
-.admin-tool-limit-field{display:flex;flex-direction:column;align-items:stretch;gap:1px;min-width:0}
-.admin-tool-limit-field span{font-size:9px;font-weight:650;color:var(--text-secondary);line-height:10px;white-space:nowrap}
-.admin-tool-limit-field input{
-  box-sizing:border-box;width:100%;height:22px;min-height:22px;
-  padding:0 3px;border:1px solid var(--border);border-radius:4px;
-  background:#fff;color:var(--text);font-size:11px;font-weight:650;text-align:center
-}
-.admin-tool-limit-field input:disabled{background:#F5F5F5}
-
-.admin-tool-register-table :is(input,select):disabled{opacity:.55}
-.admin-tool-register-table [data-tool-tariff]:disabled{opacity:1}
+.admin-tool-limit-infinity:hover:not(:disabled){background:var(--admin-pearl)}
+.admin-tool-limit-control [data-tool-limit-tier]:disabled,
+.admin-tool-limit-infinity:disabled{opacity:.75;cursor:default}
+.admin-tool-register-table .admin-tool-tier-switch:focus-visible,
+.admin-tool-register-table .admin-tool-limit-infinity:focus-visible{outline:2px solid #3568B5;outline-offset:2px}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
   display:block;min-width:0;max-width:74px;overflow:hidden;
