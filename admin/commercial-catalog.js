@@ -481,7 +481,12 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       : expandable
         ? toolStatus(item, byKey)
         : '—';
-    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : '';
+    // Structural type is independent of the readiness state.
+    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E'
+      : item.kind === 'mode' ? 'Р' : 'К';
+    const markerTitle = marker === 'F' ? 'Основная карточка'
+      : marker === 'E' ? 'Вложенная карточка'
+      : marker === 'Р' ? 'Режим' : 'Компонент';
     const toggle = expandable
       ? '<button type="button" class="admin-tool-registry-expand" data-tool-expand="' + escapeHtml(id) +
         '" aria-expanded="true" aria-label="Свернуть или раскрыть ' + escapeHtml(toolDisplayName(item)) + '">⌄</button>'
@@ -494,7 +499,8 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const row = '<tr data-tool-id="' + escapeHtml(id) + '" data-tool-ancestors="' +
       escapeHtml(ancestorIds.join(' ')) + '"' +
       (canPrice ? ' data-commercial-key="' + escapeHtml(INLINE_COMMERCIAL_KEYS[key]) + '"' : '') +
-      '><td class="admin-tool-registry-kind">' + (marker ? '<span>' + marker + '</span>' : '—') + '</td>' +
+      '><td class="admin-tool-registry-kind"><span title="' + markerTitle +
+      '" aria-label="' + markerTitle + '">' + marker + '</span></td>' +
       '<td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
       '<td><div class="admin-tool-registry-name" data-tool-depth="' + depth + '" style="--tool-depth:' + depth + '">' +
       '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
@@ -516,7 +522,7 @@ function renderToolRegister(area, label, suffix) {
     '<colgroup><col class="admin-tool-col-kind"><col class="admin-tool-col-expand">' +
       '<col class="admin-tool-col-name"><col class="admin-tool-col-status">' +
       '<col class="admin-tool-col-payment"><col class="admin-tool-col-price"></colgroup>' +
-    '<thead><tr><th scope="col" aria-label="Тип карточки"></th>' +
+    '<thead><tr><th scope="col" title="F — основная карточка, E — вложенная карточка, Р — режим, К — компонент">Тип</th>' +
       '<th scope="col" class="admin-tool-registry-expand-header">' +
       '<button type="button" class="admin-tool-registry-expand admin-tool-registry-expand-all"' +
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
