@@ -408,6 +408,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tariff-editor{margin:14px 0 18px}
 .admin-overview-tariff-editor .admin-overview-tariff-controls{margin:0 0 14px}
 .admin-overview-tariff-editor .admin-field{max-width:260px}
+.admin-overview-tariff-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto}
+@media(max-width:620px){.admin-overview-tariff-actions{margin-left:0}}
 .admin-overview-tariff-periods{border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
 .admin-overview-tariff-period-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;align-items:center;min-height:48px;padding:8px 4px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text)}
 .admin-overview-tariff-period-row:last-child{border-bottom:0}
@@ -415,7 +417,6 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tariff-period-row small{display:block;font-size:11px;color:var(--text-secondary)}
 .admin-overview-tariff-percent{display:inline-flex;align-items:center;gap:5px;color:var(--text)}
 .admin-overview-tariff-percent input{box-sizing:border-box;width:56px;height:32px;padding:4px 7px;border:1px solid var(--border);border-radius:7px;background:var(--white);color:var(--text);font:inherit;text-align:center}
-.admin-overview-tariff-footer{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:14px}
 .admin-overview-tariff-tools-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 8px}
 .admin-overview-tariff-tools-heading strong{font-size:14px;font-weight:700}
 .admin-overview-tariff-tools-heading .admin-overview-inline-link{margin:0;padding:5px 0}
