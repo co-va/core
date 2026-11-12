@@ -347,6 +347,7 @@ const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
+  { id: 'tariffs', label: 'Тарифы', icon: 'tags' },
   { id: 'finance', label: 'Финансы', icon: 'finance' },
   { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
 ];
@@ -514,6 +515,7 @@ function renderCurrentSection() {
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();
+  if (state.section === 'tariffs') return renderTariffs();
   if (state.section === 'finance') return renderFinanceSection();
   renderTenants();
   // On section entry, refresh network cells independently of the 30s poll.
@@ -545,14 +547,14 @@ function requestOverviewTariffs(force = false) {
       overviewTariffStatus = 'unavailable';
     })
     .finally(() => {
-      if (state.section === 'overview') renderOverview();
+      if (state.section === 'tariffs') renderTariffs();
     });
 }
 
 if (typeof document !== 'undefined') document.addEventListener('admin:tariff-changed', () => {
   overviewTariffStatus = 'idle';
   overviewTariffData = null;
-  if (state.section === 'overview') renderOverview();
+  if (state.section === 'tariffs') renderTariffs();
 });
 
 function requestOverviewUserStats(force = false) {
@@ -615,21 +617,10 @@ function overviewRegistrationWeeks(registered, weeks = 8, now = new Date()) {
   return buckets;
 }
 
-function renderOverview() {
-  setActiveSection('Обзор');
+function renderTariffs() {
+  setActiveSection('Тарифы');
   const content = app.querySelector('[data-content]');
-  const regular = state.tenants.filter((item) => !item.isOwnerBook);
-  const registered = overviewGroupRows('registered', regular);
-  const demo = overviewGroupRows('demo', regular);
-  const live = overviewGroupRows('live', regular);
-  const pending = overviewGroupRows('pending', regular);
-  const suspended = overviewGroupRows('suspended', regular);
-  const toolRows = Array.isArray(state.toolReadiness) ? state.toolReadiness : [];
-  const toolsByApp = [
-    { label: 'Кабинет', type: 'cabinet', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('cabinet.'))) },
-    { label: 'Записи', type: 'records', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('records.'))) },
-  ];
-  const userStats = overviewUserStatsStatus === 'ready' ? overviewUserStats : null;
+  if (!content) return;
   const liveTariffs = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
   const tariffCards = [
     { key: 'tariff.start', name: 'Start' },
@@ -641,59 +632,11 @@ function renderOverview() {
     : Number(item.priceMinor) > 0
       ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
       : '—';
-  const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
-  const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
-  const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
-  const periodLabel = overviewWindowWeeks === 4 ? '4 недели' : overviewWindowWeeks === 8 ? '8 недель' : '12 недель';
-  const groupCards = [
-    { key: 'registered', value: registered.length, title: 'Зарегистрированы', hint: 'Всего аккаунтов', theme: 'primary' },
-    { key: 'demo', value: demo.length, title: 'DEMO', hint: 'Пробный режим' },
-    { key: 'live', value: live.length, title: 'LIVE', hint: 'Рабочий режим' },
-    { key: 'pending', value: pending.length, title: 'Ожидают', hint: 'Завершения регистрации' },
-  ];
-  const selected = groupCards.find((item) => item.key === overviewDetailGroup)
-    || (overviewDetailGroup === 'suspended'
-      ? { key: 'suspended', title: 'Приостановлены', value: suspended.length }
-      : null);
-  const details = selected ? overviewGroupRows(selected.key, regular) : [];
-  const issueRows = [
-    { label: 'Ожидают регистрации', count: pending.length, group: 'pending' },
-    { label: 'Приостановлены', count: suspended.length, group: 'suspended' },
-  ].filter((item) => item.count > 0);
 
   content.innerHTML = `
-    <div class="admin-overview">
-      <div class="admin-heading admin-overview-heading">
-        <div><h2>Состояние платформы</h2></div>
-      </div>
-      <div class="admin-overview-app-head">
-        <h3>Кабинет <span class="admin-overview-head-suffix">/ Professional</span></h3>
-      </div>
-      <section class="admin-overview-metrics" aria-label="Аккаунты Кабинета">
-        ${groupCards.map((item) => `
-          <button type="button" class="admin-overview-metric${item.theme ? ' is-primary' : ''}${overviewDetailGroup === item.key ? ' is-selected' : ''}"
-            data-overview-group="${item.key}" aria-pressed="${overviewDetailGroup === item.key}">
-            <span class="admin-overview-metric-label">${item.title}</span>
-            <strong class="admin-overview-metric-value">${item.value}</strong>
-            <span class="admin-overview-metric-hint">${item.hint}</span>
-            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
-          </button>`).join('')}
-      </section>
-      ${selected ? `
-        <section class="admin-overview-detail" aria-label="${escapeHtml(selected.title)}">
-          <div class="admin-overview-detail-heading">
-            <div><strong>${escapeHtml(selected.title)} · ${details.length}</strong></div>
-            <button type="button" class="admin-overview-close" data-overview-close aria-label="Свернуть подробности">×</button>
-          </div>
-          <div class="admin-overview-detail-list">
-            ${details.length ? details.map((item) => `
-              <button type="button" class="admin-overview-person" data-overview-tenant="${escapeHtml(item.tenantId)}">
-                <span><strong>${escapeHtml(item.ownerProfile?.name || item.invitation?.name || item.tenantName || 'Без имени')}</strong>
-                <small>${escapeHtml(item.ownerProfile?.email || item.invitation?.email || '')}</small></span>
-                <span class="admin-overview-person-status">${item.ownerProfile ? escapeHtml(String(item.access?.commercialMode || 'DEMO')) : 'Ожидает'} <span aria-hidden="true">↗</span></span>
-              </button>`).join('') : '<p class="admin-overview-empty">В этой категории пока никого нет.</p>'}
-          </div>
-        </section>` : ''}
+    <div class="admin-overview admin-tariff-section">
+      <div class="admin-heading"><h2>Тарифы</h2></div>
+      <p class="admin-tariff-context">Состав и лимиты определяются в «Инструментах». Здесь настраиваются цена за 30 дней и бонусные дни.</p>
       <div class="admin-overview-tariffs-heading">
         <strong>Тарифы <span>/ Professional</span></strong>
         <span>Выберите Start+ или Pro для настройки цены и срока</span>
@@ -761,6 +704,142 @@ function renderOverview() {
               <div class="admin-overview-person">
                 <span><strong>${escapeHtml(tool.name)}</strong></span>
               </div>`).join('') : '<p class="admin-overview-empty">Инструменты не назначены.</p>'}
+          </div>
+        </section>` : ''}
+
+    </div>`;
+  if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+  content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
+    button.addEventListener('click', () => {
+      overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
+      overviewDetailGroup = '';
+      overviewTariffMessage = '';
+      renderOverview();
+    });
+  });
+  content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
+    overviewSelectedTariff = '';
+    renderOverview();
+  });
+  const tariffPriceInput = content.querySelector('[data-overview-tariff-price]');
+  const tariffBonusInputs = [...content.querySelectorAll('[data-overview-tariff-bonus]')];
+  const refreshTariffPreview = () => {
+    const amount = Number(String(tariffPriceInput?.value || '').replace(',', '.'));
+    const validPrice = tariffPriceInput?.value !== '' && Number.isFinite(amount) && amount > 0;
+    for (const months of [1,6,12]) {
+      const bonus = months === 1 ? 0 :
+        Number(content.querySelector('[data-overview-tariff-bonus="' + months + '"]')?.value || 0);
+      const safeBonus = Number.isFinite(bonus) && bonus >= 0 ? bonus : 0;
+      const gift = Math.round(months * 30 * safeBonus / 100);
+      const days = content.querySelector('[data-overview-tariff-days="' + months + '"]');
+      const cost = content.querySelector('[data-overview-tariff-sum="' + months + '"]');
+      if (days) days.textContent = (months * 30 + gift) + ' дней' + (gift ? ' (+' + gift + ')' : '');
+      if (cost) cost.textContent = validPrice
+        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽' : '—';
+    }
+  };
+  tariffPriceInput?.addEventListener('input', refreshTariffPreview);
+  tariffBonusInputs.forEach((input) => input.addEventListener('input', refreshTariffPreview));
+  content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const message = content.querySelector('[data-overview-tariff-message]');
+    const rawPrice = String(tariffPriceInput?.value || '').trim();
+    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : 0;
+    const priceMinor = Math.round(price * 100);
+    const bonus6 = Number(content.querySelector('[data-overview-tariff-bonus="6"]')?.value);
+    const bonus12 = Number(content.querySelector('[data-overview-tariff-bonus="12"]')?.value);
+    const validBonuses = [bonus6,bonus12].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 100);
+    if (!Number.isFinite(price) || price < 0 || Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
+      if (message) { message.textContent = 'Проверьте цену и бонусы (0–100%)'; message.classList.add('error'); }
+      return;
+    }
+    button.disabled = true;
+    if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
+    try {
+      overviewTariffData = await updateTariffSettings(button.dataset.overviewTariffSave, priceMinor, bonus6, bonus12);
+      overviewTariffStatus = 'ready';
+      overviewTariffMessage = priceMinor > 0 ? 'Тариф сохранён' : 'Бонусы сохранены; цена ещё не установлена';
+      renderOverview();
+    } catch (error) {
+      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить тариф'; message.classList.add('error'); }
+      button.disabled = false;
+    }
+  });
+
+  content.querySelectorAll('[data-overview-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.section = button.dataset.overviewSection;
+      renderCurrentSection();
+    });
+  });
+}
+
+function renderOverview() {
+  setActiveSection('Обзор');
+  const content = app.querySelector('[data-content]');
+  const regular = state.tenants.filter((item) => !item.isOwnerBook);
+  const registered = overviewGroupRows('registered', regular);
+  const demo = overviewGroupRows('demo', regular);
+  const live = overviewGroupRows('live', regular);
+  const pending = overviewGroupRows('pending', regular);
+  const suspended = overviewGroupRows('suspended', regular);
+  const toolRows = Array.isArray(state.toolReadiness) ? state.toolReadiness : [];
+  const toolsByApp = [
+    { label: 'Кабинет', type: 'cabinet', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('cabinet.'))) },
+    { label: 'Записи', type: 'records', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('records.'))) },
+  ];
+  const userStats = overviewUserStatsStatus === 'ready' ? overviewUserStats : null;
+  const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
+  const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
+  const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
+  const periodLabel = overviewWindowWeeks === 4 ? '4 недели' : overviewWindowWeeks === 8 ? '8 недель' : '12 недель';
+  const groupCards = [
+    { key: 'registered', value: registered.length, title: 'Зарегистрированы', hint: 'Всего аккаунтов', theme: 'primary' },
+    { key: 'demo', value: demo.length, title: 'DEMO', hint: 'Пробный режим' },
+    { key: 'live', value: live.length, title: 'LIVE', hint: 'Рабочий режим' },
+    { key: 'pending', value: pending.length, title: 'Ожидают', hint: 'Завершения регистрации' },
+  ];
+  const selected = groupCards.find((item) => item.key === overviewDetailGroup)
+    || (overviewDetailGroup === 'suspended'
+      ? { key: 'suspended', title: 'Приостановлены', value: suspended.length }
+      : null);
+  const details = selected ? overviewGroupRows(selected.key, regular) : [];
+  const issueRows = [
+    { label: 'Ожидают регистрации', count: pending.length, group: 'pending' },
+    { label: 'Приостановлены', count: suspended.length, group: 'suspended' },
+  ].filter((item) => item.count > 0);
+
+  content.innerHTML = `
+    <div class="admin-overview">
+      <div class="admin-heading admin-overview-heading">
+        <div><h2>Состояние платформы</h2></div>
+      </div>
+      <div class="admin-overview-app-head">
+        <h3>Кабинет <span class="admin-overview-head-suffix">/ Professional</span></h3>
+      </div>
+      <section class="admin-overview-metrics" aria-label="Аккаунты Кабинета">
+        ${groupCards.map((item) => `
+          <button type="button" class="admin-overview-metric${item.theme ? ' is-primary' : ''}${overviewDetailGroup === item.key ? ' is-selected' : ''}"
+            data-overview-group="${item.key}" aria-pressed="${overviewDetailGroup === item.key}">
+            <span class="admin-overview-metric-label">${item.title}</span>
+            <strong class="admin-overview-metric-value">${item.value}</strong>
+            <span class="admin-overview-metric-hint">${item.hint}</span>
+            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
+          </button>`).join('')}
+      </section>
+      ${selected ? `
+        <section class="admin-overview-detail" aria-label="${escapeHtml(selected.title)}">
+          <div class="admin-overview-detail-heading">
+            <div><strong>${escapeHtml(selected.title)} · ${details.length}</strong></div>
+            <button type="button" class="admin-overview-close" data-overview-close aria-label="Свернуть подробности">×</button>
+          </div>
+          <div class="admin-overview-detail-list">
+            ${details.length ? details.map((item) => `
+              <button type="button" class="admin-overview-person" data-overview-tenant="${escapeHtml(item.tenantId)}">
+                <span><strong>${escapeHtml(item.ownerProfile?.name || item.invitation?.name || item.tenantName || 'Без имени')}</strong>
+                <small>${escapeHtml(item.ownerProfile?.email || item.invitation?.email || '')}</small></span>
+                <span class="admin-overview-person-status">${item.ownerProfile ? escapeHtml(String(item.access?.commercialMode || 'DEMO')) : 'Ожидает'} <span aria-hidden="true">↗</span></span>
+              </button>`).join('') : '<p class="admin-overview-empty">В этой категории пока никого нет.</p>'}
           </div>
         </section>` : ''}
       <div class="admin-overview-layout">
@@ -846,7 +925,7 @@ function renderOverview() {
     </div>`;
 
   if (overviewUserStatsStatus === 'idle') requestOverviewUserStats();
-  if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+
 
   content.querySelectorAll('[data-overview-group]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -864,62 +943,6 @@ function renderOverview() {
       overviewWindowWeeks = Number(button.dataset.overviewWeeks) || 8;
       renderOverview();
     });
-  });
-  content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
-    button.addEventListener('click', () => {
-      overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
-      overviewDetailGroup = '';
-      overviewTariffMessage = '';
-      renderOverview();
-    });
-  });
-  content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
-    overviewSelectedTariff = '';
-    renderOverview();
-  });
-  const tariffPriceInput = content.querySelector('[data-overview-tariff-price]');
-  const tariffBonusInputs = [...content.querySelectorAll('[data-overview-tariff-bonus]')];
-  const refreshTariffPreview = () => {
-    const amount = Number(String(tariffPriceInput?.value || '').replace(',', '.'));
-    const validPrice = tariffPriceInput?.value !== '' && Number.isFinite(amount) && amount > 0;
-    for (const months of [1,6,12]) {
-      const bonus = months === 1 ? 0 :
-        Number(content.querySelector('[data-overview-tariff-bonus="' + months + '"]')?.value || 0);
-      const safeBonus = Number.isFinite(bonus) && bonus >= 0 ? bonus : 0;
-      const gift = Math.round(months * 30 * safeBonus / 100);
-      const days = content.querySelector('[data-overview-tariff-days="' + months + '"]');
-      const cost = content.querySelector('[data-overview-tariff-sum="' + months + '"]');
-      if (days) days.textContent = (months * 30 + gift) + ' дней' + (gift ? ' (+' + gift + ')' : '');
-      if (cost) cost.textContent = validPrice
-        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽' : '—';
-    }
-  };
-  tariffPriceInput?.addEventListener('input', refreshTariffPreview);
-  tariffBonusInputs.forEach((input) => input.addEventListener('input', refreshTariffPreview));
-  content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
-    const button = event.currentTarget;
-    const message = content.querySelector('[data-overview-tariff-message]');
-    const rawPrice = String(tariffPriceInput?.value || '').trim();
-    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : 0;
-    const priceMinor = Math.round(price * 100);
-    const bonus6 = Number(content.querySelector('[data-overview-tariff-bonus="6"]')?.value);
-    const bonus12 = Number(content.querySelector('[data-overview-tariff-bonus="12"]')?.value);
-    const validBonuses = [bonus6,bonus12].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 100);
-    if (!Number.isFinite(price) || price < 0 || Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
-      if (message) { message.textContent = 'Проверьте цену и бонусы (0–100%)'; message.classList.add('error'); }
-      return;
-    }
-    button.disabled = true;
-    if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
-    try {
-      overviewTariffData = await updateTariffSettings(button.dataset.overviewTariffSave, priceMinor, bonus6, bonus12);
-      overviewTariffStatus = 'ready';
-      overviewTariffMessage = priceMinor > 0 ? 'Тариф сохранён' : 'Бонусы сохранены; цена ещё не установлена';
-      renderOverview();
-    } catch (error) {
-      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить тариф'; message.classList.add('error'); }
-      button.disabled = false;
-    }
   });
   content.querySelectorAll('[data-overview-tenant]').forEach((button) => {
     button.addEventListener('click', () => {
