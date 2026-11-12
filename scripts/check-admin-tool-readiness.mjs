@@ -193,14 +193,42 @@ const mapSource = ui.slice(ui.indexOf('export const TOOL_MAP = Object.freeze('),
   .replaceAll('export const ', 'const ');
 const toolMap = runInNewContext(mapSource + '\nTOOL_MAP');
 for (const area of ['cabinet','records']) {
+  const dayKey = area + '.journal.day';
+  const day = toolMap[area].find((item) => item.id === 'journal')
+    ?.items.find((item) => item.readinessKey === dayKey);
+  assert.ok(day, 'Journal Day is required for ' + area);
+  const checks = visibleToolChildren(area, day);
+  assert.deepEqual(checks.map((item) => item.readinessKey), [
+    dayKey + '.events', dayKey + '.notes',
+  ], 'Day exposes Events and Notes as tariff-controlled rows, never Record: ' + area);
+  assert.ok(day.items.some((item) => item.readinessKey === dayKey + '.record'),
+    'Automatic Day Record remains in internal readiness registry: ' + area);
   const visit = (items) => items.forEach((item) => {
     const visible = visibleToolChildren(area, item);
-    if (visible.some((child) => !['e','mode'].includes(child.kind))) {
-      throw new Error('K component leaked into visible ' + area + ' hierarchy');
+    for (const child of visible) {
+      if (child.kind === 'check' &&
+          ![dayKey + '.events',dayKey + '.notes'].includes(child.readinessKey)) {
+        throw new Error('Only Events/Notes K tools can be exposed in ' + area);
+      }
     }
     visit(visible);
   });
   visit(toolMap[area]);
+}
+if (!ui.includes("marker === 'K' ? 'Инструмент внутри режима'")) {
+  throw new Error('Events and Notes must retain their K component type marker');
+}
+for (const key of [
+  'cabinet.journal.day.events', 'cabinet.journal.day.notes',
+  'records.journal.day.events', 'records.journal.day.notes',
+]) {
+  if (!ui.includes("readinessKey: '" + key + "'") ||
+      !service.includes("'" + key + "'")) {
+    throw new Error('Selectable Events/Notes row must have a real readiness status: ' + key);
+  }
+}
+if (!ui.includes("item.readinessKey, byKey, 'admin-tool-child-status'")) {
+  throw new Error('Events/Notes readiness dropdown must remain editable');
 }
 if (!ui.includes("node.closest('.admin-tool-register-table')") ||
     !ui.includes("toolStatus(item, byKey, true)")) {
