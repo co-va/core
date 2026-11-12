@@ -194,6 +194,52 @@ const groupedJournal = helpers.toolChildren('cabinet', { id: 'journal', items: [
 ] });
 assert.equal(groupedJournal.length, 2, 'Canonical Journal month groups its timetable mode');
 assert.equal(groupedJournal[1].items[0].readinessKey, 'cabinet.timetable', 'Graph mode nests under Month rather than duplicating');
+// Render the real catalog through the account drawer. Every Capability must be
+// offered at most once, even when several tool rows share the Core permission.
+const catalogSource = readFileSync(new URL('../admin/commercial-catalog.js', import.meta.url), 'utf8');
+const catalogExcerpt = catalogSource.slice(
+  catalogSource.indexOf('export const TOOL_MAP = Object.freeze('),
+  catalogSource.indexOf('const TYPE_LABELS = Object.freeze(')
+).replaceAll('export const ', 'const ');
+const catalog = runInNewContext(catalogExcerpt +
+  '\n({ TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS })');
+const accessKeys = [...new Set(Object.values(catalog.TOOL_CAPABILITY_BINDINGS).flat().concat('services.access'))];
+const accountState = {
+  capabilities: accessKeys.map((key) => ({
+    key, name: key, valueType: key === 'workplaces.max' ? 'LIMIT' : 'BOOLEAN',
+  })),
+  toolReadiness: Object.keys(catalog.TOOL_CAPABILITY_BINDINGS).map((key) => ({
+    key, status: 'TESTING',
+  })).concat([
+    { key: 'cabinet.service.procedures', status: 'TESTING' },
+    { key: 'cabinet.service.products', status: 'TESTING' },
+  ]),
+};
+const renderer = runInNewContext(registry +
+  '\n({ renderTenantRegistry })', {
+  state: accountState, ...catalog, escapeHtml,
+});
+const registryHtml = renderer.renderTenantRegistry(new Map(
+  accountState.capabilities.map((cap) => [cap.key, {
+    enabled: true, limit: cap.valueType === 'LIMIT' ? 1 : null,
+  }])
+), { isTester: true, access: { commercialMode: 'DEMO' } });
+assert.doesNotMatch(registryHtml, /Записи \/ User|data-account-tools="user"/, 'No User application tools in Professional access');
+for (const kind of ['F', 'E', 'R', 'K']) {
+  assert.match(registryHtml, new RegExp('data-tool-kind="' + kind + '"'), 'F/E/R/K type ' + kind + ' is retained');
+}
+for (const key of ['finance.cash.access', 'finance.special.access', 'workplaces.max']) {
+  assert.equal((registryHtml.match(new RegExp('data-capability="' + key.replaceAll('.', '\\.') + '"', 'g')) || []).length, 1,
+    'Shared capability appears once: ' + key);
+}
+for (const key of Object.values(catalog.TOOL_COMMERCIAL_BINDINGS)) {
+  assert.equal((registryHtml.match(new RegExp('data-commercial-slot="' + key.replaceAll('.', '\\.') + '"', 'g')) || []).length, 1,
+    'Commercial conditions have one actual tool row: ' + key);
+}
+assert.equal((registryHtml.match(/>Журнал<\/span>/g) || []).length, 1,
+  'Hierarchy has exactly one Journal parent label');
+assert.match(registryHtml, /admin-access-inline-limit/, 'Capacity limit stays in its tool row');
+assert.match(registryHtml, /data-toggle-group/, 'Composite Finance tools have one switch for several grants');
 assert.match(source, /if \(!tenant \|\| tenant\.isOwnerBook\) return;/, 'Owner cannot be deleted in UI');
 assert.match(drawer, /data-delete-account/, 'Non-owner deletion is only inside account editor');
 assert.match(drawer, /openDeleteTenantModal\(tenantId, close\)/, 'Deleting an account closes its editor');
