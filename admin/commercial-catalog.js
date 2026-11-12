@@ -631,6 +631,8 @@ function bindTariffAssignments(content) {
         });
         tariffsCache = tariffs;
         select.dataset.previous = select.value;
+        hydrateTariffAssignments(content, tariffs);
+        document.dispatchEvent(new Event('admin:tariff-changed'));
         if (message) message.textContent = 'Сохранено';
       } catch (error) {
         select.value = previous;
