@@ -1166,12 +1166,18 @@ function toolControl(capability, resolved, locked) {
     '"' + (locked ? ' disabled' : '') + '></button>';
 }
 
-function toolControls(item, resolved, tenant) {
+function toolControls(item, resolved, tenant, key, seen) {
   const keys = [
     ...(item.capabilityKey ? [String(item.capabilityKey)] : []),
-    ...(TOOL_CAPABILITY_BINDINGS[item.readinessKey || ''] || []),
+    ...(TOOL_CAPABILITY_BINDINGS[key] || []),
   ];
-  const caps = [...new Set(keys)].map((key) => state.capabilities.find((row) => row.key === key)).filter(Boolean);
+  // Several catalog rows share one Core capability (Cash/Wallets, Loans/DDS).
+  // Show each grant exactly once or simultaneous edits would conflict.
+  const caps = [...new Set(keys)]
+    .filter((capabilityKey) => !seen.has(capabilityKey))
+    .map((capabilityKey) => state.capabilities.find((row) => row.key === capabilityKey))
+    .filter(Boolean);
+  caps.forEach((capability) => seen.add(capability.key));
   const disabled = !toolReadable(item, false, tenant);
   const grants = caps.filter((cap) => cap.valueType !== 'LIMIT');
   const limit = caps.find((cap) => cap.valueType === 'LIMIT');
@@ -1196,10 +1202,10 @@ function toolControls(item, resolved, tenant) {
   };
 }
 
-function accountToolRow(item, resolved, tenant, area, depth, parentKey, hasChildren, allowCommercial) {
+function accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCommercial, seen) {
   const key = accountToolKey(area, item, parentKey);
   const kind = accountToolKind(item, depth);
-  const { grant, limit } = toolControls(item, resolved, tenant);
+  const { grant, limit } = toolControls(item, resolved, tenant, key, seen);
   const locked = !toolReadable(item, false, tenant);
   // Commercial conditions use the same row as the actual tool. The tenant
   // commercial service fills these slots; it never creates a second list.
@@ -1213,23 +1219,24 @@ function accountToolRow(item, resolved, tenant, area, depth, parentKey, hasChild
     '</div>';
 }
 
-function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', depth = 0, parentKey = '', allowCommercial = true) {
+function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', depth = 0, parentKey = '', allowCommercial = true, seen = new Set()) {
   const key = accountToolKey(area, item, parentKey);
   const children = toolChildren(area, item);
-  const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, children.length > 0, allowCommercial);
+  const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCommercial, seen);
   if (!children.length) return row;
   // The row itself is the disclosure summary. Never repeat the parent label.
   return '<details class="admin-access-tool-group" open><summary class="admin-access-tool-group-title">' +
     row + '</summary><div class="admin-access-tool-group-body">' +
-    children.map((child) => renderRegistrySection(child, resolved, tenant, area, depth + 1, key, allowCommercial)).join('') +
+    children.map((child) => renderRegistrySection(child, resolved, tenant, area, depth + 1, key, allowCommercial, seen)).join('') +
     '</div></details>';
 }
 
 function renderTenantRegistry(resolved, tenant = null, allowCommercial = true) {
+  const seen = new Set();
   return '<div class="admin-access-tool-category" data-account-tools="professional">' +
     '<div class="admin-access-tool-head"><span>Кабинет / Professional</span><span>Доступ</span><span>' +
       (allowCommercial ? 'Условия' : '') + '</span></div>' +
-    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, tenant, 'cabinet', 0, '', allowCommercial)).join('') +
+    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, tenant, 'cabinet', 0, '', allowCommercial, seen)).join('') +
     '</div>';
 }
 
