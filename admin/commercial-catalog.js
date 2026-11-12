@@ -32,7 +32,7 @@ export const TOOL_MAP = Object.freeze({
     {
       id: 'profile', label: 'Профиль', nesting: 'composition', items: [
         { label: 'Данные профиля', kind: 'composition', readinessKey: 'cabinet.profile.data' },
-        { label: 'Рабочие пространства', kind: 'e', readinessKey: 'cabinet.profile.workspaces' },
+        { label: 'Рабочие пространства', kind: 'composition', readinessKey: 'cabinet.profile.workspaces' },
       ],
     },
     {
@@ -493,7 +493,13 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
   return items.map((item, index) => {
     const key = flatToolKey(area, item, parentKey);
     const id = (ancestorIds[ancestorIds.length - 1] || area) + '-' + index;
-    const groupedChildren = visibleToolChildren(area, item);
+    // Workspace quantity is an Admin Tools row only. It stays a composition
+    // detail in account permission drawers and does not create a second grant.
+    const groupedChildren = area === 'cabinet' && item.id === 'profile'
+      ? [...visibleToolChildren(area, item),
+         ...(item.items || []).filter((child) => child.readinessKey === 'cabinet.profile.workspaces')
+           .map((child) => ({ ...child, kind: 'e' }))]
+      : visibleToolChildren(area, item);
     const expandable = groupedChildren.length > 0;
     // Every visible F/E/R row uses exactly the same tariff editor in both apps.
     // Unmapped rows are stored in the EXISTING commercial catalog by their
