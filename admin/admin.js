@@ -1218,11 +1218,10 @@ function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', 
   const children = toolChildren(area, item);
   const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, children.length > 0, allowCommercial);
   if (!children.length) return row;
-  // Details controls only the structural hierarchy, never its grants.
+  // The row itself is the disclosure summary. Never repeat the parent label.
   return '<details class="admin-access-tool-group" open><summary class="admin-access-tool-group-title">' +
-    '<span>' + escapeHtml(toolName(item)) + '</span></summary>' +
-    '<div class="admin-access-tool-group-body">' +
-      row + children.map((child) => renderRegistrySection(child, resolved, tenant, area, depth + 1, key, allowCommercial)).join('') +
+    row + '</summary><div class="admin-access-tool-group-body">' +
+    children.map((child) => renderRegistrySection(child, resolved, tenant, area, depth + 1, key, allowCommercial)).join('') +
     '</div></details>';
 }
 
