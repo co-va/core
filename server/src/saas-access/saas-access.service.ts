@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CapabilityValueType, TenantAccessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { applyReadinessGate } from './readiness-policy';
+import { applyReadinessGate, CABINET_READINESS_CAPABILITIES } from './readiness-policy';
 import { excessWorkplaceIds } from './workplace-capacity';
 
 const DEMO_DAYS = 14;
@@ -379,27 +379,52 @@ export class SaasAccessService {
     const activeTier = paidNow ? selection.tierKey : 'tariff.start';
     const rank = tierKeys.indexOf(activeTier);
     const rows = await this.prisma.$queryRawUnsafe<Array<{
-      capabilityKey: string; tariffExcluded: boolean; minimumTariff: string | null;
+      productKey: string; capabilityKey: string | null; tariffExcluded: boolean;
+      minimumTariff: string | null; parentTariff: string | null;
     }>>(
-      `SELECT link."capabilityKey",
-         p."tariffExcluded",
+      `SELECT p."key" AS "productKey",link."capabilityKey",p."tariffExcluded",
          (SELECT parent."key"
           FROM "CommercialProductInclusion" edge
           JOIN "CommercialProduct" parent ON parent."id"=edge."parentProductId"
           WHERE edge."childProductId"=p."id"
             AND parent."key" IN ('tariff.start','tariff.start-plus','tariff.pro')
-          LIMIT 1) AS "minimumTariff"
+          LIMIT 1) AS "minimumTariff",
+         (SELECT tier."key"
+          FROM "CommercialProductInclusion" childEdge
+          JOIN "CommercialProduct" folder ON folder."id"=childEdge."parentProductId"
+          JOIN "CommercialProductInclusion" folderEdge ON folderEdge."childProductId"=folder."id"
+          JOIN "CommercialProduct" tier ON tier."id"=folderEdge."parentProductId"
+          WHERE childEdge."childProductId"=p."id"
+            AND folder."type" IN ('FOLDER','PACKAGE')
+            AND tier."key" IN ('tariff.start','tariff.start-plus','tariff.pro')
+          LIMIT 1) AS "parentTariff"
        FROM "CommercialProduct" p
-       JOIN "CommercialProductCapability" link ON link."productId"=p."id"
+       LEFT JOIN "CommercialProductCapability" link ON link."productId"=p."id"
        WHERE p."isActive"=true
          AND p."type" NOT IN ('SYSTEM','PACKAGE','FOLDER')`,
     );
     const rights = new Map<string, boolean>();
-    for (const row of rows) {
-      const min = row.minimumTariff ? tierKeys.indexOf(row.minimumTariff) : 0;
+    const uiOverrides = new Map<string, boolean>();
+    // Direct row assignment wins; otherwise inherit a parent package, then
+    // the existing Admin's unconfigured default Start.
+    for (const row of rows.sort((left, right) =>
+      left.productKey.length - right.productKey.length)) {
+      const tier = row.minimumTariff || row.parentTariff;
+      const min = tier ? tierKeys.indexOf(tier) : 0;
       const allowed = !row.tariffExcluded && min >= 0 && rank >= min;
-      rights.set(row.capabilityKey, Boolean(rights.get(row.capabilityKey) || allowed));
+      if (row.capabilityKey) {
+        rights.set(row.capabilityKey, Boolean(rights.get(row.capabilityKey) || allowed));
+      }
+      // An explicitly configured UI mode overrides its legacy F bundle
+      // without creating a second capability catalog in the frontend.
+      if (row.productKey.startsWith('ui.')) {
+        const readinessKey = row.productKey.slice(3);
+        for (const capabilityKey of CABINET_READINESS_CAPABILITIES[readinessKey] || []) {
+          uiOverrides.set(capabilityKey, allowed);
+        }
+      }
     }
+    for (const [key, enabled] of uiOverrides) rights.set(key, enabled);
     const quota = await this.prisma.$queryRawUnsafe<Array<{ maxCount: number | null }>>(
       `SELECT "maxCount" FROM "CommercialTariffLimit"
        WHERE "toolKey"='cabinet.profile.workspaces' AND "tariffKey"=$1 LIMIT 1`,
