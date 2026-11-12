@@ -9,6 +9,17 @@ type AdminRequest = Request & {
   platformAdminId?: string;
 };
 
+// Public read-only tariff offer: prices are never fabricated by landing or app.
+@Controller('saas-commercial-public')
+export class CommercialPublicController {
+  constructor(private readonly catalog: CommercialCatalogService) {}
+
+  @Get('tariffs')
+  tariffs() {
+    return this.catalog.tariffOffers();
+  }
+}
+
 @Controller('saas-admin/commercial-catalog')
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 export class CommercialCatalogController {
