@@ -116,7 +116,7 @@ if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
     !ui.includes('<th>Инструменты</th>') ||
-    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим, K — компонент">Тип</th>') ||
+    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>') ||
     !ui.includes('<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th>')) {
   throw new Error('Professional/User tool registry header must be disclosure–tools–type–readiness–payment–price');
 }
@@ -129,12 +129,14 @@ if (expandCell < 0 || nameCell <= expandCell || kindCell <= nameCell) {
 }
 for (const kind of [
   "depth === 0 ? 'F'",
-  "item.kind === 'e' ? 'E'",
-  "item.kind === 'mode' ? 'R' : 'K'",
-  "marker === 'R' ? 'Режим' : 'Компонент'",
+  "item.kind === 'e' ? 'E' : 'R'",
   "marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain'",
+  "visibleToolChildren(area, item)",
 ]) {
-  if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
+  if (!toolRows.includes(kind)) throw new Error('F/E/R mapping and K-free filter missing: ' + kind);
+}
+if (toolRows.includes("marker === 'R' ? 'Режим' : 'Компонент'")) {
+  throw new Error('K component type must not be emitted in the Tools registry');
 }
 for (const rule of [
   '.admin-tool-register-card{',
@@ -154,9 +156,26 @@ assert.equal(tracks.reduce((total, value) => total + value, 0), 860,
 const weights = [5.813953488, 39.534883721, 5.813953488, 16.279069768, 16.279069768, 16.279069768];
 assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
   'Scaled columns must exactly fill the available table width');
-if (!ui.includes('R — режим, K — компонент') ||
+if (!ui.includes('R — режим">Тип</th>') ||
+    ui.includes('K — компонент">Тип</th>') ||
     !css.includes('.admin-tool-registry-kind span.is-card{')) {
-  throw new Error('R/K must be Latin and have no F/E card outline');
+  throw new Error('Only F/E/R types may be shown; existing F/E card styles remain');
+}
+const visibleCode = ui.slice(ui.indexOf('export function visibleToolChildren('), ui.indexOf('function toolRegisterRows('))
+  .replace('export function', 'function');
+const visibleToolChildren = runInNewContext(visibleCode + '\nvisibleToolChildren');
+const mapSource = ui.slice(ui.indexOf('export const TOOL_MAP = Object.freeze('), ui.indexOf('const TYPE_LABELS = Object.freeze('))
+  .replaceAll('export const ', 'const ');
+const toolMap = runInNewContext(mapSource + '\nTOOL_MAP');
+for (const area of ['cabinet','records']) {
+  const visit = (items) => items.forEach((item) => {
+    const visible = visibleToolChildren(area, item);
+    if (visible.some((child) => !['e','mode'].includes(child.kind))) {
+      throw new Error('K component leaked into visible ' + area + ' hierarchy');
+    }
+    visit(visible);
+  });
+  visit(toolMap[area]);
 }
 if (!ui.includes("node.closest('.admin-tool-register-table')") ||
     !ui.includes("toolStatus(item, byKey, true)")) {
