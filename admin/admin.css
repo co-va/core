@@ -932,18 +932,23 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-card{margin:0;padding:0;min-width:0;overflow:hidden}
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* One identical six-column geometry for Professional and User.
-   Technical columns are fixed; the remaining width is split 2:1:1:1. */
-.admin-tool-register-table col.admin-tool-col-expand,
+/* Professional and User share one six-column table:
+   F/E 44px, disclosure 60px, then 55/15/15/15 of the remaining width. */
 .admin-tool-register-table col.admin-tool-col-kind{width:44px}
-.admin-tool-register-table col.admin-tool-col-name{width:calc(40% - 35.2px)}
+.admin-tool-register-table col.admin-tool-col-expand{width:60px}
+.admin-tool-register-table col.admin-tool-col-name{width:calc(55% - 57.2px)}
 .admin-tool-register-table col.admin-tool-col-status,
 .admin-tool-register-table col.admin-tool-col-payment,
-.admin-tool-register-table col.admin-tool-col-price{width:calc(20% - 17.6px)}
-.admin-tool-register-table :is(th,td):nth-child(-n+2){
+.admin-tool-register-table col.admin-tool-col-price{width:calc(15% - 15.6px)}
+.admin-tool-register-table :is(th,td):first-child{
   box-sizing:border-box;width:44px;min-width:44px;max-width:44px;
   padding:4px 0;text-align:center
 }
+.admin-tool-register-table :is(th,td):nth-child(2){
+  box-sizing:border-box;width:60px;min-width:60px;max-width:60px;
+  padding:4px 0;text-align:center
+}
+.admin-tool-register-table :is(th,td):nth-child(n+4){padding-inline:8px}
 .admin-tool-register-table th,
 .admin-tool-register-table td{
   box-sizing:border-box;height:44px;padding:4px 12px;
@@ -959,7 +964,12 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-table tbody tr[hidden]{display:none!important}
 .admin-tool-registry-name{
   display:flex;align-items:center;gap:5px;min-width:0;
-  padding-left:calc(var(--tool-depth,0) * 18px)
+  padding-left:calc(var(--tool-depth,0) * 28px);position:relative
+}
+.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before{
+  content:"";position:absolute;top:5px;bottom:5px;
+  left:calc(var(--tool-depth) * 28px - 13px);
+  width:1px;background:var(--border)
 }
 .admin-tool-registry-label{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
 .admin-tool-register-table [data-tool-ancestors=""] .admin-tool-registry-label{font-weight:720}
@@ -969,6 +979,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
   background:transparent;color:var(--text);font-size:18px;cursor:pointer
 }
 .admin-tool-registry-expand[aria-expanded="false"]{transform:rotate(-90deg)}
+.admin-tool-register-table .admin-tool-registry-expand-header{padding:4px 0;text-align:center}
 .admin-tool-registry-expand-cell,
 .admin-tool-registry-kind{text-align:center}
 .admin-tool-registry-kind span{
@@ -979,12 +990,12 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-table .admin-tool-readiness-editor,
 .admin-tool-register-table .admin-tool-readiness{justify-self:auto;text-align:left}
 .admin-tool-register-table .admin-tool-readiness-editor .admin-tool-readiness-select{
-  box-sizing:border-box;width:116px;height:26px;min-height:26px;
+  box-sizing:border-box;width:110px;max-width:100%;height:26px;min-height:26px;
   padding:0 24px 0 7px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
 .admin-tool-register-table [data-commercial-mode]{
-  width:110px;height:26px;min-height:26px;
+  width:110px;max-width:100%;height:26px;min-height:26px;
   padding:0 24px 0 7px;box-sizing:border-box;
   border:1px solid var(--border);border-radius:5px;
   font-size:12px;background:#fff;color:var(--text)
@@ -1018,6 +1029,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(-n+2){
     padding:4px 0!important
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(n+4){
+    padding-inline:8px!important
   }
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr,
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody td{height:44px;min-height:44px}
