@@ -107,17 +107,31 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-if (!ui.includes('<th scope="col" aria-label="Тип карточки"></th><th>Инструмент</th>')) {
-  throw new Error('The unlabeled F/E technical column must be first, before Instrument');
+// The disclosure and F/E controls are two independent 44px technical columns.
+// Four content columns share the remaining space: Tools 40%, the rest 20% each.
+if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-kind">') ||
+    !ui.includes('<th scope="col" aria-label="Раскрыть или свернуть"></th>') ||
+    !ui.includes('<th scope="col" aria-label="Тип карточки"></th><th>Инструменты</th>')) {
+  throw new Error('Professional/User tool registries must render six shared columns');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
-if (toolRows.indexOf("'><td class=\"admin-tool-registry-kind\"") < 0 ||
-    toolRows.indexOf("'><td class=\"admin-tool-registry-kind\"") > toolRows.indexOf("admin-tool-registry-name\" style=")) {
-  throw new Error('F/E must occupy the first body cell, before the name/expand control');
+const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
+const kindCell = toolRows.indexOf('admin-tool-registry-kind');
+const nameCell = toolRows.indexOf('admin-tool-registry-name" style=');
+if (expandCell < 0 || kindCell <= expandCell || nameCell <= kindCell) {
+  throw new Error('Technical expand and F/E columns must precede the indented tool name');
 }
-if (!css.includes('.admin-tool-register-table th:nth-child(1){width:6.5%}') ||
-    !css.includes('.admin-tool-register-table th:nth-child(2){width:45.5%}')) {
-  throw new Error('F/E must be the narrow left-hand column, without shifting other controls');
+for (const rule of [
+  '.admin-tool-col-expand,',
+  '.admin-tool-register-table col.admin-tool-col-kind{width:44px}',
+  '.admin-tool-register-table col.admin-tool-col-name{width:calc(40% - 35.2px)}',
+  '.admin-tool-register-table col.admin-tool-col-price{width:calc(20% - 17.6px)}',
+]) {
+  if (!css.includes(rule)) throw new Error('Tool registry six-column sizing missing: ' + rule);
+}
+if (css.includes('.admin-users-section .admin-table th:first-child') ||
+    css.includes('.admin-mobile-app .admin-users-section .admin-table')) {
+  throw new Error('Account-only table geometry must not leak into Tools');
 }
 
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
