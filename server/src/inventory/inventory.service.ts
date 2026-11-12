@@ -344,7 +344,19 @@ export class InventoryService {
       if (!name) throw new BadRequestException('Укажите наименование позиции');
       data.name = name;
     }
-    if ('unit' in source) data.unit = text(source.unit) || current.unit;
+    if ('unit' in source) {
+      const nextUnit = text(source.unit) || current.unit;
+      if (nextUnit !== current.unit) {
+        const existingMovement = await owner.inventoryMovementLine.findFirst({
+          where: { tenantId, inventoryItemId: current.id },
+          select: { id: true },
+        });
+        if (existingMovement) {
+          throw new BadRequestException('Единицу учёта нельзя менять после складских движений');
+        }
+      }
+      data.unit = nextUnit;
+    }
     for (const key of ['manufacturer', 'productType', 'category', 'sku', 'barcode', 'location', 'supplier'] as const) {
       if (key in source) data[key] = optionalText(source[key]);
     }
