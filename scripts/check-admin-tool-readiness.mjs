@@ -110,18 +110,20 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// Both tool tables use the same six-track layout. The first four columns
-// retain their established alignment; the new quantity column is separate
-// from readiness. F/E/R and 44px rows remain unchanged.
+// Both tool tables use seven tracks: Tools, Type, three tariffs, Readiness,
+// with an independent expand column. Numeric rows replace switches in-place.
 if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">') ||
-    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-tariff">') ||
-    !ui.includes('<col class="admin-tool-col-limits"><col class="admin-tool-col-status"></colgroup>') ||
+    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-tier">') ||
+    !ui.includes('<col class="admin-tool-col-tier"><col class="admin-tool-col-tier">') ||
+    !ui.includes('<col class="admin-tool-col-status"></colgroup>') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
     !ui.includes('<th>Инструменты</th>') ||
     !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>') ||
-    !ui.includes('<th>Тариф</th><th>Лимит</th><th>Готовность</th>')) {
-  throw new Error('Professional/User tool registry header must be disclosure–tools–type–tariff–limit–readiness');
+    !ui.includes('data-tier-level="start-plus">Start+</th>') ||
+    !ui.includes('data-tier-level="pro">Pro</th>') ||
+    !ui.includes('<th>Готовность</th>')) {
+  throw new Error('Professional/User tool registry header must have three tier columns before readiness');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
 const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
@@ -147,26 +149,27 @@ for (const rule of [
   '.admin-tool-register-table col.admin-tool-col-expand{width:13%}',
   '.admin-tool-register-table col.admin-tool-col-name{width:32%}',
   '.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}',
-  '.admin-tool-register-table col.admin-tool-col-tariff{width:15%}',
-  '.admin-tool-register-table col.admin-tool-col-limits{width:13%}',
+  '.admin-tool-register-table col.admin-tool-col-tier{width:9.333333333%}',
   '.admin-tool-register-table col.admin-tool-col-status{width:13.5%}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
   if (!css.includes(rule)) throw new Error('Full-width registry proportions/hierarchy missing: ' + rule);
 }
-const weights = [13, 32, 13.5, 15, 13, 13.5];
+const weights = [13, 32, 13.5, 9.333333333, 9.333333333, 9.333333333, 13.5];
 assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
   'Scaled columns must exactly fill the available table width');
 for (const tier of ['start', 'start-plus', 'pro']) {
-  if (!css.includes('[data-tier-level="' + tier + '"]')) {
-    throw new Error('Tariff indicator lacks a distinct visible color: ' + tier);
+  if (!css.includes('[data-tier-level="' + tier + '"][aria-checked="true"]')) {
+    throw new Error('Tariff switch lacks a distinct visible color: ' + tier);
   }
 }
 if (!ui.includes("key === 'cabinet.profile.workspaces'") ||
     !ui.includes("key === 'cabinet.service.products'") ||
-    !ui.includes('data-tool-limit-tier')) {
-  throw new Error('Workplace and Product quantity limits must be editable inside Tools');
+    !ui.includes('data-tool-limit-tier') ||
+    !ui.includes('data-tool-limit-infinity') ||
+    !ui.includes('data-tariff-tier')) {
+  throw new Error('Three inherited tier switches and in-place numeric / infinity must be present');
 }
 if (!ui.includes("label: 'Рабочие пространства', kind: 'e'")) {
   throw new Error('The workspace quantity row must be visible, not buried in K');
