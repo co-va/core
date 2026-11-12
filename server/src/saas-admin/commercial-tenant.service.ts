@@ -582,8 +582,13 @@ export class CommercialTenantService {
       `SELECT "tariffKey" FROM "CommercialOrder" WHERE "id"=$1 AND "tenantId"=$2`,
       orderId, tenantId,
     );
-    if (paidOrder?.tariffKey) await this.applyPurchasedTariff(tenantId, paidOrder.tariffKey);
-    await this.applySelectedCapabilities(tenantId);
+    if (paidOrder?.tariffKey) {
+      // The canonical SaaS resolver now reads this package membership directly.
+      // Do not overwrite personal capability overrides or legacy paid grants.
+      await this.applyPurchasedTariff(tenantId, paidOrder.tariffKey);
+    } else {
+      await this.applySelectedCapabilities(tenantId);
+    }
     const beforeAccess = await this.accessService.resolveTenantAccess(tenantId);
     await this.accessService.setCommercialMode(tenantId, 'LIVE', actorAdminId);
     const access = await this.accessService.resolveTenantAccess(tenantId);
