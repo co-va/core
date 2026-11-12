@@ -148,6 +148,13 @@ assert.match(drawer, /class="admin-drawer admin-document-drawer admin-access-dra
 assert.match(drawer, /class="admin-document-reading"/, 'Only account drawer content scrolls');
 assert.match(drawer, /admin-access-summary-card/g, 'Mode and role reuse graphite overview cards');
 assert.match(drawer, /data-commercial-tenant-tools/, 'Commercial conditions belong inside Tools');
+assert.doesNotMatch(drawer, /<details class="admin-access-tool-conditions"|<details class="admin-section admin-access-account-actions"/, 'Terms and account actions are not hidden in disclosure panels');
+assert.match(drawer, /<section class="admin-access-tool-conditions">/, 'Terms and pricing are visible under Tools');
+assert.match(drawer, /<section class="admin-section admin-access-account-actions">/, 'Account controls are visible in their own area');
+assert.match(drawer, /class="admin-button" type="submit">Отправить письмо/, 'Email uses the existing canonical Admin button');
+assert.match(adminCss, /\.admin-access-email \.admin-form>\.admin-button\{width:auto;justify-self:start\}/, 'Email action does not expand across the form');
+assert.match(adminCss, /grid-template-columns:minmax\(0,1fr\) 66px 140px/, 'Each tool occupies one three-column row');
+assert.match(drawer, /renderTenantRegistry\(resolved, tenant\)/, 'Drawer uses the Professional-only registry');
 assert.match(drawer, /enhanceCommercialTenantTools\(backdrop\.querySelector/, 'Commercial editor mounts directly, not by DOM observer');
 assert.doesNotMatch(drawer, /Техническое письмо|admin-mode-card/, 'Legacy account drawer titles and old mode card are gone');
 const commercialModule = readFileSync(new URL('../admin/commercial-tenant.js', import.meta.url), 'utf8');
@@ -155,9 +162,17 @@ assert.doesNotMatch(commercialModule, /MutationObserver|pendingTenantId/, 'No se
 assert.match(commercialModule, /export async function enhanceCommercialTenantTools\(/, 'Commercial tools use the canonical account drawer host');
 const registry = source.slice(source.indexOf('function toolReadable('), source.indexOf('function openAccessDrawer('));
 assert.match(registry, /TOOL_MAP\.cabinet\.map/, 'Professional hierarchy stays canonical');
-assert.match(registry, /TOOL_MAP\.records\.map/, 'User hierarchy stays canonical');
+assert.doesNotMatch(registry, /TOOL_MAP\.records\.map/, 'Professional permission drawer never shows the separate User application');
 assert.doesNotMatch(registry, / · ' \+ escapeHtml\(key\)/, 'Technical readiness keys are not exposed in account rows');
 assert.match(registry, /aria-checked/, 'A normal tool has a proper switch');
+assert.match(registry, /data-tool-kind/, 'The same F/E/R/K structural levels are preserved');
+assert.match(registry, /TOOL_COMMERCIAL_BINDINGS\[key\]/, 'Commercial conditions align with their actual tool rows');
+assert.match(registry, /admin-access-inline-limit/, 'Workplace capacity occupies the same line');
+assert.doesNotMatch(registry, /<label class="admin-access-tool-option"/, 'Composite tools never create a second list of switch labels');
+assert.match(registry, /data-toggle-group/, 'Composite instruments have one visible toggle');
+const commercialCode = readFileSync(new URL('../admin/commercial-tenant.js', import.meta.url), 'utf8');
+assert.match(commercialCode, /data-commercial-slot/, 'Commercial controls mount into existing tool rows');
+assert.doesNotMatch(commercialCode, /<div class="commercial-tenant-products"/, 'No duplicate full product list under conditions');
 const registryHelpers = source.slice(source.indexOf('function toolReadable('), source.indexOf('function toolControl('));
 const toolState = { toolReadiness: [
   { key: 'cabinet.journal.day', status: 'TESTING' },
