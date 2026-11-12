@@ -502,10 +502,10 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       ? INLINE_COMMERCIAL_KEYS[key] : 'ui.' + key;
     const tierPrefix = area === 'records' ? 'tariff.records.' : 'tariff.';
     const tier = '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
-      escapeHtml(toolDisplayName(item)) + '" data-default-tier="' + tierPrefix + 'pro" disabled>' +
-      '<option value="' + tierPrefix + 'start">Start</option>' +
+      escapeHtml(toolDisplayName(item)) + '" data-default-tier="' + tierPrefix + 'start" disabled>' +
+      '<option value="' + tierPrefix + 'start" selected>Start</option>' +
       '<option value="' + tierPrefix + 'start-plus">Start+</option>' +
-      '<option value="' + tierPrefix + 'pro" selected>Pro</option>' +
+      '<option value="' + tierPrefix + 'pro">Pro</option>' +
       '</select><small class="admin-tool-registry-save-state" aria-live="polite"></small></div>';
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
