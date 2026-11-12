@@ -397,6 +397,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview .admin-overview-heading{margin-bottom:4px}
 .admin-overview-heading h2{font-size:30px;letter-spacing:-.04em}
 .admin-overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.admin-overview-tariff-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.admin-overview-tariff-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:13px 0 8px}
+.admin-overview-tariff-controls .admin-field{min-width:150px}
+.admin-overview-tariff-list{max-height:270px}
 .admin-overview-metric{position:relative;min-width:0;min-height:149px;padding:18px 20px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:18px;color:#18191A;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.045);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
 .admin-overview-metric.is-primary{background:#F5F5F3}
 .admin-overview-metric:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.1)}
@@ -465,7 +469,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-person-status span{margin-left:7px;font-size:15px}
 .admin-overview-person:hover{background:#F7F7F5}
 .admin-overview-empty{padding:8px 0;color:#777;font-size:13px}
-@media(max-width:1100px){.admin-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-overview-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1100px){.admin-overview-metrics,.admin-overview-tariff-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-overview-layout{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){
   .admin-mobile-app .admin-overview{gap:11px;padding:14px 12px 22px}
   .admin-mobile-app .admin-overview-heading{display:none}
@@ -1035,8 +1039,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}
 .admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}
 .admin-tool-register-table col.admin-tool-col-status,
-.admin-tool-register-table col.admin-tool-col-payment,
-.admin-tool-register-table col.admin-tool-col-price{width:16.279069768%}
+.admin-tool-register-table col.admin-tool-col-tariff,
+.admin-tool-register-table col.admin-tool-col-tariff-tail{width:16.279069768%}
 .admin-tool-register-table :is(th,td):first-child,
 .admin-tool-register-table :is(th,td):nth-child(3){
   box-sizing:border-box;width:5.813953488%;min-width:0;max-width:none;
@@ -1050,6 +1054,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
   box-sizing:border-box;width:16.279069768%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
+/* One visual Tariff cell spans the two former commercial tracks without
+   shifting Name, Type or Readiness by a single pixel. */
+.admin-tool-register-table :is(th,td)[colspan="2"]{width:32.558139536%}
 .admin-tool-register-table th,
 .admin-tool-register-table td{
   box-sizing:border-box;height:44px;padding:4px 12px;
@@ -1097,20 +1104,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:0 24px 0 7px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-register-table [data-commercial-mode]{
+.admin-tool-register-table [data-tool-tariff]{
   width:110px;max-width:100%;height:26px;min-height:26px;
   padding:0 24px 0 7px;box-sizing:border-box;
   border:1px solid var(--border);border-radius:5px;
   font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-registry-cost{display:flex;align-items:center;gap:5px;min-width:0}
-.admin-tool-registry-price{display:flex;align-items:center;gap:4px;min-width:0}
-.admin-tool-registry-price input{
-  box-sizing:border-box;width:64px;max-width:100%;height:26px;min-height:26px;
-  padding:0 5px;border:1px solid var(--border);
-  border-radius:5px;font-size:12px;background:#fff;color:var(--text)
-}
-.admin-tool-registry-price span{font-size:12px;color:var(--text-secondary)}
+.admin-tool-tariff{display:flex;align-items:center;gap:7px;min-width:0}
 .admin-tool-register-table :is(input,select):disabled{opacity:.55}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
