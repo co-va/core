@@ -54,10 +54,10 @@ button,input,select,textarea{font:inherit}
 .admin-preview-shell{width:min(100%,920px);height:min(92vh,920px);display:grid;grid-template-rows:56px minmax(0,1fr);background:var(--white);border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.28)}
 .admin-preview-head{display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line)}
 .admin-preview-frame{width:100%;height:100%;border:0;background:var(--app-bg)}
-.admin-mode-card{display:grid;gap:5px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-soft)}.admin-mode-card strong{font-size:18px}.admin-mode-card span{font-size:12px;color:var(--muted)}
+
 .admin-inline-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.admin-capability-order-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;border-bottom:1px solid var(--border)}.admin-capability-order-row.is-dragging{opacity:.45}
-.admin-capability-control .admin-capability{border-bottom:0}
+
+
 .admin-activity-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .admin-activity-summary>div{padding:10px;border:1px solid var(--border);border-radius:10px}.admin-activity-summary span,.admin-activity-summary strong{display:block}.admin-activity-summary span{font-size:11px;color:var(--muted);margin-bottom:4px}.admin-activity-summary strong{font-size:13px}
 .admin-activity-timeline{margin-top:14px;border-left:2px solid var(--border);padding-left:14px}.admin-activity-event{position:relative;padding:0 0 14px}.admin-activity-event::before{content:"";position:absolute;left:-20px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--surface-dark)}.admin-activity-event time{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.admin-activity-event div{font-size:13px}
@@ -224,31 +224,8 @@ button,input,select,textarea{font:inherit}
 }
 
 
-/* Canonical Shared Q and X own mobile overlays; nested Admin dialogs are content only. */
-.admin-access-q,.admin-delete-x{
-  
-  --v2-ink:var(--text);
-  
-}
-.admin-access-q .admin-drawer{
-  width:100%;max-width:none;height:auto;min-height:0;max-height:none;
-  padding:0;border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent
-}
-.admin-access-q .admin-drawer-head{margin:0 0 14px}
-.admin-access-q .admin-drawer-head h3{font-size:20px}
-.admin-access-q .admin-drawer-head p{font-size:12px;overflow-wrap:anywhere}
-.admin-access-q .admin-section{padding-top:17px;margin-top:17px}
-.admin-access-q .admin-capability{grid-template-columns:minmax(0,1fr) auto}
-.admin-access-q .admin-actions{
-  position:sticky;bottom:0;z-index:4;
-  display:grid;grid-template-columns:minmax(0,1fr);gap:8px;
-  margin-top:22px;padding:12px 0 calc(4px + env(safe-area-inset-bottom));
-  border-top:1px solid var(--border);background:var(--white)
-}
-.admin-access-q .admin-actions [data-save]{order:-1}
-.admin-access-q .admin-actions .admin-button{width:100%;min-height:48px}
-.admin-access-q .admin-admin-field,.admin-access-q .admin-field{min-width:0}
-.admin-access-q .admin-field :is(input,textarea,select){max-width:100%;min-width:0;font-size:16px;border-radius:0}
+/* Q and document-style account dialogs share the canonical V2 shell. */
+.admin-delete-x{--v2-ink:var(--text)}
 .admin-delete-x.modal-sheet.v2-layer--bottom{
   box-sizing:border-box;height:auto;min-height:0;max-height:75%;
   padding:26px 18px calc(22px + env(safe-area-inset-bottom))
@@ -296,7 +273,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-field input,.admin-field select,.admin-field textarea,.admin-limit{
   background:var(--white);border-color:var(--border)
 }
-.admin-drawer .admin-actions,.admin-access-q .admin-actions{background:var(--white)}
+.admin-drawer .admin-actions{background:var(--white)}
 @media(max-width:760px){
   .admin-mobile-app .v2-z{background:var(--app-bg)}
   .admin-mobile-app .admin-content{background:transparent}
@@ -308,7 +285,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-mobile-app .admin-card{border-radius:var(--radius-card)}
   .admin-mobile-app .admin-tool-mark{border-color:var(--border)}
-  .admin-access-q .modal-sheet{background:var(--white)}
+  
 }
 /* Account and document readers use the same document drawer surface, fixed header
    and scrollable body. Only the content layout differs. */
