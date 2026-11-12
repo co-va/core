@@ -137,7 +137,7 @@ for (const kind of [
   if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
 }
 for (const rule of [
-  '.admin-tool-register-card{margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden}',
+  '.admin-tool-register-card{',,
   '.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed',
   '.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}',
   '.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}',
@@ -162,11 +162,29 @@ if (!ui.includes("node.closest('.admin-tool-register-table')") ||
     !ui.includes("toolStatus(item, byKey, true)")) {
   throw new Error('Group readiness labels must fit inside the 65px status column');
 }
-if (!ui.includes("table.querySelectorAll('[data-tool-expand]').forEach((button) => {") ||
+if (!ui.includes("section.querySelectorAll('[data-tool-expand]').forEach((button) => {") ||
     !ui.includes("const expand = event.currentTarget.getAttribute('aria-expanded') !== 'true'") ||
-    !ui.includes('syncToolHierarchy(table);') ||
-    !ui.includes('expandButtons.every((button) => button.getAttribute(\'aria-expanded\') === \'true\')')) {
-  throw new Error('Per-table all expand/collapse must synchronize all nested toggles');
+    !ui.includes('syncToolHierarchy(section);') ||
+    !ui.includes("expandButtons.every((button) => button.getAttribute('aria-expanded') === 'true')")) {
+  throw new Error('Per-section expand/collapse must synchronize nested toggles and the sticky header');
+}
+for (const constraint of [
+  'admin-tool-register-sticky',
+  'admin-tool-register-head-scroll',
+  'admin-tool-register-head-table',
+  'admin-tool-register-body-table',
+  'const columns =',
+  'headScroll.scrollLeft = bodyScroll.scrollLeft',
+]) {
+  if (!ui.includes(constraint)) throw new Error('Sticky header missing or not horizontally synchronized: ' + constraint);
+}
+for (const rule of [
+  '.admin-tool-register-sticky{',
+  'position:sticky;top:0;z-index:3;',
+  '.admin-tool-register-head-scroll{',
+  'box-sizing:border-box;width:100%;overflow:hidden;',
+]) {
+  if (!css.includes(rule)) throw new Error('Per-section header cannot remain visible on vertical scroll: ' + rule);
 }
 if (css.includes('.admin-users-section .admin-table th:first-child') ||
     css.includes('.admin-mobile-app .admin-users-section .admin-table')) {
@@ -174,7 +192,7 @@ if (css.includes('.admin-users-section .admin-table th:first-child') ||
 }
 
 // Exercise actual hierarchy visibility logic, including three nested descendants.
-const hierarchyStart = ui.indexOf('function syncToolHierarchy(table) {');
+const hierarchyStart = ui.indexOf('function syncToolHierarchy(section) {');
 const hierarchyEnd = ui.indexOf('\nfunction hydrateInlineCommercial(', hierarchyStart);
 assert.ok(hierarchyStart >= 0 && hierarchyEnd > hierarchyStart, 'Tool hierarchy controller must exist');
 const syncHierarchy = runInNewContext(ui.slice(hierarchyStart, hierarchyEnd) + '\nsyncToolHierarchy');
@@ -193,27 +211,27 @@ const allToggle = makeToggle('all');
 const rows = ['', 'root', 'root child', 'root child nested', 'other'].map((ancestors) => ({
   dataset: { toolAncestors: ancestors }, hidden: false,
 }));
-const table = {
+const section = {
   querySelectorAll: (selector) =>
     selector === '[data-tool-expand]' ? [rootToggle, childToggle, nestedToggle] :
     selector === '[data-tool-ancestors]' ? rows : [],
   querySelector: (selector) => selector === '[data-tool-expand-all]' ? allToggle : null,
 };
-syncHierarchy(table);
+syncHierarchy(section);
 assert.deepEqual(rows.map((row) => row.hidden), [false, false, false, false, false]);
 assert.equal(allToggle.getAttribute('aria-expanded'), 'true');
 rootToggle.setAttribute('aria-expanded', 'false');
-syncHierarchy(table);
+syncHierarchy(section);
 assert.deepEqual(rows.map((row) => row.hidden), [false, true, true, true, false],
   'A collapsed parent must hide all levels of descendants, not adjacent root tools');
 assert.equal(allToggle.getAttribute('aria-expanded'), 'false');
 rootToggle.setAttribute('aria-expanded', 'true');
 childToggle.setAttribute('aria-expanded', 'false');
-syncHierarchy(table);
+syncHierarchy(section);
 assert.deepEqual(rows.map((row) => row.hidden), [false, false, true, true, false],
   'An inner collapse must preserve its own visible row and hide deeper descendants');
 childToggle.setAttribute('aria-expanded', 'true');
-syncHierarchy(table);
+syncHierarchy(section);
 assert.deepEqual(rows.map((row) => row.hidden), [false, false, false, false, false]);
 assert.equal(allToggle.getAttribute('aria-expanded'), 'true');
 
