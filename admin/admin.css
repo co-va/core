@@ -1032,15 +1032,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Full available card width, like Users. At 860px the six tracks equal the
-   approved 50 / 340 / 50 / 140 / 140 / 140 proportions. At wider widths all
-   tracks scale together; no fixed-width white card or unused right gutter. */
+/* Full available card width, like Users. The original expand/name/type tracks
+   are unchanged; the remaining space is split evenly between Tariff and
+   Readiness, with no unused commercial column. Rows stay exactly 44px. */
 .admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}
 .admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}
 .admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}
 .admin-tool-register-table col.admin-tool-col-status,
-.admin-tool-register-table col.admin-tool-col-tariff,
-.admin-tool-register-table col.admin-tool-col-tariff-tail{width:16.279069768%}
+.admin-tool-register-table col.admin-tool-col-tariff{width:24.418604652%}
 .admin-tool-register-table :is(th,td):first-child,
 .admin-tool-register-table :is(th,td):nth-child(3){
   box-sizing:border-box;width:5.813953488%;min-width:0;max-width:none;
@@ -1051,12 +1050,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:4px 12px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(n+4){
-  box-sizing:border-box;width:16.279069768%;min-width:0;max-width:none;
+  box-sizing:border-box;width:24.418604652%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
-/* One visual Tariff cell spans the two former commercial tracks without
-   shifting Name, Type or Readiness by a single pixel. */
-.admin-tool-register-table :is(th,td)[colspan="2"]{width:32.558139536%}
 .admin-tool-register-table th,
 .admin-tool-register-table td{
   box-sizing:border-box;height:44px;padding:4px 12px;
