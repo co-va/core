@@ -1377,6 +1377,11 @@ function openAccessDrawer(tenantId) {
         .forEach((input) => { input.dataset.current = String(on); });
     });
   });
+  // Capacity input sits inside the parent summary; editing must not collapse it.
+  backdrop.querySelectorAll('.admin-access-inline-limit input').forEach((input) => {
+    input.addEventListener('click', (event) => event.stopPropagation());
+    input.addEventListener('keydown', (event) => event.stopPropagation());
+  });
 
   backdrop.querySelector('[data-delete-account]')?.addEventListener('click', () => openDeleteTenantModal(tenantId, close));
 
