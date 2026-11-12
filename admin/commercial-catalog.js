@@ -104,6 +104,18 @@ export const TOOL_MAP = Object.freeze({
   ],
 });
 
+// The product on the right is a commercial condition for an existing tool row,
+// not an additional tool or an independently rendered list.
+export const TOOL_COMMERCIAL_BINDINGS = Object.freeze({
+  'cabinet.profile.workspaces': 'capacity.workplace.extra',
+  'cabinet.finance': 'folder.finance',
+  'cabinet.finance.cash': 'tool.finance.cash',
+  'cabinet.finance.dds': 'tool.finance.dds',
+  'cabinet.finance.cash.investments': 'tool.finance.investment',
+  'cabinet.finance.z-report': 'tool.finance.z-report',
+  'cabinet.inventory': 'tool.inventory',
+});
+
 // Binding to the existing capability model. Catalog hierarchy and labels stay owned by TOOL_MAP.
 export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.people': ['people.access'],
