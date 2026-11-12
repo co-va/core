@@ -54,10 +54,10 @@ button,input,select,textarea{font:inherit}
 .admin-preview-shell{width:min(100%,920px);height:min(92vh,920px);display:grid;grid-template-rows:56px minmax(0,1fr);background:var(--white);border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.28)}
 .admin-preview-head{display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line)}
 .admin-preview-frame{width:100%;height:100%;border:0;background:var(--app-bg)}
-.admin-mode-card{display:grid;gap:5px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-soft)}.admin-mode-card strong{font-size:18px}.admin-mode-card span{font-size:12px;color:var(--muted)}
+
 .admin-inline-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.admin-capability-order-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;border-bottom:1px solid var(--border)}.admin-capability-order-row.is-dragging{opacity:.45}
-.admin-capability-control .admin-capability{border-bottom:0}
+
+
 .admin-activity-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .admin-activity-summary>div{padding:10px;border:1px solid var(--border);border-radius:10px}.admin-activity-summary span,.admin-activity-summary strong{display:block}.admin-activity-summary span{font-size:11px;color:var(--muted);margin-bottom:4px}.admin-activity-summary strong{font-size:13px}
 .admin-activity-timeline{margin-top:14px;border-left:2px solid var(--border);padding-left:14px}.admin-activity-event{position:relative;padding:0 0 14px}.admin-activity-event::before{content:"";position:absolute;left:-20px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--surface-dark)}.admin-activity-event time{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.admin-activity-event div{font-size:13px}
@@ -224,31 +224,8 @@ button,input,select,textarea{font:inherit}
 }
 
 
-/* Canonical Shared Q and X own mobile overlays; nested Admin dialogs are content only. */
-.admin-access-q,.admin-delete-x{
-  
-  --v2-ink:var(--text);
-  
-}
-.admin-access-q .admin-drawer{
-  width:100%;max-width:none;height:auto;min-height:0;max-height:none;
-  padding:0;border:0;border-radius:0;box-shadow:none;overflow:visible;background:transparent
-}
-.admin-access-q .admin-drawer-head{margin:0 0 14px}
-.admin-access-q .admin-drawer-head h3{font-size:20px}
-.admin-access-q .admin-drawer-head p{font-size:12px;overflow-wrap:anywhere}
-.admin-access-q .admin-section{padding-top:17px;margin-top:17px}
-.admin-access-q .admin-capability{grid-template-columns:minmax(0,1fr) auto}
-.admin-access-q .admin-actions{
-  position:sticky;bottom:0;z-index:4;
-  display:grid;grid-template-columns:minmax(0,1fr);gap:8px;
-  margin-top:22px;padding:12px 0 calc(4px + env(safe-area-inset-bottom));
-  border-top:1px solid var(--border);background:var(--white)
-}
-.admin-access-q .admin-actions [data-save]{order:-1}
-.admin-access-q .admin-actions .admin-button{width:100%;min-height:48px}
-.admin-access-q .admin-admin-field,.admin-access-q .admin-field{min-width:0}
-.admin-access-q .admin-field :is(input,textarea,select){max-width:100%;min-width:0;font-size:16px;border-radius:0}
+/* Q and document-style account dialogs share the canonical V2 shell. */
+.admin-delete-x{--v2-ink:var(--text)}
 .admin-delete-x.modal-sheet.v2-layer--bottom{
   box-sizing:border-box;height:auto;min-height:0;max-height:75%;
   padding:26px 18px calc(22px + env(safe-area-inset-bottom))
@@ -296,7 +273,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-field input,.admin-field select,.admin-field textarea,.admin-limit{
   background:var(--white);border-color:var(--border)
 }
-.admin-drawer .admin-actions,.admin-access-q .admin-actions{background:var(--white)}
+.admin-drawer .admin-actions{background:var(--white)}
 @media(max-width:760px){
   .admin-mobile-app .v2-z{background:var(--app-bg)}
   .admin-mobile-app .admin-content{background:transparent}
@@ -308,13 +285,122 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-mobile-app .admin-card{border-radius:var(--radius-card)}
   .admin-mobile-app .admin-tool-mark{border-color:var(--border)}
-  .admin-access-q .modal-sheet{background:var(--white)}
+  
 }
+/* Account and document readers use one common document drawer surface, header,
+   scroll region and buttons. Only the account CONTENT layout is specific. */
+.admin-access-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.admin-access-summary .admin-overview-metric.admin-access-summary-card{
+  box-sizing:border-box;min-height:126px;padding:16px 18px;cursor:default;
+  background:var(--surface-dark);border-color:var(--surface-dark);color:var(--white);
+  box-shadow:none;transition:none
+}
+.admin-access-summary .admin-access-summary-card:hover{transform:none;box-shadow:none}
+.admin-access-summary-card .admin-overview-metric-label{font-size:12px;color:var(--admin-pearl);font-weight:650}
+.admin-access-summary-value{display:block;margin-top:12px;font-size:25px;line-height:1.15;letter-spacing:-.025em}
+.admin-access-summary-detail{font-size:11px;color:var(--admin-pearl);margin-top:auto;padding-top:10px}
+.admin-access-role-toggle{position:absolute;right:16px;bottom:16px;border:1px solid var(--white)}
+.admin-access-role-toggle:not(.is-on){background:var(--admin-pearl)}
+.admin-access-role-toggle.is-on{background:var(--surface-dark)}
+.admin-access-tools{margin-top:20px;padding-top:17px}
+.admin-access-tools>h4{margin-bottom:12px;font-size:17px}
+.admin-access-tool-category{margin-top:10px}
+.admin-access-tool-head,.admin-access-tool-row{
+  box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1fr) 140px 66px;
+  align-items:center;column-gap:12px;min-width:0
+}
+.admin-access-tool-head{
+  padding:9px 0;border-bottom:1px solid var(--admin-pearl);
+  font-size:12px;font-weight:700;color:var(--text-secondary)
+}
+.admin-access-tool-head>span:nth-child(2){text-align:center}
+.admin-access-tool-head>span:nth-child(3){text-align:right}
+.admin-access-tool-row{
+  min-height:43px;padding:7px 0;border-bottom:1px solid var(--admin-pearl);
+  color:var(--text);font-size:13px
+}
+.admin-access-tool-row.is-unavailable .admin-access-tool-grant{opacity:.5}
+.admin-access-tool-identity{display:flex;position:relative;align-items:center;gap:8px;min-width:0}
+.admin-access-tool-row[data-tool-depth="1"] .admin-access-tool-identity{padding-left:20px}
+.admin-access-tool-row[data-tool-depth="2"] .admin-access-tool-identity{padding-left:40px}
+.admin-access-tool-row[data-tool-depth="3"] .admin-access-tool-identity{padding-left:60px}
+.admin-access-tool-name{display:block;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-access-tool-grant,.admin-access-tool-commercial{
+  display:flex;align-items:center;justify-content:center;min-width:0
+}
+.admin-access-tool-grant{justify-content:flex-end}
+.admin-access-tool-grant .admin-toggle:disabled{opacity:.45;cursor:default}
+.admin-access-tool-grant .admin-toggle,.admin-access-tool-commercial .admin-toggle{flex:0 0 46px}
+.admin-access-tool-commercial{justify-content:center}
+.admin-access-commercial-choice{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.admin-access-commercial-price{font-size:13px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.admin-access-commercial-choice input[type="checkbox"]{width:18px;height:18px;margin:0;accent-color:var(--surface-dark)}
+.admin-access-tool-identity .admin-access-inline-limit{display:flex;flex:0 0 58px}
+.admin-access-tool-identity .admin-limit{
+  box-sizing:border-box;width:58px;height:30px;min-width:0;padding:2px 5px;
+  font-size:12px;text-align:center
+}
+.admin-access-grant-group{display:flex;align-items:center}
+.admin-access-grant-group input[type="hidden"]{display:none}
+.admin-access-tool-group>summary{list-style:none;cursor:pointer}
+.admin-access-tool-group>summary::-webkit-details-marker{display:none}
+.admin-access-tool-group>summary::marker{content:""}
+.admin-access-tool-group>summary .admin-access-tool-identity::before{
+  content:"⌄";position:absolute;left:-17px;top:50%;
+  display:block;width:14px;text-align:center;margin:0;
+  color:var(--text-secondary);font-size:12px;transform:translateY(-50%)
+}
+.admin-access-tool-group:not([open])>summary .admin-access-tool-identity::before{
+  transform:translateY(-50%) rotate(-90deg)
+}
+.admin-access-tool-group-body{padding-left:0}
+.admin-access-tool-conditions{
+  margin:22px 0 0;padding:17px 0 0;border-top:1px solid var(--admin-pearl)
+}
+.admin-access-tool-conditions>h4{margin:0 0 12px;font-size:17px}
+.admin-access-tool-conditions .commercial-tenant-section{min-width:0;gap:12px}
+.admin-access-tool-conditions .commercial-tenant-extra{min-width:0}
+.admin-access-tool-conditions .commercial-tenant-fields{
+  display:grid;grid-template-columns:minmax(0,110px) minmax(0,1fr) auto;
+  gap:10px;align-items:end
+}
+.admin-access-tool-conditions .commercial-tenant-quote span{border-color:var(--admin-pearl)}
+.admin-access-tool-conditions .commercial-tenant-details{border-top-color:var(--admin-pearl)}
+.admin-access-tool-conditions .commercial-tenant-history-row{border-top-color:var(--admin-pearl)}
+.admin-access-tool-conditions .commercial-tenant-extra>.admin-access-tool-row{border-bottom-color:var(--admin-pearl)}
+.admin-access-save-actions{margin-top:16px}
+.admin-access-account-actions>.admin-inline-actions{padding:4px 0 8px;justify-content:flex-start}
+.admin-access-email>.admin-form{padding:4px 0 12px}
+.admin-access-email .admin-form>.admin-button{width:auto;justify-self:start}
+.admin-access-drawer .admin-inline-actions>.admin-button{width:auto;flex:0 0 auto}
+@media(max-width:760px){
+  .admin-access-summary{gap:8px}
+  .admin-access-summary .admin-overview-metric.admin-access-summary-card{
+    min-height:116px;padding:12px
+  }
+  .admin-access-summary-value{font-size:19px}
+  .admin-access-role-toggle{right:9px;bottom:10px}
+  .admin-access-tool-head,.admin-access-tool-row{
+    grid-template-columns:minmax(0,1fr) 108px 50px;column-gap:5px
+  }
+  .admin-access-tool-row[data-tool-depth="1"] .admin-access-tool-identity{padding-left:12px}
+  .admin-access-tool-row[data-tool-depth="2"] .admin-access-tool-identity{padding-left:24px}
+  .admin-access-tool-row[data-tool-depth="3"] .admin-access-tool-identity{padding-left:36px}
+  .admin-access-commercial-choice{gap:5px}
+  .admin-access-commercial-price{font-size:12px}
+  .admin-access-tool-conditions .commercial-tenant-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .admin-access-tool-conditions .commercial-tenant-fields>.commercial-toggle{grid-column:1/-1;justify-self:start}
+}
+
 /* Platform Admin overview — scoped to this section, preserving the existing shell. */
 .admin-overview{display:grid;gap:16px;min-width:0}
 .admin-overview .admin-overview-heading{margin-bottom:4px}
 .admin-overview-heading h2{font-size:30px;letter-spacing:-.04em}
 .admin-overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.admin-overview-tariff-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.admin-overview-tariff-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:13px 0 8px}
+.admin-overview-tariff-controls .admin-field{min-width:150px}
+.admin-overview-tariff-list{max-height:270px}
 .admin-overview-metric{position:relative;min-width:0;min-height:149px;padding:18px 20px 16px;display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;background:var(--white);border:1px solid var(--border);border-radius:18px;color:#18191A;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.045);transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
 .admin-overview-metric.is-primary{background:#F5F5F3}
 .admin-overview-metric:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.1)}
@@ -383,7 +469,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-person-status span{margin-left:7px;font-size:15px}
 .admin-overview-person:hover{background:#F7F7F5}
 .admin-overview-empty{padding:8px 0;color:#777;font-size:13px}
-@media(max-width:1100px){.admin-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-overview-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1100px){.admin-overview-metrics,.admin-overview-tariff-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-overview-layout{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){
   .admin-mobile-app .admin-overview{gap:11px;padding:14px 12px 22px}
   .admin-mobile-app .admin-overview-heading{display:none}
@@ -946,26 +1032,33 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Full available card width, like Users. At 860px the six tracks equal the
-   approved 50 / 340 / 50 / 140 / 140 / 140 proportions. At wider widths all
-   tracks scale together; no fixed-width white card or unused right gutter. */
-.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}
-.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}
-.admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}
-.admin-tool-register-table col.admin-tool-col-status,
-.admin-tool-register-table col.admin-tool-col-payment,
-.admin-tool-register-table col.admin-tool-col-price{width:16.279069768%}
-.admin-tool-register-table :is(th,td):first-child,
-.admin-tool-register-table :is(th,td):nth-child(3){
-  box-sizing:border-box;width:5.813953488%;min-width:0;max-width:none;
-  padding:4px 0;text-align:center
+/* Approved five-column layout: distinct content zones separated by
+   deliberate free space, as indicated in the Admin reference screenshot.
+   Shared by Professional and User. Header/body tracks remain identical;
+   existing 44px row heights and horizontal scrolling remain unchanged. */
+.admin-tool-register-table col.admin-tool-col-expand{width:13%}
+.admin-tool-register-table col.admin-tool-col-name{width:32%}
+.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}
+.admin-tool-register-table col.admin-tool-col-tariff{width:20%}
+.admin-tool-register-table col.admin-tool-col-status{width:21.5%}
+.admin-tool-register-table :is(th,td):first-child{
+  box-sizing:border-box;width:13%;min-width:0;max-width:none;
+  padding:4px 0;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(2){
-  box-sizing:border-box;width:39.534883721%;min-width:0;max-width:none;
-  padding:4px 12px;text-align:left
+  box-sizing:border-box;width:32%;min-width:0;max-width:none;
+  padding:4px 8px;text-align:left
 }
-.admin-tool-register-table :is(th,td):nth-child(n+4){
-  box-sizing:border-box;width:16.279069768%;min-width:0;max-width:none;
+.admin-tool-register-table :is(th,td):nth-child(3){
+  box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
+  padding:4px 0 4px 22px;text-align:left
+}
+.admin-tool-register-table :is(th,td):nth-child(4){
+  box-sizing:border-box;width:20%;min-width:0;max-width:none;
+  padding-inline:8px;text-align:left
+}
+.admin-tool-register-table :is(th,td):nth-child(5){
+  box-sizing:border-box;width:21.5%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
@@ -997,6 +1090,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
   width:20px;height:22px;padding:0;border:0;
   background:transparent;color:var(--text);font-size:18px;cursor:pointer
 }
+.admin-tool-register-table .admin-tool-registry-expand{
+  margin:0 0 0 32px
+}
+.admin-tool-register-table .admin-tool-registry-kind{text-align:left}
 .admin-tool-registry-expand[aria-expanded="false"]{transform:rotate(-90deg)}
 .admin-tool-register-table .admin-tool-registry-expand-header{padding:4px 0;text-align:center}
 .admin-tool-registry-expand-cell,
@@ -1015,20 +1112,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:0 24px 0 7px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-register-table [data-commercial-mode]{
+.admin-tool-register-table [data-tool-tariff]{
   width:110px;max-width:100%;height:26px;min-height:26px;
   padding:0 24px 0 7px;box-sizing:border-box;
   border:1px solid var(--border);border-radius:5px;
   font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-registry-cost{display:flex;align-items:center;gap:5px;min-width:0}
-.admin-tool-registry-price{display:flex;align-items:center;gap:4px;min-width:0}
-.admin-tool-registry-price input{
-  box-sizing:border-box;width:64px;max-width:100%;height:26px;min-height:26px;
-  padding:0 5px;border:1px solid var(--border);
-  border-radius:5px;font-size:12px;background:#fff;color:var(--text)
-}
-.admin-tool-registry-price span{font-size:12px;color:var(--text-secondary)}
+.admin-tool-tariff{display:flex;align-items:center;gap:7px;min-width:0}
 .admin-tool-register-table :is(input,select):disabled{opacity:.55}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
@@ -1054,6 +1144,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
   }
   .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(2){
     padding:4px 12px!important
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(3){
+    padding-left:22px!important
   }
   .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(n+4){
     padding-inline:8px!important

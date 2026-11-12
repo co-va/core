@@ -3,6 +3,7 @@ import { captureOwnedState, restoreOwnedState, TransferState } from '../data-tra
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { effectiveSupplierOfferPrice, resolveInventoryBasePricing, supplierOfferUnitPrice } from './inventory-pricing';
 
 type AnyRecord = Record<string, any>;
 type Tx = AnyRecord;
@@ -15,6 +16,7 @@ type PreparedLine = {
   expectedQuantity: number | null;
   actualQuantity: number | null;
   supplier: string;
+  offerId: string;
   listPrice: number | null;
   discountPercent: number | null;
   note: string;
@@ -57,6 +59,23 @@ function nullablePercent(value: unknown): number | null {
   return parsed == null ? null : Math.min(100, parsed);
 }
 
+function optionalOfferAmount(value: unknown, label: string, maximum = Infinity): number | null {
+  if (value == null || String(value).trim() === '') return null;
+  const parsed = Number(String(value).replace(',', '.'));
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > maximum) {
+    throw new BadRequestException(`${label}: неверное значение`);
+  }
+  return parsed;
+}
+
+function offerPackSize(value: unknown): number {
+  const result = optionalOfferAmount(value, 'Количество в предложении');
+  if (result === null || result <= 0) {
+    throw new BadRequestException('Количество в предложении должно быть больше нуля');
+  }
+  return result;
+}
+
 function dateValue(value: unknown, fallback = new Date()): Date {
   if (!value) return fallback;
   const parsed = new Date(String(value));
@@ -84,6 +103,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
       expectedQuantity: nullableNonNegative(row.expectedQuantity),
       actualQuantity: nullableNonNegative(row.actualQuantity),
       supplier: optionalText(row.supplier),
+      offerId: text(row.offerId),
       listPrice: nullableNonNegative(row.listPrice),
       discountPercent: nullablePercent(row.discountPercent),
       note: optionalText(row.note),
@@ -148,6 +168,9 @@ export class InventoryService {
         listPrice: offer.listPrice == null ? null : decimalNumber(offer.listPrice),
         discountPercent: offer.discountPercent == null ? null : decimalNumber(offer.discountPercent),
         actualPrice: offer.actualPrice == null ? null : decimalNumber(offer.actualPrice),
+        unitsPerOffer: decimalNumber(offer.unitsPerOffer) || 1,
+        effectivePrice: effectiveSupplierOfferPrice(offer),
+        unitPrice: supplierOfferUnitPrice(offer),
         supplierSku: offer.supplierSku,
         note: offer.note,
       });
@@ -179,6 +202,8 @@ export class InventoryService {
       items: items.map((item: AnyRecord) => {
         const grossWeight = item.grossWeight == null ? null : decimalNumber(item.grossWeight);
         const tareWeight = item.tareWeight == null ? null : decimalNumber(item.tareWeight);
+        const itemOffers = offersByItem.get(item.id) || [];
+        const basePricing = resolveInventoryBasePricing(item, itemOffers);
         return {
           itemId: item.itemId,
           name: item.name,
@@ -196,8 +221,11 @@ export class InventoryService {
           grossWeight,
           tareWeight,
           netPackageWeight: grossWeight != null && tareWeight != null ? Math.max(0, grossWeight - tareWeight) : null,
+          referencePrice: item.referencePrice == null ? null : decimalNumber(item.referencePrice),
+          primaryOfferId: item.primaryOfferId || null,
+          ...basePricing,
           lastPurchasePrice: item.lastPurchasePrice == null ? null : decimalNumber(item.lastPurchasePrice),
-          supplierOffers: offersByItem.get(item.id) || [],
+          supplierOffers: itemOffers,
           trackLots: item.trackLots,
           canConsume: item.canConsume,
           canSell: item.canSell,
@@ -272,6 +300,7 @@ export class InventoryService {
           packageQuantity: nullableNonNegative(source.packageQuantity),
           grossWeight,
           tareWeight,
+          referencePrice: optionalOfferAmount(source.referencePrice, 'Базовая цена'),
           lastPurchasePrice: purchasePrice,
           trackLots: source.trackLots !== false,
           canConsume: source.canConsume !== false,
@@ -315,13 +344,26 @@ export class InventoryService {
       if (!name) throw new BadRequestException('Укажите наименование позиции');
       data.name = name;
     }
-    if ('unit' in source) data.unit = text(source.unit) || current.unit;
+    if ('unit' in source) {
+      const nextUnit = text(source.unit) || current.unit;
+      if (nextUnit !== current.unit) {
+        const existingMovement = await owner.inventoryMovementLine.findFirst({
+          where: { tenantId, inventoryItemId: current.id },
+          select: { id: true },
+        });
+        if (existingMovement) {
+          throw new BadRequestException('Единицу учёта нельзя менять после складских движений');
+        }
+      }
+      data.unit = nextUnit;
+    }
     for (const key of ['manufacturer', 'productType', 'category', 'sku', 'barcode', 'location', 'supplier'] as const) {
       if (key in source) data[key] = optionalText(source[key]);
     }
     for (const key of ['minStock', 'targetStock', 'packageQuantity', 'grossWeight', 'tareWeight', 'lastPurchasePrice'] as const) {
       if (key in source) data[key] = nullableNonNegative(source[key]);
     }
+    if ('referencePrice' in source) data.referencePrice = optionalOfferAmount(source.referencePrice, 'Базовая цена');
     const grossWeight = 'grossWeight' in data ? data.grossWeight : (current.grossWeight == null ? null : decimalNumber(current.grossWeight));
     const tareWeight = 'tareWeight' in data ? data.tareWeight : (current.tareWeight == null ? null : decimalNumber(current.tareWeight));
     if (grossWeight != null && tareWeight != null && tareWeight > grossWeight) {
@@ -335,6 +377,99 @@ export class InventoryService {
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
     return db ? { itemId } : this.snapshot(tenantId);
+  }
+
+  private async findCatalogItem(owner: Tx | PrismaService, tenantId: string, itemId: string) {
+    const item = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
+    if (!item) throw new NotFoundException('Продукт не найден');
+    return item;
+  }
+
+  async createSupplierOffer(tenantId: string, itemId: string, body: unknown) {
+    const source = objectValue(body);
+    const supplier = text(source.supplier);
+    if (!supplier) throw new BadRequestException('Укажите место покупки или поставщика');
+    const item = await this.findCatalogItem(this.prisma, tenantId, itemId);
+    await this.prisma.inventorySupplierOffer.create({
+      data: {
+        tenantId,
+        inventoryItemId: item.id,
+        offerId: randomUUID(),
+        supplier,
+        listPrice: optionalOfferAmount(source.listPrice, 'Цена по прайсу'),
+        discountPercent: optionalOfferAmount(source.discountPercent, 'Скидка', 100),
+        actualPrice: optionalOfferAmount(source.actualPrice, 'Цена покупки'),
+        unitsPerOffer: source.unitsPerOffer == null ? 1 : offerPackSize(source.unitsPerOffer),
+        supplierSku: optionalText(source.supplierSku),
+        note: optionalText(source.note),
+        isActive: true,
+      },
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async updateSupplierOffer(tenantId: string, itemId: string, offerId: string, body: unknown) {
+    const item = await this.findCatalogItem(this.prisma, tenantId, itemId);
+    const offer = await this.prisma.inventorySupplierOffer.findFirst({
+      where: { tenantId, inventoryItemId: item.id, offerId, isActive: true },
+    });
+    if (!offer) throw new NotFoundException('Предложение поставщика не найдено');
+    const source = objectValue(body);
+    const data: AnyRecord = {};
+    if ('supplier' in source) {
+      const supplier = text(source.supplier);
+      if (!supplier) throw new BadRequestException('Укажите место покупки или поставщика');
+      data.supplier = supplier;
+    }
+    if ('listPrice' in source) data.listPrice = optionalOfferAmount(source.listPrice, 'Цена по прайсу');
+    if ('discountPercent' in source) data.discountPercent = optionalOfferAmount(source.discountPercent, 'Скидка', 100);
+    if ('actualPrice' in source) data.actualPrice = optionalOfferAmount(source.actualPrice, 'Цена покупки');
+    if ('unitsPerOffer' in source) data.unitsPerOffer = offerPackSize(source.unitsPerOffer);
+    if ('supplierSku' in source) data.supplierSku = optionalText(source.supplierSku);
+    if ('note' in source) data.note = optionalText(source.note);
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.inventorySupplierOffer.update({ where: { id: offer.id }, data });
+      if (item.primaryOfferId === offerId && data.supplier !== undefined) {
+        await tx.inventoryItem.update({ where: { id: item.id }, data: { supplier: data.supplier } });
+      }
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async archiveSupplierOffer(tenantId: string, itemId: string, offerId: string) {
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const item = await this.findCatalogItem(tx, tenantId, itemId);
+      const offer = await tx.inventorySupplierOffer.findFirst({
+        where: { tenantId, inventoryItemId: item.id, offerId, isActive: true },
+      });
+      if (!offer) throw new NotFoundException('Предложение поставщика не найдено');
+      await tx.inventorySupplierOffer.update({ where: { id: offer.id }, data: { isActive: false } });
+      if (item.primaryOfferId === offerId) {
+        await tx.inventoryItem.update({ where: { id: item.id }, data: { primaryOfferId: null } });
+      }
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async setPrimarySupplierOffer(tenantId: string, itemId: string, body: unknown) {
+    const source = objectValue(body);
+    if (!('offerId' in source)) throw new BadRequestException('Укажите предложение поставщика');
+    const offerId = text(source.offerId);
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const item = await this.findCatalogItem(tx, tenantId, itemId);
+      const offer = offerId ? await tx.inventorySupplierOffer.findFirst({
+        where: { tenantId, inventoryItemId: item.id, offerId, isActive: true },
+      }) : null;
+      if (offerId && !offer) throw new NotFoundException('Предложение поставщика не найдено');
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          primaryOfferId: offerId || null,
+          ...(offer ? { supplier: offer.supplier } : {}),
+        },
+      });
+    });
+    return this.snapshot(tenantId);
   }
 
   async createMovement(tenantId: string, body: unknown) {
@@ -651,6 +786,14 @@ export class InventoryService {
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
 
+    const selectedOfferIds = [...new Set(lines
+      .filter((line) => line.direction === 'IN' && line.offerId && !raw.historicalTransfer)
+      .map((line) => line.offerId))];
+    const selectedOffers = selectedOfferIds.length ? await tx.inventorySupplierOffer.findMany({
+      where: { tenantId, isActive: true, offerId: { in: selectedOfferIds } },
+    }) : [];
+    const offerById = new Map((selectedOffers as AnyRecord[]).map((offer) => [offer.offerId, offer]));
+
     const movement = await tx.inventoryMovement.create({
       data: {
         tenantId,
@@ -677,7 +820,19 @@ export class InventoryService {
       affectedInternalIds.add(item.id);
 
       if (line.direction === 'IN') {
-        const unitCost = line.unitCost ?? (raw.historicalTransfer ? 0 : decimalNumber(item.lastPurchasePrice));
+        const offer = line.offerId && !raw.historicalTransfer ? offerById.get(line.offerId) : null;
+        if (line.offerId && !raw.historicalTransfer && (!offer || offer.inventoryItemId !== item.id)) {
+          throw new BadRequestException('Предложение не принадлежит выбранному продукту');
+        }
+        // Purchase quantities and costs are always expressed in this item's stock unit.
+        // User-supplied actual cost wins; the selected offer supplies only a default.
+        const offerUnitPrice = offer ? supplierOfferUnitPrice(offer) : null;
+        const unitCost = line.unitCost ?? offerUnitPrice ?? (raw.historicalTransfer ? 0 : decimalNumber(item.lastPurchasePrice));
+        const packSize = offer ? decimalNumber(offer.unitsPerOffer) || 1 : 1;
+        const offeredListPrice = offer?.listPrice == null ? null : decimalNumber(offer.listPrice) / packSize;
+        const lotListPrice = line.listPrice ?? offeredListPrice;
+        const lotDiscount = line.discountPercent ?? (offer?.discountPercent == null ? null : decimalNumber(offer.discountPercent));
+        const lotSupplier = line.supplier || offer?.supplier || optionalText(raw.supplier) || item.supplier;
         const lineRow = await tx.inventoryMovementLine.create({
           data: {
             tenantId,
@@ -704,11 +859,11 @@ export class InventoryService {
             quantityReceived: line.quantity,
             quantityRemaining: line.quantity,
             unitCost,
-            listPrice: line.listPrice,
-            discountPercent: line.discountPercent,
+            listPrice: lotListPrice,
+            discountPercent: lotDiscount,
             receivedAt: movement.occurredAt,
             expiresAt: raw.expiresAt ? dateValue(raw.expiresAt) : null,
-            supplier: line.supplier || optionalText(raw.supplier) || item.supplier,
+            supplier: lotSupplier,
             note: line.note,
           },
         });

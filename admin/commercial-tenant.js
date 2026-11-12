@@ -1,6 +1,5 @@
 import { apiRequest } from '../core/auth.js';
 
-let pendingTenantId = '';
 const enhancedDrawers = new WeakSet();
 
 function escapeHtml(value) {
@@ -106,13 +105,27 @@ function auditRows(events) {
 }
 
 function selectedProductKeys(section) {
-  return [...section.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')]
+  const drawer = section.closest('.admin-access-drawer') || section;
+  return [...drawer.querySelectorAll('[data-commercial-tenant-product]:checked')]
     .map((button) => button.dataset.commercialTenantProduct)
     .filter(Boolean);
 }
 
+function commercialProductSwitch(product) {
+  // Commercial selection is a checkbox, not a second identical access switch.
+  // Use the existing Admin checkbox UI; access remains the rightmost toggle.
+  return '<label class="admin-access-commercial-choice">' +
+    '<input type="checkbox" data-commercial-tenant-product="' + escapeHtml(product.key) +
+    '" data-price-minor="' + escapeHtml(product.priceMinor) +
+    '" aria-label="Включить в оплату: ' + escapeHtml(product.name) + '"' +
+    (product.selected ? ' checked' : '') + '>' +
+    '<span class="admin-access-commercial-price">' + escapeHtml(rubles(product.priceMinor)) + '</span>' +
+    '</label>';
+}
+
 function updateQuote(section) {
-  const selected = [...section.querySelectorAll('[data-commercial-tenant-product][aria-pressed="true"]')];
+  const drawer = section.closest('.admin-access-drawer') || section;
+  const selected = [...drawer.querySelectorAll('[data-commercial-tenant-product]:checked')];
   const subtotal = selected.reduce((sum, button) => sum + Number(button.dataset.priceMinor || 0), 0);
   const discountControl = section.querySelector('[data-commercial-tenant-discount]');
   const freeForever = section.querySelector('[data-commercial-tenant-free]')?.getAttribute('aria-pressed') === 'true';
@@ -179,17 +192,10 @@ function bindOrderActions(section, tenantId) {
   });
 }
 
-async function enhanceDrawer(drawer, tenantId) {
-  if (!drawer || enhancedDrawers.has(drawer) || !tenantId) return;
-  enhancedDrawers.add(drawer);
-
-  const anchor = [...drawer.querySelectorAll('.admin-section')].find((section) => section.querySelector('h4')?.textContent.trim() === 'Состояние пространства');
-  if (!anchor) return;
-
-  const section = document.createElement('section');
-  section.className = 'admin-section commercial-tenant-section';
-  section.innerHTML = '<h4>Коммерческие условия</h4><p class="admin-service-note">Загружаем…</p>';
-  anchor.before(section);
+export async function enhanceCommercialTenantTools(section, tenantId) {
+  if (!section || enhancedDrawers.has(section) || !tenantId) return;
+  enhancedDrawers.add(section);
+  section.innerHTML = '<p class="admin-service-note">Загружаем условия…</p>';
 
   try {
     const [commercial, orders] = await Promise.all([
@@ -197,12 +203,23 @@ async function enhanceDrawer(drawer, tenantId) {
       request(`/${encodeURIComponent(tenantId)}/orders`),
     ]);
     const products = Array.isArray(commercial.products) ? commercial.products : [];
+    const drawer = section.closest('.admin-access-drawer') || section;
+    const extraProducts = [];
+    for (const product of products) {
+      const slot = drawer.querySelector('[data-commercial-slot="' + CSS.escape(product.key) + '"]');
+      if (!slot) {
+        extraProducts.push(product);
+        continue;
+      }
+      slot.innerHTML = commercialProductSwitch(product);
+    }
     section.innerHTML = `
-      <h4>Коммерческие условия</h4>
-      <p class="admin-service-note">Индивидуальная выдача не меняет общий каталог. Здесь задаются только условия этого пользователя.</p>
-      <div class="commercial-tenant-products">
-        ${products.map((product) => `<button type="button" class="admin-button secondary commercial-tenant-product" data-commercial-tenant-product="${escapeHtml(product.key)}" data-price-minor="${escapeHtml(product.priceMinor)}" aria-pressed="${product.selected}">${product.selected ? '✓ ' : '+ '}${escapeHtml(product.name)} · ${escapeHtml(rubles(product.priceMinor))}</button>`).join('')}
-      </div>
+      ${extraProducts.length ? '<div class="commercial-tenant-extra">' +
+        extraProducts.map((product) =>
+          '<div class="admin-access-tool-row"><span class="admin-access-tool-identity">' +
+          escapeHtml(product.name) + '</span><span class="admin-access-tool-grant"></span>' +
+          '<span class="admin-access-tool-commercial">' + commercialProductSwitch(product) +
+          '</span></div>').join('') + '</div>' : ''}
       <div class="commercial-tenant-fields">
         <label class="admin-field"><span>Скидка, %</span><input type="number" min="0" max="100" step="1" value="${escapeHtml(commercial.terms?.discountPercent || 0)}" data-commercial-tenant-discount></label>
         <label class="admin-field"><span>Бесплатно до</span><input type="date" value="${escapeHtml(dateInputValue(commercial.terms?.freeUntil))}" data-commercial-tenant-free-until></label>
@@ -222,14 +239,13 @@ async function enhanceDrawer(drawer, tenantId) {
       <details class="commercial-tenant-details" open><summary>Расчёты и покупки</summary><div data-commercial-tenant-orders>${orderRows(orders)}</div></details>
       <details class="commercial-tenant-details"><summary>История действий</summary>${auditRows(commercial.audit)}</details>`;
 
-    section.querySelectorAll('[data-commercial-tenant-product]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const next = button.getAttribute('aria-pressed') !== 'true';
-        button.setAttribute('aria-pressed', String(next));
-        const name = button.textContent.replace(/^[+✓]\s*/, '');
-        button.textContent = `${next ? '✓' : '+'} ${name}`;
-        updateQuote(section);
-      });
+    drawer.querySelectorAll('.admin-access-commercial-choice').forEach((label) => {
+      // Labels inside a <summary> also trigger the native summary click;
+      // stop bubbling without preventing the checkbox's default activation.
+      label.addEventListener('click', (event) => event.stopPropagation());
+    });
+    drawer.querySelectorAll('[data-commercial-tenant-product]').forEach((input) => {
+      input.addEventListener('change', () => updateQuote(section));
     });
 
     const freeButton = section.querySelector('[data-commercial-tenant-free]');
@@ -297,22 +313,7 @@ async function enhanceDrawer(drawer, tenantId) {
 
     bindOrderActions(section, tenantId);
   } catch (error) {
-    section.innerHTML = `<h4>Коммерческие условия</h4><p class="admin-error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
+    section.innerHTML = `<p class="admin-error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
   }
 }
 
-document.addEventListener('click', (event) => {
-  const row = event.target instanceof Element ? event.target.closest('[data-tenant]') : null;
-  if (row?.dataset.tenant) pendingTenantId = row.dataset.tenant;
-}, true);
-
-const observer = new MutationObserver((mutations) => {
-  for (const mutation of mutations) {
-    for (const node of mutation.addedNodes) {
-      if (!(node instanceof Element)) continue;
-      const drawer = node.matches('.admin-drawer') ? node : node.querySelector('.admin-drawer');
-      if (drawer && pendingTenantId) void enhanceDrawer(drawer, pendingTenantId);
-    }
-  }
-});
-observer.observe(document.body, { childList: true, subtree: true });

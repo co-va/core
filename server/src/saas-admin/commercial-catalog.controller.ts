@@ -19,6 +19,16 @@ export class CommercialCatalogController {
     return this.catalog.catalog();
   }
 
+  @Get('tariffs')
+  tariffs() {
+    return this.catalog.tariffs();
+  }
+
+  @Put('tariffs/assignment')
+  assignTariff(@Req() request: AdminRequest, @Body() body: Record<string, unknown>) {
+    return this.catalog.assignTariff(body || {}, request.platformAdminId!);
+  }
+
   @Put(':key')
   update(
     @Req() request: AdminRequest,

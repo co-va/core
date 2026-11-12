@@ -1,9 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { READINESS_KEYS } from './tool-readiness.service';
 
 type ProductType = 'SYSTEM' | 'TOOL' | 'FOLDER' | 'PACKAGE' | 'CAPACITY' | 'ADDON';
 type ProductReadiness = 'NOT_READY' | 'TESTING' | 'READY';
+
+// Tariffs are packages in the existing commercial catalog, not a second tool registry.
+const TARIFF_KEYS = ['tariff.start', 'tariff.start-plus', 'tariff.pro'] as const;
+const USER_TARIFF_KEYS = ['tariff.records.start', 'tariff.records.start-plus', 'tariff.records.pro'] as const;
+const ALL_TARIFF_KEYS = [...TARIFF_KEYS, ...USER_TARIFF_KEYS] as const;
+type TariffKey = typeof ALL_TARIFF_KEYS[number];
+const TARIFF_TOOL_KEYS = new Set<string>([
+  ...READINESS_KEYS,
+  // Structural F rows are visible Admin instruments but not readiness leaves.
+  'cabinet.journal', 'cabinet.loyalty', 'cabinet.settings',
+  'records.journal', 'records.integrations',
+]);
 
 type CatalogManifestItem = {
   key: string;
@@ -67,6 +80,17 @@ const APP_CATALOG: CatalogManifestItem[] = [
   { key: 'tool.inventory', name: 'Склад', description: 'Позиции, остатки, партии, поставщики и движения склада', type: 'TOOL', position: 400, isSaleable: true, isFree: false, priceMinor: 99900, capabilityKeys: [] },
 
   { key: 'package.full', name: 'Полный пакет', description: 'Единый пакет доступных платных наборов и инструментов', type: 'PACKAGE', position: 900, isSaleable: true, isFree: false, priceMinor: 199900, capabilityKeys: [], includedKeys: ['folder.finance', 'tool.inventory'] },
+
+  // These three existing-model package records are initially not sold by the legacy
+  // per-product checkout. Pricing/selection is prepared without changing live access.
+  { key: 'tariff.start', name: 'Start', description: 'Базовый тариф Professional', type: 'PACKAGE', position: 930, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: [] },
+  { key: 'tariff.start-plus', name: 'Start+', description: 'Расширенный тариф Professional', type: 'PACKAGE', position: 940, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start'] },
+  { key: 'tariff.pro', name: 'Pro', description: 'Максимальный тариф Professional', type: 'PACKAGE', position: 950, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start-plus'] },
+  // User uses exactly the same three-level tier mechanism, with its own
+  // compositions and future prices. No User entitlement is changed here.
+  { key: 'tariff.records.start', name: 'Start', description: 'Тариф User', type: 'PACKAGE', position: 960, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: [] },
+  { key: 'tariff.records.start-plus', name: 'Start+', description: 'Расширенный тариф User', type: 'PACKAGE', position: 970, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.records.start'] },
+  { key: 'tariff.records.pro', name: 'Pro', description: 'Максимальный тариф User', type: 'PACKAGE', position: 980, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.records.start-plus'] },
 ];
 
 function integer(value: unknown, field: string) {
@@ -167,6 +191,118 @@ export class CommercialCatalogService {
           .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
       })),
     };
+  }
+
+  // The three tariff cards use the same CommercialProduct/Inclusion graph as
+  // the existing packages. Direct membership stores the minimum tariff once;
+  // higher tiers inherit through the two package-to-package edges.
+  async tariffs() {
+    const catalog = await this.catalog();
+    const products = catalog.products;
+    const byKey = new Map(products.map((product) => [product.key, product]));
+    const assignments: Record<string, string> = {};
+    for (const tierKey of ALL_TARIFF_KEYS) {
+      for (const child of byKey.get(tierKey)?.includedProducts || []) {
+        if (!ALL_TARIFF_KEYS.includes(child.key as TariffKey)) assignments[child.key] = tierKey;
+      }
+    }
+
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ tenantId: string; tierKey: string | null; entitled: boolean }>>(
+      `SELECT a."tenantId", p."key" AS "tierKey",
+          (COALESCE(t."freeForever",false) OR COALESCE(t."discountPercent",0)=100
+           OR t."freeUntil" >= CURRENT_TIMESTAMP OR t."paidAccessEndsAt" > CURRENT_TIMESTAMP) AS "entitled"
+         FROM "TenantAccess" a
+         LEFT JOIN "CommercialTenantTerms" t ON t."tenantId"=a."tenantId"
+         LEFT JOIN "CommercialTenantProduct" tp ON tp."tenantId"=a."tenantId"
+         LEFT JOIN "CommercialProduct" p ON p."id"=tp."productId" AND p."key" = ANY($1::text[])
+         WHERE a."commercialMode"='LIVE' AND a."isOwnerBook"=false AND a."status"='ACTIVE'`,
+      [...TARIFF_KEYS],
+    );
+    const tenantTier = new Map<string, number>();
+    for (const row of rows) {
+      const index = row.entitled ? TARIFF_KEYS.indexOf(row.tierKey as (typeof TARIFF_KEYS)[number]) : -1;
+      tenantTier.set(row.tenantId, Math.max(tenantTier.get(row.tenantId) ?? 0, index));
+    }
+    const counts = TARIFF_KEYS.map((_, index) => [...tenantTier.values()].filter((value) => value === index).length);
+
+    const expand = (key: string, collected = new Set<string>()): Set<string> => {
+      if (collected.has(key)) return collected;
+      collected.add(key);
+      for (const child of byKey.get(key)?.includedProducts || []) expand(child.key, collected);
+      return collected;
+    };
+    return {
+      tiers: TARIFF_KEYS.map((key, index) => ({
+        key,
+        name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
+        priceMinor: byKey.get(key)?.priceMinor ?? 0,
+        connected: counts[index],
+        tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
+          .map((childKey) => byKey.get(childKey)).filter((item) => item && item.isActive)
+          .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
+      })),
+      userTiers: USER_TARIFF_KEYS.map((key, index) => ({
+        key,
+        name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
+        priceMinor: byKey.get(key)?.priceMinor ?? 0,
+        connected: null, // User subscriptions are not in TenantAccess; never infer a count.
+        tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
+          .map((childKey) => byKey.get(childKey)).filter((item) => item && item.isActive)
+          .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
+      })),
+      assignments,
+    };
+  }
+
+  async assignTariff(input: Record<string, unknown>, actorAdminId: string) {
+    await this.syncAppCatalog();
+    const productKey = text(input.productKey);
+    const minimumTariff = text(input.minimumTariff);
+    const isUser = productKey.startsWith('ui.records.');
+    const eligibleTiers: readonly string[] = isUser ? USER_TARIFF_KEYS : TARIFF_KEYS;
+    if (minimumTariff && !eligibleTiers.includes(minimumTariff)) {
+      throw new BadRequestException('Тариф не относится к этому приложению');
+    }
+    let [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string; type: ProductType }>>(
+      `SELECT "id","type" FROM "CommercialProduct" WHERE "key"=$1 AND "isActive"=true`, productKey,
+    );
+    if (!product && productKey.startsWith('ui.')) {
+      const toolKey = productKey.slice(3);
+      if (!TARIFF_TOOL_KEYS.has(toolKey)) throw new BadRequestException('Неизвестный инструмент');
+      // An F/E/R UI row lacking a standalone paid product is stored in the
+      // EXISTING CommercialProduct catalog, without saleability or capabilities.
+      // It cannot alter an existing account's access or payment configuration.
+      const name = text(input.name).slice(0, 120) || toolKey;
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "CommercialProduct" ("id","key","name","description","type","position","isActive","isSaleable","isFree","priceMinor","currency","source","createdAt","updatedAt")
+         VALUES ($1,$2,$3,'', 'TOOL',850,true,false,false,0,'RUB','ADMIN',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT ("key") DO NOTHING`,
+        randomUUID(), productKey, name,
+      );
+      [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string; type: ProductType }>>(
+        `SELECT "id","type" FROM "CommercialProduct" WHERE "key"=$1 AND "isActive"=true`, productKey,
+      );
+    }
+    if (!product || product.type === 'PACKAGE') throw new BadRequestException('Инструмент не найден');
+    const tiers = await this.prisma.$queryRawUnsafe<Array<{ id: string; key: string }>>(
+      `SELECT "id","key" FROM "CommercialProduct" WHERE "key" = ANY($1::text[])`, eligibleTiers,
+    );
+    if (tiers.length !== eligibleTiers.length) throw new BadRequestException('Тарифы не настроены');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `DELETE FROM "CommercialProductInclusion" WHERE "parentProductId" = ANY($1::text[]) AND "childProductId"=$2`,
+        tiers.map((tier) => tier.id), product.id,
+      );
+      if (minimumTariff) {
+        const parent = tiers.find((tier) => tier.key === minimumTariff)!;
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "CommercialProductInclusion" ("parentProductId","childProductId","position")
+           VALUES ($1,$2,500) ON CONFLICT DO NOTHING`, parent.id, product.id,
+        );
+      }
+    });
+    await this.audit(actorAdminId, 'TARIFF_TOOL_ASSIGNED', 'PRODUCT', product.id, { productKey, minimumTariff });
+    return this.tariffs();
   }
 
   async updateProduct(key: string, input: Record<string, unknown>, actorAdminId: string) {

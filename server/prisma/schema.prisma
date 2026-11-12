@@ -926,6 +926,8 @@ model InventoryItem {
   packageQuantity   Decimal? @db.Decimal(14, 3)
   grossWeight       Decimal? @db.Decimal(14, 3)
   tareWeight        Decimal? @db.Decimal(14, 3)
+  referencePrice    Decimal? @db.Decimal(14, 4)
+  primaryOfferId    String?
   lastPurchasePrice Decimal? @db.Decimal(14, 4)
   trackLots         Boolean  @default(true)
   canConsume        Boolean  @default(true)
@@ -954,6 +956,7 @@ model InventorySupplierOffer {
   listPrice         Decimal? @db.Decimal(14, 4)
   discountPercent   Decimal? @db.Decimal(7, 4)
   actualPrice       Decimal? @db.Decimal(14, 4)
+  unitsPerOffer     Decimal  @default(1) @db.Decimal(14, 3)
   supplierSku       String   @default("")
   note              String   @default("")
   isActive          Boolean  @default(true)

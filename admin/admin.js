@@ -2,7 +2,8 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, TOOL_MAP, TOOL_CAPABILITY_BINDINGS } from './commercial-catalog.js';
+import { renderAdminTools, loadTariffs, updateTariffPrice, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
@@ -522,6 +523,34 @@ let overviewWindowWeeks = 8;
 let overviewDetailGroup = '';
 let overviewUserStats = null;
 let overviewUserStatsStatus = 'idle';
+let overviewTariffData = null;
+let overviewTariffStatus = 'idle';
+let overviewSelectedTariff = '';
+let overviewTariffMessage = '';
+
+function requestOverviewTariffs(force = false) {
+  // The isolated Overview contract tests evaluate this section without imports.
+  if (typeof loadTariffs !== 'function') { overviewTariffStatus = 'unavailable'; return; }
+  if (overviewTariffStatus === 'loading' || (!force && overviewTariffStatus !== 'idle')) return;
+  overviewTariffStatus = 'loading';
+  void loadTariffs(force)
+    .then((data) => {
+      overviewTariffData = data;
+      overviewTariffStatus = 'ready';
+    })
+    .catch(() => {
+      overviewTariffStatus = 'unavailable';
+    })
+    .finally(() => {
+      if (state.section === 'overview') renderOverview();
+    });
+}
+
+if (typeof document !== 'undefined') document.addEventListener('admin:tariff-changed', () => {
+  overviewTariffStatus = 'idle';
+  overviewTariffData = null;
+  if (state.section === 'overview') renderOverview();
+});
 
 function requestOverviewUserStats(force = false) {
   if (overviewUserStatsStatus === 'loading' || (!force && overviewUserStatsStatus !== 'idle')) return;
@@ -598,6 +627,17 @@ function renderOverview() {
     { label: 'Записи', type: 'records', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('records.'))) },
   ];
   const userStats = overviewUserStatsStatus === 'ready' ? overviewUserStats : null;
+  const liveTariffs = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
+  const tariffCards = [
+    { key: 'tariff.start', name: 'Start' },
+    { key: 'tariff.start-plus', name: 'Start+' },
+    { key: 'tariff.pro', name: 'Pro' },
+  ].map((tariff) => ({ ...tariff, ...liveTariffs.find((item) => item.key === tariff.key) }));
+  const selectedTariff = tariffCards.find((item) => item.key === overviewSelectedTariff);
+  const formatTariffPrice = (item) => item.key === 'tariff.start' ? '0 ₽'
+    : Number(item.priceMinor) > 0
+      ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
+      : '—';
   const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
   const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
   const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
@@ -649,6 +689,40 @@ function renderOverview() {
                 <small>${escapeHtml(item.ownerProfile?.email || item.invitation?.email || '')}</small></span>
                 <span class="admin-overview-person-status">${item.ownerProfile ? escapeHtml(String(item.access?.commercialMode || 'DEMO')) : 'Ожидает'} <span aria-hidden="true">↗</span></span>
               </button>`).join('') : '<p class="admin-overview-empty">В этой категории пока никого нет.</p>'}
+          </div>
+        </section>` : ''}
+      <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
+        ${tariffCards.map((item) => `
+          <button type="button" class="admin-overview-metric${overviewSelectedTariff === item.key ? ' is-selected' : ''}"
+            data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}">
+            <span class="admin-overview-metric-label">${item.name}</span>
+            <strong class="admin-overview-metric-value">${formatTariffPrice(item)}</strong>
+            <span class="admin-overview-metric-hint">Подключено: ${Number.isInteger(item.connected) ? item.connected : '—'}</span>
+            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
+          </button>`).join('')}
+      </section>
+      ${overviewSelectedTariff && overviewTariffStatus === 'unavailable' ? `
+        <section class="admin-overview-detail"><p class="admin-overview-empty">Данные тарифов недоступны.</p></section>` : ''}
+      ${overviewSelectedTariff && overviewTariffStatus === 'ready' && selectedTariff ? `
+        <section class="admin-overview-detail" aria-label="Состав тарифа ${escapeHtml(selectedTariff.name)}">
+          <div class="admin-overview-detail-heading">
+            <div><strong>${escapeHtml(selectedTariff.name)}</strong></div>
+            <button type="button" class="admin-overview-close" data-overview-tariff-close aria-label="Свернуть тариф">×</button>
+          </div>
+          ${selectedTariff.key !== 'tariff.start' ? `
+            <div class="admin-overview-tariff-controls">
+              <label class="admin-field"><span>Стоимость, ₽</span>
+                <input type="number" min="1" step="0.01" inputmode="decimal" data-overview-tariff-price
+                  value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Установить цену">
+              </label>
+              <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить цену</button>
+              <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
+            </div>` : ''}
+          <div class="admin-overview-detail-list admin-overview-tariff-list">
+            ${selectedTariff.tools?.length ? selectedTariff.tools.map((tool) => `
+              <div class="admin-overview-person">
+                <span><strong>${escapeHtml(tool.name)}</strong></span>
+              </div>`).join('') : '<p class="admin-overview-empty">Инструменты не назначены.</p>'}
           </div>
         </section>` : ''}
       <div class="admin-overview-layout">
@@ -734,10 +808,12 @@ function renderOverview() {
     </div>`;
 
   if (overviewUserStatsStatus === 'idle') requestOverviewUserStats();
+  if (overviewTariffStatus === 'idle') requestOverviewTariffs();
 
   content.querySelectorAll('[data-overview-group]').forEach((button) => {
     button.addEventListener('click', () => {
       overviewDetailGroup = overviewDetailGroup === button.dataset.overviewGroup ? '' : button.dataset.overviewGroup;
+      overviewSelectedTariff = '';
       renderOverview();
     });
   });
@@ -750,6 +826,40 @@ function renderOverview() {
       overviewWindowWeeks = Number(button.dataset.overviewWeeks) || 8;
       renderOverview();
     });
+  });
+  content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
+    button.addEventListener('click', () => {
+      overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
+      overviewDetailGroup = '';
+      overviewTariffMessage = '';
+      renderOverview();
+    });
+  });
+  content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
+    overviewSelectedTariff = '';
+    renderOverview();
+  });
+  content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const input = content.querySelector('[data-overview-tariff-price]');
+    const message = content.querySelector('[data-overview-tariff-message]');
+    const price = Number(String(input?.value || '').replace(',', '.'));
+    const priceMinor = Math.round(price * 100);
+    if (!Number.isFinite(price) || price <= 0 || Math.abs(price * 100 - priceMinor) > 0.000001) {
+      if (message) { message.textContent = 'Укажите корректную цену'; message.classList.add('error'); }
+      return;
+    }
+    button.disabled = true;
+    if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
+    try {
+      overviewTariffData = await updateTariffPrice(button.dataset.overviewTariffSave, priceMinor);
+      overviewTariffStatus = 'ready';
+      overviewTariffMessage = 'Цена сохранена';
+      renderOverview();
+    } catch (error) {
+      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить цену'; message.classList.add('error'); }
+      button.disabled = false;
+    }
   });
   content.querySelectorAll('[data-overview-tenant]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -833,24 +943,25 @@ function openRegistrationToolDrawer() {
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop';
   backdrop.innerHTML = `
-    <aside class="admin-drawer">
+    <aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Инструменты регистрации">
       <div class="admin-drawer-head">
-        <div><h3>Инструменты нового аккаунта</h3><p>Настройки доступа по регистрационной ссылке</p></div>
+        <div><h3>Инструменты регистрации</h3><p>Доступ нового аккаунта</p></div>
         <button type="button" class="admin-close" data-close aria-label="Закрыть">×</button>
       </div>
-      <div data-capability-order-list>${renderTenantRegistry(resolved)}</div>
-      <div class="admin-actions">
-        <button type="button" class="admin-button secondary" data-close>Отмена</button>
-        <button type="button" class="admin-button" data-apply-invite>Применить</button>
+      <div class="admin-document-reading">
+        <div data-capability-order-list>${renderTenantRegistry(resolved, { isTester: true })}</div>
+        <div class="admin-inline-actions">
+          <button type="button" class="admin-button" data-apply-invite>Применить</button>
+        </div>
       </div>
     </aside>`;
   // Registration links accept Boolean capability switches, never capacity overrides.
   backdrop.querySelectorAll('[data-type="LIMIT"]').forEach((input) => {
-    input.closest('.admin-capability')?.remove();
+    input.closest('.admin-access-inline-limit')?.remove();
   });
   const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
   if (sharedQ) {
-    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const html = modal(backdrop.innerHTML, { title: 'Инструменты', variant: 'q', className: 'admin-access-q admin-document-q' });
     const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
     if (!mounted) return;
     backdrop = mounted;
@@ -859,10 +970,25 @@ function openRegistrationToolDrawer() {
   backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
   backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
       button.classList.toggle('is-on');
       button.dataset.current = String(button.classList.contains('is-on'));
-      button.setAttribute('aria-pressed', button.dataset.current);
+      button.setAttribute('aria-checked', button.dataset.current);
+    });
+  });
+  backdrop.querySelectorAll('[data-toggle-group]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
+      const enabled = button.getAttribute('aria-checked') !== 'true';
+      button.setAttribute('aria-checked', String(enabled));
+      button.classList.toggle('is-on', enabled);
+      button.closest('.admin-access-grant-group').querySelectorAll('[data-capability][data-type="BOOLEAN"]')
+        .forEach((input) => { input.dataset.current = String(enabled); });
     });
   });
   backdrop.querySelector('[data-apply-invite]')?.addEventListener('click', () => {
@@ -1100,43 +1226,151 @@ function readinessLabel(key) {
   return ({ NOT_READY: 'Не готово', TESTING: 'Проверка', READY: 'Готово' })[item?.status] || 'Не готово';
 }
 
-function renderRegistryLeaf(item, resolved, readonly = false) {
-  const key = item.readinessKey || '';
-  const keys = TOOL_CAPABILITY_BINDINGS[key] || [];
-  const capabilities = readonly ? [] : keys.map((name) => state.capabilities.find((capability) => capability.key === name)).filter(Boolean);
-  const controls = capabilities.map((capability) => capabilityEditor(capability, resolved.get(capability.key))).join('');
-  const note = readonly
-    ? 'Управляется отдельно в приложении «Записи».'
-    : 'Отдельное индивидуальное разрешение пока не предусмотрено.';
-  return '<div class="admin-capability-order-row" data-readiness-key="' + escapeHtml(key) + '">' +
-    '<div class="admin-capability-control">' +
-    '<div class="admin-capability"><div><strong>' + escapeHtml(item.label) +
-    '</strong><small>' + escapeHtml(readinessLabel(key)) + ' · ' + escapeHtml(key) + '</small></div></div>' +
-    (controls || '<p class="admin-service-note">' + note + '</p>') +
-    '</div></div>';
+// A single catalog and capability binding power both the main Tools registry and
+// this compact account presentation. Access permissions remain owned by Core.
+function toolReadable(item, readonly, tenant) {
+  if (readonly) return false;
+  const key = String(item.readinessKey || '');
+  // Workplace creation is governed by its account grant, not by readiness.
+  if (!key || key === 'cabinet.profile.workspaces') {
+    if (item.id !== 'service') return true;
+  }
+  const mode = String(tenant?.access?.commercialMode || 'DEMO').toUpperCase();
+  const allowed = (status) => status === 'READY' ||
+    (status === 'TESTING' && Boolean(mode === 'DEMO' || tenant?.isTester || tenant?.isOwnerBook));
+  // Service has one actual services.access grant, and two independent mode statuses.
+  if (item.id === 'service' && !key) {
+    return ['cabinet.service.procedures', 'cabinet.service.products']
+      .some((modeKey) => allowed(state.toolReadiness.find((row) => row.key === modeKey)?.status));
+  }
+  return allowed(state.toolReadiness.find((row) => row.key === key)?.status || 'NOT_READY');
 }
 
-function renderRegistrySection(item, resolved, readonly = false) {
-  const children = Array.isArray(item.items) ? item.items : [];
-  if (!children.length) return renderRegistryLeaf(item, resolved, readonly);
-  const sharedKey = readonly ? '' : String(item.capabilityKey || '');
-  const shared = sharedKey ? state.capabilities.find((capability) => capability.key === sharedKey) : null;
-  const sharedControl = shared
-    ? '<div class="admin-capability-order-row">' + capabilityEditor(shared, resolved.get(shared.key)) + '</div>'
-    : '';
-  return '<details class="admin-section"><summary><strong>' + escapeHtml(item.label) +
-    '</strong> · ' + children.length + '</summary>' +
-    sharedControl +
-    children.map((child) => renderRegistryLeaf(child, resolved, readonly)).join('') +
-    '</details>';
+function toolName(item) {
+  if (item.readinessKey === 'cabinet.profile.workspaces') return 'Рабочее пространство';
+  return String(item.label || '').startsWith('График (') ? 'График' : String(item.label || '');
 }
 
-function renderTenantRegistry(resolved) {
-  return '<section class="admin-section"><h4>Кабинет</h4>' +
-    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved)).join('') +
-    '</section><details class="admin-section"><summary><strong>Записи</strong> · отдельное приложение</summary>' +
-    TOOL_MAP.records.map((item) => renderRegistrySection(item, resolved, true)).join('') +
-    '</details>';
+function toolChildren(area, item) {
+  return visibleToolChildren(area, item);
+}
+
+// Same F/E/R visible hierarchy as the Tools registry. K components are metadata,
+// not independently selectable rows. Their Core readiness records are untouched.
+function accountToolKey(area, item, parentKey = '') {
+  if (item.readinessKey) return item.readinessKey;
+  if (item.id) return area + '.' + item.id;
+  if (parentKey === 'cabinet.finance' && item.label === 'Касса') return 'cabinet.finance.cash';
+  return parentKey + '.' + String(item.label || '').toLowerCase().replace(/[^a-zа-яё0-9]+/g, '-');
+}
+
+function accountToolKind(item, depth) {
+  return depth === 0 ? 'F' : item.kind === 'e' ? 'E' : 'R';
+}
+
+function toolControl(capability, resolved, locked) {
+  if (!capability) return '';
+  if (capability.valueType === 'LIMIT') {
+    const value = resolved?.limit == null ? '' : String(resolved.limit);
+    return '<input class="admin-limit" type="number" min="0" data-capability="' +
+      escapeHtml(capability.key) + '" data-type="LIMIT" data-original="' + escapeHtml(value) +
+      '" value="' + escapeHtml(value) + '" placeholder="∞" aria-label="Количество рабочих пространств"' +
+      (locked ? ' disabled' : '') + '>';
+  }
+  const enabled = resolved?.enabled !== false;
+  return '<button type="button" class="admin-toggle' + (enabled ? ' is-on' : '') +
+    '" data-toggle data-capability="' + escapeHtml(capability.key) +
+    '" data-type="BOOLEAN" data-original="' + enabled + '" data-current="' + enabled +
+    '" role="switch" aria-checked="' + enabled + '" aria-label="' + escapeHtml(capability.name) +
+    '"' + (locked ? ' disabled' : '') + '></button>';
+}
+
+function toolControls(item, resolved, tenant, key, parentKey, hasChildren, seen) {
+  const keys = [
+    ...(item.capabilityKey ? [String(item.capabilityKey)] : []),
+    ...(TOOL_CAPABILITY_BINDINGS[key] || []),
+  ];
+  // Several catalog rows share one Core capability (Cash/Wallets, Loans/DDS).
+  // Show each grant exactly once or simultaneous edits would conflict.
+  const caps = [...new Set(keys)]
+    .filter((capabilityKey) => !seen.has(capabilityKey))
+    .map((capabilityKey) => state.capabilities.find((row) => row.key === capabilityKey))
+    .filter(Boolean);
+  caps.forEach((capability) => seen.add(capability.key));
+  const disabled = !toolReadable(item, false, tenant);
+  const grants = caps.filter((cap) => cap.valueType !== 'LIMIT');
+  const limit = caps.find((cap) => cap.valueType === 'LIMIT');
+  if (!grants.length) {
+    // K components and R modes without independent Core entitlements inherit
+    // the parent availability. A disabled switch conveys inherited state without
+    // pretending this component has a separately writable capability.
+    const inherited = TOOL_CAPABILITY_BINDINGS[parentKey] || [];
+    const inheritedEnabled = inherited.some((grantKey) => resolved.get(grantKey)?.enabled === true);
+    const available = toolReadable(item, false, tenant);
+    const inheritedSwitch = !hasChildren && item.readinessKey
+      ? '<button type="button" class="admin-toggle' + (inheritedEnabled && available ? ' is-on' : '') +
+        '" disabled role="switch" aria-checked="' + String(inheritedEnabled && available) +
+        '" aria-label="' + escapeHtml(toolName(item)) +
+        ': доступ наследуется, отдельного переключателя нет" title="Доступ наследуется от родительского инструмента"></button>'
+      : '';
+    return { grant: inheritedSwitch, limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '' };
+  }
+  if (grants.length === 1) return {
+    grant: toolControl(grants[0], resolved.get(grants[0].key), disabled),
+    limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '',
+  };
+  // A composite E-row is one instrument. One UI switch drives all of its
+  // existing Boolean capability keys; the data model is not replaced.
+  const enabled = grants.every((cap) => resolved.get(cap.key)?.enabled !== false);
+  const hidden = grants.map((cap) =>
+    '<input type="hidden" data-capability="' + escapeHtml(cap.key) +
+    '" data-type="BOOLEAN" data-original="' + String(resolved.get(cap.key)?.enabled !== false) +
+    '" data-current="' + String(resolved.get(cap.key)?.enabled !== false) + '">').join('');
+  return {
+    grant: '<span class="admin-access-grant-group">' + hidden +
+      '<button type="button" class="admin-toggle' + (enabled ? ' is-on' : '') +
+      '" data-toggle-group role="switch" aria-checked="' + enabled +
+      '" aria-label="' + escapeHtml(toolName(item)) + '"' + (disabled ? ' disabled' : '') + '></button></span>',
+    limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '',
+  };
+}
+
+function accountToolRow(item, resolved, tenant, area, depth, parentKey, hasChildren, allowCommercial, seen) {
+  const key = accountToolKey(area, item, parentKey);
+  const kind = accountToolKind(item, depth);
+  const { grant, limit } = toolControls(item, resolved, tenant, key, parentKey, hasChildren, seen);
+  const locked = !toolReadable(item, false, tenant);
+  // Commercial conditions use the same row as the actual tool. The tenant
+  // commercial service fills these slots; it never creates a second list.
+  const product = allowCommercial ? (TOOL_COMMERCIAL_BINDINGS[key] || '') : '';
+  const title = '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>';
+  return '<span class="admin-access-tool-row' + (locked && grant ? ' is-unavailable' : '') +
+    '" data-tool-kind="' + kind + '" data-tool-depth="' + depth + '" data-tool-key="' + escapeHtml(key) + '">' +
+    '<span class="admin-access-tool-identity">' + title + (limit ? '<span class="admin-access-inline-limit">' + limit + '</span>' : '') + '</span>' +
+    '<span class="admin-access-tool-commercial"' + (product ? ' data-commercial-slot="' + escapeHtml(product) + '"' : '') + '></span>' +
+    '<span class="admin-access-tool-grant">' + grant + '</span>' +
+    '</span>';
+}
+
+function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', depth = 0, parentKey = '', allowCommercial = true, seen = new Set()) {
+  const key = accountToolKey(area, item, parentKey);
+  const children = toolChildren(area, item);
+  const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, children.length > 0, allowCommercial, seen);
+  if (!children.length) return row;
+  // The row itself is the disclosure summary. Never repeat the parent label.
+  return '<details class="admin-access-tool-group" open><summary class="admin-access-tool-group-title">' +
+    row + '</summary><div class="admin-access-tool-group-body">' +
+    children.map((child) => renderRegistrySection(child, resolved, tenant, area, depth + 1, key, allowCommercial, seen)).join('') +
+    '</div></details>';
+}
+
+function renderTenantRegistry(resolved, tenant = null, allowCommercial = true) {
+  const seen = new Set();
+  return '<div class="admin-access-tool-category" data-account-tools="professional">' +
+    '<div class="admin-access-tool-head"><span>Кабинет / Professional</span><span>' +
+      (allowCommercial ? 'Условия' : '') + '</span><span>Доступ</span></div>' +
+    TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, tenant, 'cabinet', 0, '', allowCommercial, seen)).join('') +
+    '</div>';
 }
 
 function openAccessDrawer(tenantId) {
@@ -1146,73 +1380,72 @@ function openAccessDrawer(tenantId) {
   const mode = String(tenant.access?.commercialMode || 'DEMO');
   const demoActivated = tenant.access?.demoActivatedAt || tenant.invitation?.activatedAt || '';
   const demoExpires = tenant.access?.demoExpiresAt || tenant.invitation?.demoExpiresAt || '';
+  const personName = tenant.ownerProfile?.name || tenant.invitation?.name || tenant.tenantName || 'Пользователь';
+  const personEmail = tenant.ownerProfile?.email || tenant.invitation?.email || '';
   let backdrop = document.createElement('div');
-  backdrop.className = 'admin-drawer-backdrop';
+  backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = `
-    <aside class="admin-drawer">
+    <aside class="admin-drawer admin-document-drawer admin-access-drawer" role="dialog" aria-modal="true" aria-label="Управление доступом пользователя">
       <div class="admin-drawer-head">
-        <div><h3>${escapeHtml(tenant.ownerProfile?.name || tenant.invitation?.name || tenant.tenantName || 'Пользователь')}</h3><p>${escapeHtml(tenant.ownerProfile?.email || tenant.invitation?.email || '')}</p></div>
-        <button class="admin-close" data-close aria-label="Закрыть">×</button>
+        <div><h3>${escapeHtml(personName)}</h3><p>${escapeHtml(personEmail)}</p></div>
+        <button type="button" class="admin-close" data-close aria-label="Закрыть">×</button>
       </div>
-
-      <section class="admin-section">
-        <h4>Режим</h4>
-        <div class="admin-mode-card">
-          <strong>${escapeHtml(mode)}</strong>
-          ${mode === 'DEMO' ? `<span>${demoActivated ? `DEMO началось ${escapeHtml(formatAdminMoment(demoActivated))}` : 'DEMO ещё не началось'}</span><span>${demoExpires ? `DEMO до ${escapeHtml(formatAdminMoment(demoExpires))}` : 'Срок появится после активации'}</span>` : '<span>Рабочий режим LIVE активен.</span>'}
-        </div>
-      </section>
-
-      <section class="admin-section">
-        <h4>Роль доступа</h4>
-        ${tenant.isOwnerBook ? `<div class="admin-capability"><div><strong>Администратор</strong><small>Защищённый аккаунт платформы.</small></div></div>` : `
-        <div class="admin-capability">
-          <div>
-            <strong data-tester-label>${tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
-            <small>Назначается администратором. Не зависит от ссылки или DEMO/LIVE.</small>
+      <div class="admin-document-reading">
+        <div class="admin-access-summary">
+          <div class="admin-overview-metric admin-access-summary-card">
+            <span class="admin-overview-metric-label">Режим</span>
+            <strong class="admin-access-summary-value">${escapeHtml(mode)}</strong>
+            <span class="admin-access-summary-detail">${mode === 'DEMO'
+              ? demoExpires ? 'До ' + escapeHtml(formatAdminMoment(demoExpires)) : 'До активации'
+              : 'Рабочий доступ'}</span>
           </div>
-          <button type="button" class="admin-toggle${tenant.isTester ? ' is-on' : ''}"
-            role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
-            data-tester-toggle></button>
-        </div>`}
-      </section>
-
-      <section class="admin-section">
-        <h4>Инструменты пользователя</h4>
-        <p class="admin-service-note">Состав и порядок совпадают с реестром «Инструменты». Здесь меняются индивидуальные разрешения.</p>
-        <div data-capability-order-list>
-          ${renderTenantRegistry(resolved)}
+          <div class="admin-overview-metric admin-access-summary-card">
+            <span class="admin-overview-metric-label">Роль</span>
+            <strong class="admin-access-summary-value" data-tester-label>${tenant.isOwnerBook ? 'Администратор' : tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
+            ${tenant.isOwnerBook ? '' : `<button type="button" class="admin-toggle admin-access-role-toggle${tenant.isTester ? ' is-on' : ''}"
+              role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
+              data-tester-toggle></button>`}
+          </div>
         </div>
-      </section>
-
-      ${tenant.isOwnerBook ? '' : `<section class="admin-section">
-        <h4>Состояние пространства</h4>
-        <button class="admin-button ${tenant.status === 'SUSPENDED' ? '' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
-      </section>`}
-
-      ${tenant.ownerProfile?.email ? `
-      <section class="admin-section">
-        <h4>Техническое письмо</h4>
-        <p class="admin-service-note">Это служебная отправка уже зарегистрированному пользователю: ${escapeHtml(tenant.ownerProfile.email)}</p>
-        <form class="admin-form" data-technical-email-form>
-          <label class="admin-field"><span>Тема</span><input name="subject" maxlength="200" required></label>
-          <label class="admin-field"><span>Текст</span><textarea name="body" rows="6" maxlength="20000" required></textarea></label>
-          <div><button class="admin-button secondary" type="submit">Отправить письмо</button></div>
-          <p class="admin-inline-message" data-technical-email-message></p>
-        </form>
-      </section>` : ''}
-
-      ${tenant.isOwnerBook ? '' : `<section class="admin-section admin-danger-zone"><button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button></section>`}
-      <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить изменения</button></div>
-      <p class="admin-inline-message" data-save-message></p>
+        <section class="admin-section admin-access-tools">
+          <h4>Инструменты</h4>
+          <div data-capability-order-list>${renderTenantRegistry(resolved, tenant)}</div>
+          <div class="admin-inline-actions admin-access-save-actions">
+            <button type="button" class="admin-button" data-save>Сохранить доступ</button>
+          </div>
+          <p class="admin-inline-message" data-save-message role="status"></p>
+          ${tenant.isOwnerBook ? '' : `<section class="admin-access-tool-conditions">
+            <h4>Условия и оплата</h4>
+            <div class="commercial-tenant-section" data-commercial-tenant-tools></div>
+          </section>`}
+        </section>
+        ${tenant.isOwnerBook ? '' : `<section class="admin-section admin-access-account-actions">
+          <h4>Управление аккаунтом</h4>
+          <div class="admin-inline-actions">
+            <button type="button" class="admin-button ${tenant.status === 'SUSPENDED' ? 'secondary' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
+            <button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button>
+          </div>
+        </section>`}
+        ${tenant.ownerProfile?.email ? `<section class="admin-section admin-access-email">
+          <h4>Написать email</h4>
+          <form class="admin-form" data-technical-email-form>
+            <label class="admin-field"><span>Тема</span><input name="subject" maxlength="200" required></label>
+            <label class="admin-field"><span>Сообщение</span><textarea name="body" rows="5" maxlength="20000" required></textarea></label>
+            <button class="admin-button" type="submit">Отправить письмо</button>
+            <p class="admin-inline-message" data-technical-email-message role="status"></p>
+          </form>
+        </section>` : ''}
+      </div>
     </aside>`;
   const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
   if (sharedQ) {
-    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const html = modal(backdrop.innerHTML, { title: personName, variant: 'q', className: 'admin-access-q admin-document-q' });
     const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
     if (!mounted) return;
     backdrop = mounted;
   } else document.body.append(backdrop);
+
+  if (!tenant.isOwnerBook) void enhanceCommercialTenantTools(backdrop.querySelector('[data-commercial-tenant-tools]'), tenantId);
 
   const close = () => { if (sharedQ) backdrop.v2Close?.(); else backdrop.remove(); };
   backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
@@ -1227,10 +1460,31 @@ function openAccessDrawer(tenantId) {
   });
 
   backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault(); // A switch must not collapse its F/E/R parent.
+      if (button.disabled) return;
       button.classList.toggle('is-on');
       button.dataset.current = button.classList.contains('is-on') ? 'true' : 'false';
+      button.setAttribute('aria-checked', button.dataset.current);
     });
+  });
+  backdrop.querySelectorAll('[data-toggle-group]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (button.disabled) return;
+      const on = button.getAttribute('aria-checked') !== 'true';
+      button.classList.toggle('is-on', on);
+      button.setAttribute('aria-checked', String(on));
+      button.closest('.admin-access-grant-group').querySelectorAll('[data-capability][data-type="BOOLEAN"]')
+        .forEach((input) => { input.dataset.current = String(on); });
+    });
+  });
+  // Capacity input sits inside the parent summary; editing must not collapse it.
+  backdrop.querySelectorAll('.admin-access-inline-limit input').forEach((input) => {
+    input.addEventListener('click', (event) => event.stopPropagation());
+    input.addEventListener('keydown', (event) => event.stopPropagation());
   });
 
   backdrop.querySelector('[data-delete-account]')?.addEventListener('click', () => openDeleteTenantModal(tenantId, close));
