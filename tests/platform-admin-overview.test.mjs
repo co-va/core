@@ -81,6 +81,8 @@ assert.match(markup, /<h3>Записи <span class="admin-overview-head-suffix">
 assert.match(markup, /Готовность функций <span class="admin-overview-head-suffix">\/ Инструменты<\/span>/);
 assert.match(markup, /data-overview-tool-app="cabinet"/);
 assert.match(markup, /data-overview-tool-app="records"/);
+assert.doesNotMatch(markup, /data-overview-tariff="tariff.start"/,
+  'Editable tariff configuration belongs to Tariffs, not Overview');
 for (const serviceCopy of [
   'Аккаунты пользователей приложения, не контакты специалистов',
   'Статистика будет доступна после обновления API Core',
@@ -154,7 +156,7 @@ overviewTariffStatus = 'ready';
 overviewSelectedTariff = 'tariff.start-plus';
 renderOverview();
 `;
-runInNewContext(tariffSource, context);
+runInNewContext(tariffSource.replace(/renderOverview\(\);\s*$/, 'renderTariffs();'), context);
 assert.match(markup, /Цена за 30 дней, ₽/, 'The tariff editor defines the monthly unit');
 assert.match(markup, /data-overview-tariff-bonus="6"/);
 assert.match(markup, /data-overview-tariff-bonus="12"/);
