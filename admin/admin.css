@@ -329,6 +329,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
   display:flex;align-items:center;justify-content:center;min-width:0
 }
 .admin-access-tool-grant{justify-content:flex-end}
+.admin-access-tool-grant .admin-toggle:disabled{opacity:.45;cursor:default}
 .admin-access-tool-grant .admin-toggle,.admin-access-tool-commercial .admin-toggle{flex:0 0 46px}
 .admin-access-tool-commercial{justify-content:center}
 .admin-access-commercial-choice{display:flex;align-items:center;gap:8px;white-space:nowrap}
