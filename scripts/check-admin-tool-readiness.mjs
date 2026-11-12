@@ -128,8 +128,9 @@ if (kindCell < 0 || expandCell <= kindCell || nameCell <= expandCell) {
 for (const kind of [
   "depth === 0 ? 'F'",
   "item.kind === 'e' ? 'E'",
-  "item.kind === 'mode' ? 'Р' : 'К'",
-  "marker === 'Р' ? 'Режим' : 'Компонент'",
+  "item.kind === 'mode' ? 'R' : 'K'",
+  "marker === 'R' ? 'Режим' : 'Компонент'",
+  "marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain'",
 ]) {
   if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
 }
@@ -142,6 +143,10 @@ for (const rule of [
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
   if (!css.includes(rule)) throw new Error('Tool registry sizing / hierarchy missing: ' + rule);
+}
+if (!ui.includes('R — режим, K — компонент') ||
+    !css.includes('.admin-tool-registry-kind span.is-card{')) {
+  throw new Error('R/K must be Latin and have no F/E card outline');
 }
 if (!ui.includes("node.closest('.admin-tool-register-table')") ||
     !ui.includes("toolStatus(item, byKey, true)")) {
