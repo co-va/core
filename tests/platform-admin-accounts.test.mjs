@@ -153,7 +153,7 @@ assert.match(drawer, /<section class="admin-access-tool-conditions">/, 'Terms an
 assert.match(drawer, /<section class="admin-section admin-access-account-actions">/, 'Account controls are visible in their own area');
 assert.match(drawer, /class="admin-button" type="submit">Отправить письмо/, 'Email uses the existing canonical Admin button');
 assert.match(adminCss, /\.admin-access-email \.admin-form>\.admin-button\{width:auto;justify-self:start\}/, 'Email action does not expand across the form');
-assert.match(adminCss, /grid-template-columns:minmax\(0,1fr\) 66px 140px/, 'Each tool occupies one three-column row');
+assert.match(adminCss, /grid-template-columns:minmax\(0,1fr\) 140px 66px/, 'Each tool row has commercial details before the rightmost access switch');
 assert.match(drawer, /renderTenantRegistry\(resolved, tenant\)/, 'Drawer uses the Professional-only registry');
 assert.match(drawer, /enhanceCommercialTenantTools\(backdrop\.querySelector/, 'Commercial editor mounts directly, not by DOM observer');
 assert.doesNotMatch(drawer, /Техническое письмо|admin-mode-card/, 'Legacy account drawer titles and old mode card are gone');
@@ -239,6 +239,15 @@ for (const key of Object.values(catalog.TOOL_COMMERCIAL_BINDINGS)) {
 assert.equal((registryHtml.match(/>Журнал<\/span>/g) || []).length, 1,
   'Hierarchy has exactly one Journal parent label');
 assert.match(registryHtml, /admin-access-inline-limit/, 'Capacity limit stays in its tool row');
+assert.match(registryHtml, /data-tool-depth="1"/, 'Nested E/R names have their own indent level');
+assert.match(registryHtml, /data-tool-depth="2"/, 'Component names have deeper indent');
+assert.match(adminCss, /\.admin-access-tool-group-body\{padding-left:0\}/, 'Whole rows retain common edges');
+assert.match(adminCss, /\.admin-access-tool-grant\{justify-content:flex-end\}/, 'The access switch remains against the right edge');
+assert.match(registryHtml, /class="admin-access-tool-commercial"/, 'Commercial conditions are in the center');
+const commercialUi = readFileSync(new URL('../admin/commercial-tenant.js', import.meta.url), 'utf8');
+assert.match(commercialUi, /<input type="checkbox" data-commercial-tenant-product/, 'Commercial selection is distinguishable from main access switches');
+assert.match(commercialUi, /data-commercial-tenant-product\]:checked/, 'Commercial calculation reads checkbox state');
+assert.match(adminCss, /\.admin-access-commercial-price\{font-size:13px/, 'Money remains legible in the row');
 assert.match(registryHtml, /data-toggle-group/, 'Composite Finance tools have one switch for several grants');
 assert.match(source, /if \(!tenant \|\| tenant\.isOwnerBook\) return;/, 'Owner cannot be deleted in UI');
 assert.match(drawer, /data-delete-account/, 'Non-owner deletion is only inside account editor');
