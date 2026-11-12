@@ -173,13 +173,20 @@ assert.match(registry, /data-toggle-group/, 'Composite instruments have one visi
 const commercialCode = readFileSync(new URL('../admin/commercial-tenant.js', import.meta.url), 'utf8');
 assert.match(commercialCode, /data-commercial-slot/, 'Commercial controls mount into existing tool rows');
 assert.doesNotMatch(commercialCode, /<div class="commercial-tenant-products"/, 'No duplicate full product list under conditions');
+const catalogForFiltering = readFileSync(new URL('../admin/commercial-catalog.js', import.meta.url), 'utf8');
+const visibleChildrenCode = catalogForFiltering.slice(
+  catalogForFiltering.indexOf('export function visibleToolChildren('),
+  catalogForFiltering.indexOf('function toolRegisterRows(')
+).replace('export function', 'function');
+const visibleToolChildren = runInNewContext(visibleChildrenCode + '\nvisibleToolChildren');
 const registryHelpers = source.slice(source.indexOf('function toolReadable('), source.indexOf('function toolControl('));
 const toolState = { toolReadiness: [
   { key: 'cabinet.journal.day', status: 'TESTING' },
   { key: 'cabinet.service.procedures', status: 'NOT_READY' },
   { key: 'cabinet.service.products', status: 'READY' },
 ] };
-const helpers = runInNewContext(registryHelpers + '\n({ toolReadable, toolChildren })', { state: toolState });
+const helpers = runInNewContext(registryHelpers + '\n({ toolReadable, toolChildren })',
+  { state: toolState, visibleToolChildren });
 const day = { readinessKey: 'cabinet.journal.day' };
 assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'DEMO' } }), true, 'DEMO can use testing tools');
 assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'LIVE' }, isTester: false }), false, 'Normal LIVE accounts cannot use testing tools');
@@ -188,9 +195,9 @@ assert.equal(helpers.toolReadable({ readinessKey: 'cabinet.profile.workspaces' }
 assert.equal(helpers.toolReadable({ id: 'service' }, false, { access: { commercialMode: 'LIVE' } }), true, 'Service parent is available if one existing mode is ready');
 assert.equal(helpers.toolReadable({ id: 'service' }, true, {}), false, 'Separate User tools are read-only here');
 const groupedJournal = helpers.toolChildren('cabinet', { id: 'journal', items: [
-  { label: 'День', readinessKey: 'cabinet.journal.day' },
-  { label: 'Месяц', readinessKey: 'cabinet.journal.month' },
-  { label: 'График', readinessKey: 'cabinet.timetable' },
+  { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day' },
+  { label: 'Месяц', kind: 'mode', readinessKey: 'cabinet.journal.month' },
+  { label: 'График', kind: 'mode', readinessKey: 'cabinet.timetable' },
 ] });
 assert.equal(groupedJournal.length, 2, 'Canonical Journal month groups its timetable mode');
 assert.equal(groupedJournal[1].items[0].readinessKey, 'cabinet.timetable', 'Graph mode nests under Month rather than duplicating');
@@ -217,7 +224,7 @@ const accountState = {
 };
 const renderer = runInNewContext(registry +
   '\n({ renderTenantRegistry })', {
-  state: accountState, ...catalog, escapeHtml,
+  state: accountState, ...catalog, escapeHtml, visibleToolChildren,
 });
 const registryHtml = renderer.renderTenantRegistry(new Map(
   accountState.capabilities.map((cap) => [cap.key, {
@@ -225,20 +232,35 @@ const registryHtml = renderer.renderTenantRegistry(new Map(
   }])
 ), { isTester: true, access: { commercialMode: 'DEMO' } });
 assert.doesNotMatch(registryHtml, /Записи \/ User|data-account-tools="user"/, 'No User application tools in Professional access');
-for (const kind of ['F', 'E', 'R', 'K']) {
-  assert.match(registryHtml, new RegExp('data-tool-kind="' + kind + '"'), 'F/E/R/K type ' + kind + ' is retained');
+for (const kind of ['F', 'E', 'R']) {
+  assert.match(registryHtml, new RegExp('data-tool-kind="' + kind + '"'),
+    'Visible F/E/R hierarchy retains type ' + kind);
 }
-for (const key of ['finance.cash.access', 'finance.special.access', 'workplaces.max']) {
+assert.doesNotMatch(registryHtml, /data-tool-kind="K"|data-tool-key="cabinet\.journal\.day\.events"/,
+  'K components must not appear in the Professional account drawer');
+for (const area of ['cabinet', 'records']) {
+  const visit = (items) => {
+    for (const item of items) {
+      const children = visibleToolChildren(area, item);
+      assert.ok(children.every((child) => child.kind === 'e' || child.kind === 'mode'),
+        'Only separately selectable E/R nodes remain visible');
+      visit(children);
+    }
+  };
+  visit(catalog.TOOL_MAP[area]);
+}
+for (const key of ['finance.cash.access', 'finance.dds.access', 'services.access']) {
   assert.equal((registryHtml.match(new RegExp('data-capability="' + key.replaceAll('.', '\\.') + '"', 'g')) || []).length, 1,
     'Shared capability appears once: ' + key);
 }
-for (const key of Object.values(catalog.TOOL_COMMERCIAL_BINDINGS)) {
+for (const key of ['folder.finance', 'tool.finance.cash', 'tool.finance.dds', 'tool.finance.z-report', 'tool.inventory']) {
   assert.equal((registryHtml.match(new RegExp('data-commercial-slot="' + key.replaceAll('.', '\\.') + '"', 'g')) || []).length, 1,
     'Commercial conditions have one actual tool row: ' + key);
 }
 assert.equal((registryHtml.match(/>Журнал<\/span>/g) || []).length, 1,
   'Hierarchy has exactly one Journal parent label');
-assert.match(registryHtml, /admin-access-inline-limit/, 'Capacity limit stays in its tool row');
+assert.doesNotMatch(registryHtml, /admin-access-inline-limit|data-capability="workplaces.max"/,
+  'K-only capacity fields are not rendered as tool rows');
 assert.match(registryHtml, /data-tool-depth="1"/, 'Nested E/R names have their own indent level');
 assert.match(registryHtml, /data-tool-depth="2"/, 'Component names have deeper indent');
 assert.match(adminCss, /\.admin-access-tool-group-body\{padding-left:0\}/, 'Whole rows retain common edges');
@@ -249,11 +271,8 @@ assert.match(commercialUi, /<input type="checkbox" data-commercial-tenant-produc
 assert.match(commercialUi, /data-commercial-tenant-product\]:checked/, 'Commercial calculation reads checkbox state');
 assert.match(adminCss, /\.admin-access-commercial-price\{font-size:13px/, 'Money remains legible in the row');
 assert.match(registryHtml, /data-toggle-group/, 'Composite Finance tools have one switch for several grants');
-assert.match(registryHtml,
-  /data-tool-key="cabinet\.journal\.day\.events"[\s\S]*?disabled role="switch"/,
-  'A K component without a separate entitlement shows an inherited disabled switch');
-assert.match(registry, /title="Доступ наследуется от родительского инструмента"/,
-  'Inherited state is disclosed instead of pretending to be independently editable');
+assert.doesNotMatch(registryHtml, /data-tool-kind="K"|data-tool-key="cabinet\.finance\.cash\.wallets"/,
+  'K components and their inherited switches are absent from the drawer');
 assert.match(adminCss, /\.admin-access-tool-grant \.admin-toggle:disabled\{opacity:\.45/,
   'Inherited switches are visibly muted');
 assert.match(source, /if \(!tenant \|\| tenant\.isOwnerBook\) return;/, 'Owner cannot be deleted in UI');
