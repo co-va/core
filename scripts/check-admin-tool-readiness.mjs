@@ -107,8 +107,17 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-if (!ui.includes('<th aria-label="Тип карточки"></th>')) {
-  throw new Error('The technical F/E column header must stay blank');
+if (!ui.includes('<th scope="col" aria-label="Тип карточки"></th><th>Инструмент</th>')) {
+  throw new Error('The unlabeled F/E technical column must be first, before Instrument');
+}
+const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
+if (toolRows.indexOf("'><td class=\"admin-tool-registry-kind\"") < 0 ||
+    toolRows.indexOf("'><td class=\"admin-tool-registry-kind\"") > toolRows.indexOf("admin-tool-registry-name\" style=")) {
+  throw new Error('F/E must occupy the first body cell, before the name/expand control');
+}
+if (!css.includes('.admin-tool-register-table th:nth-child(1){width:6.5%}') ||
+    !css.includes('.admin-tool-register-table th:nth-child(2){width:45.5%}')) {
+  throw new Error('F/E must be the narrow left-hand column, without shifting other controls');
 }
 
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
