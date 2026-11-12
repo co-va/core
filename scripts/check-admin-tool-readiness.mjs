@@ -198,9 +198,9 @@ for (const area of ['cabinet','records']) {
     ?.items.find((item) => item.readinessKey === dayKey);
   assert.ok(day, 'Journal Day is required for ' + area);
   const checks = visibleToolChildren(area, day);
-  assert.deepEqual(checks.map((item) => item.readinessKey), [
+  assert.equal(checks.map((item) => item.readinessKey).join('|'), [
     dayKey + '.events', dayKey + '.notes',
-  ], 'Day exposes Events and Notes as tariff-controlled rows, never Record: ' + area);
+  ].join('|'), 'Day exposes Events and Notes as tariff-controlled rows, never Record: ' + area);
   assert.ok(day.items.some((item) => item.readinessKey === dayKey + '.record'),
     'Automatic Day Record remains in internal readiness registry: ' + area);
   const visit = (items) => items.forEach((item) => {
