@@ -45,6 +45,7 @@ type ProductRow = {
   priceMinor: number;
   currency: string;
   source: string;
+  tariffExcluded: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
