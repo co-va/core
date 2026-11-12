@@ -238,6 +238,11 @@ export class CommercialCatalogService {
     if (minimumTariff && !TARIFF_KEYS.includes(minimumTariff as TariffKey)) {
       throw new BadRequestException('Неизвестный тариф');
     }
+    // Profile and the first workspace are structural Start capabilities,
+    // including when a paid tier inherits Start. They must not disappear.
+    if (['system.profile', 'system.workplace'].includes(productKey) && minimumTariff !== 'tariff.start') {
+      throw new BadRequestException('Базовые возможности всегда входят в Start');
+    }
     const [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string; type: ProductType }>>(
       `SELECT "id","type" FROM "CommercialProduct" WHERE "key"=$1 AND "isActive"=true`, productKey,
     );
