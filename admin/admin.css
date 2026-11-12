@@ -932,8 +932,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-card{margin:0;padding:0;min-width:0;overflow:hidden}
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-.admin-tool-register-table th:nth-child(1){width:42%}
-.admin-tool-register-table th:nth-child(2){width:10%}
+.admin-tool-register-table th:nth-child(1){width:6.5%}
+.admin-tool-register-table th:nth-child(2){width:45.5%}
 .admin-tool-register-table th:nth-child(3){width:18%}
 .admin-tool-register-table th:nth-child(4){width:16%}
 .admin-tool-register-table th:nth-child(5){width:14%}
@@ -963,7 +963,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-registry-expand[aria-expanded="false"]{transform:rotate(-90deg)}
 .admin-tool-registry-kind{text-align:left}
-.admin-tool-register-table th:nth-child(2){text-align:left}
+.admin-tool-register-table th:nth-child(1){text-align:left}
 .admin-tool-registry-kind span{
   display:inline-grid;place-items:center;width:22px;height:22px;
   border:1px solid var(--border);border-radius:3px;
