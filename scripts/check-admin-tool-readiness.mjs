@@ -107,27 +107,37 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// The disclosure and F/E controls are two independent 44px technical columns.
-// Four content columns share the remaining space: Tools 40%, the rest 20% each.
-if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-kind">') ||
-    !ui.includes('<th scope="col" aria-label="Раскрыть или свернуть"></th>') ||
-    !ui.includes('<th scope="col" aria-label="Тип карточки"></th><th>Инструменты</th>')) {
-  throw new Error('Professional/User tool registries must render six shared columns');
+// Six aligned columns on both Professional and User: F/E 44px, disclosure 60px,
+// Tools 55% of the remainder, and three compact 15% columns.
+if (!ui.includes('<colgroup><col class="admin-tool-col-kind"><col class="admin-tool-col-expand">') ||
+    !ui.includes('<th scope="col" aria-label="Тип карточки"></th>') ||
+    !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
+    !ui.includes('data-tool-expand-all aria-expanded="true"') ||
+    !ui.includes('<th>Инструменты</th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th>')) {
+  throw new Error('Professional/User tool registries require a shared F/E–disclosure–tools–status–payment–price header');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
-const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
 const kindCell = toolRows.indexOf('admin-tool-registry-kind');
-const nameCell = toolRows.indexOf('admin-tool-registry-name" style=');
-if (expandCell < 0 || kindCell <= expandCell || nameCell <= kindCell) {
-  throw new Error('Technical expand and F/E columns must precede the indented tool name');
+const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
+const nameCell = toolRows.indexOf('admin-tool-registry-name" data-tool-depth=');
+if (kindCell < 0 || expandCell <= kindCell || nameCell <= expandCell) {
+  throw new Error('F/E must be the first body cell, disclosure second, nested tool name third');
 }
 for (const rule of [
-  '.admin-tool-col-expand,',
   '.admin-tool-register-table col.admin-tool-col-kind{width:44px}',
-  '.admin-tool-register-table col.admin-tool-col-name{width:calc(40% - 35.2px)}',
-  '.admin-tool-register-table col.admin-tool-col-price{width:calc(20% - 17.6px)}',
+  '.admin-tool-register-table col.admin-tool-col-expand{width:60px}',
+  '.admin-tool-register-table col.admin-tool-col-name{width:calc(55% - 57.2px)}',
+  '.admin-tool-register-table col.admin-tool-col-price{width:calc(15% - 15.6px)}',
+  'padding-left:calc(var(--tool-depth,0) * 28px)',
+  '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
-  if (!css.includes(rule)) throw new Error('Tool registry six-column sizing missing: ' + rule);
+  if (!css.includes(rule)) throw new Error('Tool registry sizing / hierarchy missing: ' + rule);
+}
+if (!ui.includes("table.querySelectorAll('[data-tool-expand]').forEach((button) => {") ||
+    !ui.includes("const expand = event.currentTarget.getAttribute('aria-expanded') !== 'true'") ||
+    !ui.includes('syncToolHierarchy(table);') ||
+    !ui.includes('expandButtons.every((button) => button.getAttribute(\'aria-expanded\') === \'true\')')) {
+  throw new Error('Per-table master expand/collapse must synchronize all nested toggles');
 }
 if (css.includes('.admin-users-section .admin-table th:first-child') ||
     css.includes('.admin-mobile-app .admin-users-section .admin-table')) {
