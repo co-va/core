@@ -154,8 +154,10 @@ assert.match(testingMigration, /SET "status" = 'TESTING'/);
 assert.match(testingMigration, /WHERE "AdminToolReadiness"\."status" = 'NOT_READY'/,
   'Release must not demote already READY Service modes');
 const adminRegistryUi = readFileSync('admin/admin.js', 'utf8');
-assert.match(adminRegistryUi, /const sharedKey = readonly \? '' : String\(item\.capabilityKey \|\| ''\)/,
-  'Shared Service access must remain editable in tenant profile, not duplicated into modes');
+assert.match(adminRegistryUi, /\.\.\.\(item\.capabilityKey \? \[String\(item\.capabilityKey\)\] : \[\]\)/,
+  'Shared Service access remains editable on its parent, not duplicated into modes');
+assert.match(adminRegistryUi, /item\.id === 'service' && !key/,
+  'Service mode availability is derived from its existing mode readiness statuses');
 console.log('Service modes: Procedures/Products, independent statuses, legacy access and migration PASS');
 
 // Workplace creation is core DEMO setup; readiness does not apply to it.
