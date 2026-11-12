@@ -69,7 +69,7 @@ export class DataTransferService {
     for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
     for (const field of ['from', 'to','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
     for (const field of ['occurredAt', 'createdAt']) if (v[field] != null) v[field] = instant(v[field]);
-    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
+    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
     if(v.discount!==undefined) {

@@ -20,8 +20,8 @@ export const DOMAIN_FIELDS: Record<string, string[]> = {
   schedule: ['workplace','workplaceKey','date','from','to'],
   records: ['recordId','procedures','personKey','personTransferId','name','phone','uei','workplace','workplaceKey','workplaceTransferId','date','from','to','procedure','cost','price','discountPercent','discountMoney','duration','createdAt','email','surname','amount','wallet','walletId','occurredAt','material','manufacturer','unit','quantity','unitCost','withoutProcedure'],
   payments: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','workplace','workplaceKey','occurredAt','amount','wallet','walletId'],
-  items: ['name','itemId','manufacturer','unit','quantity','unitCost','occurredAt'],
-  movements: ['itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','kind','occurredAt','workplace','workplaceKey'],
+  items: ['name','itemId','manufacturer','unit','quantity','containerCount','unitCost','occurredAt'],
+  movements: ['itemId','itemTransferId','material','manufacturer','unit','quantity','containerDelta','expectedContainerCount','actualContainerCount','unitCost','kind','occurredAt','workplace','workplaceKey'],
   consumables: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','withoutProcedure','itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','occurredAt','workplace','workplaceKey'],
 };
 export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean; stableFingerprint?: string };
