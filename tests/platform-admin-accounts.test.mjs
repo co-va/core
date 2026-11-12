@@ -158,6 +158,27 @@ assert.match(registry, /TOOL_MAP\.cabinet\.map/, 'Professional hierarchy stays c
 assert.match(registry, /TOOL_MAP\.records\.map/, 'User hierarchy stays canonical');
 assert.doesNotMatch(registry, / · ' \+ escapeHtml\(key\)/, 'Technical readiness keys are not exposed in account rows');
 assert.match(registry, /aria-checked/, 'A normal tool has a proper switch');
+const registryHelpers = source.slice(source.indexOf('function toolReadable('), source.indexOf('function toolControl('));
+const toolState = { toolReadiness: [
+  { key: 'cabinet.journal.day', status: 'TESTING' },
+  { key: 'cabinet.service.procedures', status: 'NOT_READY' },
+  { key: 'cabinet.service.products', status: 'READY' },
+] };
+const helpers = runInNewContext(registryHelpers + '\\n({ toolReadable, toolChildren })'.replace('\\\\n', '\\n'), { state: toolState });
+const day = { readinessKey: 'cabinet.journal.day' };
+assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'DEMO' } }), true, 'DEMO can use testing tools');
+assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'LIVE' }, isTester: false }), false, 'Normal LIVE accounts cannot use testing tools');
+assert.equal(helpers.toolReadable(day, false, { access: { commercialMode: 'LIVE' }, isTester: true }), true, 'LIVE tester can use testing tools');
+assert.equal(helpers.toolReadable({ readinessKey: 'cabinet.profile.workspaces' }, false, {}), true, 'Workplace access is governed by grants, not readiness');
+assert.equal(helpers.toolReadable({ id: 'service' }, false, { access: { commercialMode: 'LIVE' } }), true, 'Service parent is available if one existing mode is ready');
+assert.equal(helpers.toolReadable({ id: 'service' }, true, {}), false, 'Separate User tools are read-only here');
+const groupedJournal = helpers.toolChildren('cabinet', { id: 'journal', items: [
+  { label: 'День', readinessKey: 'cabinet.journal.day' },
+  { label: 'Месяц', readinessKey: 'cabinet.journal.month' },
+  { label: 'График', readinessKey: 'cabinet.timetable' },
+] });
+assert.equal(groupedJournal.length, 2, 'Canonical Journal month groups its timetable mode');
+assert.equal(groupedJournal[1].items[0].readinessKey, 'cabinet.timetable', 'Graph mode nests under Month rather than duplicating');
 assert.match(source, /if \(!tenant \|\| tenant\.isOwnerBook\) return;/, 'Owner cannot be deleted in UI');
 assert.match(drawer, /data-delete-account/, 'Non-owner deletion is only inside account editor');
 assert.match(drawer, /openDeleteTenantModal\(tenantId, close\)/, 'Deleting an account closes its editor');
