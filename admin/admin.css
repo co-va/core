@@ -495,7 +495,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 
 /* Accounts: identity is a single compact field, tester is an optional account attribute. */
 .admin-users-section .admin-table th,.admin-users-section .admin-table td{padding:13px 12px}
-.admin-users-section .admin-table th:first-child,.admin-users-section .admin-table td:first-child{width:31%;min-width:205px}
+.admin-users-section .admin-accounts-table th:first-child,.admin-users-section .admin-accounts-table td:first-child{width:31%;min-width:205px}
 .admin-account-email{display:block;margin-top:4px;font-size:12px;line-height:1.35;color:var(--text-secondary);font-weight:400;overflow-wrap:anywhere}
 .admin-inline-role-editor{display:block;margin-top:5px}
 .admin-inline-role-select{max-width:145px;min-width:105px;min-height:28px;padding:4px 20px 4px 6px;border:1px solid var(--border);border-radius:7px;background:var(--white);font:inherit;font-size:11px;color:var(--text);cursor:pointer}
@@ -507,7 +507,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-account-presence::before{content:'';display:inline-block;flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:#9ea5a8}
 .admin-account-presence.is-online::before{background:#378448}
 .admin-network-detail{display:block;margin-top:5px;font-size:11px;line-height:1.3;color:var(--text-secondary);white-space:normal}
-.admin-users-section .admin-table th:last-child,.admin-users-section .admin-table td:last-child{min-width:130px}
+.admin-users-section .admin-accounts-table th:last-child,.admin-users-section .admin-accounts-table td:last-child{min-width:130px}
 .admin-users-section .admin-table tbody tr:focus-visible{outline:2px solid var(--white);outline-offset:-3px}
 .admin-danger-zone{display:flex;justify-content:flex-end}
 @media(max-width:760px){
@@ -932,11 +932,18 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-register-card{margin:0;padding:0;min-width:0;overflow:hidden}
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-.admin-tool-register-table th:nth-child(1){width:6.5%}
-.admin-tool-register-table th:nth-child(2){width:45.5%}
-.admin-tool-register-table th:nth-child(3){width:18%}
-.admin-tool-register-table th:nth-child(4){width:16%}
-.admin-tool-register-table th:nth-child(5){width:14%}
+/* One identical six-column geometry for Professional and User.
+   Technical columns are fixed; the remaining width is split 2:1:1:1. */
+.admin-tool-register-table col.admin-tool-col-expand,
+.admin-tool-register-table col.admin-tool-col-kind{width:44px}
+.admin-tool-register-table col.admin-tool-col-name{width:calc(40% - 35.2px)}
+.admin-tool-register-table col.admin-tool-col-status,
+.admin-tool-register-table col.admin-tool-col-payment,
+.admin-tool-register-table col.admin-tool-col-price{width:calc(20% - 17.6px)}
+.admin-tool-register-table :is(th,td):nth-child(-n+2){
+  box-sizing:border-box;width:44px;min-width:44px;max-width:44px;
+  padding:4px 0;text-align:center
+}
 .admin-tool-register-table th,
 .admin-tool-register-table td{
   box-sizing:border-box;height:44px;padding:4px 12px;
@@ -957,13 +964,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tool-registry-label{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
 .admin-tool-register-table [data-tool-ancestors=""] .admin-tool-registry-label{font-weight:720}
 .admin-tool-registry-expand{
-  display:grid;place-items:center;flex:0 0 20px;
+  display:grid;place-items:center;margin:0 auto;
   width:20px;height:22px;padding:0;border:0;
   background:transparent;color:var(--text);font-size:18px;cursor:pointer
 }
 .admin-tool-registry-expand[aria-expanded="false"]{transform:rotate(-90deg)}
-.admin-tool-registry-kind{text-align:left}
-.admin-tool-register-table th:nth-child(1){text-align:left}
+.admin-tool-registry-expand-cell,
+.admin-tool-registry-kind{text-align:center}
 .admin-tool-registry-kind span{
   display:inline-grid;place-items:center;width:22px;height:22px;
   border:1px solid var(--border);border-radius:3px;
@@ -1008,6 +1015,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-tool-register-table td{
     display:table-cell;grid-column:auto;grid-row:auto;padding:4px 12px!important;
     height:44px;white-space:nowrap;line-height:1.2
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(-n+2){
+    padding:4px 0!important
   }
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr,
   .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody td{height:44px;min-height:44px}
