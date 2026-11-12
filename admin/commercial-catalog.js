@@ -714,7 +714,8 @@ function bindTariffAssignments(content) {
         // all lower tiers; turning one on also enables all higher tiers.
         const nextIndex = active ? index + 1 : index;
         const next = nextIndex < buttons.length ? buttons[nextIndex].dataset.tariffTier : '';
-        const previous = current < buttons.length ? buttons[current].dataset.tariffTier : '';
+        const previous = current >= 0 && current < buttons.length
+          ? buttons[current].dataset.tariffTier : '';
         const message = row.querySelector('.admin-tool-registry-save-state');
         buttons.forEach((b) => { b.disabled = true; });
         try {
