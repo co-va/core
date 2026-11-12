@@ -1195,73 +1195,72 @@ function openAccessDrawer(tenantId) {
   const mode = String(tenant.access?.commercialMode || 'DEMO');
   const demoActivated = tenant.access?.demoActivatedAt || tenant.invitation?.activatedAt || '';
   const demoExpires = tenant.access?.demoExpiresAt || tenant.invitation?.demoExpiresAt || '';
+  const personName = tenant.ownerProfile?.name || tenant.invitation?.name || tenant.tenantName || 'Пользователь';
+  const personEmail = tenant.ownerProfile?.email || tenant.invitation?.email || '';
   let backdrop = document.createElement('div');
-  backdrop.className = 'admin-drawer-backdrop';
+  backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = `
-    <aside class="admin-drawer">
+    <aside class="admin-drawer admin-document-drawer admin-access-drawer" role="dialog" aria-modal="true" aria-label="Управление доступом пользователя">
       <div class="admin-drawer-head">
-        <div><h3>${escapeHtml(tenant.ownerProfile?.name || tenant.invitation?.name || tenant.tenantName || 'Пользователь')}</h3><p>${escapeHtml(tenant.ownerProfile?.email || tenant.invitation?.email || '')}</p></div>
-        <button class="admin-close" data-close aria-label="Закрыть">×</button>
+        <div><h3>${escapeHtml(personName)}</h3><p>${escapeHtml(personEmail)}</p></div>
+        <button type="button" class="admin-close" data-close aria-label="Закрыть">×</button>
       </div>
-
-      <section class="admin-section">
-        <h4>Режим</h4>
-        <div class="admin-mode-card">
-          <strong>${escapeHtml(mode)}</strong>
-          ${mode === 'DEMO' ? `<span>${demoActivated ? `DEMO началось ${escapeHtml(formatAdminMoment(demoActivated))}` : 'DEMO ещё не началось'}</span><span>${demoExpires ? `DEMO до ${escapeHtml(formatAdminMoment(demoExpires))}` : 'Срок появится после активации'}</span>` : '<span>Рабочий режим LIVE активен.</span>'}
-        </div>
-      </section>
-
-      <section class="admin-section">
-        <h4>Роль доступа</h4>
-        ${tenant.isOwnerBook ? `<div class="admin-capability"><div><strong>Администратор</strong><small>Защищённый аккаунт платформы.</small></div></div>` : `
-        <div class="admin-capability">
-          <div>
-            <strong data-tester-label>${tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
-            <small>Назначается администратором. Не зависит от ссылки или DEMO/LIVE.</small>
+      <div class="admin-document-reading">
+        <div class="admin-access-summary">
+          <div class="admin-overview-metric admin-access-summary-card">
+            <span class="admin-overview-metric-label">Режим</span>
+            <strong class="admin-access-summary-value">${escapeHtml(mode)}</strong>
+            <span class="admin-access-summary-detail">${mode === 'DEMO'
+              ? demoExpires ? 'До ' + escapeHtml(formatAdminMoment(demoExpires)) : 'До активации'
+              : 'Рабочий доступ'}</span>
           </div>
-          <button type="button" class="admin-toggle${tenant.isTester ? ' is-on' : ''}"
-            role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
-            data-tester-toggle></button>
-        </div>`}
-      </section>
-
-      <section class="admin-section">
-        <h4>Инструменты пользователя</h4>
-        <p class="admin-service-note">Состав и порядок совпадают с реестром «Инструменты». Здесь меняются индивидуальные разрешения.</p>
-        <div data-capability-order-list>
-          ${renderTenantRegistry(resolved)}
+          <div class="admin-overview-metric admin-access-summary-card">
+            <span class="admin-overview-metric-label">Роль</span>
+            <strong class="admin-access-summary-value" data-tester-label>${tenant.isOwnerBook ? 'Администратор' : tenant.isTester ? 'Тестировщик' : 'Пользователь'}</strong>
+            ${tenant.isOwnerBook ? '' : `<button type="button" class="admin-toggle admin-access-role-toggle${tenant.isTester ? ' is-on' : ''}"
+              role="switch" aria-label="Тестировщик" aria-checked="${tenant.isTester ? 'true' : 'false'}"
+              data-tester-toggle></button>`}
+          </div>
         </div>
-      </section>
-
-      ${tenant.isOwnerBook ? '' : `<section class="admin-section">
-        <h4>Состояние пространства</h4>
-        <button class="admin-button ${tenant.status === 'SUSPENDED' ? '' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
-      </section>`}
-
-      ${tenant.ownerProfile?.email ? `
-      <section class="admin-section">
-        <h4>Техническое письмо</h4>
-        <p class="admin-service-note">Это служебная отправка уже зарегистрированному пользователю: ${escapeHtml(tenant.ownerProfile.email)}</p>
-        <form class="admin-form" data-technical-email-form>
-          <label class="admin-field"><span>Тема</span><input name="subject" maxlength="200" required></label>
-          <label class="admin-field"><span>Текст</span><textarea name="body" rows="6" maxlength="20000" required></textarea></label>
-          <div><button class="admin-button secondary" type="submit">Отправить письмо</button></div>
-          <p class="admin-inline-message" data-technical-email-message></p>
-        </form>
-      </section>` : ''}
-
-      ${tenant.isOwnerBook ? '' : `<section class="admin-section admin-danger-zone"><button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button></section>`}
-      <div class="admin-actions"><button class="admin-button secondary" data-close>Закрыть</button><button class="admin-button" data-save>Сохранить изменения</button></div>
-      <p class="admin-inline-message" data-save-message></p>
+        <section class="admin-section admin-access-tools">
+          <h4>Инструменты</h4>
+          <div data-capability-order-list>${renderTenantRegistry(resolved, tenant)}</div>
+          ${tenant.isOwnerBook ? '' : `<details class="admin-access-tool-conditions">
+            <summary>Условия и оплата</summary>
+            <div class="commercial-tenant-section" data-commercial-tenant-tools></div>
+          </details>`}
+          <div class="admin-inline-actions admin-access-save-actions">
+            <button type="button" class="admin-button" data-save>Сохранить доступ</button>
+          </div>
+          <p class="admin-inline-message" data-save-message role="status"></p>
+        </section>
+        ${tenant.isOwnerBook ? '' : `<details class="admin-section admin-access-account-actions">
+          <summary>Управление аккаунтом</summary>
+          <div class="admin-inline-actions">
+            <button type="button" class="admin-button ${tenant.status === 'SUSPENDED' ? 'secondary' : 'danger'}" data-status>${tenant.status === 'SUSPENDED' ? 'Включить пространство' : 'Отключить пространство'}</button>
+            <button type="button" class="admin-button danger" data-delete-account>Удалить аккаунт</button>
+          </div>
+        </details>`}
+        ${tenant.ownerProfile?.email ? `<details class="admin-section admin-access-email">
+          <summary>Написать email</summary>
+          <form class="admin-form" data-technical-email-form>
+            <label class="admin-field"><span>Тема</span><input name="subject" maxlength="200" required></label>
+            <label class="admin-field"><span>Сообщение</span><textarea name="body" rows="5" maxlength="20000" required></textarea></label>
+            <button class="admin-button secondary" type="submit">Отправить письмо</button>
+            <p class="admin-inline-message" data-technical-email-message role="status"></p>
+          </form>
+        </details>` : ''}
+      </div>
     </aside>`;
   const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
   if (sharedQ) {
-    const html = modal(backdrop.innerHTML, { title: 'Доступ', variant: 'q', className: 'admin-access-q' });
+    const html = modal(backdrop.innerHTML, { title: personName, variant: 'q', className: 'admin-access-q admin-document-q' });
     const mounted = mountModal(app.querySelector('[data-v2-app]'), html);
     if (!mounted) return;
     backdrop = mounted;
   } else document.body.append(backdrop);
+
+  if (!tenant.isOwnerBook) void enhanceCommercialTenantTools(backdrop.querySelector('[data-commercial-tenant-tools]'), tenantId);
 
   const close = () => { if (sharedQ) backdrop.v2Close?.(); else backdrop.remove(); };
   backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
@@ -1276,9 +1275,11 @@ function openAccessDrawer(tenantId) {
   });
 
   backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
       button.classList.toggle('is-on');
       button.dataset.current = button.classList.contains('is-on') ? 'true' : 'false';
+      button.setAttribute('aria-checked', button.dataset.current);
     });
   });
 
