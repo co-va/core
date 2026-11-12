@@ -1181,7 +1181,7 @@ function toolControl(capability, resolved, locked) {
     '"' + (locked ? ' disabled' : '') + '></button>';
 }
 
-function toolControls(item, resolved, tenant, key, seen) {
+function toolControls(item, resolved, tenant, key, parentKey, hasChildren, seen) {
   const keys = [
     ...(item.capabilityKey ? [String(item.capabilityKey)] : []),
     ...(TOOL_CAPABILITY_BINDINGS[key] || []),
@@ -1196,7 +1196,21 @@ function toolControls(item, resolved, tenant, key, seen) {
   const disabled = !toolReadable(item, false, tenant);
   const grants = caps.filter((cap) => cap.valueType !== 'LIMIT');
   const limit = caps.find((cap) => cap.valueType === 'LIMIT');
-  if (!grants.length) return { grant: '', limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '' };
+  if (!grants.length) {
+    // K components and R modes without independent Core entitlements inherit
+    // the parent availability. A disabled switch conveys inherited state without
+    // pretending this component has a separately writable capability.
+    const inherited = TOOL_CAPABILITY_BINDINGS[parentKey] || [];
+    const inheritedEnabled = inherited.some((grantKey) => resolved.get(grantKey)?.enabled === true);
+    const available = toolReadable(item, false, tenant);
+    const inheritedSwitch = !hasChildren && item.readinessKey
+      ? '<button type="button" class="admin-toggle' + (inheritedEnabled && available ? ' is-on' : '') +
+        '" disabled role="switch" aria-checked="' + String(inheritedEnabled && available) +
+        '" aria-label="' + escapeHtml(toolName(item)) +
+        ': доступ наследуется, отдельного переключателя нет" title="Доступ наследуется от родительского инструмента"></button>'
+      : '';
+    return { grant: inheritedSwitch, limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '' };
+  }
   if (grants.length === 1) return {
     grant: toolControl(grants[0], resolved.get(grants[0].key), disabled),
     limit: limit ? toolControl(limit, resolved.get(limit.key), disabled) : '',
@@ -1217,10 +1231,10 @@ function toolControls(item, resolved, tenant, key, seen) {
   };
 }
 
-function accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCommercial, seen) {
+function accountToolRow(item, resolved, tenant, area, depth, parentKey, hasChildren, allowCommercial, seen) {
   const key = accountToolKey(area, item, parentKey);
   const kind = accountToolKind(item, depth);
-  const { grant, limit } = toolControls(item, resolved, tenant, key, seen);
+  const { grant, limit } = toolControls(item, resolved, tenant, key, parentKey, hasChildren, seen);
   const locked = !toolReadable(item, false, tenant);
   // Commercial conditions use the same row as the actual tool. The tenant
   // commercial service fills these slots; it never creates a second list.
@@ -1237,7 +1251,7 @@ function accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCom
 function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', depth = 0, parentKey = '', allowCommercial = true, seen = new Set()) {
   const key = accountToolKey(area, item, parentKey);
   const children = toolChildren(area, item);
-  const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCommercial, seen);
+  const row = accountToolRow(item, resolved, tenant, area, depth, parentKey, children.length > 0, allowCommercial, seen);
   if (!children.length) return row;
   // The row itself is the disclosure summary. Never repeat the parent label.
   return '<details class="admin-access-tool-group" open><summary class="admin-access-tool-group-title">' +
