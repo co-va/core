@@ -220,7 +220,7 @@ export class CommercialCatalogService {
     );
     const tenantTier = new Map<string, number>();
     for (const row of rows) {
-      const index = row.entitled ? TARIFF_KEYS.indexOf(row.tierKey as TariffKey) : -1;
+      const index = row.entitled ? TARIFF_KEYS.indexOf(row.tierKey as (typeof TARIFF_KEYS)[number]) : -1;
       tenantTier.set(row.tenantId, Math.max(tenantTier.get(row.tenantId) ?? 0, index));
     }
     const counts = TARIFF_KEYS.map((_, index) => [...tenantTier.values()].filter((value) => value === index).length);
