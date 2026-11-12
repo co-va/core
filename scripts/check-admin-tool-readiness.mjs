@@ -73,6 +73,44 @@ if(!adminNav.includes("if (state.section !== 'tenants' || !Array.isArray(tenants
   throw new Error('Late Users network refresh must not navigate away from Tools');
 }
 
+
+// Registry hierarchy: User has single F Profile/Contacts cards, and Chat must
+// be the last F card even while its application remains under reconstruction.
+const mapBlock = ui.slice(ui.indexOf('export const TOOL_MAP'), ui.indexOf('// Binding to the existing'));
+const recordsMap = mapBlock.slice(mapBlock.indexOf('  records: ['));
+for (const key of ["records.profile", "records.contacts", "records.chat"]) {
+  if (!recordsMap.includes("readinessKey: '" + key + "'")) {
+    throw new Error('Missing single User F readiness ' + key);
+  }
+}
+for (const removedKey of ['records.profile.personal-data','records.profile.documents-notifications',
+                          'records.contacts.list','records.contacts.card']) {
+  if (recordsMap.includes("readinessKey: '" + removedKey + "'")) {
+    throw new Error('Duplicate readiness returned within User F card: ' + removedKey);
+  }
+}
+if (!/id: 'chat', label: 'Чат', readinessKey: 'records\.chat' \},\s*\],\s*\}\);/.test(recordsMap)) {
+  throw new Error('User Chat must remain the last F row');
+}
+if (!/id: 'chat', label: 'Чат', readinessKey: 'cabinet\.chat' \},\s*\],\s*records: \[/.test(mapBlock)) {
+  throw new Error('Professional Chat must remain the last F row');
+}
+for (const area of ['cabinet', 'records']) {
+  for (const [suffix,name] of [['events','События'],['notes','Заметки'],['record','Запись']]) {
+    if (!mapBlock.includes("label: '" + name + "', kind: 'check', readinessKey: '" + area + ".journal.day." + suffix + "'")) {
+      throw new Error('Missing non-card Day check ' + area + '/' + suffix);
+    }
+  }
+}
+for (const service of ['google-calendar','yandex-calendar']) {
+  if (!recordsMap.includes("kind: 'check', readinessKey: 'records.integrations." + service + "'")) {
+    throw new Error('Calendar integration must be a check, never an E card');
+  }
+}
+if (!ui.includes('<th aria-label="Тип карточки"></th>')) {
+  throw new Error('The technical F/E column header must stay blank');
+}
+
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
 
 if (!ui.includes("readinessKey: 'cabinet.profile.workspaces'")) throw new Error('Workplace readiness dropdown must be present');
