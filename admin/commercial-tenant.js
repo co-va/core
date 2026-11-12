@@ -240,7 +240,10 @@ export async function enhanceCommercialTenantTools(section, tenantId) {
       <details class="commercial-tenant-details"><summary>История действий</summary>${auditRows(commercial.audit)}</details>`;
 
     drawer.querySelectorAll('[data-commercial-tenant-product]').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', (event) => {
+        // Tool-row summaries must not collapse when changing commercial terms.
+        event.stopPropagation();
+        event.preventDefault();
         const next = button.getAttribute('aria-pressed') !== 'true';
         button.setAttribute('aria-pressed', String(next));
         button.classList.toggle('is-on', next);
