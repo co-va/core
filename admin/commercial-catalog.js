@@ -628,6 +628,24 @@ export async function updateTariffPrice(key, priceMinor) {
   return loadTariffs(true);
 }
 
+export async function updateTariffSettings(tariffKey, priceMinor, bonus6, bonus12) {
+  if (!['tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
+      !Number.isSafeInteger(priceMinor) || priceMinor < 0 ||
+      ![bonus6, bonus12].every((value) =>
+        Number.isSafeInteger(value) && value >= 0 && value <= 100)) {
+    throw new Error('Проверьте цену за 30 дней и проценты бонусов');
+  }
+  const result = await commercialRequest('/tariffs/settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tariffKey, priceMinor, bonus6, bonus12 }),
+  });
+  tariffsCache = result;
+  catalogCache = null;
+  catalogPromise = null;
+  document.dispatchEvent(new Event('admin:tariff-changed'));
+  return result;
+}
+
 function hydrateTariffAssignments(content, tariffs) {
   const assignments = tariffs?.assignments || {};
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
