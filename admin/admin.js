@@ -848,7 +848,7 @@ function openRegistrationToolDrawer() {
     </aside>`;
   // Registration links accept Boolean capability switches, never capacity overrides.
   backdrop.querySelectorAll('[data-type="LIMIT"]').forEach((input) => {
-    input.closest('.admin-capability')?.remove();
+    input.closest('.admin-access-inline-limit')?.remove();
   });
   const sharedQ = Boolean(app.querySelector('.admin-mobile-app'));
   if (sharedQ) {
@@ -861,10 +861,25 @@ function openRegistrationToolDrawer() {
   backdrop.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
   backdrop.querySelectorAll('[data-toggle]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
       button.classList.toggle('is-on');
       button.dataset.current = String(button.classList.contains('is-on'));
       button.setAttribute('aria-checked', button.dataset.current);
+    });
+  });
+  backdrop.querySelectorAll('[data-toggle-group]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
+      const enabled = button.getAttribute('aria-checked') !== 'true';
+      button.setAttribute('aria-checked', String(enabled));
+      button.classList.toggle('is-on', enabled);
+      button.closest('.admin-access-grant-group').querySelectorAll('[data-capability][data-type="BOOLEAN"]')
+        .forEach((input) => { input.dataset.current = String(enabled); });
     });
   });
   backdrop.querySelector('[data-apply-invite]')?.addEventListener('click', () => {
