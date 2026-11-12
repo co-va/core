@@ -14,22 +14,222 @@ export class DocumentRegistryService {
       title: string;
       type: string;
       requiredForRegistration: boolean;
+      purpose: string | null;
       version: number;
       content: string;
       publishedAt: Date;
     }>>`
-      SELECT d."key", d."title", d."type", d."requiredForRegistration",
-             v."version", v."contentSnapshot" AS "content", v."publishedAt"
+      SELECT d."key", d."title", d."type", d."requiredForRegistration", d."purpose",
+             v."version", v."contentSnapshot" AS "content", v."publishedAt",
+             v."editorEdition", ed."application"
       FROM "PlatformDocument" d
       JOIN LATERAL (
-        SELECT "version", "contentSnapshot", "publishedAt"
+        SELECT "version", "contentSnapshot", "publishedAt", "editorEdition"
         FROM "PlatformDocumentVersion"
         WHERE "documentId" = d."id"
         ORDER BY "version" DESC, "publishedAt" DESC
         LIMIT 1
       ) v ON true
+      LEFT JOIN "PlatformDocumentDraft" ed ON ed."key"=d."key"
       WHERE d."isActive" = true
       ORDER BY d."key" ASC
+    `;
+  }
+
+
+  // Editorial drafts are never part of PlatformDocumentVersion or consent history.
+  // All routes invoking these methods are protected by JwtAuthGuard + PlatformAdminGuard.
+  async adminDrafts() {
+    return this.prisma.$queryRaw<Array<{
+      key: string; application: string; title: string; type: string; content: string;
+      edition: string; requiredForRegistration: boolean; purpose: string; baseVersion: number;
+    }>>`
+      SELECT "key","application","title","type","content","edition",
+             "requiredForRegistration","purpose","baseVersion"
+      FROM "PlatformDocumentDraft"
+      WHERE "draftActive" = true
+      ORDER BY "createdAt" ASC
+    `;
+  }
+
+  async saveAdminDraft(input: unknown) {
+    const body = input && typeof input === 'object' && !Array.isArray(input)
+      ? input as Record<string, unknown> : {};
+    const requestedKey = String(body.key || '').trim();
+    const requestedApplication = String(body.application || '').trim().toLowerCase();
+    if (!['professional','user'].includes(requestedApplication)) {
+      throw new BadRequestException('Не выбрано приложение документа');
+    }
+    const key = requestedKey || `admin-${requestedApplication}-${randomUUID()}`;
+    if (!/^[a-z0-9][a-z0-9-]{1,110}$/.test(key)) {
+      throw new BadRequestException('Некорректный ключ документа');
+    }
+    const title = String(body.title || '').trim();
+    const content = String(body.content || '').trim();
+    const edition = String(body.edition || '').trim();
+    if (!title || title.length > 250 || content.length > 200_000 || edition.length > 40) {
+      throw new BadRequestException('Проверьте название, редакцию и текст документа');
+    }
+    const saved = await this.prisma.$queryRaw<Array<{
+      application: string; baseVersion: number; draftActive: boolean;
+    }>>`
+      SELECT "application","baseVersion","draftActive"
+      FROM "PlatformDocumentDraft" WHERE "key" = ${key}
+    `;
+    const existing = await this.prisma.$queryRaw<Array<{
+      version: number; type: string; requiredForRegistration: boolean; purpose: string | null;
+    }>>`
+      SELECT v."version",d."type",d."requiredForRegistration",d."purpose"
+      FROM "PlatformDocument" d
+      LEFT JOIN LATERAL (
+        SELECT "version" FROM "PlatformDocumentVersion"
+        WHERE "documentId" = d."id" ORDER BY "version" DESC LIMIT 1
+      ) v ON true
+      WHERE d."key" = ${key}
+    `;
+    if (!saved.length && !existing.length && !key.startsWith(`admin-${requestedApplication}-`)) {
+      throw new BadRequestException('Новый документ должен создаваться через реестр');
+    }
+    const application = saved[0]?.application ||
+      (key === 'account-terms' || key === 'platform-privacy-policy' || key.startsWith('admin-user-')
+        ? 'user' : 'professional');
+    if (application !== requestedApplication) {
+      throw new BadRequestException('Документ принадлежит другому приложению');
+    }
+    const requestedType = String(body.type || '').toUpperCase();
+    if (!['CUSTOM_LEGAL', 'CUSTOM_WORKING'].includes(requestedType)) {
+      throw new BadRequestException('Выберите статус документа: Правовой или Рабочий');
+    }
+    // Built-in legal source types are immutable; only custom document types can be changed.
+    const type = existing[0] && !['CUSTOM_LEGAL', 'CUSTOM_WORKING'].includes(existing[0].type)
+      ? existing[0].type : requestedType;
+    const purpose = String(body.purpose || '').toUpperCase();
+    if (!['REQUIRED', 'OPTIONAL', 'READING', 'REFERENCE'].includes(purpose)) {
+      throw new BadRequestException('Выберите назначение документа');
+    }
+    const required = purpose === 'REQUIRED';
+    const baseVersion = saved[0]?.draftActive
+      ? Number(saved[0].baseVersion)
+      : Number(existing[0]?.version || 0);
+    await this.prisma.$executeRaw`
+      INSERT INTO "PlatformDocumentDraft" (
+        "key","application","title","type","content","edition",
+        "requiredForRegistration","purpose","baseVersion","draftActive","publishedOnce"
+      ) VALUES (
+        ${key},${application},${title},${type},${content},${edition},
+        ${required},${purpose},${baseVersion},true,false
+      )
+      ON CONFLICT ("key") DO UPDATE SET
+        "title"=EXCLUDED."title","type"=EXCLUDED."type",
+        "content"=EXCLUDED."content","edition"=EXCLUDED."edition",
+        "requiredForRegistration"=EXCLUDED."requiredForRegistration",
+        "purpose"=EXCLUDED."purpose",
+        "baseVersion"=EXCLUDED."baseVersion","draftActive"=true,
+        "updatedAt"=CURRENT_TIMESTAMP
+    `;
+    return { key, application, title, type, content, edition, requiredForRegistration: required, purpose, baseVersion };
+  }
+
+  async publishAdminDraft(keyInput: string) {
+    const key = String(keyInput || '').trim();
+    if (!/^[a-z0-9][a-z0-9-]{1,110}$/.test(key)) {
+      throw new BadRequestException('Некорректный документ');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const drafts = await tx.$queryRaw<Array<{
+        key: string; title: string; type: string; content: string; edition: string;
+        requiredForRegistration: boolean; purpose: string; baseVersion: number;
+      }>>`
+        SELECT "key","title","type","content","edition","requiredForRegistration","purpose","baseVersion"
+        FROM "PlatformDocumentDraft"
+        WHERE "key" = ${key} AND "draftActive" = true FOR UPDATE
+      `;
+      const draft = drafts[0];
+      if (!draft) throw new BadRequestException('Сохранённый черновик не найден');
+      if (!draft.title.trim() || !draft.content.trim() || !draft.edition.trim()) {
+        throw new BadRequestException('Для публикации нужны название, редакция и текст');
+      }
+      const publishedHeader = draft.content.split(/\r?\n/).slice(0, 8).join('\n');
+      const declaredEditions = [...publishedHeader.matchAll(/(?:юридическая\s+)?редакция\s+(\d+(?:\.\d+)*)/gi)]
+        .map((match) => match[1]);
+      if (declaredEditions.some((edition) => edition !== draft.edition)) {
+        throw new BadRequestException('Номер редакции в тексте документа отличается от редакции в заголовке');
+      }
+      const existing = await tx.$queryRaw<Array<{ id: string; type: string }>>`
+        SELECT "id","type" FROM "PlatformDocument" WHERE "key" = ${key} FOR UPDATE
+      `;
+      const documentId = existing[0]?.id || randomUUID();
+      const latest = existing.length ? await tx.$queryRaw<Array<{
+        version: number; contentHash: string; editorEdition: string | null;
+      }>>`
+        SELECT "version","contentHash","editorEdition" FROM "PlatformDocumentVersion"
+        WHERE "documentId" = ${documentId} ORDER BY "version" DESC LIMIT 1
+      ` : [];
+      const currentVersion = Number(latest[0]?.version || 0);
+      if (Number(draft.baseVersion) !== currentVersion) {
+        throw new ConflictException('Документ обновился после создания черновика. Необходимо сверить редакции.');
+      }
+      const contentHash = createHash('sha256').update(draft.content, 'utf8').digest('hex');
+      if (latest[0]?.contentHash === contentHash) {
+        throw new BadRequestException('Текст не изменён. Новая редакция не требуется.');
+      }
+      await tx.$executeRaw`
+        INSERT INTO "PlatformDocument" (
+          "id","key","type","title","requiredForRegistration","purpose",
+          "requiredForLive","requiredForPublicBooking","isActive","createdAt","updatedAt"
+        ) VALUES (
+          ${documentId},${key},${draft.type},${draft.title},
+          ${draft.requiredForRegistration},${draft.purpose},false,false,true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+        ) ON CONFLICT ("key") DO UPDATE SET
+          "title"=EXCLUDED."title","type"=EXCLUDED."type",
+          "requiredForRegistration"=EXCLUDED."requiredForRegistration",
+          "purpose"=EXCLUDED."purpose","isActive"=true,"updatedAt"=CURRENT_TIMESTAMP
+      `;
+      if (latest.length) {
+        await tx.$executeRaw`
+          UPDATE "PlatformDocumentVersion"
+          SET "supersededAt"=CURRENT_TIMESTAMP
+          WHERE "documentId"=${documentId} AND "supersededAt" IS NULL
+        `;
+      }
+      const version = currentVersion + 1;
+      await tx.$executeRaw`
+        INSERT INTO "PlatformDocumentVersion" (
+          "id","documentId","version","contentSnapshot","contentHash",
+          "operatorIdentitySnapshot","publishedAt","supersededAt","editorEdition","editorTitle"
+        ) VALUES (
+          ${randomUUID()},${documentId},${version},${draft.content},${contentHash},
+          '{}'::jsonb,CURRENT_TIMESTAMP,NULL,${draft.edition},${draft.title}
+        )
+      `;
+      await tx.$executeRaw`
+        UPDATE "PlatformDocumentDraft" SET
+          "draftActive"=false,"publishedOnce"=true,"content"='',"baseVersion"=${version},
+          "updatedAt"=CURRENT_TIMESTAMP
+        WHERE "key"=${key}
+      `;
+      return { key, version, edition: draft.edition };
+    });
+  }
+
+  async archivedAdminVersions() {
+    return this.prisma.$queryRaw<Array<{
+      id: string; documentKey: string; documentTitle: string; documentVersion: number;
+      documentContent: string; editorEdition: string | null; publishedAt: Date;
+      supersededAt: Date; application: string;
+    }>>`
+      SELECT v."id",d."key" AS "documentKey",COALESCE(v."editorTitle",d."title") AS "documentTitle",
+             v."version" AS "documentVersion",v."contentSnapshot" AS "documentContent",
+             v."editorEdition",v."publishedAt",v."supersededAt",
+             COALESCE(ed."application",
+               CASE WHEN d."key" IN ('account-terms','platform-privacy-policy')
+                 THEN 'user' ELSE 'professional' END) AS "application"
+      FROM "PlatformDocumentVersion" v
+      JOIN "PlatformDocument" d ON d."id"=v."documentId"
+      LEFT JOIN "PlatformDocumentDraft" ed ON ed."key"=d."key"
+      WHERE v."supersededAt" IS NOT NULL
+      ORDER BY v."supersededAt" DESC,v."id" DESC
+      LIMIT 500
     `;
   }
 
@@ -116,6 +316,12 @@ export class DocumentRegistryService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of normalized) {
+        // Admin-published revisions must never be reverted by the static seed on login.
+        const editorOwned = await tx.$queryRaw<Array<{ key: string }>>`
+          SELECT "key" FROM "PlatformDocumentDraft"
+          WHERE "key"=${item.key} AND "publishedOnce"=true
+        `;
+        if (editorOwned.length) continue;
         const existing = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT "id" FROM "PlatformDocument" WHERE "key" = ${item.key} LIMIT 1
         `;

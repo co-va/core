@@ -49,6 +49,14 @@ const APP_CATALOG: CatalogManifestItem[] = [
   { key: 'tool.notifications', name: 'Уведомления', description: 'Системные уведомления', type: 'TOOL', position: 160, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['notifications.access'] },
   { key: 'tool.integrations', name: 'Интеграции', description: 'Базовый раздел интеграций', type: 'TOOL', position: 170, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['integrations.access'] },
   { key: 'tool.journal', name: 'Журнал', description: 'День, месяц (просмотр и режим графика), список записей', type: 'TOOL', position: 180, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['journal.day.access', 'journal.month.access', 'journal.list.access'] },
+  // Additive catalog entries: price is configurable from each Loyalty E row.
+  // No saleability or paid access is enabled by default.
+  { key: 'tool.loyalty.deposit', name: 'Депозит', description: '', type: 'TOOL', position: 190, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['loyalty.deposit.access'] },
+  { key: 'tool.loyalty.personal-account', name: 'Личный счёт', description: '', type: 'TOOL', position: 191, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['loyalty.personal_account.access'] },
+  { key: 'tool.loyalty.certificate', name: 'Сертификат', description: '', type: 'TOOL', position: 192, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['loyalty.certificate.access'] },
+  { key: 'tool.loyalty.subscription', name: 'Абонемент', description: '', type: 'TOOL', position: 193, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['loyalty.subscription.access'] },
+  { key: 'tool.loyalty.referral', name: 'Реферальная программа', description: '', type: 'TOOL', position: 194, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['loyalty.referral.access'] },
+  { key: 'tool.loyalty.bonus', name: 'Бонусная программа', description: '', type: 'TOOL', position: 195, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: ['loyalty.bonus.access'] },
 
   { key: 'tool.finance.cash', name: 'Касса', description: 'Кошельки и движения по ним', type: 'TOOL', position: 300, isSaleable: true, isFree: false, priceMinor: 0, capabilityKeys: ['finance.cash.access'] },
   { key: 'tool.finance.dds', name: 'ДДС', description: 'Движение денежных средств, статьи и финансовые операции', type: 'TOOL', position: 310, isSaleable: true, isFree: false, priceMinor: 0, capabilityKeys: ['finance.dds.access', 'finance.income_expense.access', 'finance.articles.access', 'finance.special.access'] },

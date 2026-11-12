@@ -1,4 +1,4 @@
-:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;--line:var(--border);--muted:var(--text-secondary);--accent:var(--surface-dark);--sidebar:var(--surface-dark);--app-max-width:1240px;--visual-vh:100dvh}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;--line:var(--border);--muted:var(--text-secondary);--accent:var(--surface-dark);--sidebar:var(--surface-dark);--app-max-width:1240px;--visual-vh:100dvh;--admin-pearl:#E0D6D6}
 *{box-sizing:border-box}
 body{margin:0;min-width:320px;background:var(--app-bg)}
 button,input,select,textarea{font:inherit}
@@ -340,8 +340,8 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-bar-cell{display:flex;min-width:0;height:100%;flex-direction:column;align-items:center;gap:0}
 .admin-overview-bar-value{height:19px;line-height:19px;color:#64676A;font-size:11px;font-weight:650;font-variant-numeric:tabular-nums}
 .admin-overview-bar-track{display:flex;flex:1;align-items:flex-end;justify-content:center;min-height:0;width:100%}
-.admin-overview-bar{display:block;width:min(100%,34px);height:var(--bar-height);border-radius:5px 5px 0 0;background:#ABB0B2;transition:height .2s ease}
-.admin-overview-bar.is-current{background:#2F3338}
+.admin-overview-bar{display:block;width:min(100%,34px);height:var(--bar-height);border-radius:5px 5px 0 0;background:var(--admin-pearl);transition:height .2s ease}
+.admin-overview-bar.is-current{background:var(--admin-pearl)}
 .admin-overview-bar-label{height:23px;line-height:23px;font-size:10px;white-space:nowrap;color:#7B8083;font-variant-numeric:tabular-nums}
 .admin-overview-footnote{margin:16px 0 0;color:#7B8083;font-size:11px;line-height:1.45}
 .admin-overview-focus{display:flex;flex-direction:column}
@@ -360,10 +360,10 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-tool-counts{display:flex;flex-wrap:wrap;gap:18px 28px;margin-bottom:16px;font-size:13px;color:#454A4C}
 .admin-overview-tool-counts>span{display:flex;align-items:center;gap:8px}
 .admin-overview-tool-counts strong{font-variant-numeric:tabular-nums;color:#222;font-size:14px}
-.admin-overview-tool-counts i{width:9px;height:9px;border-radius:50%;display:inline-block}
-.admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:#3C4841}
-.admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:#B8A77B}
-.admin-overview-tool-counts .is-not-ready,.admin-overview-tool-track .is-not-ready{background:#D7D7D3}
+.admin-overview-tool-counts i{width:12px;height:12px;border-radius:0;display:inline-block;flex:0 0 12px}
+.admin-overview-tool-counts .is-ready,.admin-overview-tool-track .is-ready{background:var(--surface-dark)}
+.admin-overview-tool-counts .is-testing,.admin-overview-tool-track .is-testing{background:#FFFF00}
+.admin-overview-tool-counts .is-not-ready,.admin-overview-tool-track .is-not-ready{background:var(--admin-pearl)}
 .admin-overview-tool-track{display:flex;gap:2px;height:9px;overflow:hidden;border-radius:20px;background:#EEE}
 .admin-overview-tool-track>span{display:block;min-width:0}
 .admin-overview-tool-track .is-empty{background:#EEE}
@@ -459,9 +459,43 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-mobile-app .admin-users-section>.admin-invite-panel{padding:0 10px;margin:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:0 2px 6px rgba(17,17,17,.035)}
 }
 
+/* Desktop and iPad account lists use identical six-column tracks.
+   Content in the owner row must not size columns differently from other users.
+   Narrow desktop/iPad viewports can scroll horizontally without clipping the last track. */
+@media(min-width:761px){
+  .admin-users-section>.admin-card:has(> .admin-accounts-table){
+    overflow-x:auto;
+    overscroll-behavior-x:contain;
+  }
+  .admin-users-section .admin-accounts-table{
+    width:100%;
+    min-width:760px;
+    table-layout:fixed;
+  }
+  .admin-users-section .admin-accounts-table thead th:nth-child(1){width:30%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(2){width:16%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(3){width:10%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(4){width:10%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(5){width:13%}
+  .admin-users-section .admin-accounts-table thead th:nth-child(6){width:21%}
+  /* The Users tables use the same approved 44px pearl headers as Document Registry. */
+  .admin-users-section .admin-accounts-table thead th{
+    height:44px;
+    background:var(--admin-pearl);
+    color:#41484F;
+    font-size:15px;
+    font-weight:750;
+    line-height:1.2;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    border-bottom-color:var(--admin-pearl);
+  }
+  .admin-users-section .admin-accounts-table tbody td{border-bottom-color:var(--admin-pearl)}
+}
+
 /* Accounts: identity is a single compact field, tester is an optional account attribute. */
-.admin-users-section .admin-table th,.admin-users-section .admin-table td{padding:13px 12px}
-.admin-users-section .admin-table th:first-child,.admin-users-section .admin-table td:first-child{width:31%;min-width:205px}
+.admin-users-section .admin-accounts-table th,.admin-users-section .admin-accounts-table td{padding:13px 12px}
+.admin-users-section .admin-accounts-table th:first-child,.admin-users-section .admin-accounts-table td:first-child{width:31%;min-width:205px}
 .admin-account-email{display:block;margin-top:4px;font-size:12px;line-height:1.35;color:var(--text-secondary);font-weight:400;overflow-wrap:anywhere}
 .admin-inline-role-editor{display:block;margin-top:5px}
 .admin-inline-role-select{max-width:145px;min-width:105px;min-height:28px;padding:4px 20px 4px 6px;border:1px solid var(--border);border-radius:7px;background:var(--white);font:inherit;font-size:11px;color:var(--text);cursor:pointer}
@@ -473,19 +507,19 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-account-presence::before{content:'';display:inline-block;flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:#9ea5a8}
 .admin-account-presence.is-online::before{background:#378448}
 .admin-network-detail{display:block;margin-top:5px;font-size:11px;line-height:1.3;color:var(--text-secondary);white-space:normal}
-.admin-users-section .admin-table th:last-child,.admin-users-section .admin-table td:last-child{min-width:130px}
-.admin-users-section .admin-table tbody tr:focus-visible{outline:2px solid var(--white);outline-offset:-3px}
+.admin-users-section .admin-accounts-table th:last-child,.admin-users-section .admin-accounts-table td:last-child{min-width:130px}
+.admin-users-section .admin-accounts-table tbody tr:focus-visible{outline:2px solid var(--white);outline-offset:-3px}
 .admin-danger-zone{display:flex;justify-content:flex-end}
 @media(max-width:760px){
-  .admin-mobile-app .admin-users-section .admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
-  .admin-mobile-app .admin-users-section .admin-table td{display:block;grid-column:auto;min-width:0;overflow-wrap:anywhere}
-  .admin-mobile-app .admin-users-section .admin-table td:first-child,
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(5),
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(6){grid-column:1/-1;width:auto;min-width:0}
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(2),
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(3),
-  .admin-mobile-app .admin-users-section .admin-table td:nth-child(4){grid-column:auto;display:block;justify-content:initial}
-  .admin-mobile-app .admin-users-section .admin-table td:not(:first-child)::before{content:attr(data-label);display:block;margin-bottom:4px;font-size:11px;font-weight:650;color:var(--text-secondary)}
+  .admin-mobile-app .admin-users-section .admin-accounts-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+  .admin-mobile-app .admin-users-section .admin-accounts-table td{display:block;grid-column:auto;min-width:0;overflow-wrap:anywhere}
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:first-child,
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:nth-child(5),
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:nth-child(6){grid-column:1/-1;width:auto;min-width:0}
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:nth-child(2),
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:nth-child(3),
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:nth-child(4){grid-column:auto;display:block;justify-content:initial}
+  .admin-mobile-app .admin-users-section .admin-accounts-table td:not(:first-child)::before{content:attr(data-label);display:block;margin-bottom:4px;font-size:11px;font-weight:650;color:var(--text-secondary)}
 }
 
 
@@ -521,8 +555,23 @@ html:has(.admin-shell){background:var(--surface-dark)}
 /* Unified compact registries: the legal/archive data are unchanged. */
 .admin-registry-section .admin-registry-table{width:100%;min-width:860px;table-layout:fixed}
 .admin-registry-section .admin-registry-table th,
-.admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.admin-registry-section .admin-registry-table td{padding:7px 12px;height:44px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;border-bottom-color:var(--admin-pearl)}
+/* Preserve the original compact mobile header. */
 .admin-registry-section .admin-registry-table thead th{height:34px}
+/* Desktop/iPad registry: one approved pearl background and existing secondary ink.
+   All six column tracks remain aligned across Professional, User and History. */
+@media(min-width:761px){
+  .admin-registry-section .admin-registry-table thead th{
+    height:44px;
+    background:var(--admin-pearl);
+    color:#41484F;
+    font-size:15px;
+    font-weight:750;
+    line-height:1.2;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+  }
+}
 .admin-registry-section .admin-registry-table tbody tr{height:44px}
 .admin-registry-section .admin-registry-table .admin-registry-title{display:block;min-width:0;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}
 .admin-registry-section .admin-registry-table .admin-registry-version{font-size:14px;font-weight:750;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:.01em}
@@ -560,7 +609,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-registry-section .admin-registry-documents-table .admin-registry-purpose.is-working.is-required .admin-registry-purpose-mark{background:#969DA1;border-color:#969DA1;color:#fff}
 /* Reuse the existing Admin pill geometry. Calm teal is specific to working
    platform templates, not a new general purpose UI component. */
-.admin-registry-section .admin-registry-documents-table .admin-pill.working{background:#DDF2F1;color:#136D76}
+.admin-registry-section .admin-registry-documents-table .admin-pill.working{background:#FFF4C7;color:#765600}
 .admin-registry-history-card{overflow:hidden}
 .admin-registry-documents-scroll,.admin-registry-history-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-registry-section .admin-registry-history-table{width:100%;min-width:860px;table-layout:fixed}
@@ -627,4 +676,388 @@ html:has(.admin-shell){background:var(--surface-dark)}
 @media(max-width:360px){
   .admin-mobile-app .admin-registry-section .admin-registry-table tbody tr{display:table-row}
   .admin-mobile-app .admin-registry-section .admin-registry-documents-table .admin-registry-title{font-size:12px}
+}
+
+/* Admin desktop/iPad: one section rhythm and heading hierarchy for Overview, Users and Document Registry.
+   Mobile (< 761px) keeps its separate layout and typography unchanged. */
+@media(min-width:761px){
+  .admin-shell{
+    --admin-section-spacing:44px;
+    --admin-section-top-spacing:14px;
+    --admin-section-title-size:25px;
+  }
+  .admin-overview-app-head h3,
+  .admin-users-section-title{
+    font-family:inherit;
+    font-size:var(--admin-section-title-size);
+    font-weight:720;
+    line-height:1.2;
+    letter-spacing:-.03em;
+    color:var(--white);
+  }
+  .admin-overview-head-suffix,
+  .admin-registry-app{
+    font-family:inherit;
+    font-size:.62em;
+    font-weight:550;
+    letter-spacing:0;
+    color:var(--admin-pearl);
+    white-space:nowrap;
+  }
+  .admin-overview-tools-by-app .admin-overview-head-suffix{
+    color:var(--admin-pearl);
+  }
+  .admin-users-layout,
+  .admin-registry-layout{
+    gap:var(--admin-section-spacing);
+    padding-top:var(--admin-section-top-spacing);
+  }
+  .admin-users-section-title{margin-bottom:14px}
+  .admin-overview-user-section,
+  .admin-overview-tools-section{
+    margin-top:calc(var(--admin-section-spacing) - 16px);
+  }
+}
+
+.admin-registry-add{display:none}
+.admin-registry-section .admin-pill.admin-registry-status-draft{
+  background:#FFF4C7;
+  color:#765600;
+  font-size:10px;
+  padding:4px 5px;
+  white-space:nowrap;
+}
+/* Admin document registry — shared desktop/iPad document-sheet geometry. */
+@media(min-width:761px){
+  .admin-document-drawer{
+    border-radius:36px 0 0 0;
+    padding:0;
+    overflow:hidden;
+  }
+  .admin-document-drawer .admin-drawer-head{
+    flex:0 0 auto;
+    align-items:flex-start;
+    min-height:98px;
+    padding:25px 28px 20px;
+    margin:0;
+    border-bottom:1px solid var(--border);
+  }
+  .admin-document-drawer .admin-drawer-head h3{
+    margin:4px 0 0;
+    font-size:21px;
+    font-weight:720;
+    line-height:1.2;
+    letter-spacing:-.025em;
+    overflow-wrap:anywhere;
+  }
+  .admin-document-drawer .admin-document-head-version{
+    display:block;
+    font-size:12px;
+    line-height:1.4;
+    color:var(--text-secondary);
+  }
+  .admin-document-drawer .admin-document-reading{
+    padding:22px 25px 36px;
+  }
+  .admin-document-drawer .admin-document-reading .document-page{
+    padding:0 5px 20px;
+  }
+  .admin-document-drawer .admin-document-reading .document-page__version,
+  .admin-document-drawer .admin-document-reading .document-page>h1{display:none}
+  /* History is a separate scroll region: its section title and column head stay visible. */
+  .admin-registry-history-section>.admin-users-section-title{
+    position:sticky;
+    top:0;
+    z-index:3;
+    padding:9px 0 14px;
+    margin:-9px 0 0;
+    background:var(--surface-dark);
+  }
+  .admin-registry-history-scroll{
+    max-height:calc(100dvh - 180px);
+    overflow-x:auto;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
+  }
+  .admin-registry-history-table thead th{
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:var(--admin-pearl);
+  }
+  .admin-registry-section .admin-registry-table tbody tr[data-registry-row],
+  .admin-registry-section .admin-registry-history-table tbody tr[data-registry-history-row]{cursor:pointer}
+  .admin-registry-section .admin-registry-table tbody tr[data-registry-row]:focus-visible,
+  .admin-registry-section .admin-registry-history-table tbody tr[data-registry-history-row]:focus-visible{
+    outline:2px solid var(--text);
+    outline-offset:-3px;
+  }
+  .admin-registry-section-title-line{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    margin-bottom:14px;
+  }
+  .admin-registry-section-title-line .admin-users-section-title{margin:0}
+  .admin-registry-add{
+    display:grid;
+    place-items:center;
+    flex:0 0 34px;
+    width:34px;
+    height:34px;
+    border:0;
+    border-radius:9px;
+    padding:0;
+    background:transparent;
+    color:var(--white);
+    cursor:pointer;
+  }
+  .admin-registry-add svg{width:22px;height:22px}
+  .admin-registry-add:hover{background:rgba(255,255,255,.09)}
+  .admin-registry-add:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+  .admin-registry-editor-content{display:grid;gap:16px;min-height:0}
+  .admin-registry-editor-field{display:grid;gap:6px;min-width:0}
+  .admin-registry-editor-field label{font-size:12px;color:var(--text-secondary);font-weight:620}
+  .admin-registry-editor-field input,
+  .admin-registry-editor-field textarea,
+  .admin-registry-editor-field select{
+    display:block;
+    box-sizing:border-box;
+    width:100%;
+    min-height:40px;
+    border:1px solid var(--border);
+    border-radius:9px;
+    padding:10px 12px;
+    background:#fff;
+    color:var(--text);
+    font:inherit;
+    font-size:14px;
+  }
+  /* Compact, identical single-line controls; document body stays independently sized. */
+  .admin-registry-editor-field input,
+  .admin-registry-editor-field select{
+    height:22px;
+    min-height:22px;
+    padding:0 8px;
+    line-height:20px;
+  }
+  .admin-registry-editor-field select{
+    -webkit-appearance:menulist;
+    appearance:menulist;
+  }
+  .admin-registry-editor-field textarea{min-height:300px;line-height:1.5;resize:vertical}
+  .admin-registry-editor-actions{display:flex;flex-wrap:wrap;gap:12px;padding:16px 0}
+  .admin-registry-editor-actions button{border-radius:9px;border:1px solid var(--border);padding:11px 15px;cursor:pointer;background:#fff;color:var(--text);font-weight:650}
+  .admin-registry-editor-actions .is-publish{background:var(--text);border-color:var(--text);color:#fff}
+  .admin-registry-editor-error{min-height:18px;color:#a13e31;font-size:12px}
+  .admin-registry-draft-badge{display:inline-flex;margin-left:6px;padding:3px 7px;border-radius:6px;background:#FFF1BA;color:#765600;font-size:11px;font-weight:680}
+}
+
+/* Desktop Admin shell: shared Professional color hierarchy (canonical yellow, pearl and white). */
+@media(min-width:761px){
+  .admin-shell .admin-brand{
+    color:#FFFF00;
+  }
+  .admin-shell .admin-brand span{
+    color:var(--admin-pearl);
+    font-size:15px;
+    font-weight:550;
+    line-height:1.2;
+    letter-spacing:0;
+  }
+  .admin-shell .admin-nav button{
+    color:var(--white);
+  }
+  .admin-shell .admin-sidebar-foot{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-toolbar-context{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-toolbar-context [data-toolbar-title]{
+    color:var(--white);
+  }
+  .admin-shell .admin-toolbar-divider{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-toolbar-user{
+    color:var(--admin-pearl);
+  }
+  .admin-shell .admin-session-icon{
+    color:var(--admin-pearl);
+  }
+}
+
+
+/* Unified three-registry 44px geometry: Tools, Documents and Users.
+   The heading and every row use one height, on the same approved pearl hairlines. */
+@media(min-width:761px){
+  .admin-users-section .admin-accounts-table thead th,
+  .admin-registry-section .admin-registry-table thead th,
+  .admin-tool-register-table thead th{
+    box-sizing:border-box;height:44px;
+    background:var(--admin-pearl);color:#41484F;
+    font-size:15px;font-weight:750;line-height:1.2;
+    letter-spacing:.05em;text-transform:uppercase;
+    border-bottom:1px solid var(--admin-pearl);
+  }
+  .admin-users-section .admin-accounts-table tbody tr,
+  .admin-users-section .admin-accounts-table tbody td,
+  .admin-registry-section .admin-registry-table tbody tr,
+  .admin-registry-section .admin-registry-table tbody td,
+  .admin-tool-register-table tbody tr,
+  .admin-tool-register-table tbody td{
+    box-sizing:border-box;height:44px;
+    border-bottom:1px solid var(--admin-pearl);
+  }
+  .admin-users-section .admin-accounts-table th,
+  .admin-users-section .admin-accounts-table td,
+  .admin-registry-section .admin-registry-table th,
+  .admin-registry-section .admin-registry-table td,
+  .admin-tool-register-table th,
+  .admin-tool-register-table td{
+    padding:4px 12px;vertical-align:middle;
+  }
+  .admin-users-section .admin-account-email,
+  .admin-users-section .admin-network-detail{margin-top:2px}
+  .admin-users-section .admin-inline-role-editor{display:block;margin:0;line-height:1}
+  .admin-users-section .admin-inline-role-select{min-height:20px;height:20px;padding:0 18px 0 6px}
+  .admin-users-section .admin-account-email,
+  .admin-users-section .admin-network-detail{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
+.admin-tool-register-layout{gap:44px}
+/* The sticky element belongs to each section, so its own header leaves the
+   viewport as the next section arrives; horizontal clipping is only inside it. */
+.admin-tool-register-sticky{
+  position:sticky;top:0;z-index:3;background:var(--surface-dark)
+}
+.admin-tool-register-sticky>.admin-users-section-title{margin:0;padding:0 0 12px}
+.admin-tool-register-head-scroll{
+  box-sizing:border-box;width:100%;overflow:hidden;
+  border-inline:1px solid var(--line);
+  background:var(--admin-pearl);border-radius:14px 14px 0 0
+}
+.admin-tool-register-card{
+  margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden;
+  border-top:0;border-radius:0 0 14px 14px
+}
+.admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
+/* Full available card width, like Users. At 860px the six tracks equal the
+   approved 50 / 340 / 50 / 140 / 140 / 140 proportions. At wider widths all
+   tracks scale together; no fixed-width white card or unused right gutter. */
+.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}
+.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}
+.admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}
+.admin-tool-register-table col.admin-tool-col-status,
+.admin-tool-register-table col.admin-tool-col-payment,
+.admin-tool-register-table col.admin-tool-col-price{width:16.279069768%}
+.admin-tool-register-table :is(th,td):first-child,
+.admin-tool-register-table :is(th,td):nth-child(3){
+  box-sizing:border-box;width:5.813953488%;min-width:0;max-width:none;
+  padding:4px 0;text-align:center
+}
+.admin-tool-register-table :is(th,td):nth-child(2){
+  box-sizing:border-box;width:39.534883721%;min-width:0;max-width:none;
+  padding:4px 12px;text-align:left
+}
+.admin-tool-register-table :is(th,td):nth-child(n+4){
+  box-sizing:border-box;width:16.279069768%;min-width:0;max-width:none;
+  padding-inline:8px;text-align:left
+}
+.admin-tool-register-table th,
+.admin-tool-register-table td{
+  box-sizing:border-box;height:44px;padding:4px 12px;
+  vertical-align:middle;overflow:hidden;text-overflow:ellipsis;
+  border-bottom:1px solid var(--admin-pearl);white-space:nowrap
+}
+.admin-tool-register-table thead th{
+  height:44px;background:var(--admin-pearl);color:#41484F;
+  font-size:15px;font-weight:750;line-height:1.2;
+  letter-spacing:.05em;text-transform:uppercase;
+  text-align:left
+}
+.admin-tool-register-table tbody tr[hidden]{display:none!important}
+.admin-tool-registry-name{
+  display:flex;align-items:center;gap:5px;min-width:0;
+  padding-left:calc(var(--tool-depth,0) * 28px);position:relative
+}
+.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before{
+  content:"";position:absolute;top:5px;bottom:5px;
+  left:calc(var(--tool-depth) * 28px - 13px);
+  width:1px;background:var(--border)
+}
+.admin-tool-registry-label{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.admin-tool-register-table [data-tool-ancestors=""] .admin-tool-registry-label{font-weight:720}
+.admin-tool-registry-expand{
+  display:grid;place-items:center;margin:0 auto;
+  width:20px;height:22px;padding:0;border:0;
+  background:transparent;color:var(--text);font-size:18px;cursor:pointer
+}
+.admin-tool-registry-expand[aria-expanded="false"]{transform:rotate(-90deg)}
+.admin-tool-register-table .admin-tool-registry-expand-header{padding:4px 0;text-align:center}
+.admin-tool-registry-expand-cell,
+.admin-tool-registry-kind{text-align:center}
+.admin-tool-registry-kind span{
+  display:inline-grid;place-items:center;width:22px;height:22px;
+  font-size:11px;font-weight:750;color:var(--text)
+}
+.admin-tool-registry-kind span.is-card{
+  border:1px solid var(--border);border-radius:3px
+}
+.admin-tool-register-table .admin-tool-readiness-editor,
+.admin-tool-register-table .admin-tool-readiness{justify-self:auto;text-align:left}
+.admin-tool-register-table .admin-tool-readiness-editor .admin-tool-readiness-select{
+  box-sizing:border-box;width:116px;max-width:100%;height:26px;min-height:26px;
+  padding:0 24px 0 7px;border:1px solid var(--border);
+  border-radius:5px;font-size:12px;background:#fff;color:var(--text)
+}
+.admin-tool-register-table [data-commercial-mode]{
+  width:110px;max-width:100%;height:26px;min-height:26px;
+  padding:0 24px 0 7px;box-sizing:border-box;
+  border:1px solid var(--border);border-radius:5px;
+  font-size:12px;background:#fff;color:var(--text)
+}
+.admin-tool-registry-cost{display:flex;align-items:center;gap:5px;min-width:0}
+.admin-tool-registry-price{display:flex;align-items:center;gap:4px;min-width:0}
+.admin-tool-registry-price input{
+  box-sizing:border-box;width:64px;max-width:100%;height:26px;min-height:26px;
+  padding:0 5px;border:1px solid var(--border);
+  border-radius:5px;font-size:12px;background:#fff;color:var(--text)
+}
+.admin-tool-registry-price span{font-size:12px;color:var(--text-secondary)}
+.admin-tool-register-table :is(input,select):disabled{opacity:.55}
+.admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
+.admin-tool-registry-save-state{
+  display:block;min-width:0;max-width:74px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text-secondary)
+}
+.admin-tool-register-footer{display:flex;align-items:center;flex-wrap:wrap;gap:14px;color:var(--admin-pearl);font-size:12px}
+.admin-tool-register-footer [data-commercial-publish]{min-height:28px;padding:5px 11px}
+@media(max-width:760px){
+  .admin-mobile-app .admin-tool-register-card{padding:0;overflow:hidden}
+  .admin-mobile-app .admin-tool-register-table{display:table;min-width:860px;table-layout:fixed}
+  .admin-mobile-app .admin-tool-register-table thead{display:table-header-group}
+  .admin-mobile-app .admin-tool-register-table tbody{display:table-row-group}
+  .admin-mobile-app .admin-tool-register-table tbody tr{display:table-row;height:44px}
+  .admin-mobile-app .admin-tool-register-table th,
+  .admin-mobile-app .admin-tool-register-table td{
+    display:table-cell;grid-column:auto;grid-row:auto;padding:4px 12px!important;
+    height:44px;white-space:nowrap;line-height:1.2
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):first-child,
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(3){
+    padding:4px 0!important
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(2){
+    padding:4px 12px!important
+  }
+  .admin-mobile-app .admin-tool-register-table :is(th,td):nth-child(n+4){
+    padding-inline:8px!important
+  }
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody tr,
+  .admin-mobile-app .admin-registry-section .admin-registry-history-table tbody td{height:44px;min-height:44px}
 }

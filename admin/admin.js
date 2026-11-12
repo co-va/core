@@ -121,7 +121,8 @@ async function enableAdminPush(promptUser = false) {
 // role selectors or the registration-link editor just to refresh online labels.
 async function refreshTenantNetwork() {
   const tenants = await adminRequest('/tenants');
-  if (!Array.isArray(tenants)) return;
+  // A request started in Users must never redraw Users after navigation to Tools.
+  if (state.section !== 'tenants' || !Array.isArray(tenants)) return;
   const content = app.querySelector('[data-content]');
   state.tenants = tenants;
   const liveRows = [...(content?.querySelectorAll('[data-tenant]') || [])];
@@ -479,6 +480,16 @@ function renderCurrentSection() {
       setTitle: setActiveSection,
       loadHistory: () => adminRequest('/document-registry/history'),
       loadCurrentDocuments: () => adminRequest('/document-registry/current'),
+      loadDrafts: () => adminRequest('/document-registry/drafts'),
+      saveDraft: (draft) => adminRequest('/document-registry/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      }),
+      publishDraft: (key) => adminRequest('/document-registry/drafts/' + encodeURIComponent(key) + '/publish', {
+        method: 'POST',
+      }),
+      loadVersions: () => adminRequest('/document-registry/versions'),
       // This published core endpoint already exists on the live backend and
       // returns source versions of the 3 Professional working templates.
       // The new Admin current endpoint may not yet be deployed there.
@@ -900,7 +911,7 @@ function renderTenants() {
       <section class="admin-users-section" aria-labelledby="admin-my-account-title">
         <h2 class="admin-users-section-title" id="admin-my-account-title">Мой аккаунт</h2>
         <div class="admin-card">
-          <table class="admin-table">
+          <table class="admin-table admin-accounts-table">
             <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
             <tbody>${owner ? tenantRow(owner) : '<tr><td colspan="6">Административный аккаунт не найден.</td></tr>'}</tbody>
           </table>
@@ -909,7 +920,7 @@ function renderTenants() {
       <section class="admin-users-section" aria-labelledby="admin-all-users-title">
         <h2 class="admin-users-section-title" id="admin-all-users-title">Все пользователи</h2>
         <div class="admin-card">
-          <table class="admin-table">
+          <table class="admin-table admin-accounts-table">
             <thead><tr><th>Пользователь</th><th>Роль</th><th>Режим</th><th>Тариф</th><th>Доступ</th><th>В сети</th></tr></thead>
             <tbody>${tenants.map(tenantRow).join('') || '<tr><td colspan="6">Пока нет других пользователей.</td></tr>'}</tbody>
           </table>
@@ -1043,14 +1054,19 @@ function tenantRow(item) {
     const lastVisit = rawLastVisit && Number.isFinite(rawLastVisit.getTime())
       ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
       : '';
-    const rawTime = Number(item.presence.totalOnlineMs);
+    // Only desktop/iPad changes presentation here; mobile Admin retains its current
+    // status detail until the separately planned mobile redesign.
+    const mobile = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 760px)').matches;
+    const rawTime = mobile ? Number(item.presence.totalOnlineMs) : 0;
     const minutes = Number.isFinite(rawTime) && rawTime >= 60_000 ? Math.floor(rawTime / 60_000) : 0;
     const duration = minutes >= 60 ? `${Math.floor(minutes / 60)} ч${minutes % 60 ? ` ${minutes % 60} мин` : ''}`
       : minutes ? `${minutes} мин` : '';
-    // A zero accumulated duration is not a visit. Never invent a date from registration.
-    const visitDetails = lastVisit ? [lastVisit, duration].filter(Boolean).join(' — ') : '';
+    // lastSeenAt is a verified activity timestamp, not necessarily login time.
+    const detail = mobile ? [lastVisit, duration].filter(Boolean).join(' — ') : lastVisit;
     network = `<span class="admin-account-presence ${connected ? 'is-online' : 'is-offline'}">${connected ? 'В сети' : 'Не в сети'}</span>
-      ${visitDetails ? `<small class="admin-network-detail">${escapeHtml(visitDetails)}</small>` : ''}`;
+      ${detail ? `<small class="admin-network-detail"${mobile ? '' : ' title="Последняя активность"'}>${escapeHtml(detail)}</small>` : ''}`;
   }
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>

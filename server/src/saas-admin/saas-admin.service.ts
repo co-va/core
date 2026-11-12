@@ -32,6 +32,22 @@ export class SaasAdminService {
     return this.documentRegistry.history();
   }
 
+  documentRegistryDrafts() {
+    return this.documentRegistry.adminDrafts();
+  }
+
+  saveDocumentRegistryDraft(input: unknown) {
+    return this.documentRegistry.saveAdminDraft(input);
+  }
+
+  publishDocumentRegistryDraft(key: string) {
+    return this.documentRegistry.publishAdminDraft(key);
+  }
+
+  documentRegistryVersions() {
+    return this.documentRegistry.archivedAdminVersions();
+  }
+
   documentRegistryCurrent() {
     return this.documentRegistry.currentDocuments();
   }

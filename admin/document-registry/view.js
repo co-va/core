@@ -1,3 +1,4 @@
+import { openDocumentEditor } from './editor.js';
 import { documentPage } from '../../ui/documents/index.js';
 import { modal, mountModal } from '../../ui/modals/index.js';
 import {
@@ -15,6 +16,9 @@ import {
 // The registry is a single three-section document list. The source catalog and
 // persisted signing history stay canonical and are never copied into this view.
 const DOCUMENT_ICON = '<svg class="admin-registry-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h6"/></svg>';
+const ADD_DOCUMENT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l4 4v5M14 3v5h4M5 3v18h8M16 15v8M12 19h8"/></svg>';
+const escapeDocument = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+
 
 // Short labels are for Admin's index only; legal source titles stay intact.
 const SHORT_TITLES = Object.freeze({
@@ -86,6 +90,7 @@ function actionLabel(value) {
   if (action === 'CONSENTED') return 'Согласие дано';
   if (action === 'REVOKED') return 'Отозвано';
   if (action === 'DECLINED') return 'Отклонено';
+  if (action === 'SUPERSEDED') return 'Редакция заменена';
   return action || 'Событие';
 }
 
@@ -97,14 +102,23 @@ function actionState(value) {
 }
 
 function sectionMarkup(title, application, body, escapeHtml, extra = '') {
-  return '<section class="admin-users-section admin-registry-section" ' + extra + '>' +
+  const app = String(application || '').toLowerCase();
+  const canCreate = app === 'professional' || app === 'user';
+  return '<section class="admin-users-section admin-registry-section' +
+    (canCreate ? '' : ' admin-registry-history-section') + '" ' + extra + '>' +
+    (canCreate ? '<div class="admin-registry-section-title-line">' : '') +
     '<h2 class="admin-users-section-title">' + escapeHtml(title) +
       (application ? '<span class="admin-registry-app"> / ' + escapeHtml(application) + '</span>' : '') + '</h2>' +
+    (canCreate ? '<button type="button" class="admin-registry-add" data-registry-add="' + app +
+      '" aria-label="Добавить документ в ' + escapeHtml(title) + '" title="Добавить документ">' + ADD_DOCUMENT_ICON + '</button></div>' : '') +
     body + '</section>';
 }
 
 // A label describes the document's purpose, never whether this administrator signed it.
 function documentPurpose(item) {
+  const chosen = { REQUIRED: 'Обязательно', OPTIONAL: 'Необязательно',
+    READING: 'Ознакомление', REFERENCE: 'Справочный' }[String(item?.purpose || '')];
+  if (chosen) return chosen;
   if (item.key === 'platform-privacy-policy') return 'Ознакомление';
   if (item.type === 'RKN_GUIDE_TEMPLATE') return 'Справочный';
   // These working templates are provided to Professional but define the
@@ -133,20 +147,23 @@ function purposeMarkup(value, status) {
 function documentStatus(item) {
   return item.key === 'rkn-notification-guide-template'
     || item.type === 'USER_DOCUMENT_BASE'
+    || item.type === 'CUSTOM_WORKING'
     ? 'Рабочий' : 'Правовой';
 }
 
-function documentStatusMarkup(item) {
+function documentStatusMarkup(item, hasDraft = false) {
   const status = documentStatus(item);
-  // Reuse the same badge already used for History events and Users.
+  // A draft is not a second document row: indicate it in the existing status cell.
   return '<span class="admin-pill' +
-    (status === 'Правовой' ? ' active' : ' working') + '">' + status + '</span>';
+    (hasDraft ? ' admin-registry-status-draft' : status === 'Правовой' ? ' active' : ' working') +
+    '">' + status + (hasDraft ? ' · Черновик' : '') + '</span>';
 }
 
 // A platform-supplied working base has an explicit source version in
 // PlatformDocumentVersion. A Professional's private edits are NOT this version.
 // The RKN instruction stays unversioned as an informational helper.
 function sourceEdition(item) {
+  if (item?.editorEdition) return String(item.editorEdition);
   const legal = legalEdition(item?.content);
   if (legal) return legal;
   if (item?.type === 'USER_DOCUMENT_BASE') {
@@ -156,7 +173,7 @@ function sourceEdition(item) {
   return item?.edition || '—';
 }
 
-function documentTable(items, escapeHtml, application) {
+function documentTable(items, escapeHtml, application, draftKeys = new Set()) {
   const rows = items.map((item) => {
     const title = escapeHtml(item.title || 'Документ');
     const shortTitle = escapeHtml(SHORT_TITLES[item.key] || item.title || 'Документ');
@@ -164,18 +181,18 @@ function documentTable(items, escapeHtml, application) {
     const publicationDate = escapeHtml(publishedDocumentDate(item));
     const key = escapeHtml(item.key || '');
     const purpose = documentPurpose(item);
-    return '<tr>' +
+    return '<tr data-registry-row="' + key + '" tabindex="0" role="button" aria-label="Просмотреть ' + title + '">' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" data-registry-version="' + key + '">' + edition + '</span></td>' +
       '<td data-label="Назначение">' + purposeMarkup(purpose, documentStatus(item)) + '</td>' +
       '<td data-label="Дата"><time class="admin-registry-published-date" data-registry-date="' + key + '">' + publicationDate + '</time></td>' +
-      '<td data-label="Статус">' + documentStatusMarkup(item) + '</td>' +
+      '<td data-label="Статус">' + documentStatusMarkup(item, draftKeys.has(item.key)) + '</td>' +
       '<td data-label="Открыть" class="admin-registry-open-cell"><button type="button" class="admin-registry-open admin-registry-open-icon" data-registry-document="' + key +
-      '" aria-label="Открыть документ ' + title + '" title="Открыть: ' + title + '"' +
-      (item.content ? '' : ' disabled aria-disabled="true"') + '>' + DOCUMENT_ICON + '</button></td>' +
+      '" aria-label="Редактировать документ ' + title + '" title="Редактировать: ' + title + '"' +
+      (item.content || draftKeys.has(item.key) ? '' : ' disabled aria-disabled="true"') + '>' + DOCUMENT_ICON + '</button></td>' +
       '</tr>';
   }).join('');
-  return '<div class="admin-card"><div class="admin-registry-documents-scroll"><table class="admin-table admin-registry-table admin-registry-documents-table">' +
+  return '<div class="admin-card"><div class="admin-registry-documents-scroll"><table class="admin-table admin-registry-table admin-registry-documents-table" data-registry-application="' + application + '">' +
     '<thead><tr><th>Документ</th><th>Версия</th><th>Назначение</th><th>Дата</th><th>Статус</th><th aria-label="Открыть"></th></tr></thead><tbody>' +
     (rows || '<tr><td colspan="6" class="admin-history-empty">Документов пока нет.</td></tr>') +
     '</tbody></table></div></div>';
@@ -196,8 +213,17 @@ function historyShortTitle(item) {
   return title;
 }
 
-function historyTable(escapeHtml) {
-  const history = getDocumentRegistryHistory();
+function historyTable(escapeHtml, archivedVersions = []) {
+  const snapshots = (Array.isArray(archivedVersions) ? archivedVersions : []).map((row) => ({
+    ...row,
+    id: 'revision-' + row.id,
+    __archive: true,
+    accountEmail: 'Архив редакций',
+    subjectType: row.application === 'user' ? 'ACCOUNT' : 'PLATFORM_ACCOUNT',
+    occurredAt: row.supersededAt,
+    action: 'SUPERSEDED',
+  }));
+  const history = [...snapshots, ...getDocumentRegistryHistory()];
   if (!history.length) {
     return '<div class="admin-card admin-history-empty">Событий пока нет.</div>';
   }
@@ -205,14 +231,15 @@ function historyTable(escapeHtml) {
     const title = escapeHtml(item.documentTitle || item.documentKey || 'Документ');
     const shortTitle = escapeHtml(historyShortTitle(item));
     const id = escapeHtml(item.id || '');
-    const version = escapeHtml(legalEdition(item.documentContent) || '—');
+    const version = escapeHtml(item.editorEdition || legalEdition(item.documentContent) ||
+      (item.__archive ? String(item.documentVersion || '—') : '—'));
     const archiveVersion = escapeHtml(String(item.documentVersion || ''));
     const account = escapeHtml(item.accountEmail || item.tenantName || '—');
     const subject = item.subjectType === 'ACCOUNT' ? 'User' : 'Professional';
     const action = escapeHtml(actionLabel(item.action));
     const status = actionState(item.action);
     const moment = formatEventMoment(item.occurredAt);
-    return '<tr>' +
+    return '<tr data-registry-history-row="' + id + '" tabindex="0" role="button" aria-label="Просмотреть архивный документ">' +
       '<td data-label="Документ" title="' + title + '"><strong class="admin-registry-title">' + shortTitle + '</strong></td>' +
       '<td data-label="Версия"><span class="admin-registry-version" title="Архивная копия ' + archiveVersion + '">' + version + '</span></td>' +
       '<td data-label="Аккаунт"><span class="admin-registry-history-account" title="' + account + ' · ' + subject + '">' +
@@ -235,17 +262,22 @@ function openDocument(item) {
   const content = item.content || item.documentContent || '';
   // Both current and signed archived document readers show the revision
   // actually stated in that snapshot; the archive index is not a legal edition.
-  const version = legalEdition(content) ||
-    (item.type === 'USER_DOCUMENT_BASE' ? sourceEdition(item) : '');
+  const version = item.editorEdition || legalEdition(content) ||
+    (item.__archive ? String(item.documentVersion || '') : item.type === 'USER_DOCUMENT_BASE' ? sourceEdition(item) : '');
+  const sharedQ = Boolean(document.querySelector('.admin-mobile-app'));
+  const heading = escapeDocument(title);
+  const fixedHeader = sharedQ
+    ? '<div><h3>Документ</h3></div>'
+    : '<div><span class="admin-document-head-version">Версия ' + escapeDocument(version || '—') +
+      '</span><h3>' + heading + '</h3></div>';
   let backdrop = document.createElement('div');
   backdrop.className = 'admin-drawer-backdrop admin-document-drawer-backdrop';
   backdrop.innerHTML = '<aside class="admin-drawer admin-document-drawer" role="dialog" aria-modal="true" aria-label="Просмотр документа">' +
-    '<div class="admin-drawer-head"><div><h3>Документ</h3></div>' +
+    '<div class="admin-drawer-head">' + fixedHeader +
     '<button type="button" class="admin-close" data-close aria-label="Закрыть">×</button></div>' +
     '<div class="admin-document-reading">' + documentPage({ title, version, content }) + '</div></aside>';
 
   // Reuse the same desktop drawer and mobile shared Q as Users / Tools.
-  const sharedQ = Boolean(document.querySelector('.admin-mobile-app'));
   if (sharedQ) {
     const html = modal(backdrop.innerHTML, { title: 'Документ', variant: 'q', className: 'admin-document-q' });
     const mounted = mountModal(document.querySelector('[data-v2-app]'), html);
@@ -269,7 +301,7 @@ function openDocument(item) {
   return backdrop;
 }
 
-export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments, loadWorkingTemplates, loadAccountTerms }) {
+export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadHistory, loadCurrentDocuments, loadWorkingTemplates, loadAccountTerms, loadDrafts, saveDraft, publishDraft, loadVersions }) {
   if (!root) return;
   setTitle?.('Реестр документов');
 
@@ -284,6 +316,37 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   ];
   const user = getRegistryPlatformUserDocuments();
   const currentDocumentsByKey = new Map();
+  const draftsByKey = new Map();
+  const sourceByKey = new Map([...professional, ...user].map((item) => [item.key, item]));
+  const applicationFor = (item) => item?.application ||
+    (item?.key === 'account-terms' || item?.key === 'platform-privacy-policy' ||
+      String(item?.key || '').startsWith('admin-user-') ? 'user' : 'professional');
+  const sourceFor = (key) => currentDocumentsByKey.get(key) || sourceByKey.get(key) || getRegistryDocument(key) ||
+    draftsByKey.get(key);
+  const refresh = () => renderDocumentRegistry(root, {
+    escapeHtml, setTitle, loadHistory, loadCurrentDocuments, loadWorkingTemplates, loadAccountTerms,
+    loadDrafts, saveDraft, publishDraft, loadVersions,
+  });
+  const edit = (item, application) => {
+    if (document.querySelector('.admin-mobile-app')) {
+      if (item?.content) openDocument(item);
+      return;
+    }
+    if (item?.key && !item.content && !draftsByKey.has(item.key)) return;
+    const purpose = documentPurpose(item || {});
+    openDocumentEditor({
+      item: item ? {
+        ...item,
+        purpose: ({ 'Обязательно': 'REQUIRED', 'Необязательно': 'OPTIONAL',
+          'Ознакомление': 'READING', 'Справочный': 'REFERENCE' })[purpose],
+      } : null,
+      draft: item?.key ? draftsByKey.get(item.key) || null : null,
+      application,
+      saveDraft, publishDraft,
+      onUpdated: refresh,
+    });
+  };
+
   root.innerHTML = '<div class="admin-users-layout admin-registry-layout">' +
     sectionMarkup('Кабинет', 'Professional', documentTable(professional, escapeHtml, 'professional'), escapeHtml) +
     sectionMarkup('Записи', 'User', documentTable(user, escapeHtml, 'user'), escapeHtml) +
@@ -302,14 +365,97 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
     }
   };
   sourceButtons.forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event?.stopPropagation?.();
       const key = button.dataset.registryDocument;
-      const selected = currentDocumentsByKey.get(key) || user.find((item) => item.key === key) || getRegistryDocument(key);
-      // Account terms must come from the real platform snapshot, not a dummy
-      // legal body; source descriptors deliberately contain no document text.
-      if (selected?.content) openDocument(selected);
+      const selected = sourceFor(key);
+      edit(selected, applicationFor(selected));
     });
   });
+  const renderExtras = () => {
+    const draftKeys = new Set(draftsByKey.keys());
+    for (const application of ['professional', 'user']) {
+      const table = root.querySelector?.('[data-registry-application="' + application + '"]');
+      if (!table) continue;
+      const tbody = table.querySelector('tbody');
+      if (!tbody) continue;
+      tbody.querySelectorAll('[data-registry-extra]').forEach((row) => row.remove());
+      const extrasByKey = new Map();
+      for (const item of currentDocumentsByKey.values()) {
+        if (!sourceByKey.has(item.key) && item.application === application &&
+          String(item.key || '').startsWith('admin-' + application + '-')) extrasByKey.set(item.key, item);
+      }
+      for (const draft of draftsByKey.values()) {
+        if (!sourceByKey.has(draft.key) && applicationFor(draft) === application && !extrasByKey.has(draft.key)) {
+          extrasByKey.set(draft.key, { ...draft, editorEdition: draft.edition, publishedAt: null });
+        }
+      }
+      const extras = [...extrasByKey.values()];
+      if (extras.length) {
+        const html = documentTable(extras, escapeHtml, application, draftKeys);
+        const rows = html.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] || '';
+        tbody.insertAdjacentHTML('beforeend', rows.replaceAll('<tr data-registry-row', '<tr data-registry-extra data-registry-row'));
+      }
+      for (const row of tbody.querySelectorAll('[data-registry-row]')) {
+        const key = row.dataset.registryRow;
+        const item = sourceFor(key);
+        const cell = row.querySelector('td[data-label="Статус"]');
+        if (cell && item) cell.innerHTML = documentStatusMarkup(item, draftKeys.has(key));
+        const purposeCell = row.querySelector('td[data-label="Назначение"]');
+        if (purposeCell && item) purposeCell.innerHTML = purposeMarkup(documentPurpose(item), documentStatus(item));
+      }
+    }
+  };
+  root.addEventListener?.('click', (event) => {
+    const addButton = event.target?.closest?.('[data-registry-add]');
+    if (addButton) {
+      edit(null, addButton.dataset.registryAdd);
+      return;
+    }
+    const editButton = event.target?.closest?.('[data-registry-document]');
+    if (editButton) {
+      // Initial icons have their own handler for existing registry tests;
+      // appended documents are handled by the stable root delegation.
+      if (!sourceButtons.includes(editButton)) {
+        const selected = sourceFor(editButton.dataset.registryDocument);
+        edit(selected, applicationFor(selected));
+      }
+      return;
+    }
+    const row = event.target?.closest?.('[data-registry-row]');
+    if (!row) return;
+    const selected = sourceFor(row.dataset.registryRow);
+    // An existing published edition wins over a pending draft in the viewer.
+    if (selected?.content) openDocument(selected);
+  });
+  root.addEventListener?.('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target?.closest?.('[data-registry-row]');
+    if (!row || event.target !== row) return;
+    event.preventDefault();
+    const selected = sourceFor(row.dataset.registryRow);
+    if (selected?.content) openDocument(selected);
+  });
+  root.querySelectorAll?.('[data-registry-add]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation?.();
+      edit(null, button.dataset.registryAdd);
+    });
+  });
+  if (typeof loadDrafts === 'function') {
+    void Promise.resolve().then(loadDrafts).then((rows) => {
+      if (!Array.isArray(rows) || root.isConnected === false) return;
+      draftsByKey.clear();
+      for (const row of rows) {
+        if (!row?.key) continue;
+        draftsByKey.set(row.key, row);
+        enableDocumentButton(row.key);
+      }
+      renderExtras();
+    }).catch(() => {
+      // A backend without the editorial migration must never imply a saved draft.
+    });
+  }
   if (typeof loadCurrentDocuments === 'function') {
     void Promise.resolve().then(loadCurrentDocuments).then((items) => {
       if (!Array.isArray(items) || root.isConnected === false) return;
@@ -324,6 +470,7 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
         const date = dates.find((node) => node.dataset.registryDate === item.key);
         if (date) date.textContent = publishedDocumentDate(item);
       }
+      renderExtras();
     }).catch(() => {
       // Older preview backend may lack this GET. Source document metadata remains.
     });
@@ -384,15 +531,40 @@ export async function renderDocumentRegistry(root, { escapeHtml, setTitle, loadH
   const host = root.querySelector('[data-registry-history-content]');
   if (!host) return;
   try {
-    const items = typeof loadHistory === 'function' ? await loadHistory() : [];
-    hydrateDocumentRegistryHistory(items);
+    const [eventsResult, versionsResult] = await Promise.all([
+      typeof loadHistory === 'function' ? loadHistory() : Promise.resolve([]),
+      typeof loadVersions === 'function' ? loadVersions().catch(() => []) : Promise.resolve([]),
+    ]);
+    hydrateDocumentRegistryHistory(eventsResult);
+    const archived = Array.isArray(versionsResult) ? versionsResult : [];
+    const archivedById = new Map(archived.map((item) => ['revision-' + item.id, {
+      ...item, __archive: true, id: 'revision-' + item.id,
+      content: item.documentContent,
+      title: item.documentTitle,
+    }]));
     if (!host.isConnected) return;
-    host.innerHTML = historyTable(escapeHtml);
+    host.innerHTML = historyTable(escapeHtml, archived);
+    const viewHistorical = (id) => {
+      const item = archivedById.get(id) || getDocumentRegistryHistory().find((event) => event.id === id);
+      if (item) openDocument(item);
+    };
     host.querySelectorAll('[data-registry-history]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const item = getDocumentRegistryHistory().find((event) => event.id === button.dataset.registryHistory);
-        if (item) openDocument(item);
+      button.addEventListener('click', (event) => {
+        event?.stopPropagation?.();
+        viewHistorical(button.dataset.registryHistory);
       });
+    });
+    host.addEventListener?.('click', (event) => {
+      if (event.target?.closest?.('[data-registry-history]')) return;
+      const row = event.target?.closest?.('[data-registry-history-row]');
+      if (row) viewHistorical(row.dataset.registryHistoryRow);
+    });
+    host.addEventListener?.('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (event.target?.dataset?.registryHistoryRow) {
+        event.preventDefault();
+        viewHistorical(event.target.dataset.registryHistoryRow);
+      }
     });
   } catch {
     if (host.isConnected) {

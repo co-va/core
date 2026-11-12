@@ -6,6 +6,9 @@ type ToolReadinessStatus = 'NOT_READY' | 'TESTING' | 'READY';
 export const READINESS_KEYS = [
   'cabinet.people',
   'cabinet.journal.day',
+  'cabinet.journal.day.events',
+  'cabinet.journal.day.notes',
+  'cabinet.journal.day.record',
   'cabinet.journal.month',
   'cabinet.journal.list',
   'cabinet.timetable',
@@ -35,15 +38,17 @@ export const READINESS_KEYS = [
   'cabinet.settings.integrations',
   'cabinet.settings.documents',
   'cabinet.settings.tags',
-  'records.profile.personal-data',
-  'records.profile.documents-notifications',
+  'records.profile',
   'records.journal.day',
+  'records.journal.day.events',
+  'records.journal.day.notes',
+  'records.journal.day.record',
   'records.journal.month',
   'records.journal.list',
-  'records.contacts.list',
-  'records.contacts.card',
+  'records.contacts',
   'records.integrations.google-calendar',
   'records.integrations.yandex-calendar',
+  'records.chat',
 ] as const;
 
 const READINESS_KEY_SET = new Set<string>(READINESS_KEYS);

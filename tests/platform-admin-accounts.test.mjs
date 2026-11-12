@@ -43,11 +43,19 @@ assert.match(tenantRow(user), /data-label="Тариф"/);
 assert.match(tenantRow(user), /data-label="Доступ"><span class="admin-pill active">Разрешён<\/span><\/td>/, 'Permission is distinct from network presence');
 assert.match(tenantRow(user), /data-label="В сети" data-online-cell>—<\/td>/, 'Old Core responses do not invent presence');
 assert.doesNotMatch(tenantRow(user), /Сеть: нет данных|admin-account-presence/, 'No placeholder text when telemetry absent');
-assert.match(tenantRow({ ...user, presence: { online: true, totalOnlineMs: 7_500_000, lastSeenAt: '2026-11-11T11:32:00Z' } }), /admin-account-presence is-online">В сети<\/span>[\s\S]*11\.11\.26[^<]* — 2 ч 5 мин/, 'Online shows last verified time and credited duration on one line');
-assert.match(tenantRow({ ...user, presence: { online: false, totalOnlineMs: 60_000, lastSeenAt: '2026-11-11T11:32:00Z' } }), /admin-account-presence is-offline">Не в сети<\/span>[\s\S]*11\.11\.26[^<]* — 1 мин/, 'Offline shows the last verified date and credited duration');
+const presentOnline = tenantRow({ ...user, presence: { online: true, totalOnlineMs: 7_500_000, lastSeenAt: '2026-11-11T11:32:00Z' } });
+assert.match(presentOnline, /admin-account-presence is-online">В сети<\/span>[\s\S]*admin-network-detail" title="Последняя активность">11\.11\.26[^<]*<\/small>/, 'Desktop shows verified last activity after network status');
+assert.doesNotMatch(presentOnline, /2 ч 5 мин| — /, 'Desktop does not confuse cumulative credited hours with time of last visit');
+const presentOffline = tenantRow({ ...user, presence: { online: false, totalOnlineMs: 60_000, lastSeenAt: '2026-11-11T11:32:00Z' } });
+assert.match(presentOffline, /admin-account-presence is-offline">Не в сети<\/span>[\s\S]*11\.11\.26/, 'Desktop retains last observed activity when offline');
+assert.doesNotMatch(presentOffline, /1 мин| — /, 'Desktop hides accumulated time when offline');
 assert.match(tenantRow({ ...user, presence: { online: false, totalOnlineMs: 0, lastSeenAt: '2026-11-11T11:32:00Z' } }), /11\.11\.26/, 'First confirmed visit shows a date even at zero credited minutes');
 assert.doesNotMatch(tenantRow({ ...user, presence: { online: false, totalOnlineMs: 0, lastSeenAt: null } }), /admin-network-detail|Учтено|Последний|менее 1 мин/, 'No invented visit and no zero-minute noise');
-assert.doesNotMatch(tenantRow({ ...user, presence: { online: true, totalOnlineMs: 20_000, lastSeenAt: '2026-11-11T11:32:00Z' } }), /менее 1 мин| — /, 'Under one minute, show only the date');
+const mobileTenantRow = runInNewContext(source.slice(rowStart, rowEnd) + '\ntenantRow', {
+  escapeHtml,
+  window: { matchMedia: () => ({ matches: true }) },
+});
+assert.match(mobileTenantRow({ ...user, presence: { online: true, totalOnlineMs: 7_500_000, lastSeenAt: '2026-11-11T11:32:00Z' } }), /11\.11\.26[^<]* — 2 ч 5 мин/, 'Mobile remains unchanged until its separate redesign');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-label="Email"|data-label="Тестировщик"|Активен/, 'No redundant columns or permission-as-online');
 assert.doesNotMatch(tenantRow(owner) + tenantRow(user), /data-delete-tenant|Удалить/, 'No destructive actions in table rows');
 assert.equal((tenantRow(user).match(/<td /g) || []).length, 6, 'Presence is its own sixth column');
@@ -88,6 +96,15 @@ assert.equal((markup.match(/data-tenant="owner-id"/g) || []).length, 1, 'Existin
 assert.equal((markup.match(/data-tenant="person-id"/g) || []).length, 1, 'Existing user must not be duplicated');
 assert.doesNotMatch(markup, /admin-table-group|Остальные пользователи|admin-heading/, 'No grey separators or duplicate page title');
 assert.equal((markup.match(/<th>Пользователь<\/th><th>Роль<\/th><th>Режим<\/th><th>Тариф<\/th><th>Доступ<\/th><th>В сети<\/th>/g) || []).length, 2, 'Both tables have six aligned headers');
+
+assert.equal((markup.match(/class="admin-table admin-accounts-table"/g) || []).length, 2, 'Both account tables use one explicit fixed-track layout');
+const adminCss = readFileSync(new URL('../admin/admin.css', import.meta.url), 'utf8');
+const accountLayout = adminCss.slice(adminCss.indexOf('/* Desktop and iPad account lists use identical six-column tracks.'));
+assert.match(accountLayout, /@media\(min-width:761px\)\{[\s\S]*?\.admin-users-section \.admin-accounts-table\{[\s\S]*?table-layout:fixed;/, 'The fixed account tracks apply only to desktop and iPad');
+const trackWidths = [...accountLayout.matchAll(/\.admin-accounts-table thead th:nth-child\((\d)\)\{width:(\d+)%\}/g)]
+  .map((match) => [Number(match[1]), Number(match[2])]);
+assert.deepEqual(trackWidths, [[1,30],[2,16],[3,10],[4,10],[5,13],[6,21]], 'All six columns share a stable 100% track system');
+
 assert.match(source, /addEventListener\('change', async \(event\) => \{[\s\S]*?body: JSON.stringify\(\{ isTester: next \}\)/, 'Inline tester writes only the tester flag');
 assert.match(source, /select\.value = String\(previous\)/, 'Failed role edit reverts in place');
 assert.match(source, /if \(state\.section === 'tenants'\) await refreshTenantNetwork\(\)/, 'Polling changes only online labels, not entire user cards');

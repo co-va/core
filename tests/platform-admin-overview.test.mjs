@@ -105,6 +105,19 @@ assert.match(source, /<header class="admin-toolbar">/, 'Shared desktop H must re
 assert.match(styles, /@media\(min-width:761px\)\{[\s\S]*?\.admin-shell\{height:100dvh;min-height:0;overflow:hidden\}/, 'Desktop shell must hold height to viewport');
 assert.match(styles, /\.admin-main\{min-height:0;overflow-y:auto;/, 'Only dashboard content scrolls inside desktop shell');
 assert.match(styles, /\.admin-toolbar\{position:relative;z-index:2;min-height:68px;/, 'H remains above content instead of scrolling away');
+
+// Admin visual contract: pearl is the single approved warm accent, yellow marks READY only.
+assert.match(styles, /\.admin-overview-bar\{[^}]*background:var\(--admin-pearl\)/, 'Overview bars use the same pearl as the document header');
+assert.match(styles, /\.admin-overview-bar\.is-current\{background:var\(--admin-pearl\)\}/, 'Last overview bar does not revert to graphite');
+assert.match(styles, /\.admin-overview-tool-counts \.is-ready,\.admin-overview-tool-track \.is-ready\{background:var\(--surface-dark\)\}/, 'Ready is canonical graphite');
+assert.match(styles, /\.admin-overview-tool-counts \.is-testing,\.admin-overview-tool-track \.is-testing\{background:#FFFF00\}/, 'Testing is canonical yellow');
+assert.match(styles, /\.admin-overview-tool-counts \.is-not-ready,\.admin-overview-tool-track \.is-not-ready\{background:var\(--admin-pearl\)\}/, 'Not ready uses approved pearl');
+
+assert.match(styles, /\.admin-overview-tool-counts i\{width:12px;height:12px;border-radius:0;display:inline-block;flex:0 0 12px\}/, 'Readiness legend uses visible square markers, not circles');
+assert.match(styles, /\.admin-shell \.admin-nav button\{\s*color:var\(--white\);/, 'All four sidebar navigation labels share the white text');
+assert.doesNotMatch(styles, /\.admin-shell \.admin-nav button\[data-section="document-registry"\]/, 'Document Registry does not require a one-off nav color');
+assert.match(styles, /\.admin-users-section \.admin-accounts-table thead th\{[^}]*height:44px;[^}]*background:var\(--admin-pearl\);[^}]*color:#41484F;[^}]*font-size:15px;[^}]*text-transform:uppercase;/, 'Users table headers match the document registry');
+assert.match(styles, /\.admin-users-section \.admin-accounts-table tbody td\{border-bottom-color:var\(--admin-pearl\)\}/, 'Users row dividers match the shared pearl header');
 assert.match(markup, /\u2014/, 'Unavailable User metrics must not claim zero');
 assert.match(markup, /data-overview-tool-app="cabinet"/);
 assert.match(markup, /data-overview-tool-app="records"/);

@@ -17,7 +17,11 @@ export const TOOL_MAP = Object.freeze({
     { id: 'people', label: 'Клиенты', readinessKey: 'cabinet.people' },
     {
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
-        { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day' },
+        { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day', items: [
+          { label: 'События', kind: 'check', readinessKey: 'cabinet.journal.day.events' },
+          { label: 'Заметки', kind: 'check', readinessKey: 'cabinet.journal.day.notes' },
+          { label: 'Запись', kind: 'check', readinessKey: 'cabinet.journal.day.record' },
+        ] },
         { label: 'Месяц', kind: 'mode', readinessKey: 'cabinet.journal.month' },
         { label: 'График (режим месяца)', kind: 'mode', readinessKey: 'cabinet.timetable' },
         { label: 'Список', kind: 'mode', readinessKey: 'cabinet.journal.list' },
@@ -35,7 +39,6 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Товары', kind: 'mode', readinessKey: 'cabinet.service.products' },
       ],
     },
-    { id: 'chat', label: 'Чат', readinessKey: 'cabinet.chat' },
     {
       id: 'loyalty', label: 'Лояльность', nesting: 'e', items: [
         { label: 'Депозит', kind: 'e', readinessKey: 'cabinet.loyalty.deposit' },
@@ -75,33 +78,29 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Ярлыки', kind: 'e', readinessKey: 'cabinet.settings.tags' },
       ],
     },
+    { id: 'chat', label: 'Чат', readinessKey: 'cabinet.chat' },
   ],
   records: [
-    {
-      id: 'profile', label: 'Профиль', nesting: 'composition', items: [
-        { label: 'Личные данные', kind: 'composition', readinessKey: 'records.profile.personal-data' },
-        { label: 'Документы и уведомления', kind: 'composition', readinessKey: 'records.profile.documents-notifications' },
-      ],
-    },
+    { id: 'profile', label: 'Профиль', readinessKey: 'records.profile' },
     {
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
-        { label: 'День', kind: 'mode', readinessKey: 'records.journal.day' },
+        { label: 'День', kind: 'mode', readinessKey: 'records.journal.day', items: [
+          { label: 'События', kind: 'check', readinessKey: 'records.journal.day.events' },
+          { label: 'Заметки', kind: 'check', readinessKey: 'records.journal.day.notes' },
+          { label: 'Запись', kind: 'check', readinessKey: 'records.journal.day.record' },
+        ] },
         { label: 'Месяц', kind: 'mode', readinessKey: 'records.journal.month' },
         { label: 'Список', kind: 'mode', readinessKey: 'records.journal.list' },
       ],
     },
-    {
-      id: 'contacts', label: 'Контакты', nesting: 'composition', items: [
-        { label: 'Список контактов', kind: 'composition', readinessKey: 'records.contacts.list' },
-        { label: 'Карточка контакта', kind: 'composition', readinessKey: 'records.contacts.card' },
-      ],
-    },
+    { id: 'contacts', label: 'Контакты', readinessKey: 'records.contacts' },
     {
       id: 'integrations', label: 'Интеграции', nesting: 'e', items: [
-        { label: 'Google Календарь', kind: 'e', readinessKey: 'records.integrations.google-calendar', accountToolKey: 'account.calendar.google' },
-        { label: 'Яндекс Календарь', kind: 'e', readinessKey: 'records.integrations.yandex-calendar', accountToolKey: 'account.calendar.yandex' },
+        { label: 'Google Календарь', kind: 'check', readinessKey: 'records.integrations.google-calendar', accountToolKey: 'account.calendar.google' },
+        { label: 'Яндекс Календарь', kind: 'check', readinessKey: 'records.integrations.yandex-calendar', accountToolKey: 'account.calendar.yandex' },
       ],
     },
+    { id: 'chat', label: 'Чат', readinessKey: 'records.chat' },
   ],
 });
 
@@ -241,9 +240,8 @@ function readinessSelect(readinessKey, byKey, className) {
 function aggregateKeys(item) {
   // Parent count follows its immediate children: Finance is E × 3, whereas
   // Cash is Composition × 3. A nested E counts ready when any member is ready.
-  return (item.items || []).map((child) => child.items?.length
-    ? aggregateKeys(child).join(',')
-    : child.readinessKey).filter(Boolean);
+  return (item.items || []).map((child) => child.readinessKey ||
+    (child.items?.length ? aggregateKeys(child).join(',') : null)).filter(Boolean);
 }
 
 function isReadinessGroupReady(keyGroup, byKey) {
@@ -282,11 +280,12 @@ function childRow(child, byKey) {
   </div>`;
 }
 
-function toolStatus(item, byKey) {
+function toolStatus(item, byKey, compact = false) {
   const items = Array.isArray(item.items) ? item.items : [];
   if (items.length) {
     const aggregate = aggregateStatus(item, byKey);
-    return `<span class="admin-tool-readiness" data-readiness-count="${aggregate.total}" data-readiness-keys="${escapeHtml(aggregate.keys.join('|'))}">${aggregate.ready}/${aggregate.total} готово</span>`;
+    const fullStatus = `${aggregate.ready}/${aggregate.total} готово`;
+    return `<span class="admin-tool-readiness" data-readiness-count="${aggregate.total}" data-readiness-keys="${escapeHtml(aggregate.keys.join('|'))}" title="${fullStatus}">${compact ? `${aggregate.ready}/${aggregate.total}` : fullStatus}</span>`;
   }
   return readinessSelect(item.readinessKey, byKey, 'admin-tool-readiness');
 }
@@ -337,7 +336,9 @@ function hydrateReadiness(root, items = []) {
     const total = Number(node.dataset.readinessCount || 0);
     const keys = String(node.dataset.readinessKeys || '').split('|').filter(Boolean);
     const ready = keys.filter((key) => isReadinessGroupReady(key, byKey)).length;
-    node.textContent = `${ready}/${total} готово`;
+    node.title = `${ready}/${total} готово`;
+    node.textContent = node.closest('.admin-tool-register-table')
+      ? `${ready}/${total}` : node.title;
   });
 }
 
@@ -420,38 +421,279 @@ function bindArchitecture(content) {
   bindAccountTools(content);
 }
 
+// Tools are one flat, document-style registry. F/E are structural labels, not separate folders.
+const INLINE_COMMERCIAL_KEYS = Object.freeze({
+  'cabinet.people': 'tool.people',
+  'cabinet.journal': 'tool.journal',
+  'cabinet.timetable': 'tool.timetable',
+  'cabinet.profile': 'system.profile',
+  'cabinet.profile.workspaces': 'system.workplace',
+  'cabinet.service': 'tool.services',
+  'cabinet.loyalty.deposit': 'tool.loyalty.deposit',
+  'cabinet.loyalty.personal-account': 'tool.loyalty.personal-account',
+  'cabinet.loyalty.certificate': 'tool.loyalty.certificate',
+  'cabinet.loyalty.subscription': 'tool.loyalty.subscription',
+  'cabinet.loyalty.referral': 'tool.loyalty.referral',
+  'cabinet.loyalty.bonus': 'tool.loyalty.bonus',
+  'cabinet.finance': 'folder.finance',
+  'cabinet.finance.cash': 'tool.finance.cash',
+  'cabinet.finance.dds': 'tool.finance.dds',
+  'cabinet.finance.cash.investments': 'tool.finance.investment',
+  'cabinet.finance.z-report': 'tool.finance.z-report',
+  'cabinet.inventory': 'tool.inventory',
+  'cabinet.settings.online-booking': 'tool.online-booking',
+  'cabinet.settings.documents': 'tool.documents',
+  'cabinet.settings.tags': 'tool.tags',
+  'cabinet.settings.notifications': 'tool.notifications',
+  'cabinet.settings.integrations': 'tool.integrations',
+});
+
+function flatToolKey(area, item, parentKey) {
+  if (item.readinessKey) return item.readinessKey;
+  if (item.id) return area + '.' + item.id;
+  if (parentKey === 'cabinet.finance' && item.label === 'Касса') return 'cabinet.finance.cash';
+  return parentKey + '.' + String(item.label || '').toLowerCase().replace(/[^a-zа-яё0-9]+/g, '-');
+}
+
+function toolDisplayName(item) {
+  if (item.readinessKey === 'cabinet.profile.workspaces') return 'Рабочее пространство';
+  return String(item.label || '').startsWith('График (') ? 'График' : item.label;
+}
+
+function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], parentKey = '') {
+  return items.map((item, index) => {
+    const key = flatToolKey(area, item, parentKey);
+    const id = (ancestorIds[ancestorIds.length - 1] || area) + '-' + index;
+    const children = Array.isArray(item.items) ? item.items : [];
+    const isCabinetJournal = area === 'cabinet' && item.id === 'journal';
+    const groupedChildren = isCabinetJournal
+      ? children.filter((child) => child.readinessKey !== 'cabinet.timetable').map((child) => (
+        child.readinessKey === 'cabinet.journal.month'
+          ? { ...child, items: children.filter((nested) => nested.readinessKey === 'cabinet.timetable') }
+          : child
+      ))
+      : children;
+    const expandable = groupedChildren.length > 0;
+    const canPrice = area === 'cabinet' && INLINE_COMMERCIAL_KEYS[key];
+    const price = canPrice ? '<div class="admin-tool-registry-price"><input type="number" min="0" step="0.01" inputmode="decimal" data-commercial-price aria-label="Цена ' +
+      escapeHtml(toolDisplayName(item)) + '" disabled><span>₽</span></div>' : '—';
+    const payment = canPrice ? '<select data-commercial-mode aria-label="Оплата ' + escapeHtml(toolDisplayName(item)) +
+      '" disabled><option value="free">Бесплатно</option><option value="paid">Платно</option></select>' : '—';
+    const readiness = item.readinessKey
+      ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
+      : expandable
+        ? toolStatus(item, byKey, true)
+        : '—';
+    // Structural type is independent of the readiness state.
+    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E'
+      : item.kind === 'mode' ? 'R' : 'K';
+    const markerTitle = marker === 'F' ? 'Основная карточка'
+      : marker === 'E' ? 'Вложенная карточка'
+      : marker === 'R' ? 'Режим' : 'Компонент';
+    const toggle = expandable
+      ? '<button type="button" class="admin-tool-registry-expand" data-tool-expand="' + escapeHtml(id) +
+        '" aria-expanded="true" aria-label="Свернуть или раскрыть ' + escapeHtml(toolDisplayName(item)) + '">⌄</button>'
+      : '';
+    const name = escapeHtml(toolDisplayName(item));
+    const accountControl = item.accountToolKey
+      ? '<label class="admin-tool-account-control"><input type="checkbox" data-account-tool="' +
+        escapeHtml(item.accountToolKey) + '" disabled><span data-account-tool-state>—</span></label>'
+      : '';
+    const row = '<tr data-tool-id="' + escapeHtml(id) + '" data-tool-ancestors="' +
+      escapeHtml(ancestorIds.join(' ')) + '"' +
+      (canPrice ? ' data-commercial-key="' + escapeHtml(INLINE_COMMERCIAL_KEYS[key]) + '"' : '') +
+      '><td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
+      '<td><div class="admin-tool-registry-name" data-tool-depth="' + depth + '" style="--tool-depth:' + depth + '">' +
+      '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
+      '<td class="admin-tool-registry-kind"><span class="' + (marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain') + '" title="' + markerTitle +
+      '" aria-label="' + markerTitle + '">' + marker + '</span></td>' +
+      '<td>' + readiness + '</td><td>' + payment + '</td><td><div class="admin-tool-registry-cost">' + price +
+      '<small class="admin-tool-registry-save-state" aria-live="polite"></small></div></td></tr>';
+    return row + (expandable
+      ? toolRegisterRows(area, groupedChildren, byKey, depth + 1, [...ancestorIds, id], key)
+      : '');
+  }).join('');
+}
+
+function renderToolRegister(area, label, suffix) {
+  const items = TOOL_MAP[area] || [];
+  const columns = '<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">' +
+    '<col class="admin-tool-col-kind"><col class="admin-tool-col-status">' +
+    '<col class="admin-tool-col-payment"><col class="admin-tool-col-price"></colgroup>';
+  return '<section class="admin-users-section admin-tool-register-section">' +
+    '<div class="admin-tool-register-sticky">' +
+    '<h2 class="admin-users-section-title">' + label +
+      ' <span class="admin-registry-app">/ ' + suffix + '</span></h2>' +
+    '<div class="admin-tool-register-head-scroll">' +
+    '<table class="admin-table admin-tool-register-table admin-tool-register-head-table">' + columns +
+    '<thead><tr><th scope="col" class="admin-tool-registry-expand-header">' +
+      '<button type="button" class="admin-tool-registry-expand admin-tool-registry-expand-all"' +
+      ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
+      '<th>Инструменты</th>' +
+      '<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим, K — компонент">Тип</th>' +
+      '<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead></table></div></div>' +
+    '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
+    '<table class="admin-table admin-tool-register-table admin-tool-register-body-table" data-admin-tool-map="' + area + '">' +
+    columns + '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) +
+    '</tbody></table></div></div></section>';
+}
+
+function syncToolHierarchy(section) {
+  const expandButtons = [...section.querySelectorAll('[data-tool-expand]')];
+  const closed = new Set(expandButtons.filter((button) => button.getAttribute('aria-expanded') === 'false')
+    .map((button) => button.dataset.toolExpand));
+  section.querySelectorAll('[data-tool-ancestors]').forEach((row) => {
+    row.hidden = String(row.dataset.toolAncestors || '').split(' ').some((id) => closed.has(id));
+  });
+  const expandAll = section.querySelector('[data-tool-expand-all]');
+  if (expandAll) {
+    const allExpanded = expandButtons.every((button) => button.getAttribute('aria-expanded') === 'true');
+    expandAll.setAttribute('aria-expanded', String(allExpanded));
+    expandAll.setAttribute('aria-label', allExpanded ? 'Свернуть все строки' : 'Раскрыть все строки');
+    expandAll.title = allExpanded ? 'Свернуть всё' : 'Раскрыть всё';
+  }
+}
+
+function hydrateInlineCommercial(content, products) {
+  const indexed = new Map((Array.isArray(products) ? products : []).map((product) => [product.key, product]));
+  content.querySelectorAll('[data-commercial-key]').forEach((row) => {
+    const product = indexed.get(row.dataset.commercialKey);
+    const price = row.querySelector('[data-commercial-price]');
+    const mode = row.querySelector('[data-commercial-mode]');
+    if (!product || !price || !mode) return;
+    row.dataset.saleable = String(Boolean(product.isSaleable));
+    price.value = rubles(product.priceMinor);
+    price.dataset.previous = price.value;
+    mode.value = product.isFree ? 'free' : 'paid';
+    mode.dataset.previous = mode.value;
+    price.disabled = false;
+    mode.disabled = false;
+  });
+}
+
+function bindInlineCommercial(content) {
+  const pending = new WeakMap();
+  content.querySelectorAll('[data-commercial-key]').forEach((row) => {
+    const price = row.querySelector('[data-commercial-price]');
+    const mode = row.querySelector('[data-commercial-mode]');
+    const message = row.querySelector('.admin-tool-registry-save-state');
+    if (!price || !mode) return;
+    const save = async (event) => {
+      const isPrice = event.currentTarget === price;
+      if (pending.has(row)) {
+        // A later edit is written after the current request, never raced over it.
+        try { await pending.get(row); } catch { /* The first handler shows the error. */ }
+        if (!row.isConnected) return;
+      }
+      const rub = Number(String(price.value).replace(',', '.'));
+      if (isPrice && (!Number.isFinite(rub) || rub < 0 || !Number.isInteger(Math.round(rub * 100)))) {
+        price.value = price.dataset.previous || '0';
+        if (message) message.textContent = 'Неверная цена';
+        return;
+      }
+      const data = isPrice
+        ? { priceMinor: Math.round(rub * 100) }
+        : { isFree: mode.value === 'free', isSaleable: mode.value === 'paid' };
+      price.disabled = true;
+      mode.disabled = true;
+      if (message) message.textContent = 'Сохранение…';
+      const request = commercialRequest('/' + encodeURIComponent(row.dataset.commercialKey), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      pending.set(row, request);
+      try {
+        const catalog = await request;
+        catalogCache = catalog;
+        const updated = catalog?.products?.find((item) => item.key === row.dataset.commercialKey);
+        if (updated) {
+          row.dataset.saleable = String(Boolean(updated.isSaleable));
+          price.dataset.previous = rubles(updated.priceMinor);
+          mode.dataset.previous = updated.isFree ? 'free' : 'paid';
+        }
+        if (message) message.textContent = 'Сохранено';
+      } catch (error) {
+        price.value = price.dataset.previous || '0';
+        mode.value = mode.dataset.previous || 'free';
+        if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка сохранения';
+      } finally {
+        if (pending.get(row) === request) pending.delete(row);
+        price.disabled = false;
+        mode.disabled = false;
+      }
+    };
+    price.addEventListener('change', save);
+    mode.addEventListener('change', save);
+  });
+}
+
 export function renderAdminTools(content) {
   if (!content) return;
-
-  content.innerHTML = `<div class="admin-tool-areas">
-    <p class="admin-service-note">Выберите статус инструмента. Изменение сохраняется автоматически.</p>
-    <details class="admin-tool-area">
-      <summary class="admin-tool-area-summary"><strong>Кабинет</strong><span aria-hidden="true">⌄</span></summary>
-      <div class="admin-tool-area-body" data-tool-area-body="cabinet">${renderArchitecture('cabinet', toolReadinessCache)}</div>
-    </details>
-    <details class="admin-tool-area">
-      <summary class="admin-tool-area-summary"><strong>Записи</strong><span aria-hidden="true">⌄</span></summary>
-      <div class="admin-tool-area-body" data-tool-area-body="records">${renderArchitecture('records', toolReadinessCache)}</div>
-    </details>
-    <details class="admin-tool-area" data-commerce-folder>
-      <summary class="admin-tool-area-summary"><strong>Коммерция</strong><span aria-hidden="true">⌄</span></summary>
-      <div class="admin-tool-area-body" data-commerce-body><div class="admin-card" style="padding:18px">Открой папку, чтобы загрузить коммерческие условия.</div></div>
-    </details>
-  </div>`;
-
+  content.innerHTML = '<div class="admin-users-layout admin-tool-register-layout">' +
+    renderToolRegister('cabinet', 'Кабинет', 'Professional') +
+    renderToolRegister('records', 'Записи', 'User') +
+    '<div class="admin-tool-register-footer"><span data-commercial-publication></span>' +
+    '<button type="button" class="admin-button secondary" data-commercial-publish disabled>Опубликовать изменения</button>' +
+    '<span data-commercial-publish-message aria-live="polite"></span></div></div>';
   bindArchitecture(content);
+  content.querySelectorAll('.admin-tool-register-section').forEach((section) => {
+    const bodyScroll = section.querySelector('.admin-tool-register-scroll');
+    const headScroll = section.querySelector('.admin-tool-register-head-scroll');
+    // Keep the sticky header columns aligned when the narrow viewport scrolls horizontally.
+    bodyScroll?.addEventListener('scroll', () => {
+      if (headScroll) headScroll.scrollLeft = bodyScroll.scrollLeft;
+    }, { passive: true });
+    section.querySelectorAll('[data-tool-expand]').forEach((button) => {
+      button.addEventListener('click', () => {
+        button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
+        syncToolHierarchy(section);
+      });
+    });
+    section.querySelector('[data-tool-expand-all]')?.addEventListener('click', (event) => {
+      const expand = event.currentTarget.getAttribute('aria-expanded') !== 'true';
+      section.querySelectorAll('[data-tool-expand]').forEach((button) => {
+        button.setAttribute('aria-expanded', String(expand));
+      });
+      syncToolHierarchy(section);
+    });
+    syncToolHierarchy(section);
+  });
+  bindInlineCommercial(content);
   void loadToolReadiness().then((items) => {
     if (content.isConnected) hydrateAllReadiness(content, items);
   }).catch(() => {});
   void accountToolsRequest().then((tools) => {
     if (content.isConnected) hydrateAccountTools(content, tools);
   }).catch(() => {});
-  const commerceFolder = content.querySelector('[data-commerce-folder]');
-  const commerceBody = content.querySelector('[data-commerce-body]');
-  commerceFolder?.addEventListener('toggle', () => {
-    if (!commerceFolder.open || !commerceBody || commerceBody.dataset.loaded === 'true') return;
-    commerceBody.dataset.loaded = 'true';
-    void renderCommerce(commerceBody);
+  void loadCatalog().then((catalog) => {
+    if (!content.isConnected) return;
+    hydrateInlineCommercial(content, catalog?.products);
+    const publication = content.querySelector('[data-commercial-publication]');
+    if (publication) publication.textContent = catalog?.publication
+      ? 'Каталог: версия ' + catalog.publication.version : 'Каталог ещё не опубликован';
+    const publish = content.querySelector('[data-commercial-publish]');
+    if (publish) publish.disabled = false;
+  }).catch(() => {
+    const message = content.querySelector('[data-commercial-publish-message]');
+    if (message) message.textContent = 'Коммерческие условия недоступны';
+  });
+  content.querySelector('[data-commercial-publish]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    const message = content.querySelector('[data-commercial-publish-message]');
+    try {
+      await commercialRequest('/publish', { method: 'POST' });
+      catalogCache = null;
+      const current = await loadCatalog();
+      const publication = content.querySelector('[data-commercial-publication]');
+      if (publication) publication.textContent = 'Каталог: версия ' + current?.publication?.version;
+      if (message) message.textContent = 'Опубликовано';
+    } catch (error) {
+      if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка публикации';
+    } finally {
+      button.disabled = false;
+    }
   });
 }
 

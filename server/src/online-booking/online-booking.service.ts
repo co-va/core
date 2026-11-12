@@ -418,7 +418,7 @@ export class OnlineBookingService {
     return { tenantId: profileRoute.tenantId, workplaceKey: workplace.key };
   }
 
-  async getContext(tenantId: string, workplaceKey = '') {
+  async getContext(tenantId: string, workplaceKey = '', directRoute: Record<string, any> = {}) {
     await this.access.assertRealOperationsAllowed(tenantId);
     const [sourceWorkplaces, operational, documents] = await Promise.all([
       this.prisma.workplace.findMany({
@@ -442,7 +442,21 @@ export class OnlineBookingService {
     const selected = requestedWorkplace
       ? sourceWorkplaces.find((item) => text(item?.key) === requestedWorkplace)
       : null;
-    if (requestedWorkplace && (!selected || selected.visibleInPublicBooking === false)) {
+    // Only a tenant-scoped individual link may open a hidden workspace.
+    // A plain workplace query parameter is not an authorization.
+    let directWorkplaceAccess = false;
+    if (requestedWorkplace && selected?.visibleInPublicBooking === false) {
+      const profileSlug = text(directRoute?.profileSlug);
+      const workplaceSlug = text(directRoute?.workplaceSlug);
+      if (profileSlug && workplaceSlug) {
+        const resolved = await this.resolvePublicRoute(profileSlug, workplaceSlug).catch((error) => {
+          if (error instanceof NotFoundException) return null;
+          throw error;
+        });
+        directWorkplaceAccess = resolved?.tenantId === tenantId && resolved?.workplaceKey === requestedWorkplace;
+      }
+    }
+    if (requestedWorkplace && (!selected || (selected.visibleInPublicBooking === false && !directWorkplaceAccess))) {
       throw new NotFoundException('Рабочее пространство не найдено');
     }
 
@@ -484,6 +498,7 @@ export class OnlineBookingService {
       tenantId,
       revision: 0,
       settings: objectValue(operational.bookingSettings),
+      directWorkplaceAccess,
       workplaces: bookingWorkplaces,
       procedures,
       days,

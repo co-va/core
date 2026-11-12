@@ -63,6 +63,26 @@ export class SaasAdminController {
     return this.admin.documentRegistryHistory();
   }
 
+  @Get('document-registry/drafts')
+  documentRegistryDrafts() {
+    return this.admin.documentRegistryDrafts();
+  }
+
+  @Post('document-registry/drafts')
+  saveDocumentRegistryDraft(@Body() body: unknown) {
+    return this.admin.saveDocumentRegistryDraft(body);
+  }
+
+  @Post('document-registry/drafts/:key/publish')
+  publishDocumentRegistryDraft(@Param('key') key: string) {
+    return this.admin.publishDocumentRegistryDraft(key);
+  }
+
+  @Get('document-registry/versions')
+  documentRegistryVersions() {
+    return this.admin.documentRegistryVersions();
+  }
+
   @Post('document-registry/sync')
   syncDocumentRegistry(@Body() body: { documents?: unknown }) {
     return this.admin.syncDocumentRegistry(body?.documents);

@@ -205,8 +205,13 @@ export class OnlineBookingController {
   }
 
   @Get(':tenantId/context')
-  context(@Param('tenantId') tenantId: string, @Query('workplace') workplace = '') {
-    return this.booking.getContext(tenantId, workplace);
+  context(
+    @Param('tenantId') tenantId: string,
+    @Query('workplace') workplace = '',
+    @Query('profileSlug') profileSlug = '',
+    @Query('workplaceSlug') workplaceSlug = '',
+  ) {
+    return this.booking.getContext(tenantId, workplace, { profileSlug, workplaceSlug });
   }
 
   @Post(':tenantId/account/prepare')
