@@ -239,11 +239,12 @@ export async function enhanceCommercialTenantTools(section, tenantId) {
       <details class="commercial-tenant-details" open><summary>Расчёты и покупки</summary><div data-commercial-tenant-orders>${orderRows(orders)}</div></details>
       <details class="commercial-tenant-details"><summary>История действий</summary>${auditRows(commercial.audit)}</details>`;
 
+    drawer.querySelectorAll('.admin-access-commercial-choice').forEach((label) => {
+      // Labels inside a <summary> also trigger the native summary click;
+      // stop bubbling without preventing the checkbox's default activation.
+      label.addEventListener('click', (event) => event.stopPropagation());
+    });
     drawer.querySelectorAll('[data-commercial-tenant-product]').forEach((input) => {
-      input.addEventListener('click', (event) => {
-        // Commercial checkboxes must not collapse their F/E/R/K summary.
-        event.stopPropagation();
-      });
       input.addEventListener('change', () => updateQuote(section));
     });
 
