@@ -38,10 +38,10 @@ export function standardFacts(sheet: string, row: number, values: Record<string,
   if (v.accountAction || v.accountAmount !== undefined || v.spendLimitPercent !== undefined || v.visibleToEndUser !== undefined) add('accounts',{...reference,...linked,...pick('accountAction','accountAmount','occurredAt','wallet','note','spendLimitPercent','visibleToEndUser')});
   if (v.amount !== undefined) add('payments',{...reference,...linked,...pick('amount','occurredAt','wallet','paymentSource','deposit','note')});
   if (v.financeKind || v.financeAmount !== undefined) add('operations',pick('financeKind','financeAmount','occurredAt','wallet','toWallet','article','loan','investment','note'));
-  if (v.material && v.unit) add('items',{name:v.material,...pick('manufacturer','unit','productType','category','sku','barcode','location','supplier','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','trackLots','canConsume','canSell')});
+  if (v.material && v.unit) add('items',{name:v.material,...pick('manufacturer','unit','productType','category','sku','barcode','location','supplier','minStock','targetStock','packageQuantity','containerCount','grossWeight','tareWeight','lastPurchasePrice','trackLots','canConsume','canSell')});
   if (v.material && v.supplier && (v.listPrice !== undefined || v.actualPrice !== undefined || v.supplierSku)) add('offers',pick('material','manufacturer','unit','supplier','listPrice','supplierDiscount','supplierSku','actualPrice','note'));
   if (v.quantity !== undefined) {
-    const data = {...reference,...linked,...pick('material','manufacturer','unit','quantity','unitCost','kind','direction','expectedQuantity','actualQuantity','occurredAt','expiresAt','supplier','listPrice','withoutProcedure','note')};
+    const data = {...reference,...linked,...pick('material','manufacturer','unit','quantity','containerDelta','unitCost','kind','direction','expectedQuantity','actualQuantity','expectedContainerCount','actualContainerCount','occurredAt','expiresAt','supplier','listPrice','withoutProcedure','note')};
     if (v.date && !v.kind) add('consumables',data); else add('movements',data);
   }
   if (!facts.length) add('people',{...v,name:undefined});

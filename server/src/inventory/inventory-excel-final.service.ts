@@ -7,7 +7,7 @@ type AnyRecord = Record<string, any>;
 
 const STOCK_HEADERS = [
   'Производитель', 'Наименование *', 'Категория / тип', 'Единица *', 'Количество *',
-  'В упаковке', 'Масса брутто полной упаковки', 'Масса тары',
+  'Тюбиков на складе', 'В упаковке', 'Масса брутто полной упаковки', 'Масса тары',
   'Поставщик начального остатка', 'Прайсовая цена', 'Скидка %', 'Фактическая цена закупки',
   'Место хранения', 'Минимальный остаток', 'Целевой остаток', 'Артикул', 'Штрихкод',
 ];
@@ -19,7 +19,7 @@ const SUPPLIER_HEADERS = [
 
 const MOVEMENT_HEADERS = [
   'Дата *', 'Время', 'UEI', 'Имя', 'Процедура', 'Часть / зона', 'Тип *',
-  'Производитель', 'Материал *', 'Количество *', 'Единица', 'Поставщик',
+  'Производитель', 'Материал *', 'Количество *', 'Единица', 'Изменение тюбиков', 'Учётных тюбиков', 'Фактически тюбиков', 'Поставщик',
   'Прайсовая цена', 'Скидка %', 'Фактическая цена закупки', 'Себестоимость', 'Примечание',
 ];
 
@@ -88,7 +88,7 @@ export class InventoryExcelService {
     styleSheet(sheet, STOCK_HEADERS);
     snapshot.items.forEach((item: AnyRecord) => sheet.addRow([
       item.manufacturer || '', item.name, item.productType || item.category || '', item.unit, item.balance,
-      item.packageQuantity ?? '', item.grossWeight ?? '', item.tareWeight ?? '',
+      item.containerCount ?? '', item.packageQuantity ?? '', item.grossWeight ?? '', item.tareWeight ?? '',
       '', '', '', item.lastPurchasePrice ?? '',
       item.location || '', item.minStock ?? '', item.targetStock ?? '', item.sku || '', item.barcode || '',
     ]));
@@ -169,6 +169,7 @@ export class InventoryExcelService {
           line.item?.name || '',
           Number(line.quantity),
           line.item?.unit || '',
+          line.containerDelta ?? '', line.expectedContainerCount ?? '', line.actualContainerCount ?? '',
           suppliers.join(', '),
           listPrices.length === 1 ? Number(listPrices[0]) : '',
           discounts.length === 1 ? Number(discounts[0]) : '',

@@ -937,6 +937,8 @@ model InventoryItem {
   minStock          Decimal? @db.Decimal(14, 3)
   targetStock       Decimal? @db.Decimal(14, 3)
   packageQuantity   Decimal? @db.Decimal(14, 3)
+  // Observed physical containers. NULL means unknown, never estimated.
+  containerCount    Int?
   grossWeight       Decimal? @db.Decimal(14, 3)
   tareWeight        Decimal? @db.Decimal(14, 3)
   referencePrice    Decimal? @db.Decimal(14, 4)
@@ -1050,6 +1052,9 @@ model InventoryMovementLine {
   amount              Decimal  @db.Decimal(16, 4)
   expectedQuantity    Decimal? @db.Decimal(14, 3)
   actualQuantity      Decimal? @db.Decimal(14, 3)
+  containerDelta      Int?
+  expectedContainerCount Int?
+  actualContainerCount Int?
   note                String   @default("")
   createdAt           DateTime @default(now())
 
