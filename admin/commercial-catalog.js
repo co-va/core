@@ -495,16 +495,17 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const id = (ancestorIds[ancestorIds.length - 1] || area) + '-' + index;
     const groupedChildren = visibleToolChildren(area, item);
     const expandable = groupedChildren.length > 0;
-    const productKey = area === 'cabinet' ? INLINE_COMMERCIAL_KEYS[key] : '';
-    const tier = productKey === 'system.profile' || productKey === 'system.workplace'
-      ? 'Start'
-      : productKey
-      ? '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
-        escapeHtml(toolDisplayName(item)) + '" disabled>' +
-        '<option value="">Не входит</option><option value="tariff.start">Start</option>' +
-        '<option value="tariff.start-plus">Start+</option><option value="tariff.pro">Pro</option>' +
-        '</select><small class="admin-tool-registry-save-state" aria-live="polite"></small></div>'
-      : '—';
+    // Every visible F/E/R row uses exactly the same tariff editor in both apps.
+    // Unmapped rows are stored in the EXISTING commercial catalog by their
+    // canonical Admin tool key, not by a parallel registry or a UI-only state.
+    const productKey = area === 'cabinet' && INLINE_COMMERCIAL_KEYS[key]
+      ? INLINE_COMMERCIAL_KEYS[key] : 'ui.' + key;
+    const tier = '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
+      escapeHtml(toolDisplayName(item)) + '" disabled>' +
+      '<option value="tariff.start">Start</option>' +
+      '<option value="tariff.start-plus">Start+</option>' +
+      '<option value="tariff.pro" selected>Pro</option>' +
+      '</select><small class="admin-tool-registry-save-state" aria-live="polite"></small></div>';
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
       : expandable
@@ -524,14 +525,13 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
         escapeHtml(item.accountToolKey) + '" disabled><span data-account-tool-state>—</span></label>'
       : '';
     const row = '<tr data-tool-id="' + escapeHtml(id) + '" data-tool-ancestors="' +
-      escapeHtml(ancestorIds.join(' ')) + '"' +
-      (productKey ? ' data-tariff-product="' + escapeHtml(productKey) + '"' : '') +
+      escapeHtml(ancestorIds.join(' ')) + '" data-tariff-product="' + escapeHtml(productKey) + '"' +
       '><td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
       '<td><div class="admin-tool-registry-name" data-tool-depth="' + depth + '" style="--tool-depth:' + depth + '">' +
       '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
       '<td class="admin-tool-registry-kind"><span class="' + (marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain') + '" title="' + markerTitle +
       '" aria-label="' + markerTitle + '">' + marker + '</span></td>' +
-      '<td>' + readiness + '</td><td colspan="2">' + tier + '</td></tr>';
+      '<td>' + tier + '</td><td>' + readiness + '</td></tr>';
     return row + (expandable
       ? toolRegisterRows(area, groupedChildren, byKey, depth + 1, [...ancestorIds, id], key)
       : '');
@@ -540,11 +540,11 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
 
 function renderToolRegister(area, label, suffix) {
   const items = TOOL_MAP[area] || [];
-  // Preserve the approved six-track / 44px table geometry. The last two
-  // tracks are one visible Tariff cell instead of Payment + Price.
+  // Five balanced columns: retain original tool, type and row geometry.
+  // Tariff precedes Readiness; there is no empty sixth track.
   const columns = '<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">' +
-    '<col class="admin-tool-col-kind"><col class="admin-tool-col-status">' +
-    '<col class="admin-tool-col-tariff"><col class="admin-tool-col-tariff-tail"></colgroup>';
+    '<col class="admin-tool-col-kind"><col class="admin-tool-col-tariff">' +
+    '<col class="admin-tool-col-status"></colgroup>';
   return '<section class="admin-users-section admin-tool-register-section">' +
     '<div class="admin-tool-register-sticky">' +
     '<h2 class="admin-users-section-title">' + label +
@@ -556,7 +556,7 @@ function renderToolRegister(area, label, suffix) {
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
       '<th>Инструменты</th>' +
       '<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>' +
-      '<th>Готовность</th><th colspan="2">Тариф</th></tr></thead></table></div></div>' +
+      '<th>Тариф</th><th>Готовность</th></tr></thead></table></div></div>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table admin-tool-register-body-table" data-admin-tool-map="' + area + '">' +
     columns + '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) +
@@ -609,7 +609,7 @@ function hydrateTariffAssignments(content, tariffs) {
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
     const select = row.querySelector('[data-tool-tariff]');
     if (!select) return;
-    select.value = assignments[row.dataset.tariffProduct] || '';
+    select.value = assignments[row.dataset.tariffProduct] || 'tariff.pro';
     select.dataset.previous = select.value;
     select.disabled = false;
   });
@@ -656,7 +656,7 @@ export function renderAdminTools(content) {
   content.querySelectorAll('.admin-tool-register-section').forEach((section) => {
     const bodyScroll = section.querySelector('.admin-tool-register-scroll');
     const headScroll = section.querySelector('.admin-tool-register-head-scroll');
-    // The two synchronized tables retain their approved physical tracks.
+    // Header/body use the same five proportional tracks on both devices.
     bodyScroll?.addEventListener('scroll', () => {
       if (headScroll) headScroll.scrollLeft = bodyScroll.scrollLeft;
     }, { passive: true });
