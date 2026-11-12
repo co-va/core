@@ -134,14 +134,14 @@ if (expandCell < 0 || nameCell <= expandCell || kindCell <= nameCell) {
 }
 for (const kind of [
   "depth === 0 ? 'F'",
-  "item.kind === 'e' ? 'E' : 'R'",
+  "item.kind === 'e' ? 'E' : item.kind === 'check' ? 'K' : 'R'",
   "marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain'",
   "visibleToolChildren(area, item)",
 ]) {
-  if (!toolRows.includes(kind)) throw new Error('F/E/R mapping and K-free filter missing: ' + kind);
+  if (!toolRows.includes(kind)) throw new Error('F/E/R/K row mapping missing: ' + kind);
 }
-if (toolRows.includes("marker === 'R' ? 'Режим' : 'Компонент'")) {
-  throw new Error('K component type must not be emitted in the Tools registry');
+if (!toolRows.includes("marker === 'K' ? 'Инструмент внутри режима'")) {
+  throw new Error('Events/Notes K component type must be visible in Tools registry');
 }
 for (const rule of [
   '.admin-tool-register-card{',
