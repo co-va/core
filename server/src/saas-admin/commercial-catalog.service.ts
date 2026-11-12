@@ -1,13 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { READINESS_KEYS } from './tool-readiness.service';
 
 type ProductType = 'SYSTEM' | 'TOOL' | 'FOLDER' | 'PACKAGE' | 'CAPACITY' | 'ADDON';
 type ProductReadiness = 'NOT_READY' | 'TESTING' | 'READY';
 
 // Tariffs are packages in the existing commercial catalog, not a second tool registry.
 const TARIFF_KEYS = ['tariff.start', 'tariff.start-plus', 'tariff.pro'] as const;
-type TariffKey = typeof TARIFF_KEYS[number];
+const USER_TARIFF_KEYS = ['tariff.records.start', 'tariff.records.start-plus', 'tariff.records.pro'] as const;
+const ALL_TARIFF_KEYS = [...TARIFF_KEYS, ...USER_TARIFF_KEYS] as const;
+type TariffKey = typeof ALL_TARIFF_KEYS[number];
+const TARIFF_TOOL_KEYS = new Set<string>([
+  ...READINESS_KEYS,
+  // Structural F rows are visible Admin instruments but not readiness leaves.
+  'cabinet.journal', 'cabinet.loyalty', 'cabinet.settings',
+  'records.journal', 'records.integrations',
+]);
 
 type CatalogManifestItem = {
   key: string;
@@ -74,9 +83,14 @@ const APP_CATALOG: CatalogManifestItem[] = [
 
   // These three existing-model package records are initially not sold by the legacy
   // per-product checkout. Pricing/selection is prepared without changing live access.
-  { key: 'tariff.start', name: 'Start', description: 'Базовый тариф Professional', type: 'PACKAGE', position: 930, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: [], includedKeys: ['system.profile', 'system.workplace'] },
+  { key: 'tariff.start', name: 'Start', description: 'Базовый тариф Professional', type: 'PACKAGE', position: 930, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: [] },
   { key: 'tariff.start-plus', name: 'Start+', description: 'Расширенный тариф Professional', type: 'PACKAGE', position: 940, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start'] },
   { key: 'tariff.pro', name: 'Pro', description: 'Максимальный тариф Professional', type: 'PACKAGE', position: 950, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start-plus'] },
+  // User uses exactly the same three-level tier mechanism, with its own
+  // compositions and future prices. No User entitlement is changed here.
+  { key: 'tariff.records.start', name: 'Start', description: 'Тариф User', type: 'PACKAGE', position: 960, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: [] },
+  { key: 'tariff.records.start-plus', name: 'Start+', description: 'Расширенный тариф User', type: 'PACKAGE', position: 970, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.records.start'] },
+  { key: 'tariff.records.pro', name: 'Pro', description: 'Максимальный тариф User', type: 'PACKAGE', position: 980, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.records.start-plus'] },
 ];
 
 function integer(value: unknown, field: string) {
@@ -187,9 +201,9 @@ export class CommercialCatalogService {
     const products = catalog.products;
     const byKey = new Map(products.map((product) => [product.key, product]));
     const assignments: Record<string, string> = {};
-    for (const tierKey of TARIFF_KEYS) {
+    for (const tierKey of ALL_TARIFF_KEYS) {
       for (const child of byKey.get(tierKey)?.includedProducts || []) {
-        if (!TARIFF_KEYS.includes(child.key as TariffKey)) assignments[child.key] = tierKey;
+        if (!ALL_TARIFF_KEYS.includes(child.key as TariffKey)) assignments[child.key] = tierKey;
       }
     }
 
@@ -223,7 +237,16 @@ export class CommercialCatalogService {
         name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
         priceMinor: byKey.get(key)?.priceMinor ?? 0,
         connected: counts[index],
-        tools: [...expand(key)].filter((childKey) => !TARIFF_KEYS.includes(childKey as TariffKey))
+        tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
+          .map((childKey) => byKey.get(childKey)).filter((item) => item && item.isActive)
+          .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
+      })),
+      userTiers: USER_TARIFF_KEYS.map((key, index) => ({
+        key,
+        name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
+        priceMinor: byKey.get(key)?.priceMinor ?? 0,
+        connected: null, // User subscriptions are not in TenantAccess; never infer a count.
+        tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
           .map((childKey) => byKey.get(childKey)).filter((item) => item && item.isActive)
           .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
       })),
@@ -235,22 +258,36 @@ export class CommercialCatalogService {
     await this.syncAppCatalog();
     const productKey = text(input.productKey);
     const minimumTariff = text(input.minimumTariff);
-    if (minimumTariff && !TARIFF_KEYS.includes(minimumTariff as TariffKey)) {
-      throw new BadRequestException('Неизвестный тариф');
+    const isUser = productKey.startsWith('ui.records.');
+    const eligibleTiers: readonly string[] = isUser ? USER_TARIFF_KEYS : TARIFF_KEYS;
+    if (minimumTariff && !eligibleTiers.includes(minimumTariff)) {
+      throw new BadRequestException('Тариф не относится к этому приложению');
     }
-    // Profile and the first workspace are structural Start capabilities,
-    // including when a paid tier inherits Start. They must not disappear.
-    if (['system.profile', 'system.workplace'].includes(productKey) && minimumTariff !== 'tariff.start') {
-      throw new BadRequestException('Базовые возможности всегда входят в Start');
-    }
-    const [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string; type: ProductType }>>(
+    let [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string; type: ProductType }>>(
       `SELECT "id","type" FROM "CommercialProduct" WHERE "key"=$1 AND "isActive"=true`, productKey,
     );
+    if (!product && productKey.startsWith('ui.')) {
+      const toolKey = productKey.slice(3);
+      if (!TARIFF_TOOL_KEYS.has(toolKey)) throw new BadRequestException('Неизвестный инструмент');
+      // An F/E/R UI row lacking a standalone paid product is stored in the
+      // EXISTING CommercialProduct catalog, without saleability or capabilities.
+      // It cannot alter an existing account's access or payment configuration.
+      const name = text(input.name).slice(0, 120) || toolKey;
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "CommercialProduct" ("id","key","name","description","type","position","isActive","isSaleable","isFree","priceMinor","currency","source","createdAt","updatedAt")
+         VALUES ($1,$2,$3,'', 'TOOL',850,true,false,false,0,'RUB','ADMIN',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT ("key") DO NOTHING`,
+        randomUUID(), productKey, name,
+      );
+      [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string; type: ProductType }>>(
+        `SELECT "id","type" FROM "CommercialProduct" WHERE "key"=$1 AND "isActive"=true`, productKey,
+      );
+    }
     if (!product || product.type === 'PACKAGE') throw new BadRequestException('Инструмент не найден');
     const tiers = await this.prisma.$queryRawUnsafe<Array<{ id: string; key: string }>>(
-      `SELECT "id","key" FROM "CommercialProduct" WHERE "key" = ANY($1::text[])`, [...TARIFF_KEYS],
+      `SELECT "id","key" FROM "CommercialProduct" WHERE "key" = ANY($1::text[])`, eligibleTiers,
     );
-    if (tiers.length !== TARIFF_KEYS.length) throw new BadRequestException('Тарифы не настроены');
+    if (tiers.length !== eligibleTiers.length) throw new BadRequestException('Тарифы не настроены');
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(
         `DELETE FROM "CommercialProductInclusion" WHERE "parentProductId" = ANY($1::text[]) AND "childProductId"=$2`,
