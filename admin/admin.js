@@ -1146,10 +1146,13 @@ function toolControl(capability, resolved, locked) {
       escapeHtml(capability.name) + '"' + (locked ? ' disabled' : '') + '>';
   }
   const enabled = resolved?.enabled !== false;
-  return '<button type="button" class="admin-toggle' + (enabled ? ' is-on' : '') +
+  // Do not present a blocked capability as an active switch. Preserve its
+  // actual stored value for the change detector; a blocked row cannot save.
+  const presentedEnabled = enabled && !locked;
+  return '<button type="button" class="admin-toggle' + (presentedEnabled ? ' is-on' : '') +
     '" data-toggle data-capability="' + escapeHtml(capability.key) +
     '" data-type="BOOLEAN" data-original="' + enabled + '" data-current="' + enabled +
-    '" role="switch" aria-checked="' + enabled + '" aria-label="' + escapeHtml(capability.name) +
+    '" role="switch" aria-checked="' + presentedEnabled + '" aria-label="' + escapeHtml(capability.name) +
     '"' + (locked ? ' disabled' : '') + '></button>';
 }
 
