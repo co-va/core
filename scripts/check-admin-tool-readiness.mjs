@@ -109,21 +109,22 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// Both tool tables share six columns: 50px Type, 44px disclosure,
-// fluid name, and three fixed 65px commercial/readiness fields.
-if (!ui.includes('<colgroup><col class="admin-tool-col-kind"><col class="admin-tool-col-expand">') ||
-    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим, K — компонент">Тип</th>') ||
+// Both tool tables use the exact fixed 860px grid: 50 + 340 + 50 + 140 + 140 + 140.
+if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">') ||
+    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-status">') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
-    !ui.includes('<th>Инструменты</th><th title="Готовность" aria-label="Готовность">Готов.</th>')) {
-  throw new Error('Professional/User tool registries need a shared Type–disclosure–tools–readiness–payment–price header');
+    !ui.includes('<th>Инструменты</th>') ||
+    !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим, K — компонент">Тип</th>') ||
+    !ui.includes('<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th>')) {
+  throw new Error('Professional/User tool registry header must be disclosure–tools–type–readiness–payment–price');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
-const kindCell = toolRows.indexOf('admin-tool-registry-kind');
 const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
 const nameCell = toolRows.indexOf('admin-tool-registry-name" data-tool-depth=');
-if (kindCell < 0 || expandCell <= kindCell || nameCell <= expandCell) {
-  throw new Error('Type must precede disclosure, which must precede the nested tool name');
+const kindCell = toolRows.indexOf('admin-tool-registry-kind');
+if (expandCell < 0 || nameCell <= expandCell || kindCell <= nameCell) {
+  throw new Error('Disclosure must be the first cell, tools second, type third');
 }
 for (const kind of [
   "depth === 0 ? 'F'",
@@ -135,14 +136,17 @@ for (const kind of [
   if (!toolRows.includes(kind)) throw new Error('Structural type mapping missing: ' + kind);
 }
 for (const rule of [
+  '.admin-tool-register-card{margin:0;padding:0;width:860px;max-width:100%;min-width:0;overflow:hidden}',
+  '.admin-tool-register-table{width:860px;min-width:860px;max-width:860px;table-layout:fixed',
+  '.admin-tool-register-table col.admin-tool-col-expand{width:50px}',
+  '.admin-tool-register-table col.admin-tool-col-name{width:340px}',
   '.admin-tool-register-table col.admin-tool-col-kind{width:50px}',
-  '.admin-tool-register-table col.admin-tool-col-expand{width:44px}',
-  '.admin-tool-register-table col.admin-tool-col-name{width:auto}',
-  '.admin-tool-register-table col.admin-tool-col-price{width:65px}',
+  '.admin-tool-register-table col.admin-tool-col-status,',
+  '.admin-tool-register-table col.admin-tool-col-price{width:140px}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
-  if (!css.includes(rule)) throw new Error('Tool registry sizing / hierarchy missing: ' + rule);
+  if (!css.includes(rule)) throw new Error('Fixed 860px geometry/hierarchy missing: ' + rule);
 }
 if (!ui.includes('R — режим, K — компонент') ||
     !css.includes('.admin-tool-registry-kind span.is-card{')) {
