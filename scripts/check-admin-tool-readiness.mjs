@@ -56,9 +56,9 @@ if (!ui.includes("renderToolRegister('cabinet', 'Кабинет', 'Professional'
   throw new Error('Tools must be the two document-style registries');
 }
 if (ui.includes('data-commerce-folder')) throw new Error('Separate Commerce accordion has returned');
-if (!ui.includes('data-tool-expand=') || !ui.includes('data-commercial-price') ||
-    !ui.includes('data-commercial-mode') || !ui.includes('bindInlineCommercial(content)')) {
-  throw new Error('Nested tool rows and inline auto-saving commercial controls are required');
+if (!ui.includes('data-tool-expand=') || !ui.includes('data-tool-tariff') ||
+    !ui.includes('bindTariffAssignments(content)')) {
+  throw new Error('Nested tool rows and inline tariff assignment controls are required');
 }
 if (!ui.includes("child.readinessKey === 'cabinet.journal.month'") ||
     !ui.includes("nested.readinessKey === 'cabinet.timetable'")) {
@@ -109,16 +109,17 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// Both tool tables fill the entire available card width, preserving the
-// 860px reference proportions: 50 + 340 + 50 + 140 + 140 + 140.
+// Both tool tables use one shared five-column layout with no trailing blank
+// commercial tracks. The tool labels, F/E/R and 44px rows remain unchanged.
 if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">') ||
-    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-status">') ||
+    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-tariff">') ||
+    !ui.includes('<col class="admin-tool-col-status"></colgroup>') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
     !ui.includes('<th>Инструменты</th>') ||
     !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>') ||
-    !ui.includes('<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th>')) {
-  throw new Error('Professional/User tool registry header must be disclosure–tools–type–readiness–payment–price');
+    !ui.includes('<th>Тариф</th><th>Готовность</th>')) {
+  throw new Error('Professional/User tool registry header must be disclosure–tools–type–tariff–readiness');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
 const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
@@ -141,19 +142,17 @@ if (toolRows.includes("marker === 'R' ? 'Режим' : 'Компонент'")) {
 for (const rule of [
   '.admin-tool-register-card{',
   '.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed',
-  '.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}',
-  '.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}',
-  '.admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}',
-  '.admin-tool-register-table col.admin-tool-col-price{width:16.279069768%}',
+  '.admin-tool-register-table col.admin-tool-col-expand{width:13%}',
+  '.admin-tool-register-table col.admin-tool-col-name{width:32%}',
+  '.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}',
+  '.admin-tool-register-table col.admin-tool-col-tariff{width:20%}',
+  '.admin-tool-register-table col.admin-tool-col-status{width:21.5%}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
   if (!css.includes(rule)) throw new Error('Full-width registry proportions/hierarchy missing: ' + rule);
 }
-const tracks = [50, 340, 50, 140, 140, 140];
-assert.equal(tracks.reduce((total, value) => total + value, 0), 860,
-  'Tool reference grid must have an exact 860px base');
-const weights = [5.813953488, 39.534883721, 5.813953488, 16.279069768, 16.279069768, 16.279069768];
+const weights = [13, 32, 13.5, 20, 21.5];
 assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
   'Scaled columns must exactly fill the available table width');
 if (!ui.includes('R — режим">Тип</th>') ||
@@ -212,7 +211,7 @@ if (css.includes('.admin-users-section .admin-table th:first-child') ||
 
 // Exercise actual hierarchy visibility logic, including three nested descendants.
 const hierarchyStart = ui.indexOf('function syncToolHierarchy(section) {');
-const hierarchyEnd = ui.indexOf('\nfunction hydrateInlineCommercial(', hierarchyStart);
+const hierarchyEnd = ui.indexOf('\nexport async function loadTariffs(', hierarchyStart);
 assert.ok(hierarchyStart >= 0 && hierarchyEnd > hierarchyStart, 'Tool hierarchy controller must exist');
 const syncHierarchy = runInNewContext(ui.slice(hierarchyStart, hierarchyEnd) + '\nsyncToolHierarchy');
 const makeToggle = (id) => {
