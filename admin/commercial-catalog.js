@@ -100,6 +100,7 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Яндекс Календарь', kind: 'check', readinessKey: 'records.integrations.yandex-calendar', accountToolKey: 'account.calendar.yandex' },
       ],
     },
+    { id: 'chat', label: 'Чат', readinessKey: 'records.chat' },
   ],
 });
 
