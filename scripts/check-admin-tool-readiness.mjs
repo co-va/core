@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import { runInNewContext } from 'node:vm';
 
 const ui = fs.readFileSync('admin/commercial-catalog.js', 'utf8');
 const service = fs.readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
@@ -143,6 +145,50 @@ if (css.includes('.admin-users-section .admin-table th:first-child') ||
     css.includes('.admin-mobile-app .admin-users-section .admin-table')) {
   throw new Error('Account-only table geometry must not leak into Tools');
 }
+
+// Exercise actual hierarchy visibility logic, including three nested descendants.
+const hierarchyStart = ui.indexOf('function syncToolHierarchy(table) {');
+const hierarchyEnd = ui.indexOf('\nfunction hydrateInlineCommercial(', hierarchyStart);
+assert.ok(hierarchyStart >= 0 && hierarchyEnd > hierarchyStart, 'Tool hierarchy controller must exist');
+const syncHierarchy = runInNewContext(ui.slice(hierarchyStart, hierarchyEnd) + '\nsyncToolHierarchy');
+const makeToggle = (id) => {
+  const attributes = new Map([['aria-expanded', 'true']]);
+  return {
+    dataset: { toolExpand: id },
+    getAttribute: (key) => attributes.get(key),
+    setAttribute: (key, value) => attributes.set(key, value),
+  };
+};
+const rootToggle = makeToggle('root');
+const childToggle = makeToggle('child');
+const nestedToggle = makeToggle('nested');
+const masterToggle = makeToggle('master');
+const rows = ['', 'root', 'root child', 'root child nested', 'other'].map((ancestors) => ({
+  dataset: { toolAncestors: ancestors }, hidden: false,
+}));
+const table = {
+  querySelectorAll: (selector) =>
+    selector === '[data-tool-expand]' ? [rootToggle, childToggle, nestedToggle] :
+    selector === '[data-tool-ancestors]' ? rows : [],
+  querySelector: (selector) => selector === '[data-tool-expand-all]' ? masterToggle : null,
+};
+syncHierarchy(table);
+assert.deepEqual(rows.map((row) => row.hidden), [false, false, false, false, false]);
+assert.equal(masterToggle.getAttribute('aria-expanded'), 'true');
+rootToggle.setAttribute('aria-expanded', 'false');
+syncHierarchy(table);
+assert.deepEqual(rows.map((row) => row.hidden), [false, true, true, true, false],
+  'A collapsed parent must hide all levels of descendants, not adjacent root tools');
+assert.equal(masterToggle.getAttribute('aria-expanded'), 'false');
+rootToggle.setAttribute('aria-expanded', 'true');
+childToggle.setAttribute('aria-expanded', 'false');
+syncHierarchy(table);
+assert.deepEqual(rows.map((row) => row.hidden), [false, false, true, true, false],
+  'An inner collapse must preserve its own visible row and hide deeper descendants');
+childToggle.setAttribute('aria-expanded', 'true');
+syncHierarchy(table);
+assert.deepEqual(rows.map((row) => row.hidden), [false, false, false, false, false]);
+assert.equal(masterToggle.getAttribute('aria-expanded'), 'true');
 
 console.log(`Admin tool readiness map: OK (${a.length} nodes)`);
 
