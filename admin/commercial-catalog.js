@@ -477,11 +477,16 @@ function toolDisplayName(item) {
   return String(item.label || '').startsWith('График (') ? 'График' : item.label;
 }
 
-// K denotes non-card components. They remain in the internal catalog for
-// runtime/readiness logic, but are not selectable rows in either Admin list.
+// Only Events and Notes are selectable K components inside Journal / Day.
+// Record stays an automatic Day function with its readiness key intact but
+// without an independent tariff row. Other internal K components stay hidden.
 export function visibleToolChildren(area, item) {
+  const dayKey = area + '.journal.day';
   const children = (Array.isArray(item.items) ? item.items : [])
-    .filter((child) => child.kind === 'e' || child.kind === 'mode');
+    .filter((child) => child.kind === 'e' || child.kind === 'mode' ||
+      (item.readinessKey === dayKey && child.kind === 'check' &&
+        (child.readinessKey === dayKey + '.events' ||
+         child.readinessKey === dayKey + '.notes')));
   if (area !== 'cabinet' || item.id !== 'journal') return children;
   return children.filter((child) => child.readinessKey !== 'cabinet.timetable')
     .map((child) => child.readinessKey === 'cabinet.journal.month'
@@ -489,38 +494,53 @@ export function visibleToolChildren(area, item) {
       : child);
 }
 
+const tariffLevels = Object.freeze(['start','start-plus','pro']);
+
 function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], parentKey = '') {
   return items.map((item, index) => {
     const key = flatToolKey(area, item, parentKey);
     const id = (ancestorIds[ancestorIds.length - 1] || area) + '-' + index;
-    const groupedChildren = visibleToolChildren(area, item);
+    // Workspace quantity is an Admin Tools row, not a second account permission.
+    const groupedChildren = area === 'cabinet' && item.id === 'profile'
+      ? [...visibleToolChildren(area, item),
+         ...(item.items || []).filter((child) => child.readinessKey === 'cabinet.profile.workspaces')
+           .map((child) => ({ ...child, kind: 'e' }))]
+      : visibleToolChildren(area, item);
     const expandable = groupedChildren.length > 0;
-    // Every visible F/E/R row uses exactly the same tariff editor in both apps.
-    // Unmapped rows are stored in the EXISTING commercial catalog by their
-    // canonical Admin tool key, not by a parallel registry or a UI-only state.
     const productKey = area === 'cabinet' && INLINE_COMMERCIAL_KEYS[key]
       ? INLINE_COMMERCIAL_KEYS[key] : 'ui.' + key;
     const tierPrefix = area === 'records' ? 'tariff.records.' : 'tariff.';
-    const tier = '<div class="admin-tool-tariff"><select data-tool-tariff aria-label="Тариф ' +
-      escapeHtml(toolDisplayName(item)) + '" data-default-tier="' + tierPrefix + 'start" disabled>' +
-      '<option value="' + tierPrefix + 'start" selected>Start</option>' +
-      '<option value="' + tierPrefix + 'start-plus">Start+</option>' +
-      '<option value="' + tierPrefix + 'pro">Pro</option>' +
-      '</select><small class="admin-tool-registry-save-state" aria-live="polite"></small></div>';
+    const limitTool = area === 'cabinet' &&
+      (key === 'cabinet.profile.workspaces' || key === 'cabinet.service.products');
+    const levelCells = tariffLevels.map((level, tierIndex) => {
+      const tierKey = tierPrefix + level;
+      if (limitTool) {
+        return '<td class="admin-tool-tier-cell" data-tool-limit-key="' + escapeHtml(key) + '">' +
+          '<div class="admin-tool-limit-control" data-tier-level="' + level + '">' +
+          '<input type="text" inputmode="numeric" autocomplete="off" maxlength="3" disabled ' +
+            'data-tool-limit-tier="' + tierKey + '" ' +
+            'aria-label="' + escapeHtml(toolDisplayName(item)) + ', ' +
+            ['Start','Start+','Pro'][tierIndex] + '" placeholder="—" title="Число или ∞">' +
+          '<button type="button" class="admin-tool-limit-infinity" data-tool-limit-infinity ' +
+            'title="Без ограничения" aria-label="Установить ∞" disabled>∞</button></div></td>';
+      }
+      return '<td class="admin-tool-tier-cell"><label class="admin-tool-tier-check"><input type="checkbox" ' +
+        'class="admin-tool-tier-checkbox" data-tier-level="' + level + '" data-tariff-tier="' + tierKey +
+        '" checked disabled title="' + ['Start','Start+','Pro'][tierIndex] +
+        '" aria-label="' + escapeHtml(toolDisplayName(item)) + ', ' +
+        ['Start','Start+','Pro'][tierIndex] + '"><span class="admin-tool-tier-mark" aria-hidden="true"></span></label></td>';
+    }).join('');
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
-      : expandable
-        ? toolStatus(item, byKey, true)
-        : '—';
-    // Structural type is independent of readiness and commercial tier.
-    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : 'R';
+      : expandable ? toolStatus(item, byKey, true) : '—';
+    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : item.kind === 'check' ? 'K' : 'R';
     const markerTitle = marker === 'F' ? 'Основная карточка'
-      : marker === 'E' ? 'Вложенная карточка' : 'Режим';
+      : marker === 'E' ? 'Вложенная карточка'
+      : marker === 'K' ? 'Инструмент внутри режима' : 'Режим';
     const toggle = expandable
       ? '<button type="button" class="admin-tool-registry-expand" data-tool-expand="' + escapeHtml(id) +
         '" aria-expanded="true" aria-label="Свернуть или раскрыть ' + escapeHtml(toolDisplayName(item)) + '">⌄</button>'
       : '';
-    const name = escapeHtml(toolDisplayName(item));
     const accountControl = item.accountToolKey
       ? '<label class="admin-tool-account-control"><input type="checkbox" data-account-tool="' +
         escapeHtml(item.accountToolKey) + '" disabled><span data-account-tool-state>—</span></label>'
@@ -529,10 +549,12 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       escapeHtml(ancestorIds.join(' ')) + '" data-tariff-product="' + escapeHtml(productKey) + '"' +
       '><td class="admin-tool-registry-expand-cell">' + toggle + '</td>' +
       '<td><div class="admin-tool-registry-name" data-tool-depth="' + depth + '" style="--tool-depth:' + depth + '">' +
-      '<span class="admin-tool-registry-label">' + name + '</span>' + accountControl + '</div></td>' +
-      '<td class="admin-tool-registry-kind"><span class="' + (marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain') + '" title="' + markerTitle +
-      '" aria-label="' + markerTitle + '">' + marker + '</span></td>' +
-      '<td>' + tier + '</td><td>' + readiness + '</td></tr>';
+      '<span class="admin-tool-registry-label">' + escapeHtml(toolDisplayName(item)) +
+      '</span>' + accountControl + '</div></td>' +
+      '<td class="admin-tool-registry-kind"><span class="' +
+      (marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain') + '" title="' +
+      markerTitle + '" aria-label="' + markerTitle + '">' + marker + '</span></td>' +
+      levelCells + '<td>' + readiness + '</td></tr>';
     return row + (expandable
       ? toolRegisterRows(area, groupedChildren, byKey, depth + 1, [...ancestorIds, id], key)
       : '');
@@ -540,11 +562,9 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
 }
 
 function renderToolRegister(area, label, suffix) {
-  const items = TOOL_MAP[area] || [];
-  // Five balanced columns: retain original tool, type and row geometry.
-  // Tariff precedes Readiness; there is no empty sixth track.
   const columns = '<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">' +
-    '<col class="admin-tool-col-kind"><col class="admin-tool-col-tariff">' +
+    '<col class="admin-tool-col-kind"><col class="admin-tool-col-tier">' +
+    '<col class="admin-tool-col-tier"><col class="admin-tool-col-tier">' +
     '<col class="admin-tool-col-status"></colgroup>';
   return '<section class="admin-users-section admin-tool-register-section">' +
     '<div class="admin-tool-register-sticky">' +
@@ -557,10 +577,13 @@ function renderToolRegister(area, label, suffix) {
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
       '<th>Инструменты</th>' +
       '<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>' +
-      '<th>Тариф</th><th>Готовность</th></tr></thead></table></div></div>' +
+      '<th class="admin-tool-tier-heading" data-tier-level="start">Start</th>' +
+      '<th class="admin-tool-tier-heading" data-tier-level="start-plus">Start+</th>' +
+      '<th class="admin-tool-tier-heading" data-tier-level="pro">Pro</th>' +
+      '<th>Готовность</th></tr></thead></table></div></div>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table admin-tool-register-body-table" data-admin-tool-map="' + area + '">' +
-    columns + '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) +
+    columns + '<tbody>' + toolRegisterRows(area, TOOL_MAP[area] || [], readinessByKey(toolReadinessCache)) +
     '</tbody></table></div></div></section>';
 }
 
@@ -608,42 +631,129 @@ export async function updateTariffPrice(key, priceMinor) {
 function hydrateTariffAssignments(content, tariffs) {
   const assignments = tariffs?.assignments || {};
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
-    const select = row.querySelector('[data-tool-tariff]');
-    if (!select) return;
-    select.value = assignments[row.dataset.tariffProduct] || select.dataset.defaultTier;
-    select.dataset.previous = select.value;
-    select.disabled = false;
+    const checkboxes = [...row.querySelectorAll('[data-tariff-tier]')];
+    if (!checkboxes.length) return; // Numeric limits use counts instead of checkboxes.
+    const key = row.dataset.tariffProduct;
+    const hasValue = Object.prototype.hasOwnProperty.call(assignments, key);
+    const selected = hasValue ? assignments[key] : checkboxes[0].dataset.tariffTier;
+    const minIndex = selected == null ? checkboxes.length :
+      checkboxes.findIndex((box) => box.dataset.tariffTier === selected);
+    checkboxes.forEach((box, index) => {
+      box.checked = index >= (minIndex < 0 ? checkboxes.length : minIndex);
+      box.dataset.previous = selected == null ? '' : selected;
+      box.disabled = false;
+    });
+  });
+}
+
+function hydrateTariffLimits(content, tariffs) {
+  const limits = tariffs?.limits || {};
+  content.querySelectorAll('[data-tool-limit-key]').forEach((cell) => {
+    const entries = limits[cell.dataset.toolLimitKey] || {};
+    const input = cell.querySelector('[data-tool-limit-tier]');
+    const infinity = cell.querySelector('[data-tool-limit-infinity]');
+    if (!input) return;
+    const value = entries[input.dataset.toolLimitTier];
+    input.value = value === null ? '∞' : Number.isInteger(value) ? String(value) : '';
+    input.dataset.previous = input.value;
+    const control = cell.querySelector('.admin-tool-limit-control');
+    if (control) control.dataset.infinite = String(input.value === '∞');
+    input.disabled = false;
+    if (infinity) infinity.disabled = false;
+  });
+}
+
+function bindTariffLimits(content) {
+  content.querySelectorAll('[data-tool-limit-key]').forEach((cell) => {
+    const input = cell.querySelector('[data-tool-limit-tier]');
+    const infinity = cell.querySelector('[data-tool-limit-infinity]');
+    if (!input) return;
+    const control = cell.querySelector('.admin-tool-limit-control');
+    infinity?.addEventListener('click', () => {
+      if (input.disabled) return;
+      input.value = '∞';
+      if (control) control.dataset.infinite = 'true';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    input.addEventListener('input', () => {
+      if (control) control.dataset.infinite = String(input.value.trim() === '∞');
+    });
+    input.addEventListener('change', async () => {
+      const raw = input.value.trim();
+      const previous = input.dataset.previous || '';
+      if (raw === previous) return;
+      const parsed = raw === '' ? undefined : raw === '∞' ? null : Number(raw);
+      if (parsed !== undefined && parsed !== null &&
+          (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 999 || String(parsed) !== raw)) {
+        input.value = previous;
+        if (control) control.dataset.infinite = String(previous === '∞');
+        input.title = 'Введите число 0–999 или используйте ∞';
+        return;
+      }
+      input.disabled = true;
+      if (infinity) infinity.disabled = true;
+      try {
+        const tariffs = await commercialRequest('/tariffs/limit', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toolKey: cell.dataset.toolLimitKey,
+            tariffKey: input.dataset.toolLimitTier,
+            limit: raw === '' ? 'unset' : parsed,
+          }),
+        });
+        tariffsCache = tariffs;
+        hydrateTariffLimits(content, tariffs);
+        document.dispatchEvent(new Event('admin:tariff-changed'));
+      } catch (error) {
+        input.value = previous;
+        if (control) control.dataset.infinite = String(previous === '∞');
+        input.title = error instanceof Error ? error.message : 'Лимит не сохранён';
+      } finally {
+        input.disabled = false;
+        if (infinity) infinity.disabled = false;
+      }
+    });
   });
 }
 
 function bindTariffAssignments(content) {
   content.querySelectorAll('[data-tariff-product]').forEach((row) => {
-    const select = row.querySelector('[data-tool-tariff]');
-    if (!select) return;
-    const message = row.querySelector('.admin-tool-registry-save-state');
-    select.addEventListener('change', async () => {
-      const previous = select.dataset.previous || '';
-      select.disabled = true;
-      if (message) message.textContent = 'Сохранение…';
-      try {
-        const tariffs = await commercialRequest('/tariffs/assignment', {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            productKey: row.dataset.tariffProduct, minimumTariff: select.value,
-            name: row.querySelector('.admin-tool-registry-label')?.textContent || '',
-          }),
+    const checkboxes = [...row.querySelectorAll('[data-tariff-tier]')];
+    if (!checkboxes.length) return;
+    checkboxes.forEach((box, index) => {
+      box.addEventListener('change', async () => {
+        // One minimum tariff per tool. Checking a square includes every
+        // higher tier; unchecking it excludes this and all lower tiers.
+        const previous = checkboxes[0].dataset.previous || '';
+        const nextIndex = box.checked ? index : index + 1;
+        const next = nextIndex < checkboxes.length
+          ? checkboxes[nextIndex].dataset.tariffTier : '';
+        const previousIndex = checkboxes.findIndex((item) => item.dataset.tariffTier === previous);
+        checkboxes.forEach((item, i) => {
+          item.checked = i >= nextIndex;
+          item.disabled = true;
         });
-        tariffsCache = tariffs;
-        select.dataset.previous = select.value;
-        hydrateTariffAssignments(content, tariffs);
-        document.dispatchEvent(new Event('admin:tariff-changed'));
-        if (message) message.textContent = 'Сохранено';
-      } catch (error) {
-        select.value = previous;
-        if (message) message.textContent = error instanceof Error ? error.message : 'Ошибка';
-      } finally {
-        select.disabled = false;
-      }
+        try {
+          const tariffs = await commercialRequest('/tariffs/assignment', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              productKey: row.dataset.tariffProduct,
+              minimumTariff: next,
+              name: row.querySelector('.admin-tool-registry-label')?.textContent || '',
+            }),
+          });
+          tariffsCache = tariffs;
+          hydrateTariffAssignments(content, tariffs);
+          document.dispatchEvent(new Event('admin:tariff-changed'));
+        } catch (error) {
+          checkboxes.forEach((item, i) => {
+            item.checked = previousIndex >= 0 && i >= previousIndex;
+            item.title = error instanceof Error ? error.message : 'Не удалось сохранить тариф';
+          });
+        } finally {
+          checkboxes.forEach((item) => { item.disabled = false; });
+        }
+      });
     });
   });
 }
@@ -658,7 +768,7 @@ export function renderAdminTools(content) {
   content.querySelectorAll('.admin-tool-register-section').forEach((section) => {
     const bodyScroll = section.querySelector('.admin-tool-register-scroll');
     const headScroll = section.querySelector('.admin-tool-register-head-scroll');
-    // Header/body use the same five proportional tracks on both devices.
+    // Header/body use the same seven proportional tracks on both devices.
     bodyScroll?.addEventListener('scroll', () => {
       if (headScroll) headScroll.scrollLeft = bodyScroll.scrollLeft;
     }, { passive: true });
@@ -678,6 +788,7 @@ export function renderAdminTools(content) {
     syncToolHierarchy(section);
   });
   bindTariffAssignments(content);
+  bindTariffLimits(content);
   void loadToolReadiness().then((items) => {
     if (content.isConnected) hydrateAllReadiness(content, items);
   }).catch(() => {});
@@ -685,10 +796,16 @@ export function renderAdminTools(content) {
     if (content.isConnected) hydrateAccountTools(content, tools);
   }).catch(() => {});
   void loadTariffs(true).then((tariffs) => {
-    if (content.isConnected) hydrateTariffAssignments(content, tariffs);
+    if (content.isConnected) {
+      hydrateTariffAssignments(content, tariffs);
+      hydrateTariffLimits(content, tariffs);
+    }
   }).catch(() => {
-    content.querySelectorAll('[data-tool-tariff]').forEach((select) => {
-      select.title = 'Тарифы пока недоступны';
+    content.querySelectorAll('[data-tariff-tier]').forEach((box) => {
+      box.title = 'Тарифы пока недоступны';
+    });
+    content.querySelectorAll('[data-tool-limit-tier]').forEach((input) => {
+      input.title = 'Лимиты пока недоступны';
     });
   });
 }

@@ -15,6 +15,7 @@ const TARIFF_TOOL_KEYS = new Set<string>([
   ...READINESS_KEYS,
   // Structural F rows are visible Admin instruments but not readiness leaves.
   'cabinet.journal', 'cabinet.loyalty', 'cabinet.settings',
+  'cabinet.profile', 'cabinet.service', 'cabinet.finance', 'cabinet.inventory',
   'records.journal', 'records.integrations',
 ]);
 
@@ -45,6 +46,7 @@ type ProductRow = {
   priceMinor: number;
   currency: string;
   source: string;
+  tariffExcluded: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -200,7 +202,19 @@ export class CommercialCatalogService {
     const catalog = await this.catalog();
     const products = catalog.products;
     const byKey = new Map(products.map((product) => [product.key, product]));
-    const assignments: Record<string, string> = {};
+    const assignments: Record<string, string | null> = {};
+    const limits: Record<string, Record<string, number | null>> = {};
+    const limitRows = await this.prisma.$queryRawUnsafe<Array<{toolKey:string;tariffKey:string;maxCount:number|null}>>(
+      `SELECT "toolKey","tariffKey","maxCount" FROM "CommercialTariffLimit" ORDER BY "toolKey","tariffKey"`,
+    );
+    for (const row of limitRows) {
+      (limits[row.toolKey] ||= {})[row.tariffKey] = row.maxCount;
+    }
+    for (const product of products) {
+      // No membership is a legacy/unconfigured Start until explicitly disabled.
+      // An all-off selection must survive refresh without a fourth tariff.
+      if (product.tariffExcluded) assignments[product.key] = null;
+    }
     for (const tierKey of ALL_TARIFF_KEYS) {
       for (const child of byKey.get(tierKey)?.includedProducts || []) {
         if (!ALL_TARIFF_KEYS.includes(child.key as TariffKey)) assignments[child.key] = tierKey;
@@ -251,7 +265,90 @@ export class CommercialCatalogService {
           .map((item) => ({ key: item!.key, name: item!.name, type: item!.type })),
       })),
       assignments,
+      limits,
     };
+  }
+
+
+  // Public information for the landing and the Professional registration.
+  // Unapproved (zero-price) paid tariffs are visible but cannot be purchased.
+  async tariffOffers() {
+    const catalog = await this.tariffs();
+    return {
+      daysPerMonth: 30,
+      periods: [
+        { months: 1, paidDays: 30, bonusPercent: 0, bonusDays: 0, accessDays: 30 },
+        { months: 6, paidDays: 180, bonusPercent: 20, bonusDays: 36, accessDays: 216 },
+        { months: 12, paidDays: 360, bonusPercent: 50, bonusDays: 180, accessDays: 540 },
+      ],
+      professional: catalog.tiers.map((tier, index) => ({
+        ...tier,
+        free: index === 0,
+        purchasable: index === 0 || tier.priceMinor > 0,
+      })),
+      user: catalog.userTiers.map((tier, index) => ({
+        ...tier,
+        free: index === 0,
+        purchasable: index === 0 || tier.priceMinor > 0,
+      })),
+    };
+  }
+
+  async updateTariffLimit(input: Record<string, unknown>, actorAdminId: string) {
+    const toolKey = text(input.toolKey);
+    const tariffKey = text(input.tariffKey);
+    if (!TARIFF_TOOL_KEYS.has(toolKey)) {
+      throw new BadRequestException('Инструмент не найден');
+    }
+    const keys: readonly string[] = toolKey.startsWith('records.') ? USER_TARIFF_KEYS : TARIFF_KEYS;
+    if (!keys.includes(tariffKey)) {
+      throw new BadRequestException('Тариф не относится к выбранному приложению');
+    }
+    const raw = input.limit;
+    const unset = raw === 'unset';
+    let maxCount: number | null = null;
+    if (!unset && raw !== null) {
+      if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) {
+        throw new BadRequestException('Лимит должен быть целым неотрицательным числом или ∞');
+      }
+      maxCount = raw;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      // Check the resulting tier ladder rather than silently accepting a
+      // lower maximum in a higher tariff. Undefined tiers remain configurable.
+      const rows = await tx.$queryRawUnsafe<Array<{tariffKey:string;maxCount:number|null}>>(
+        `SELECT "tariffKey","maxCount" FROM "CommercialTariffLimit" WHERE "toolKey"=$1 AND "tariffKey" = ANY($2::text[])`,
+        toolKey, [...keys],
+      );
+      const ladder = new Map(rows.map((row) => [row.tariffKey, row.maxCount]));
+      if (unset) ladder.delete(tariffKey);
+      else ladder.set(tariffKey, maxCount);
+      for (let index=1; index<keys.length; index++) {
+        const prev = ladder.get(keys[index-1]);
+        const next = ladder.get(keys[index]);
+        if (prev === undefined || next === undefined) continue;
+        if ((prev === null ? Infinity : prev) > (next === null ? Infinity : next)) {
+          throw new BadRequestException('Лимит следующего тарифа не может быть меньше предыдущего');
+        }
+      }
+      if (unset) {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM "CommercialTariffLimit" WHERE "toolKey"=$1 AND "tariffKey"=$2`,
+          toolKey,tariffKey,
+        );
+      } else {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "CommercialTariffLimit" ("toolKey","tariffKey","maxCount")
+           VALUES ($1,$2,$3)
+           ON CONFLICT ("tariffKey","toolKey") DO UPDATE SET
+             "maxCount"=EXCLUDED."maxCount","updatedAt"=CURRENT_TIMESTAMP`,
+          toolKey,tariffKey,maxCount,
+        );
+      }
+    });
+    await this.audit(actorAdminId,'TARIFF_QUANTITY_LIMIT_UPDATED','TOOL',toolKey,
+      {tariffKey,limit:unset?'unset':maxCount});
+    return this.tariffs();
   }
 
   async assignTariff(input: Record<string, unknown>, actorAdminId: string) {
@@ -300,6 +397,12 @@ export class CommercialCatalogService {
            VALUES ($1,$2,500) ON CONFLICT DO NOTHING`, parent.id, product.id,
         );
       }
+      // Existing catalog record holds explicit "all three off" without
+      // introducing a fourth tariff or modifying account permissions.
+      await tx.$executeRawUnsafe(
+        `UPDATE "CommercialProduct" SET "tariffExcluded"=$2,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$1`,
+        product.id, !minimumTariff,
+      );
     });
     await this.audit(actorAdminId, 'TARIFF_TOOL_ASSIGNED', 'PRODUCT', product.id, { productKey, minimumTariff });
     return this.tariffs();

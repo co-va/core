@@ -38,6 +38,24 @@
     @media(max-width:900px){:root{--landing-top:76px;--landing-gap:78px;--landing-side:20px}.topbar{height:58px;padding:8px 14px}.topbar__link{height:38px;padding:0 12px}.deck-card{width:calc(100% - 40px);height:calc(100svh - 154px);min-height:0;border-radius:25px}.card-panel{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);align-content:stretch;gap:18px;padding:34px 26px 22px;overflow:hidden}.copy{max-width:none;width:100%}.copy h1{font-size:clamp(40px,9.6vw,60px)}.copy h2{font-size:clamp(33px,7.5vw,49px)}.copy p{margin-top:14px;font-size:16px}.hero-note{margin-top:12px;font-size:12px}.actions{margin-top:16px}.action{height:44px}.preview-wrap{min-height:0;height:100%}.device{width:min(78vw,310px);height:min(40svh,370px);border-radius:28px}.device__header{height:58px;grid-template-columns:40px 1fr auto 28px}.device__avatar{width:38px;height:38px}.device__surface{height:calc(100% - 58px);border-radius:26px 0 0 0}.scatter{min-height:0;height:100%;max-height:290px}.scatter-card{padding:14px;width:min(74%,280px)}.scatter-card strong{font-size:17px}.product-map{height:100%;min-height:270px;transform:scale(.68);transform-origin:center center}.steps{max-width:none;align-self:center}.step{padding:11px;grid-template-columns:42px minmax(0,1fr)}.step__n{width:42px;height:42px}.step strong{font-size:15px}.step span{font-size:13px}.person-stack{width:100%;align-self:center}.person-stack .list-entry{min-height:60px}.person-stack .list-entry__content{min-height:60px}.grow-stack{min-height:0;height:100%;max-height:290px}.grow-card{height:165px;width:min(82%,310px);font-size:18px}.grow-card:nth-child(1){top:0}.grow-card:nth-child(2){top:42px}.grow-card:nth-child(3){top:84px}.final-screen{padding-top:90px}}
     @media(max-width:520px){:root{--landing-top:72px;--landing-gap:74px;--landing-side:14px}.brand{font-size:14px}.topbar__actions .topbar__link:first-child{display:none}.deck-card{width:calc(100% - 28px);height:calc(100svh - 144px);min-height:0;border-radius:22px}.card-panel{padding:30px 20px 18px;gap:14px}.copy h1{font-size:clamp(36px,10.6vw,48px);line-height:.96}.copy h2{font-size:clamp(29px,8.4vw,40px);line-height:.98}.copy p{font-size:15px;line-height:1.32;margin-top:11px}.eyebrow{font-size:11px;margin-bottom:9px}.actions{gap:8px;margin-top:14px}.action{height:42px;padding:0 14px;font-size:14px}.hero-note{font-size:11px;margin-top:10px}.preview-wrap{align-items:center}.device{width:min(76vw,276px);height:min(36svh,320px)}.device__header{height:52px;grid-template-columns:36px 1fr auto 24px;padding:7px}.device__avatar{width:34px;height:34px;font-size:12px}.device__title{font-size:15px}.device__action{height:34px;font-size:11px}.device__surface{height:calc(100% - 52px);margin-left:11px;padding:12px 10px 14px}.device__surface h3{font-size:16px;margin-bottom:9px}.device .list-entry{min-height:46px}.device .list-entry__content{min-height:46px;padding:6px 7px}.device .list-entry__main strong{font-size:11px}.device .list-entry__main small{font-size:9px}.device .list-entry__right strong{font-size:10px}.device .list-entry__right small{font-size:9px}.scatter{max-height:250px}.scatter-card{padding:11px;width:72%}.scatter-card span{font-size:10px}.scatter-card strong{font-size:15px}.product-map{min-height:240px;transform:scale(.54);width:148%;margin-left:-24%}.steps{gap:8px}.step{grid-template-columns:38px minmax(0,1fr);padding:9px 10px}.step__n{width:38px;height:38px}.step strong{font-size:14px}.step span{font-size:12px}.person-stack .list-entry{min-height:50px}.person-stack .list-entry__content{min-height:50px;padding:7px 9px}.person-stack .list-entry__main strong{font-size:12px}.person-stack .list-entry__main small{font-size:9px}.person-stack .list-entry__right strong{font-size:10px}.person-stack .list-entry__right small{font-size:8px}.grow-stack{max-height:235px}.grow-card{height:138px;padding:14px;font-size:15px}.grow-card:nth-child(2){top:36px}.grow-card:nth-child(3){top:72px}}
     @media(max-height:720px) and (min-width:901px){:root{--landing-gap:90px}.deck-card{height:calc(100svh - 190px);min-height:500px}.card-panel{padding-top:34px;padding-bottom:30px}.device{height:420px}.preview-wrap{min-height:340px}}
+    .tariff-screen{position:relative;z-index:190;padding:96px clamp(20px,6vw,90px);background:var(--landing-card);color:var(--landing-ink)}
+    .tariff-inner{max-width:1160px;margin:auto}
+    .tariff-inner h2{margin:0;font-size:clamp(34px,4vw,58px);line-height:1;letter-spacing:-.04em}
+    .tariff-inner>p{max-width:680px;margin:16px 0 28px;color:var(--landing-copy);font-size:17px;line-height:1.45}
+    .tariff-period{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin:26px 0;padding:16px 0;border-top:1px solid #ccc;border-bottom:1px solid #ccc}
+    .tariff-period label{font-size:15px;font-weight:700}
+    .tariff-period select{min-width:240px;max-width:100%;padding:10px 12px;border:1px solid #aaa;border-radius:8px;background:#fff;color:var(--landing-ink);font:inherit}
+    .tariff-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .tariff-card{display:flex;flex-direction:column;gap:14px;min-height:230px;padding:24px;border:1px solid #d1d1d1;border-radius:18px;background:#fff}
+    .tariff-card h3{margin:0;font-size:24px;letter-spacing:-.02em}
+    .tariff-card p{margin:0;color:var(--landing-copy);font-size:14px;line-height:1.4}
+    .tariff-card strong{display:block;font-size:25px}
+    .tariff-card .action{margin-top:auto;width:fit-content}
+    .tariff-card .action[aria-disabled="true"]{pointer-events:none;opacity:.55}
+    .tariff-demo{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-top:18px;padding:22px 24px;border:1px solid #d1d1d1;border-radius:18px;background:#fff}
+    .tariff-demo strong{display:block;font-size:20px}
+    .tariff-demo p{margin:5px 0 0;color:var(--landing-copy);font-size:14px}
+    @media(max-width:760px){.tariff-screen{padding:62px 20px}.tariff-cards{grid-template-columns:1fr}.tariff-card{min-height:180px}.tariff-inner>p{font-size:15px}}
     @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
   </style>
 </head>
@@ -174,13 +192,52 @@
       </div>
     </section>
 
+    <section class="tariff-screen" id="tariffs" aria-labelledby="tariff-heading">
+      <div class="tariff-inner">
+        <h2 id="tariff-heading">Выберите тариф</h2>
+        <p>Начать можно бесплатно или сразу подключить платный тариф. DEMO — отдельный вариант знакомства с приложением, он необязателен.</p>
+        <div class="tariff-period">
+          <label for="tariff-period-choice">Период оплаты</label>
+          <select id="tariff-period-choice" data-tariff-period>
+            <option value="1">1 месяц · 30 дней</option>
+            <option value="6">6 месяцев · 216 дней доступа</option>
+            <option value="12">12 месяцев · 540 дней доступа</option>
+          </select>
+        </div>
+        <div class="tariff-cards">
+          <article class="tariff-card">
+            <h3>Start</h3>
+            <strong>Бесплатно</strong>
+            <p>LIVE без ограничения срока. Состав и количественные ограничения определяются тарифом.</p>
+            <a class="action" data-tariff-entry="start" href="https://prof.va-tools.ru/invite/?tariff=start">Выбрать Start</a>
+          </article>
+          <article class="tariff-card">
+            <h3>Start+</h3>
+            <strong data-tariff-price="tariff.start-plus">Цена не установлена</strong>
+            <p data-tariff-description="tariff.start-plus">Расширенный тариф. Срок оплаты выбирается выше.</p>
+            <a class="action" data-tariff-entry="start-plus" aria-disabled="true" tabindex="-1" href="https://prof.va-tools.ru/invite/?tariff=start-plus">Выбрать Start+</a>
+          </article>
+          <article class="tariff-card">
+            <h3>Pro</h3>
+            <strong data-tariff-price="tariff.pro">Цена не установлена</strong>
+            <p data-tariff-description="tariff.pro">Максимальный тариф. Срок оплаты выбирается выше.</p>
+            <a class="action" data-tariff-entry="pro" aria-disabled="true" tabindex="-1" href="https://prof.va-tools.ru/invite/?tariff=pro">Выбрать Pro</a>
+          </article>
+        </div>
+        <div class="tariff-demo">
+          <div><strong>Попробовать DEMO</strong><p>14 дней для знакомства с приложением. Перейти на LIVE можно раньше.</p></div>
+          <a class="action action--secondary" data-tariff-entry="demo" href="https://prof.va-tools.ru/invite/">Попробовать</a>
+        </div>
+      </div>
+    </section>
+
     <section class="final-screen" id="start-now">
       <div class="final-inner">
         <div class="final-mark">VA</div>
         <p class="eyebrow">Начать</p>
         <h2>Порядок в работе может быть простым.</h2>
         <p>Создайте профиль и соберите своё рабочее пространство.</p>
-        <div class="actions"><a class="action" href="https://prof.va-tools.ru/invite/">Создать профиль</a><a class="action action--secondary" href="https://prof.va-tools.ru/">Войти</a></div>
+        <div class="actions"><a class="action" href="#tariffs">Выбрать тариф</a><a class="action action--secondary" href="https://prof.va-tools.ru/">Войти</a></div>
       </div>
     </section>
   </main>
@@ -189,5 +246,6 @@
     <div class="footer__brand">VA Tools</div>
     <div class="footer__links"><span>Документы</span><span>Контакты</span><span>ИП</span></div>
   </footer>
+  <script type="module" src="./tariffs.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PlatformNoticeService } from '../platform-notice/platform-notice.service';
@@ -227,6 +227,11 @@ export class CommercialTenantService {
       },
       quote,
       access,
+      // The package is a commercial selection, not an individually saleable tool.
+      currentTariffKey: products.find((product) =>
+        selectedIds.has(product.id) &&
+        ['tariff.start', 'tariff.start-plus', 'tariff.pro'].includes(product.key)
+      )?.key || 'tariff.start',
       products: products.filter((product) => product.isActive && product.isSaleable).map((product) => ({
         ...product,
         selected: selectedIds.has(product.id),
@@ -290,6 +295,138 @@ export class CommercialTenantService {
       capabilitiesApplied: applyCapabilities,
     });
     return this.getTenantCommercial(tenantId);
+  }
+
+
+  // New package-based checkout. Existing per-tool orders remain supported and
+  // no account entitlement is changed before payment is confirmed.
+  async createTariffOrder(tenantId: string, tariffKey: string, periodMonths: number) {
+    if (!['tariff.start-plus','tariff.pro'].includes(tariffKey)) {
+      throw new BadRequestException('Нужно выбрать Start+ или Pro');
+    }
+    const periods = {
+      1: { paidDays: 30, bonusDays: 0 },
+      6: { paidDays: 180, bonusDays: 36 },
+      12: { paidDays: 360, bonusDays: 180 },
+    } as const;
+    if (periodMonths !== 1 && periodMonths !== 6 && periodMonths !== 12) {
+      throw new BadRequestException('Оплата возможна за 1, 6 или 12 месяцев');
+    }
+    const period = periods[periodMonths];
+    const tariff = (await this.catalogService.tariffs()).tiers.find((item) => item.key === tariffKey);
+    const monthlyPriceMinor = tariff?.priceMinor ?? 0;
+    if (!Number.isSafeInteger(monthlyPriceMinor) || monthlyPriceMinor <= 0) {
+      throw new BadRequestException('Цена тарифа ещё не установлена администратором');
+    }
+    const totalMinor = monthlyPriceMinor * periodMonths;
+    if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) {
+      throw new BadRequestException('Ошибка расчёта стоимости тарифа');
+    }
+    const tenant = await this.prisma.tenantAccess.findUnique({
+      where: { tenantId }, select: { tenantId: true, isOwnerBook: true },
+    });
+    if (!tenant) throw new NotFoundException('Рабочее пространство не найдено');
+    if (tenant.isOwnerBook) throw new BadRequestException('Для администратора подписка не оформляется');
+
+    const [pending] = await this.prisma.$queryRawUnsafe<Array<{
+      id: string; tariffKey: string | null; periodMonths: number | null;
+    }>>(
+      `SELECT "id","tariffKey","periodMonths" FROM "CommercialOrder"
+       WHERE "tenantId"=$1 AND "status"='PENDING' ORDER BY "createdAt" DESC LIMIT 1`, tenantId,
+    );
+    if (pending) {
+      if (pending.tariffKey === tariffKey && pending.periodMonths === periodMonths) {
+        return this.orderHistory(tenantId);
+      }
+      throw new ConflictException('Есть неоплаченный счёт. Сначала завершите его.');
+    }
+    const [publication] = await this.prisma.$queryRawUnsafe<Array<{ version: number }>>(
+      `SELECT "version" FROM "CommercialCatalogPublication" ORDER BY "version" DESC LIMIT 1`,
+    );
+    const id = randomUUID();
+    const accessDays = period.paidDays + period.bonusDays;
+    await this.prisma.$transaction(async (tx) => {
+      // The settlement trigger extends this row under a row lock.
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CommercialTenantTerms"
+         ("tenantId","discountPercent","freeForever","freeUntil","updatedByAdminId","createdAt","updatedAt")
+         VALUES ($1,0,false,NULL,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT ("tenantId") DO NOTHING`, tenantId,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CommercialOrder"
+         ("id","tenantId","status","subtotalMinor","discountPercent","discountMinor",
+          "totalMinor","currency","catalogVersion","createdByAdminId",
+          "tariffKey","periodMonths","paidDays","bonusDays","accessDays",
+          "createdAt","updatedAt")
+         VALUES ($1,$2,'PENDING',$3,0,0,$3,'RUB',$4,NULL,$5,$6,$7,$8,$9,
+          CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+        id, tenantId, totalMinor, publication?.version || null, tariffKey,
+        periodMonths, period.paidDays, period.bonusDays, accessDays,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CommercialOrderItem"
+         ("id","orderId","productKey","productName","priceMinor","quantity","totalMinor","snapshot")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+        randomUUID(), id, tariffKey, tariff?.name || tariffKey,
+        monthlyPriceMinor, periodMonths, totalMinor,
+        JSON.stringify({ tariffKey, periodMonths, monthlyPriceMinor,
+          paidDays: period.paidDays, bonusDays: period.bonusDays,
+          accessDays, catalogVersion: publication?.version || null }),
+      );
+    });
+    await this.audit(null, tenantId, 'COMMERCIAL_TARIFF_ORDER_CREATED', 'ORDER', id, {
+      tariffKey, periodMonths, paidDays: period.paidDays,
+      bonusDays: period.bonusDays, accessDays, totalMinor,
+    });
+    return this.orderHistory(tenantId);
+  }
+
+  async selectStartTariff(tenantId: string) {
+    const [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "CommercialProduct" WHERE "key"='tariff.start' AND "isActive"=true LIMIT 1`,
+    );
+    if (!product) throw new BadRequestException('Тариф Start не настроен');
+    const terms = await this.getTenantCommercial(tenantId);
+    if (terms.terms.paidAccessEndsAt && new Date(terms.terms.paidAccessEndsAt) > new Date()) {
+      // Never downgrade someone with a still-paid entitlement.
+      return terms;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CommercialTenantTerms"
+         ("tenantId","discountPercent","freeForever","freeUntil","updatedByAdminId","createdAt","updatedAt")
+         VALUES ($1,0,false,NULL,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+         ON CONFLICT ("tenantId") DO NOTHING`, tenantId,
+      );
+      await tx.$executeRawUnsafe(
+        `DELETE FROM "CommercialTenantProduct" WHERE "tenantId"=$1`, tenantId,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CommercialTenantProduct" ("tenantId","productId","createdAt")
+         VALUES ($1,$2,CURRENT_TIMESTAMP) ON CONFLICT DO NOTHING`,
+        tenantId, product.id,
+      );
+    });
+    // Legacy/starter capability grants are deliberately not reset during
+    // transition. Paid package membership replaces them only after purchase.
+    return this.getTenantCommercial(tenantId);
+  }
+
+  private async applyPurchasedTariff(tenantId: string, tariffKey: string) {
+    const [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "CommercialProduct" WHERE "key"=$1 AND "isActive"=true`, tariffKey,
+    );
+    if (!product) throw new BadRequestException('Купленный тариф отсутствует в каталоге');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `DELETE FROM "CommercialTenantProduct" WHERE "tenantId"=$1`, tenantId,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CommercialTenantProduct" ("tenantId","productId","createdAt")
+         VALUES ($1,$2,CURRENT_TIMESTAMP)`, tenantId, product.id,
+      );
+    });
   }
 
   async createOrderSnapshot(tenantId: string, actorAdminId: string | null) {
@@ -440,7 +577,18 @@ export class CommercialTenantService {
       }).catch(() => null);
     }
 
-    await this.applySelectedCapabilities(tenantId);
+    // Package selection is applied only when the manual payment was confirmed.
+    const [paidOrder] = await this.prisma.$queryRawUnsafe<Array<{ tariffKey: string | null }>>(
+      `SELECT "tariffKey" FROM "CommercialOrder" WHERE "id"=$1 AND "tenantId"=$2`,
+      orderId, tenantId,
+    );
+    if (paidOrder?.tariffKey) {
+      // The canonical SaaS resolver now reads this package membership directly.
+      // Do not overwrite personal capability overrides or legacy paid grants.
+      await this.applyPurchasedTariff(tenantId, paidOrder.tariffKey);
+    } else {
+      await this.applySelectedCapabilities(tenantId);
+    }
     const beforeAccess = await this.accessService.resolveTenantAccess(tenantId);
     await this.accessService.setCommercialMode(tenantId, 'LIVE', actorAdminId);
     const access = await this.accessService.resolveTenantAccess(tenantId);

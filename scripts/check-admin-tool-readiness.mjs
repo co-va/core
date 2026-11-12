@@ -57,7 +57,7 @@ if (!ui.includes("renderToolRegister('cabinet', 'Кабинет', 'Professional'
   throw new Error('Tools must be the two document-style registries');
 }
 if (ui.includes('data-commerce-folder')) throw new Error('Separate Commerce accordion has returned');
-if (!ui.includes('data-tool-expand=') || !ui.includes('data-tool-tariff') ||
+if (!ui.includes('data-tool-expand=') || !ui.includes('data-tariff-tier') ||
     !ui.includes('bindTariffAssignments(content)')) {
   throw new Error('Nested tool rows and inline tariff assignment controls are required');
 }
@@ -110,17 +110,20 @@ for (const service of ['google-calendar','yandex-calendar']) {
     throw new Error('Calendar integration must be a check, never an E card');
   }
 }
-// Both tool tables use one shared five-column layout with no trailing blank
-// commercial tracks. The tool labels, F/E/R and 44px rows remain unchanged.
+// Both tool tables use seven tracks: Tools, Type, three tariffs, Readiness,
+// with an independent expand column. Numeric rows replace switches in-place.
 if (!ui.includes('<colgroup><col class="admin-tool-col-expand"><col class="admin-tool-col-name">') ||
-    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-tariff">') ||
+    !ui.includes('<col class="admin-tool-col-kind"><col class="admin-tool-col-tier">') ||
+    !ui.includes('<col class="admin-tool-col-tier"><col class="admin-tool-col-tier">') ||
     !ui.includes('<col class="admin-tool-col-status"></colgroup>') ||
     !ui.includes('class="admin-tool-registry-expand admin-tool-registry-expand-all"') ||
     !ui.includes('data-tool-expand-all aria-expanded="true"') ||
     !ui.includes('<th>Инструменты</th>') ||
     !ui.includes('<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>') ||
-    !ui.includes('<th>Тариф</th><th>Готовность</th>')) {
-  throw new Error('Professional/User tool registry header must be disclosure–tools–type–tariff–readiness');
+    !ui.includes('data-tier-level="start-plus">Start+</th>') ||
+    !ui.includes('data-tier-level="pro">Pro</th>') ||
+    !ui.includes('<th>Готовность</th>')) {
+  throw new Error('Professional/User tool registry header must have three tier columns before readiness');
 }
 const toolRows = ui.slice(ui.indexOf('function toolRegisterRows('), ui.indexOf('function renderToolRegister('));
 const expandCell = toolRows.indexOf('admin-tool-registry-expand-cell');
@@ -131,31 +134,53 @@ if (expandCell < 0 || nameCell <= expandCell || kindCell <= nameCell) {
 }
 for (const kind of [
   "depth === 0 ? 'F'",
-  "item.kind === 'e' ? 'E' : 'R'",
+  "item.kind === 'e' ? 'E' : item.kind === 'check' ? 'K' : 'R'",
   "marker === 'F' || marker === 'E' ? 'is-card' : 'is-plain'",
   "visibleToolChildren(area, item)",
 ]) {
-  if (!toolRows.includes(kind)) throw new Error('F/E/R mapping and K-free filter missing: ' + kind);
+  if (!toolRows.includes(kind)) throw new Error('F/E/R/K row mapping missing: ' + kind);
 }
-if (toolRows.includes("marker === 'R' ? 'Режим' : 'Компонент'")) {
-  throw new Error('K component type must not be emitted in the Tools registry');
+if (!toolRows.includes("marker === 'K' ? 'Инструмент внутри режима'")) {
+  throw new Error('Events/Notes K component type must be visible in Tools registry');
 }
 for (const rule of [
   '.admin-tool-register-card{',
   '.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed',
   '.admin-tool-register-table col.admin-tool-col-expand{width:13%}',
   '.admin-tool-register-table col.admin-tool-col-name{width:32%}',
-  '.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}',
-  '.admin-tool-register-table col.admin-tool-col-tariff{width:20%}',
-  '.admin-tool-register-table col.admin-tool-col-status{width:21.5%}',
+  '.admin-tool-register-table col.admin-tool-col-kind{width:5.8%}',
+  '.admin-tool-register-table col.admin-tool-col-tier{width:12.5%}',
+  '.admin-tool-register-table col.admin-tool-col-status{width:11.7%}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
   if (!css.includes(rule)) throw new Error('Full-width registry proportions/hierarchy missing: ' + rule);
 }
-const weights = [13, 32, 13.5, 20, 21.5];
+const weights = [13, 32, 5.8, 12.5, 12.5, 12.5, 11.7];
 assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
   'Scaled columns must exactly fill the available table width');
+// Tariff membership is presented with neutral native square checkboxes,
+// including Deposit; no unrelated tier colors or sliding switches in Tools.
+if (!ui.includes('class="admin-tool-tier-checkbox"') ||
+    !ui.includes('type="checkbox"') ||
+    !ui.includes('data-tariff-tier') ||
+    !css.includes('.admin-tool-tier-checkbox{') ||
+    css.includes('.admin-tool-tier-switch') ||
+    !ui.includes("'cabinet.loyalty.deposit': 'tool.loyalty.deposit'")) {
+  throw new Error('Tariff controls must be neutral checkboxes for every tool, including Deposit');
+}
+if (!ui.includes("key === 'cabinet.profile.workspaces'") ||
+    !ui.includes("key === 'cabinet.service.products'") ||
+    !ui.includes('data-tool-limit-tier') ||
+    !ui.includes('data-tool-limit-infinity') ||
+    !ui.includes('data-tariff-tier')) {
+  throw new Error('Three inherited tier switches and in-place numeric / infinity must be present');
+}
+if (!ui.includes("label: 'Рабочие пространства', kind: 'composition'") ||
+    !ui.includes("child.readinessKey === 'cabinet.profile.workspaces'") ||
+    !ui.includes("...child, kind: 'e'")) {
+  throw new Error('Workplace quantity must be visible only in Tools, not duplicated in account permissions');
+}
 if (!ui.includes('R — режим">Тип</th>') ||
     ui.includes('K — компонент">Тип</th>') ||
     !css.includes('.admin-tool-registry-kind span.is-card{')) {
@@ -168,14 +193,42 @@ const mapSource = ui.slice(ui.indexOf('export const TOOL_MAP = Object.freeze('),
   .replaceAll('export const ', 'const ');
 const toolMap = runInNewContext(mapSource + '\nTOOL_MAP');
 for (const area of ['cabinet','records']) {
+  const dayKey = area + '.journal.day';
+  const day = toolMap[area].find((item) => item.id === 'journal')
+    ?.items.find((item) => item.readinessKey === dayKey);
+  assert.ok(day, 'Journal Day is required for ' + area);
+  const checks = visibleToolChildren(area, day);
+  assert.equal(checks.map((item) => item.readinessKey).join('|'), [
+    dayKey + '.events', dayKey + '.notes',
+  ].join('|'), 'Day exposes Events and Notes as tariff-controlled rows, never Record: ' + area);
+  assert.ok(day.items.some((item) => item.readinessKey === dayKey + '.record'),
+    'Automatic Day Record remains in internal readiness registry: ' + area);
   const visit = (items) => items.forEach((item) => {
     const visible = visibleToolChildren(area, item);
-    if (visible.some((child) => !['e','mode'].includes(child.kind))) {
-      throw new Error('K component leaked into visible ' + area + ' hierarchy');
+    for (const child of visible) {
+      if (child.kind === 'check' &&
+          ![dayKey + '.events',dayKey + '.notes'].includes(child.readinessKey)) {
+        throw new Error('Only Events/Notes K tools can be exposed in ' + area);
+      }
     }
     visit(visible);
   });
   visit(toolMap[area]);
+}
+if (!ui.includes("marker === 'K' ? 'Инструмент внутри режима'")) {
+  throw new Error('Events and Notes must retain their K component type marker');
+}
+for (const key of [
+  'cabinet.journal.day.events', 'cabinet.journal.day.notes',
+  'records.journal.day.events', 'records.journal.day.notes',
+]) {
+  if (!ui.includes("readinessKey: '" + key + "'") ||
+      !service.includes("'" + key + "'")) {
+    throw new Error('Selectable Events/Notes row must have a real readiness status: ' + key);
+  }
+}
+if (!ui.includes("item.readinessKey, byKey, 'admin-tool-child-status'")) {
+  throw new Error('Events/Notes readiness dropdown must remain editable');
 }
 if (!ui.includes("node.closest('.admin-tool-register-table')") ||
     !ui.includes("toolStatus(item, byKey, true)")) {

@@ -1032,15 +1032,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* Approved five-column layout: distinct content zones separated by
-   deliberate free space, as indicated in the Admin reference screenshot.
-   Shared by Professional and User. Header/body tracks remain identical;
-   existing 44px row heights and horizontal scrolling remain unchanged. */
+/* Table bands aligned to the marked reference: established disclosure/name,
+   a compact Type column, three equal wide-spaced tariff columns and readiness.
+   The header and body use the same colgroup; rows remain 44px high. */
 .admin-tool-register-table col.admin-tool-col-expand{width:13%}
 .admin-tool-register-table col.admin-tool-col-name{width:32%}
-.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}
-.admin-tool-register-table col.admin-tool-col-tariff{width:20%}
-.admin-tool-register-table col.admin-tool-col-status{width:21.5%}
+.admin-tool-register-table col.admin-tool-col-kind{width:5.8%}
+.admin-tool-register-table col.admin-tool-col-tier{width:12.5%}
+.admin-tool-register-table col.admin-tool-col-status{width:11.7%}
 .admin-tool-register-table :is(th,td):first-child{
   box-sizing:border-box;width:13%;min-width:0;max-width:none;
   padding:4px 0;text-align:left
@@ -1050,15 +1049,17 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:4px 8px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(3){
-  box-sizing:border-box;width:13.5%;min-width:0;max-width:none;
+  box-sizing:border-box;width:5.8%;min-width:0;max-width:none;
   padding:4px 0 4px 22px;text-align:left
 }
-.admin-tool-register-table :is(th,td):nth-child(4){
-  box-sizing:border-box;width:20%;min-width:0;max-width:none;
-  padding-inline:8px;text-align:left
+.admin-tool-register-table :is(th,td):nth-child(4),
+.admin-tool-register-table :is(th,td):nth-child(5),
+.admin-tool-register-table :is(th,td):nth-child(6){
+  box-sizing:border-box;width:12.5%;min-width:0;max-width:none;
+  padding-inline:8px;text-align:center
 }
-.admin-tool-register-table :is(th,td):nth-child(5){
-  box-sizing:border-box;width:21.5%;min-width:0;max-width:none;
+.admin-tool-register-table :is(th,td):nth-child(7){
+  box-sizing:border-box;width:11.7%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
@@ -1112,14 +1113,63 @@ html:has(.admin-shell){background:var(--surface-dark)}
   padding:0 24px 0 7px;border:1px solid var(--border);
   border-radius:5px;font-size:12px;background:#fff;color:var(--text)
 }
-.admin-tool-register-table [data-tool-tariff]{
-  width:110px;max-width:100%;height:26px;min-height:26px;
-  padding:0 24px 0 7px;box-sizing:border-box;
-  border:1px solid var(--border);border-radius:5px;
-  font-size:12px;background:#fff;color:var(--text)
+/* Tools share the existing Admin typography and F/E outline palette.
+   A checked tariff is a white square with a text-colour checkmark. */
+.admin-tool-register-table .admin-tool-tier-heading{text-align:center}
+.admin-tool-register-table .admin-tool-tier-cell{text-align:center}
+.admin-tool-register-table .admin-tool-tier-check{
+  display:inline-flex;position:relative;align-items:center;justify-content:center;
+  width:18px;height:18px;vertical-align:middle;cursor:pointer
 }
-.admin-tool-tariff{display:flex;align-items:center;gap:7px;min-width:0}
-.admin-tool-register-table :is(input,select):disabled{opacity:.55}
+.admin-tool-register-table .admin-tool-tier-checkbox{
+  position:absolute;inset:0;margin:0;width:100%;height:100%;
+  opacity:0;cursor:inherit;z-index:1
+}
+.admin-tool-register-table .admin-tool-tier-mark{
+  box-sizing:border-box;width:18px;height:18px;
+  border:1px solid var(--border);border-radius:3px;
+  background:#fff;display:grid;place-items:center;pointer-events:none
+}
+.admin-tool-register-table .admin-tool-tier-checkbox:checked + .admin-tool-tier-mark::after{
+  content:"";display:block;width:8px;height:5px;
+  border-left:2px solid var(--text);border-bottom:2px solid var(--text);
+  transform:translateY(-1px) rotate(-45deg)
+}
+.admin-tool-register-table .admin-tool-tier-checkbox:focus-visible + .admin-tool-tier-mark{
+  outline:2px solid var(--text);outline-offset:2px
+}
+.admin-tool-register-table .admin-tool-tier-checkbox:disabled,
+.admin-tool-register-table .admin-tool-tier-checkbox:disabled + .admin-tool-tier-mark{
+  cursor:default
+}
+/* The quantity is 0-999 or infinity, in one compact field. The infinity
+   action lives INSIDE that field, not as a second attached input/button. */
+.admin-tool-limit-control{
+  display:flex;position:relative;align-items:center;justify-content:center;
+  box-sizing:border-box;width:56px;max-width:100%;height:26px;
+  margin-inline:auto;border:1px solid var(--border);border-radius:5px;
+  background:#fff
+}
+.admin-tool-limit-control [data-tool-limit-tier]{
+  box-sizing:border-box;width:100%;min-width:0;height:24px;min-height:24px;
+  padding:0 17px 0 4px;border:0;border-radius:5px;
+  background:transparent;color:var(--text);font-size:12px;font-weight:600;
+  text-align:center;outline:0
+}
+.admin-tool-limit-control [data-tool-limit-tier]::placeholder{color:var(--text-secondary)}
+.admin-tool-limit-infinity{
+  position:absolute;right:2px;top:2px;display:grid;place-items:center;
+  box-sizing:border-box;width:16px;height:20px;padding:0;border:0;
+  background:transparent;color:var(--text-secondary);font-size:13px;
+  font-weight:600;cursor:pointer
+}
+.admin-tool-limit-control[data-infinite="true"] [data-tool-limit-tier]{padding-right:4px}
+.admin-tool-limit-control[data-infinite="true"] .admin-tool-limit-infinity{display:none}
+.admin-tool-limit-infinity:hover:not(:disabled){color:var(--text)}
+.admin-tool-limit-control:focus-within{outline:1px solid var(--text);outline-offset:0}
+.admin-tool-limit-control [data-tool-limit-tier]:disabled,
+.admin-tool-limit-infinity:disabled{opacity:.75;cursor:default}
+.admin-tool-register-table .admin-tool-limit-infinity:focus-visible{outline:1px solid var(--text);outline-offset:0}
 .admin-tool-register-table .admin-tool-account-control{margin-left:6px;font-size:11px}
 .admin-tool-registry-save-state{
   display:block;min-width:0;max-width:74px;overflow:hidden;

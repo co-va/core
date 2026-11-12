@@ -908,6 +908,19 @@ model AdminToolReadiness {
   updatedAt DateTime @updatedAt
 }
 
+// Administrator-defined quantity caps inside the existing commercial tariffs.
+// Does not replace PlanCapability or change any live tenant entitlement.
+model CommercialTariffLimit {
+  tariffKey String
+  toolKey   String
+  maxCount  Int?
+  createdAt DateTime @default(now()) @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @db.Timestamp(3)
+
+  @@id([tariffKey, toolKey])
+  @@index([toolKey])
+}
+
 model InventoryItem {
   id                String   @id @default(cuid())
   tenantId          String
