@@ -929,27 +929,29 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 .admin-tool-register-layout{gap:44px}
-.admin-tool-register-card{margin:0;padding:0;width:860px;max-width:100%;min-width:0;overflow:hidden}
+.admin-tool-register-card{margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden}
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
-.admin-tool-register-table{width:860px;min-width:860px;max-width:860px;table-layout:fixed;border-collapse:collapse;color:var(--text)}
-/* One fixed 860px grid for both tool sections: 50 + 340 + 50 + 140 + 140 + 140. */
-.admin-tool-register-table col.admin-tool-col-expand{width:50px}
-.admin-tool-register-table col.admin-tool-col-name{width:340px}
-.admin-tool-register-table col.admin-tool-col-kind{width:50px}
+.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
+/* Full available card width, like Users. At 860px the six tracks equal the
+   approved 50 / 340 / 50 / 140 / 140 / 140 proportions. At wider widths all
+   tracks scale together; no fixed-width white card or unused right gutter. */
+.admin-tool-register-table col.admin-tool-col-expand{width:5.813953488%}
+.admin-tool-register-table col.admin-tool-col-name{width:39.534883721%}
+.admin-tool-register-table col.admin-tool-col-kind{width:5.813953488%}
 .admin-tool-register-table col.admin-tool-col-status,
 .admin-tool-register-table col.admin-tool-col-payment,
-.admin-tool-register-table col.admin-tool-col-price{width:140px}
+.admin-tool-register-table col.admin-tool-col-price{width:16.279069768%}
 .admin-tool-register-table :is(th,td):first-child,
 .admin-tool-register-table :is(th,td):nth-child(3){
-  box-sizing:border-box;width:50px;min-width:50px;max-width:50px;
+  box-sizing:border-box;width:5.813953488%;min-width:0;max-width:none;
   padding:4px 0;text-align:center
 }
 .admin-tool-register-table :is(th,td):nth-child(2){
-  box-sizing:border-box;width:340px;min-width:340px;max-width:340px;
+  box-sizing:border-box;width:39.534883721%;min-width:0;max-width:none;
   padding:4px 12px;text-align:left
 }
 .admin-tool-register-table :is(th,td):nth-child(n+4){
-  box-sizing:border-box;width:140px;min-width:140px;max-width:140px;
+  box-sizing:border-box;width:16.279069768%;min-width:0;max-width:none;
   padding-inline:8px;text-align:left
 }
 .admin-tool-register-table th,
