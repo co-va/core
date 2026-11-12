@@ -148,15 +148,15 @@ for (const rule of [
   '.admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed',
   '.admin-tool-register-table col.admin-tool-col-expand{width:13%}',
   '.admin-tool-register-table col.admin-tool-col-name{width:32%}',
-  '.admin-tool-register-table col.admin-tool-col-kind{width:13.5%}',
-  '.admin-tool-register-table col.admin-tool-col-tier{width:9.333333333%}',
-  '.admin-tool-register-table col.admin-tool-col-status{width:13.5%}',
+  '.admin-tool-register-table col.admin-tool-col-kind{width:8%}',
+  '.admin-tool-register-table col.admin-tool-col-tier{width:9%}',
+  '.admin-tool-register-table col.admin-tool-col-status{width:20%}',
   'padding-left:calc(var(--tool-depth,0) * 28px)',
   '.admin-tool-registry-name[data-tool-depth]:not([data-tool-depth="0"])::before',
 ]) {
   if (!css.includes(rule)) throw new Error('Full-width registry proportions/hierarchy missing: ' + rule);
 }
-const weights = [13, 32, 13.5, 9.333333333, 9.333333333, 9.333333333, 13.5];
+const weights = [13, 32, 8, 9, 9, 9, 20];
 assert.ok(Math.abs(weights.reduce((total, value) => total + value, 0) - 100) < 1e-6,
   'Scaled columns must exactly fill the available table width');
 // Tariff membership is presented with neutral native square checkboxes,
