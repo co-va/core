@@ -17,7 +17,11 @@ export const TOOL_MAP = Object.freeze({
     { id: 'people', label: 'Клиенты', readinessKey: 'cabinet.people' },
     {
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
-        { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day' },
+        { label: 'День', kind: 'mode', readinessKey: 'cabinet.journal.day', items: [
+          { label: 'События', kind: 'check', readinessKey: 'cabinet.journal.day.events' },
+          { label: 'Заметки', kind: 'check', readinessKey: 'cabinet.journal.day.notes' },
+          { label: 'Запись', kind: 'check', readinessKey: 'cabinet.journal.day.record' },
+        ] },
         { label: 'Месяц', kind: 'mode', readinessKey: 'cabinet.journal.month' },
         { label: 'График (режим месяца)', kind: 'mode', readinessKey: 'cabinet.timetable' },
         { label: 'Список', kind: 'mode', readinessKey: 'cabinet.journal.list' },
@@ -35,7 +39,6 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Товары', kind: 'mode', readinessKey: 'cabinet.service.products' },
       ],
     },
-    { id: 'chat', label: 'Чат', readinessKey: 'cabinet.chat' },
     {
       id: 'loyalty', label: 'Лояльность', nesting: 'e', items: [
         { label: 'Депозит', kind: 'e', readinessKey: 'cabinet.loyalty.deposit' },
@@ -75,31 +78,26 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Ярлыки', kind: 'e', readinessKey: 'cabinet.settings.tags' },
       ],
     },
+    { id: 'chat', label: 'Чат', readinessKey: 'cabinet.chat' },
   ],
   records: [
-    {
-      id: 'profile', label: 'Профиль', nesting: 'composition', items: [
-        { label: 'Личные данные', kind: 'composition', readinessKey: 'records.profile.personal-data' },
-        { label: 'Документы и уведомления', kind: 'composition', readinessKey: 'records.profile.documents-notifications' },
-      ],
-    },
+    { id: 'profile', label: 'Профиль', readinessKey: 'records.profile' },
     {
       id: 'journal', label: 'Журнал', nesting: 'modes', items: [
-        { label: 'День', kind: 'mode', readinessKey: 'records.journal.day' },
+        { label: 'День', kind: 'mode', readinessKey: 'records.journal.day', items: [
+          { label: 'События', kind: 'check', readinessKey: 'records.journal.day.events' },
+          { label: 'Заметки', kind: 'check', readinessKey: 'records.journal.day.notes' },
+          { label: 'Запись', kind: 'check', readinessKey: 'records.journal.day.record' },
+        ] },
         { label: 'Месяц', kind: 'mode', readinessKey: 'records.journal.month' },
         { label: 'Список', kind: 'mode', readinessKey: 'records.journal.list' },
       ],
     },
-    {
-      id: 'contacts', label: 'Контакты', nesting: 'composition', items: [
-        { label: 'Список контактов', kind: 'composition', readinessKey: 'records.contacts.list' },
-        { label: 'Карточка контакта', kind: 'composition', readinessKey: 'records.contacts.card' },
-      ],
-    },
+    { id: 'contacts', label: 'Контакты', readinessKey: 'records.contacts' },
     {
       id: 'integrations', label: 'Интеграции', nesting: 'e', items: [
-        { label: 'Google Календарь', kind: 'e', readinessKey: 'records.integrations.google-calendar', accountToolKey: 'account.calendar.google' },
-        { label: 'Яндекс Календарь', kind: 'e', readinessKey: 'records.integrations.yandex-calendar', accountToolKey: 'account.calendar.yandex' },
+        { label: 'Google Календарь', kind: 'check', readinessKey: 'records.integrations.google-calendar', accountToolKey: 'account.calendar.google' },
+        { label: 'Яндекс Календарь', kind: 'check', readinessKey: 'records.integrations.yandex-calendar', accountToolKey: 'account.calendar.yandex' },
       ],
     },
   ],
@@ -241,9 +239,8 @@ function readinessSelect(readinessKey, byKey, className) {
 function aggregateKeys(item) {
   // Parent count follows its immediate children: Finance is E × 3, whereas
   // Cash is Composition × 3. A nested E counts ready when any member is ready.
-  return (item.items || []).map((child) => child.items?.length
-    ? aggregateKeys(child).join(',')
-    : child.readinessKey).filter(Boolean);
+  return (item.items || []).map((child) => child.readinessKey ||
+    (child.items?.length ? aggregateKeys(child).join(',') : null)).filter(Boolean);
 }
 
 function isReadinessGroupReady(keyGroup, byKey) {
@@ -514,7 +511,7 @@ function renderToolRegister(area, label, suffix) {
       ' <span class="admin-registry-app">/ ' + suffix + '</span></h2>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table" data-admin-tool-map="' + area + '">' +
-    '<thead><tr><th>Инструмент</th><th>Карточка</th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
+    '<thead><tr><th>Инструмент</th><th aria-label="Тип карточки"></th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
     '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) + '</tbody></table></div></div></section>';
 }
 
