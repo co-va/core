@@ -280,11 +280,12 @@ function childRow(child, byKey) {
   </div>`;
 }
 
-function toolStatus(item, byKey) {
+function toolStatus(item, byKey, compact = false) {
   const items = Array.isArray(item.items) ? item.items : [];
   if (items.length) {
     const aggregate = aggregateStatus(item, byKey);
-    return `<span class="admin-tool-readiness" data-readiness-count="${aggregate.total}" data-readiness-keys="${escapeHtml(aggregate.keys.join('|'))}">${aggregate.ready}/${aggregate.total} готово</span>`;
+    const fullStatus = `${aggregate.ready}/${aggregate.total} готово`;
+    return `<span class="admin-tool-readiness" data-readiness-count="${aggregate.total}" data-readiness-keys="${escapeHtml(aggregate.keys.join('|'))}" title="${fullStatus}">${compact ? `${aggregate.ready}/${aggregate.total}` : fullStatus}</span>`;
   }
   return readinessSelect(item.readinessKey, byKey, 'admin-tool-readiness');
 }
@@ -335,7 +336,9 @@ function hydrateReadiness(root, items = []) {
     const total = Number(node.dataset.readinessCount || 0);
     const keys = String(node.dataset.readinessKeys || '').split('|').filter(Boolean);
     const ready = keys.filter((key) => isReadinessGroupReady(key, byKey)).length;
-    node.textContent = `${ready}/${total} готово`;
+    node.title = `${ready}/${total} готово`;
+    node.textContent = node.closest('.admin-tool-register-table')
+      ? `${ready}/${total}` : node.title;
   });
 }
 
@@ -479,7 +482,7 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
       : expandable
-        ? toolStatus(item, byKey)
+        ? toolStatus(item, byKey, true)
         : '—';
     // Structural type is independent of the readiness state.
     const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E'
@@ -526,7 +529,8 @@ function renderToolRegister(area, label, suffix) {
       '<th scope="col" class="admin-tool-registry-expand-header">' +
       '<button type="button" class="admin-tool-registry-expand admin-tool-registry-expand-all"' +
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
-      '<th>Инструменты</th><th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
+      '<th>Инструменты</th><th title="Готовность" aria-label="Готовность">Готов.</th>' +
+      '<th>Оплата</th><th>Цена, ₽</th></tr></thead>' +
     '<tbody>' + toolRegisterRows(area, items, readinessByKey(toolReadinessCache)) + '</tbody></table></div></div></section>';
 }
 
