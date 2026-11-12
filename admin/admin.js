@@ -1249,8 +1249,8 @@ function renderRegistrySection(item, resolved, tenant = null, area = 'cabinet', 
 function renderTenantRegistry(resolved, tenant = null, allowCommercial = true) {
   const seen = new Set();
   return '<div class="admin-access-tool-category" data-account-tools="professional">' +
-    '<div class="admin-access-tool-head"><span>Кабинет / Professional</span><span>Доступ</span><span>' +
-      (allowCommercial ? 'Условия' : '') + '</span></div>' +
+    '<div class="admin-access-tool-head"><span>Кабинет / Professional</span><span>' +
+      (allowCommercial ? 'Условия' : '') + '</span><span>Доступ</span></div>' +
     TOOL_MAP.cabinet.map((item) => renderRegistrySection(item, resolved, tenant, 'cabinet', 0, '', allowCommercial, seen)).join('') +
     '</div>';
 }
