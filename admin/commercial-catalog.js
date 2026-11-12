@@ -512,7 +512,7 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
       if (limitTool) {
         return '<td class="admin-tool-tier-cell" data-tool-limit-key="' + escapeHtml(key) + '">' +
           '<div class="admin-tool-limit-control" data-tier-level="' + level + '">' +
-          '<input type="text" inputmode="numeric" autocomplete="off" maxlength="9" disabled ' +
+          '<input type="text" inputmode="numeric" autocomplete="off" maxlength="3" disabled ' +
             'data-tool-limit-tier="' + tierKey + '" ' +
             'aria-label="' + escapeHtml(toolDisplayName(item)) + ', ' +
             ['Start','Start+','Pro'][tierIndex] + '" placeholder="—" title="Число или ∞">' +
@@ -650,6 +650,8 @@ function hydrateTariffLimits(content, tariffs) {
     const value = entries[input.dataset.toolLimitTier];
     input.value = value === null ? '∞' : Number.isInteger(value) ? String(value) : '';
     input.dataset.previous = input.value;
+    const control = cell.querySelector('.admin-tool-limit-control');
+    if (control) control.dataset.infinite = String(input.value === '∞');
     input.disabled = false;
     if (infinity) infinity.disabled = false;
   });
@@ -660,10 +662,15 @@ function bindTariffLimits(content) {
     const input = cell.querySelector('[data-tool-limit-tier]');
     const infinity = cell.querySelector('[data-tool-limit-infinity]');
     if (!input) return;
+    const control = cell.querySelector('.admin-tool-limit-control');
     infinity?.addEventListener('click', () => {
       if (input.disabled) return;
       input.value = '∞';
+      if (control) control.dataset.infinite = 'true';
       input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    input.addEventListener('input', () => {
+      if (control) control.dataset.infinite = String(input.value.trim() === '∞');
     });
     input.addEventListener('change', async () => {
       const raw = input.value.trim();
@@ -671,9 +678,10 @@ function bindTariffLimits(content) {
       if (raw === previous) return;
       const parsed = raw === '' ? undefined : raw === '∞' ? null : Number(raw);
       if (parsed !== undefined && parsed !== null &&
-          (!Number.isSafeInteger(parsed) || parsed < 0 || String(parsed) !== raw)) {
+          (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 999 || String(parsed) !== raw)) {
         input.value = previous;
-        input.title = 'Введите целое число или используйте ∞';
+        if (control) control.dataset.infinite = String(previous === '∞');
+        input.title = 'Введите число 0–999 или используйте ∞';
         return;
       }
       input.disabled = true;
@@ -692,6 +700,7 @@ function bindTariffLimits(content) {
         document.dispatchEvent(new Event('admin:tariff-changed'));
       } catch (error) {
         input.value = previous;
+        if (control) control.dataset.infinite = String(previous === '∞');
         input.title = error instanceof Error ? error.message : 'Лимит не сохранён';
       } finally {
         input.disabled = false;
