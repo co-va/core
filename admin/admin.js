@@ -1113,7 +1113,7 @@ function toolReadable(item, readonly, tenant) {
   }
   const mode = String(tenant?.access?.commercialMode || 'DEMO').toUpperCase();
   const allowed = (status) => status === 'READY' ||
-    (status === 'TESTING' && (mode === 'DEMO' || tenant?.isTester || tenant?.isOwnerBook));
+    (status === 'TESTING' && Boolean(mode === 'DEMO' || tenant?.isTester || tenant?.isOwnerBook));
   // Service has one actual services.access grant, and two independent mode statuses.
   if (item.id === 'service' && !key) {
     return ['cabinet.service.procedures', 'cabinet.service.products']
