@@ -475,19 +475,23 @@ function toolDisplayName(item) {
   return String(item.label || '').startsWith('График (') ? 'График' : item.label;
 }
 
+// K denotes non-card components. They remain in the internal catalog for
+// runtime/readiness logic, but are not selectable rows in either Admin list.
+export function visibleToolChildren(area, item) {
+  const children = (Array.isArray(item.items) ? item.items : [])
+    .filter((child) => child.kind === 'e' || child.kind === 'mode');
+  if (area !== 'cabinet' || item.id !== 'journal') return children;
+  return children.filter((child) => child.readinessKey !== 'cabinet.timetable')
+    .map((child) => child.readinessKey === 'cabinet.journal.month'
+      ? { ...child, items: children.filter((nested) => nested.readinessKey === 'cabinet.timetable') }
+      : child);
+}
+
 function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], parentKey = '') {
   return items.map((item, index) => {
     const key = flatToolKey(area, item, parentKey);
     const id = (ancestorIds[ancestorIds.length - 1] || area) + '-' + index;
-    const children = Array.isArray(item.items) ? item.items : [];
-    const isCabinetJournal = area === 'cabinet' && item.id === 'journal';
-    const groupedChildren = isCabinetJournal
-      ? children.filter((child) => child.readinessKey !== 'cabinet.timetable').map((child) => (
-        child.readinessKey === 'cabinet.journal.month'
-          ? { ...child, items: children.filter((nested) => nested.readinessKey === 'cabinet.timetable') }
-          : child
-      ))
-      : children;
+    const groupedChildren = visibleToolChildren(area, item);
     const expandable = groupedChildren.length > 0;
     const canPrice = area === 'cabinet' && INLINE_COMMERCIAL_KEYS[key];
     const price = canPrice ? '<div class="admin-tool-registry-price"><input type="number" min="0" step="0.01" inputmode="decimal" data-commercial-price aria-label="Цена ' +
@@ -500,11 +504,9 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
         ? toolStatus(item, byKey, true)
         : '—';
     // Structural type is independent of the readiness state.
-    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E'
-      : item.kind === 'mode' ? 'R' : 'K';
+    const marker = depth === 0 ? 'F' : item.kind === 'e' ? 'E' : 'R';
     const markerTitle = marker === 'F' ? 'Основная карточка'
-      : marker === 'E' ? 'Вложенная карточка'
-      : marker === 'R' ? 'Режим' : 'Компонент';
+      : marker === 'E' ? 'Вложенная карточка' : 'Режим';
     const toggle = expandable
       ? '<button type="button" class="admin-tool-registry-expand" data-tool-expand="' + escapeHtml(id) +
         '" aria-expanded="true" aria-label="Свернуть или раскрыть ' + escapeHtml(toolDisplayName(item)) + '">⌄</button>'
@@ -545,7 +547,7 @@ function renderToolRegister(area, label, suffix) {
       '<button type="button" class="admin-tool-registry-expand admin-tool-registry-expand-all"' +
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
       '<th>Инструменты</th>' +
-      '<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим, K — компонент">Тип</th>' +
+      '<th scope="col" title="F — основная карточка, E — вложенная карточка, R — режим">Тип</th>' +
       '<th>Готовность</th><th>Оплата</th><th>Цена, ₽</th></tr></thead></table></div></div>' +
     '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
     '<table class="admin-table admin-tool-register-table admin-tool-register-body-table" data-admin-tool-map="' + area + '">' +
