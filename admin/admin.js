@@ -2,9 +2,9 @@ import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/au
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderCommercialFinance } from './commercial-finance.js';
-import { renderAdminTools, loadTariffs, updateTariffPrice, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderAdminTools, loadTariffs, updateTariffSettings, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
+import { renderCommercialFinance } from './commercial-finance.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
@@ -347,6 +347,7 @@ const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
+  { id: 'tariffs', label: 'Тарифы', icon: 'tags' },
   { id: 'finance', label: 'Финансы', icon: 'finance' },
   { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
 ];
@@ -514,6 +515,7 @@ function renderCurrentSection() {
     });
   }
   if (state.section === 'capabilities') return renderCapabilities();
+  if (state.section === 'tariffs') return renderTariffs();
   if (state.section === 'finance') return renderFinanceSection();
   renderTenants();
   // On section entry, refresh network cells independently of the 30s poll.
@@ -545,14 +547,14 @@ function requestOverviewTariffs(force = false) {
       overviewTariffStatus = 'unavailable';
     })
     .finally(() => {
-      if (state.section === 'overview') renderOverview();
+      if (state.section === 'tariffs') renderTariffs();
     });
 }
 
 if (typeof document !== 'undefined') document.addEventListener('admin:tariff-changed', () => {
   overviewTariffStatus = 'idle';
   overviewTariffData = null;
-  if (state.section === 'overview') renderOverview();
+  if (state.section === 'tariffs') renderTariffs();
 });
 
 function requestOverviewUserStats(force = false) {
@@ -615,34 +617,161 @@ function overviewRegistrationWeeks(registered, weeks = 8, now = new Date()) {
   return buckets;
 }
 
-function renderFinanceSection() {
-  setActiveSection('Финансы');
+function renderTariffs() {
+  setActiveSection('Тарифы');
   const content = app.querySelector('[data-content]');
   if (!content) return;
-  content.innerHTML = '<div class="admin-heading"><h2>Финансы</h2></div>' +
-    '<section class="admin-card admin-empty-card">Загружаем счета и платежи…</section>';
-  void adminRequest('/finance/overview')
-    .then((data) => {
-      if (state.section !== 'finance') return;
-      const tenantName = (id) => {
-        const entry = state.tenants.find((item) => item.tenantId === id);
-        return entry?.ownerProfile?.name || entry?.invitation?.name || entry?.tenantName || id;
-      };
-      renderCommercialFinance(content, data, {
-        escapeHtml, tenantName,
-        onTenant: (tenantId) => {
-          state.section = 'tenants';
-          renderCurrentSection();
-          openAccessDrawer(tenantId);
-        },
-      });
-    })
-    .catch((error) => {
-      if (state.section !== 'finance') return;
-      content.innerHTML = '<div class="admin-heading"><h2>Финансы</h2></div>' +
-        '<section class="admin-card admin-empty-card" role="alert">' +
-        escapeHtml(error instanceof Error ? error.message : 'Данные финансов недоступны') + '</section>';
+  const liveTariffs = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
+  const tariffCards = [
+    { key: 'tariff.start', name: 'Start' },
+    { key: 'tariff.start-plus', name: 'Start+' },
+    { key: 'tariff.pro', name: 'Pro' },
+  ].map((tariff) => ({ ...tariff, ...liveTariffs.find((item) => item.key === tariff.key) }));
+  const selectedTariff = tariffCards.find((item) => item.key === overviewSelectedTariff);
+  const formatTariffPrice = (item) => item.key === 'tariff.start' ? '0 ₽'
+    : Number(item.priceMinor) > 0
+      ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
+      : '—';
+
+  content.innerHTML = `
+    <div class="admin-overview admin-tariff-section">
+      <div class="admin-heading"><h2>Тарифы</h2></div>
+      <p class="admin-tariff-context">Состав и лимиты определяются в «Инструментах». Здесь настраиваются цена за 30 дней и бонусные дни.</p>
+      <div class="admin-overview-tariffs-heading">
+        <strong>Тарифы <span>/ Professional</span></strong>
+        <span>Выберите Start+ или Pro для настройки цены и срока</span>
+      </div>
+      <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
+        ${tariffCards.map((item) => `
+          <button type="button" class="admin-overview-metric${overviewSelectedTariff === item.key ? ' is-selected' : ''}"
+            data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}">
+            <span class="admin-overview-metric-label">${item.name}</span>
+            <strong class="admin-overview-metric-value">${formatTariffPrice(item)}</strong>
+            <span class="admin-overview-metric-hint">Подключено: ${Number.isInteger(item.connected) ? item.connected : '—'}</span>
+            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
+          </button>`).join('')}
+      </section>
+      ${overviewSelectedTariff && overviewTariffStatus === 'unavailable' ? `
+        <section class="admin-overview-detail"><p class="admin-overview-empty">Данные тарифов недоступны.</p></section>` : ''}
+      ${overviewSelectedTariff && overviewTariffStatus === 'ready' && selectedTariff ? `
+        <section class="admin-overview-detail" aria-label="Состав тарифа ${escapeHtml(selectedTariff.name)}">
+          <div class="admin-overview-detail-heading">
+            <div><strong>${escapeHtml(selectedTariff.name)}</strong></div>
+            <button type="button" class="admin-overview-close" data-overview-tariff-close aria-label="Свернуть тариф">×</button>
+          </div>
+          ${selectedTariff.key !== 'tariff.start' ? `
+            <div class="admin-overview-tariff-editor">
+              <div class="admin-overview-tariff-controls">
+                <label class="admin-field"><span>Цена за 30 дней, ₽</span>
+                  <input type="number" min="0" step="0.01" inputmode="decimal" data-overview-tariff-price
+                    value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Цена не установлена">
+                </label>
+              </div>
+              <div class="admin-overview-tariff-periods">
+                <div class="admin-overview-tariff-period-row is-heading">
+                  <span>Оплата</span><span>Бонус времени</span><span>Всего дней</span><span>Стоимость, ₽</span>
+                </div>
+                ${[1, 6, 12].map((months) => {
+                  const period = selectedTariff.periods?.find((item) => item.months === months);
+                  const percent = period?.bonusPercent ?? (months === 6 ? 20 : months === 12 ? 50 : 0);
+                  const bonusDays = Math.round(months * 30 * percent / 100);
+                  const fullDays = months * 30 + bonusDays;
+                  return `<div class="admin-overview-tariff-period-row" data-overview-tariff-months="${months}">
+                    <span>${months} ${months === 1 ? 'месяц' : 'месяцев'} <small>${months * 30} дней</small></span>
+                    <span>${months === 1 ? '—' : `
+                      <label class="admin-overview-tariff-percent">
+                        <input type="number" min="0" max="100" step="1" inputmode="numeric"
+                          data-overview-tariff-bonus="${months}" value="${percent}" aria-label="Бонус за ${months} месяцев"> %
+                      </label>`}</span>
+                    <span data-overview-tariff-days="${months}">${fullDays} дней${bonusDays ? ` (+${bonusDays})` : ''}</span>
+                    <span data-overview-tariff-sum="${months}">${selectedTariff.priceMinor
+                      ? escapeHtml(new Intl.NumberFormat('ru-RU').format(selectedTariff.priceMinor * months / 100)) + ' ₽'
+                      : '—'}</span>
+                  </div>`;
+                }).join('')}
+              </div>
+              <div class="admin-overview-tariff-footer">
+                <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
+                <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
+              </div>
+            </div>` : '<p class="admin-overview-tariff-free">Бесплатный LIVE Start без ограничения срока. Цена и бонусы не требуются.</p>'}
+          <div class="admin-overview-tariff-tools-heading">
+            <strong>Состав тарифа</strong>
+            <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Настроить в «Инструментах» <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="admin-overview-detail-list admin-overview-tariff-list">
+            ${selectedTariff.tools?.length ? selectedTariff.tools.map((tool) => `
+              <div class="admin-overview-person">
+                <span><strong>${escapeHtml(tool.name)}</strong></span>
+              </div>`).join('') : '<p class="admin-overview-empty">Инструменты не назначены.</p>'}
+          </div>
+        </section>` : ''}
+
+    </div>`;
+  if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+  content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
+    button.addEventListener('click', () => {
+      overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
+      overviewDetailGroup = '';
+      overviewTariffMessage = '';
+      renderTariffs();
     });
+  });
+  content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
+    overviewSelectedTariff = '';
+    renderTariffs();
+  });
+  const tariffPriceInput = content.querySelector('[data-overview-tariff-price]');
+  const tariffBonusInputs = [...content.querySelectorAll('[data-overview-tariff-bonus]')];
+  const refreshTariffPreview = () => {
+    const amount = Number(String(tariffPriceInput?.value || '').replace(',', '.'));
+    const validPrice = tariffPriceInput?.value !== '' && Number.isFinite(amount) && amount > 0;
+    for (const months of [1,6,12]) {
+      const bonus = months === 1 ? 0 :
+        Number(content.querySelector('[data-overview-tariff-bonus="' + months + '"]')?.value || 0);
+      const safeBonus = Number.isFinite(bonus) && bonus >= 0 ? bonus : 0;
+      const gift = Math.round(months * 30 * safeBonus / 100);
+      const days = content.querySelector('[data-overview-tariff-days="' + months + '"]');
+      const cost = content.querySelector('[data-overview-tariff-sum="' + months + '"]');
+      if (days) days.textContent = (months * 30 + gift) + ' дней' + (gift ? ' (+' + gift + ')' : '');
+      if (cost) cost.textContent = validPrice
+        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽' : '—';
+    }
+  };
+  tariffPriceInput?.addEventListener('input', refreshTariffPreview);
+  tariffBonusInputs.forEach((input) => input.addEventListener('input', refreshTariffPreview));
+  content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const message = content.querySelector('[data-overview-tariff-message]');
+    const rawPrice = String(tariffPriceInput?.value || '').trim();
+    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : 0;
+    const priceMinor = Math.round(price * 100);
+    const bonus6 = Number(content.querySelector('[data-overview-tariff-bonus="6"]')?.value);
+    const bonus12 = Number(content.querySelector('[data-overview-tariff-bonus="12"]')?.value);
+    const validBonuses = [bonus6,bonus12].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 100);
+    if (!Number.isFinite(price) || price < 0 || Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
+      if (message) { message.textContent = 'Проверьте цену и бонусы (0–100%)'; message.classList.add('error'); }
+      return;
+    }
+    button.disabled = true;
+    if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
+    try {
+      overviewTariffData = await updateTariffSettings(button.dataset.overviewTariffSave, priceMinor, bonus6, bonus12);
+      overviewTariffStatus = 'ready';
+      overviewTariffMessage = priceMinor > 0 ? 'Тариф сохранён' : 'Бонусы сохранены; цена ещё не установлена';
+      renderTariffs();
+    } catch (error) {
+      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить тариф'; message.classList.add('error'); }
+      button.disabled = false;
+    }
+  });
+
+  content.querySelectorAll('[data-overview-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.section = button.dataset.overviewSection;
+      renderCurrentSection();
+    });
+  });
 }
 
 function renderOverview() {
@@ -660,17 +789,6 @@ function renderOverview() {
     { label: 'Записи', type: 'records', ...overviewToolSummary(toolRows.filter((row) => String(row.key || '').startsWith('records.'))) },
   ];
   const userStats = overviewUserStatsStatus === 'ready' ? overviewUserStats : null;
-  const liveTariffs = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
-  const tariffCards = [
-    { key: 'tariff.start', name: 'Start' },
-    { key: 'tariff.start-plus', name: 'Start+' },
-    { key: 'tariff.pro', name: 'Pro' },
-  ].map((tariff) => ({ ...tariff, ...liveTariffs.find((item) => item.key === tariff.key) }));
-  const selectedTariff = tariffCards.find((item) => item.key === overviewSelectedTariff);
-  const formatTariffPrice = (item) => item.key === 'tariff.start' ? '0 ₽'
-    : Number(item.priceMinor) > 0
-      ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
-      : '—';
   const bars = overviewRegistrationWeeks(registered, overviewWindowWeeks);
   const maxBar = Math.max(1, ...bars.map((bar) => bar.count));
   const recent = bars.reduce((sum, bar) => sum + bar.count, 0);
@@ -722,40 +840,6 @@ function renderOverview() {
                 <small>${escapeHtml(item.ownerProfile?.email || item.invitation?.email || '')}</small></span>
                 <span class="admin-overview-person-status">${item.ownerProfile ? escapeHtml(String(item.access?.commercialMode || 'DEMO')) : 'Ожидает'} <span aria-hidden="true">↗</span></span>
               </button>`).join('') : '<p class="admin-overview-empty">В этой категории пока никого нет.</p>'}
-          </div>
-        </section>` : ''}
-      <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
-        ${tariffCards.map((item) => `
-          <button type="button" class="admin-overview-metric${overviewSelectedTariff === item.key ? ' is-selected' : ''}"
-            data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}">
-            <span class="admin-overview-metric-label">${item.name}</span>
-            <strong class="admin-overview-metric-value">${formatTariffPrice(item)}</strong>
-            <span class="admin-overview-metric-hint">Подключено: ${Number.isInteger(item.connected) ? item.connected : '—'}</span>
-            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
-          </button>`).join('')}
-      </section>
-      ${overviewSelectedTariff && overviewTariffStatus === 'unavailable' ? `
-        <section class="admin-overview-detail"><p class="admin-overview-empty">Данные тарифов недоступны.</p></section>` : ''}
-      ${overviewSelectedTariff && overviewTariffStatus === 'ready' && selectedTariff ? `
-        <section class="admin-overview-detail" aria-label="Состав тарифа ${escapeHtml(selectedTariff.name)}">
-          <div class="admin-overview-detail-heading">
-            <div><strong>${escapeHtml(selectedTariff.name)}</strong></div>
-            <button type="button" class="admin-overview-close" data-overview-tariff-close aria-label="Свернуть тариф">×</button>
-          </div>
-          ${selectedTariff.key !== 'tariff.start' ? `
-            <div class="admin-overview-tariff-controls">
-              <label class="admin-field"><span>Стоимость, ₽</span>
-                <input type="number" min="1" step="0.01" inputmode="decimal" data-overview-tariff-price
-                  value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Установить цену">
-              </label>
-              <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить цену</button>
-              <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
-            </div>` : ''}
-          <div class="admin-overview-detail-list admin-overview-tariff-list">
-            ${selectedTariff.tools?.length ? selectedTariff.tools.map((tool) => `
-              <div class="admin-overview-person">
-                <span><strong>${escapeHtml(tool.name)}</strong></span>
-              </div>`).join('') : '<p class="admin-overview-empty">Инструменты не назначены.</p>'}
           </div>
         </section>` : ''}
       <div class="admin-overview-layout">
@@ -841,7 +925,7 @@ function renderOverview() {
     </div>`;
 
   if (overviewUserStatsStatus === 'idle') requestOverviewUserStats();
-  if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+
 
   content.querySelectorAll('[data-overview-group]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -859,40 +943,6 @@ function renderOverview() {
       overviewWindowWeeks = Number(button.dataset.overviewWeeks) || 8;
       renderOverview();
     });
-  });
-  content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
-    button.addEventListener('click', () => {
-      overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
-      overviewDetailGroup = '';
-      overviewTariffMessage = '';
-      renderOverview();
-    });
-  });
-  content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
-    overviewSelectedTariff = '';
-    renderOverview();
-  });
-  content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
-    const button = event.currentTarget;
-    const input = content.querySelector('[data-overview-tariff-price]');
-    const message = content.querySelector('[data-overview-tariff-message]');
-    const price = Number(String(input?.value || '').replace(',', '.'));
-    const priceMinor = Math.round(price * 100);
-    if (!Number.isFinite(price) || price <= 0 || Math.abs(price * 100 - priceMinor) > 0.000001) {
-      if (message) { message.textContent = 'Укажите корректную цену'; message.classList.add('error'); }
-      return;
-    }
-    button.disabled = true;
-    if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
-    try {
-      overviewTariffData = await updateTariffPrice(button.dataset.overviewTariffSave, priceMinor);
-      overviewTariffStatus = 'ready';
-      overviewTariffMessage = 'Цена сохранена';
-      renderOverview();
-    } catch (error) {
-      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить цену'; message.classList.add('error'); }
-      button.disabled = false;
-    }
   });
   content.querySelectorAll('[data-overview-tenant]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -1042,6 +1092,36 @@ function openRegistrationToolDrawer() {
       message.hidden = true;
     }
   });
+}
+
+function renderFinanceSection() {
+  setActiveSection('Финансы');
+  const content = app.querySelector('[data-content]');
+  if (!content) return;
+  content.innerHTML = '<div class="admin-heading"><h2>Финансы</h2></div>' +
+    '<section class="admin-card admin-empty-card">Загружаем счета и платежи…</section>';
+  void adminRequest('/finance/overview')
+    .then((data) => {
+      if (state.section !== 'finance') return;
+      const tenantName = (id) => {
+        const entry = state.tenants.find((item) => item.tenantId === id);
+        return entry?.ownerProfile?.name || entry?.invitation?.name || entry?.tenantName || id;
+      };
+      renderCommercialFinance(content, data, {
+        escapeHtml, tenantName,
+        onTenant: (tenantId) => {
+          state.section = 'tenants';
+          renderCurrentSection();
+          openAccessDrawer(tenantId);
+        },
+      });
+    })
+    .catch((error) => {
+      if (state.section !== 'finance') return;
+      content.innerHTML = '<div class="admin-heading"><h2>Финансы</h2></div>' +
+        '<section class="admin-card admin-empty-card" role="alert">' +
+        escapeHtml(error instanceof Error ? error.message : 'Данные финансов недоступны') + '</section>';
+    });
 }
 
 function renderTenants() {
