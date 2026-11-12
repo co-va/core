@@ -633,6 +633,9 @@ function renderTariffs() {
       ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
       : '—';
 
+  const existingSection = content.querySelector('.admin-tariff-section');
+  const currentScroll = typeof window !== 'undefined' ? window.scrollY : 0;
+  const currentSelection = existingSection?.querySelector('[data-overview-tariff][aria-pressed="true"]')?.dataset.overviewTariff;
   content.innerHTML = `
     <div class="admin-overview admin-tariff-section">
       <div class="admin-heading"><h2>Тарифы</h2></div>
@@ -664,6 +667,10 @@ function renderTariffs() {
                   <input type="number" min="0" step="0.01" inputmode="decimal" data-overview-tariff-price
                     value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Цена не установлена">
                 </label>
+                <div class="admin-overview-tariff-actions">
+                  <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
+                  <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
+                </div>
               </div>
               <div class="admin-overview-tariff-periods">
                 <div class="admin-overview-tariff-period-row is-heading">
@@ -688,10 +695,7 @@ function renderTariffs() {
                   </div>`;
                 }).join('')}
               </div>
-              <div class="admin-overview-tariff-footer">
-                <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
-                <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
-              </div>
+
             </div>` : '<p class="admin-overview-tariff-free">Бесплатный LIVE Start без ограничения срока. Цена и бонусы не требуются.</p>'}
           <div class="admin-overview-tariff-tools-heading">
             <strong>Состав тарифа</strong>
@@ -706,13 +710,17 @@ function renderTariffs() {
         </section>` : ''}
 
     </div>`;
+  // Tariff-card selection must not jump the document back to the Overview position.
+  if (existingSection && currentSelection !== overviewSelectedTariff && typeof window !== 'undefined') {
+    window.scrollTo(0, currentScroll);
+  }
   if (overviewTariffStatus === 'idle') requestOverviewTariffs();
   content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
     button.addEventListener('click', () => {
       overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
       overviewDetailGroup = '';
       overviewTariffMessage = '';
-      renderTariffs();
+      if (state.section === 'tariffs') renderTariffs();
     });
   });
   content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
