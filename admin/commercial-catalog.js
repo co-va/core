@@ -519,11 +519,11 @@ function toolRegisterRows(area, items, byKey, depth = 0, ancestorIds = [], paren
           '<button type="button" class="admin-tool-limit-infinity" data-tool-limit-infinity ' +
             'title="Без ограничения" aria-label="Установить ∞" disabled>∞</button></div></td>';
       }
-      return '<td class="admin-tool-tier-cell"><input type="checkbox" ' +
+      return '<td class="admin-tool-tier-cell"><label class="admin-tool-tier-check"><input type="checkbox" ' +
         'class="admin-tool-tier-checkbox" data-tier-level="' + level + '" data-tariff-tier="' + tierKey +
         '" checked disabled title="' + ['Start','Start+','Pro'][tierIndex] +
         '" aria-label="' + escapeHtml(toolDisplayName(item)) + ', ' +
-        ['Start','Start+','Pro'][tierIndex] + '"></td>';
+        ['Start','Start+','Pro'][tierIndex] + '"><span class="admin-tool-tier-mark" aria-hidden="true"></span></label></td>';
     }).join('');
     const readiness = item.readinessKey
       ? readinessSelect(item.readinessKey, byKey, 'admin-tool-child-status')
