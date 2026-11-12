@@ -529,6 +529,8 @@ let overviewSelectedTariff = '';
 let overviewTariffMessage = '';
 
 function requestOverviewTariffs(force = false) {
+  // The isolated Overview contract tests evaluate this section without imports.
+  if (typeof loadTariffs !== 'function') { overviewTariffStatus = 'unavailable'; return; }
   if (overviewTariffStatus === 'loading' || (!force && overviewTariffStatus !== 'idle')) return;
   overviewTariffStatus = 'loading';
   void loadTariffs(force)
@@ -544,7 +546,7 @@ function requestOverviewTariffs(force = false) {
     });
 }
 
-document.addEventListener('admin:tariff-changed', () => {
+if (typeof document !== 'undefined') document.addEventListener('admin:tariff-changed', () => {
   overviewTariffStatus = 'idle';
   overviewTariffData = null;
   if (state.section === 'overview') renderOverview();
