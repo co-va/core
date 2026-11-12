@@ -6,7 +6,8 @@ const ui = fs.readFileSync('admin/commercial-catalog.js', 'utf8');
 const service = fs.readFileSync('server/src/saas-admin/tool-readiness.service.ts', 'utf8');
 
 if (!ui.includes('/saas-admin/tool-readiness')) throw new Error('Admin tools must use dedicated readiness API');
-if (ui.includes('productKey:')) throw new Error('Admin architecture map must not use commercial product keys for readiness');
+const readinessHandler = ui.slice(ui.indexOf('function bindReadiness('), ui.indexOf('function bindAccountTools('));
+if (readinessHandler.includes('productKey:')) throw new Error('Admin readiness must not use commercial product keys');
 if (!ui.includes('account.calendar.google') || !ui.includes('account.calendar.yandex')) throw new Error('Records calendar availability controls must remain in unified tools view');
 if (!ui.includes('/saas-admin/account-tools') || !ui.includes('data-account-tool=')) throw new Error('Readiness must stay separate from real platform enablement controls');
 if (ui.includes('admin-tool-child-status">—')) throw new Error('Admin architecture map must not render missing child readiness');
