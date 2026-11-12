@@ -339,13 +339,13 @@ export class BookingFlowService {
       throw new BadRequestException('Укажите участников и услуги каждого участника');
     }
 
-    const context = await this.online.getContext(tenantId, workplaceKey);
+    const context = await this.online.getContext(tenantId, workplaceKey, objectValue(source.directRoute));
     const workplace = arrayValue(context.workplaces).find((item) => text(item?.key) === workplaceKey);
     if (!workplace) throw new BadRequestException('Рабочее пространство недоступно');
 
     const prepared = [] as Array<{ participant: BookingParticipant; procedureIds: string[]; duration: number }>;
     for (const participant of participants) {
-      const snapshots = await this.procedures.snapshots(tenantId, workplaceKey, participant.procedureIds);
+      const snapshots = await this.procedures.snapshots(tenantId, workplaceKey, participant.procedureIds, true);
       const duration = snapshots.reduce((sum, procedure) => sum + Math.max(0, Number(procedure?.duration || 0)), 0);
       if (!snapshots.length || duration <= 0) throw new BadRequestException(`Не удалось определить услуги для ${participant.name}`);
       prepared.push({ participant, procedureIds: snapshots.map((procedure) => text(procedure.id)), duration });
@@ -398,7 +398,7 @@ export class BookingFlowService {
           source: recordSource,
           sourceRequestId: `${bookingSessionId}:${item.participant.id}`,
           createdBy,
-        });
+        }, undefined, { allowDirectWorkplaceLink: context.directWorkplaceAccess === true });
         records.push(record);
         cursor += item.duration;
       }

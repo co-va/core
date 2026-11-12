@@ -189,7 +189,8 @@ export class RecordService {
     }
   }
 
-  async create(tenantId: string, input: JsonObject, position?: number, { createHistory = true } = {}) {
+  async create(tenantId: string, input: JsonObject, position?: number,
+    { createHistory = true, allowDirectWorkplaceLink = false } = {}) {
     const id = text(input.id) || randomUUID();
     const sourceRequestId = text(input.sourceRequestId);
     if (sourceRequestId) {
@@ -213,7 +214,8 @@ export class RecordService {
     const publicBooking = text(input.source) === 'online-booking' || text(input.source) === 'account-journal';
     if (publicBooking) {
       const workplace = await this.prisma.workplace.findUnique({ where: { tenantId_key: { tenantId, key: workplaceId } } });
-      if (!workplace || workplace.deletedAt || workplace.visibleInPublicBooking === false) {
+      if (!workplace || workplace.deletedAt || (workplace.visibleInPublicBooking === false
+        && !(text(input.source) === 'online-booking' && allowDirectWorkplaceLink))) {
         throw new BadRequestException('Рабочее пространство недоступно для онлайн-записи');
       }
     }
