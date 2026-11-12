@@ -171,8 +171,10 @@ if (!ui.includes("key === 'cabinet.profile.workspaces'") ||
     !ui.includes('data-tariff-tier')) {
   throw new Error('Three inherited tier switches and in-place numeric / infinity must be present');
 }
-if (!ui.includes("label: 'Рабочие пространства', kind: 'e'")) {
-  throw new Error('The workspace quantity row must be visible, not buried in K');
+if (!ui.includes("label: 'Рабочие пространства', kind: 'composition'") ||
+    !ui.includes("child.readinessKey === 'cabinet.profile.workspaces'") ||
+    !ui.includes("...child, kind: 'e'")) {
+  throw new Error('Workplace quantity must be visible only in Tools, not duplicated in account permissions');
 }
 if (!ui.includes('R — режим">Тип</th>') ||
     ui.includes('K — компонент">Тип</th>') ||
