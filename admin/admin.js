@@ -1227,10 +1227,10 @@ function accountToolRow(item, resolved, tenant, area, depth, parentKey, allowCom
   const product = allowCommercial ? (TOOL_COMMERCIAL_BINDINGS[key] || '') : '';
   const title = '<span class="admin-access-tool-name">' + escapeHtml(toolName(item)) + '</span>';
   return '<span class="admin-access-tool-row' + (locked && grant ? ' is-unavailable' : '') +
-    '" data-tool-kind="' + kind + '" data-tool-key="' + escapeHtml(key) + '">' +
+    '" data-tool-kind="' + kind + '" data-tool-depth="' + depth + '" data-tool-key="' + escapeHtml(key) + '">' +
     '<span class="admin-access-tool-identity">' + title + (limit ? '<span class="admin-access-inline-limit">' + limit + '</span>' : '') + '</span>' +
-    '<span class="admin-access-tool-grant">' + grant + '</span>' +
     '<span class="admin-access-tool-commercial"' + (product ? ' data-commercial-slot="' + escapeHtml(product) + '"' : '') + '></span>' +
+    '<span class="admin-access-tool-grant">' + grant + '</span>' +
     '</span>';
 }
 
