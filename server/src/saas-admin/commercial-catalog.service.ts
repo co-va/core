@@ -269,6 +269,31 @@ export class CommercialCatalogService {
     };
   }
 
+
+  // Public information for the landing and the Professional registration.
+  // Unapproved (zero-price) paid tariffs are visible but cannot be purchased.
+  async tariffOffers() {
+    const catalog = await this.tariffs();
+    return {
+      daysPerMonth: 30,
+      periods: [
+        { months: 1, paidDays: 30, bonusPercent: 0, bonusDays: 0, accessDays: 30 },
+        { months: 6, paidDays: 180, bonusPercent: 20, bonusDays: 36, accessDays: 216 },
+        { months: 12, paidDays: 360, bonusPercent: 50, bonusDays: 180, accessDays: 540 },
+      ],
+      professional: catalog.tiers.map((tier, index) => ({
+        ...tier,
+        free: index === 0,
+        purchasable: index === 0 || tier.priceMinor > 0,
+      })),
+      user: catalog.userTiers.map((tier, index) => ({
+        ...tier,
+        free: index === 0,
+        purchasable: index === 0 || tier.priceMinor > 0,
+      })),
+    };
+  }
+
   async updateTariffLimit(input: Record<string, unknown>, actorAdminId: string) {
     const toolKey = text(input.toolKey);
     const tariffKey = text(input.tariffKey);
