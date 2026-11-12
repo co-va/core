@@ -48,6 +48,7 @@ export const READINESS_KEYS = [
   'records.contacts',
   'records.integrations.google-calendar',
   'records.integrations.yandex-calendar',
+  'records.chat',
 ] as const;
 
 const READINESS_KEY_SET = new Set<string>(READINESS_KEYS);
