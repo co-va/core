@@ -57,7 +57,7 @@ if (!ui.includes("renderToolRegister('cabinet', 'Кабинет', 'Professional'
   throw new Error('Tools must be the two document-style registries');
 }
 if (ui.includes('data-commerce-folder')) throw new Error('Separate Commerce accordion has returned');
-if (!ui.includes('data-tool-expand=') || !ui.includes('data-tool-tariff') ||
+if (!ui.includes('data-tool-expand=') || !ui.includes('data-tariff-tier') ||
     !ui.includes('bindTariffAssignments(content)')) {
   throw new Error('Nested tool rows and inline tariff assignment controls are required');
 }
