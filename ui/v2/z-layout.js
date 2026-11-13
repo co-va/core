@@ -1,27 +1,34 @@
 import { v2ZDismissAffordance } from './z-affordance.js';
 
 const Z_VIEWPORT_OVERSCAN = '24px';
+// One geometry and one 12px spacing token for Z and Q.
+const SURFACE_HEADER_SPACING = '12px';
 
-const Z_HEADER_STYLE = [
+const SURFACE_HEADER_STYLE = [
   'position:relative',
   'z-index:20',
   'box-sizing:border-box',
   'min-height:28px',
   'margin:0 -18px',
   'padding:0 18px 0 0',
-  'display:flex',
+  `--v2-surface-header-spacing:${SURFACE_HEADER_SPACING}`,
+  'display:grid',
   'flex:0 0 auto',
-  'flex-direction:column',
-  'background:var(--v2-white,#fff)',
+  'grid-template-columns:24px minmax(0,1fr)',
+  'align-items:center',
+  'padding-top:var(--v2-surface-header-spacing)',
+  'padding-bottom:var(--v2-surface-header-spacing)',
+  'background:var(--v2-inner-surface,#F5F5F3)',
 ].join(';');
 
-const Z_HEADER_CONTENT_STYLE = [
+const SURFACE_HEADER_CONTENT_STYLE = [
   'box-sizing:border-box',
   'min-width:0',
+  'flex:1 1 auto',
   'padding-left:18px',
   'display:flex',
   'flex-direction:column',
-  'gap:8px',
+  'gap:var(--v2-surface-header-spacing)',
 ].join(';');
 
 const Z_BODY_STYLE = [
@@ -29,6 +36,8 @@ const Z_BODY_STYLE = [
   'min-height:0',
   'box-sizing:border-box',
   'flex:1 1 auto',
+  // The Z/Q body is never a horizontal rail. Its explicit child rails own pan-x.
+  // Keep vertical scrolling and the separate surface dismiss gesture intact.
   'overflow-y:auto',
   'overscroll-behavior:contain',
   '--v2-z-body-section-gap:20px',
@@ -57,14 +66,13 @@ function visibleWorkAreaStyle(style, kind = 'z') {
 function surfaceHeader(content = '', { kind = 'z', dismiss = true } = {}) {
   const data = kind === 'q' ? 'data-v2-q-header' : 'data-v2-z-header';
   const contentData = kind === 'q' ? 'data-v2-q-header-content' : 'data-v2-z-header-content';
-  const contentStyle = visibleWorkAreaStyle(Z_HEADER_CONTENT_STYLE, kind);
-  return `<div ${data} style="${Z_HEADER_STYLE}">${dismiss ? v2ZDismissAffordance() : ''}<div ${contentData} style="${contentStyle}">${content}</div></div>`;
+  const contentStyle = visibleWorkAreaStyle(SURFACE_HEADER_CONTENT_STYLE, kind);
+  return `<div ${data} style="${SURFACE_HEADER_STYLE}">${dismiss ? v2ZDismissAffordance() : ''}<div ${contentData} style="${contentStyle}">${content}</div></div>`;
 }
 
 function surfaceBody(content = '', { kind = 'z' } = {}) {
   const data = kind === 'q' ? 'data-v2-q-body' : 'data-v2-z-body';
-  const bodyStyle = visibleWorkAreaStyle(Z_BODY_STYLE, kind);
-  return `<div ${data} style="${bodyStyle}">${content}</div>`;
+  return `<div ${data} style="${visibleWorkAreaStyle(Z_BODY_STYLE, kind)}">${content}</div>`;
 }
 
 export function v2ZHeader(content = '') {
