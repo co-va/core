@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../core/tariff-benefits.js';
 
 const source = readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../admin/admin.css', import.meta.url), 'utf8');
@@ -72,6 +73,7 @@ const context = {
   escapeHtml: (text) => String(text || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
   openAccessDrawer: (tenantId) => { openedTenant = tenantId; },
   renderCurrentSection: () => { currentSectionRendered = state.section; },
+  tariffBenefits, tariffHeadline, tariffNewBenefits,
   adminRequest: async () => { throw new Error('Preview backend does not have the new endpoint'); },
 };
 runInNewContext(source.slice(start, end) + '\nrenderOverview();', context);
@@ -162,7 +164,10 @@ assert.match(markup, /data-overview-tariff-bonus="6"/);
 assert.match(markup, /data-overview-tariff-bonus="12"/);
 assert.match(markup, /216 дней \(\+36\)/, '6-month gift is paid days plus bonus');
 assert.match(markup, /540 дней \(\+180\)/, '12-month gift is paid days plus bonus');
-assert.match(markup, /Сохранить тариф/, 'Price and bonus settings are saved as one configuration');
+assert.match(markup, /data-overview-tariff-save="tariff.start-plus"/, 'Price and bonuses have one save action for the selected tier');
+assert.match(markup, /data-overview-tariff-price="tariff.start-plus"/, 'Start+ has a visible price input');
+assert.match(markup, /data-overview-tariff-price="tariff.pro"/, 'Pro has a visible price input');
+assert.doesNotMatch(markup, /Подключено: 4/, 'Offer cards do not confuse accounts with included benefits');
 assert.match(markup, /data-overview-section="capabilities"/, 'Tools composition has one canonical editor');
 
 listeners.get('group')();
