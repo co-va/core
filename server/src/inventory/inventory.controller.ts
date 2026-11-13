@@ -31,6 +31,15 @@ export class InventoryController {
     return this.inventory.updateItem(request.auth!.tenantId, itemId, body);
   }
 
+  @Post('items/:itemId/move')
+  moveItem(
+    @Req() request: AuthenticatedRequest,
+    @Param('itemId') itemId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inventory.moveItem(request.auth!.tenantId, itemId, body);
+  }
+
   @Post('items/:itemId/offers')
   createSupplierOffer(
     @Req() request: AuthenticatedRequest,
