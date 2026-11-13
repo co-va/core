@@ -162,8 +162,12 @@ runInNewContext(tariffSource.replace(/renderOverview\(\);\s*$/, 'renderTariffs()
 assert.match(markup, /Цена за 30 дней, ₽/, 'The tariff editor defines the monthly unit');
 assert.match(markup, /data-overview-tariff-bonus="6"/);
 assert.match(markup, /data-overview-tariff-bonus="12"/);
-assert.match(markup, /216 дней \(\+36\)/, '6-month gift is paid days plus bonus');
-assert.match(markup, /540 дней \(\+180\)/, '12-month gift is paid days plus bonus');
+assert.match(markup, /180 оплаченных дней/, '6-month duration is explicitly paid days');
+assert.match(markup, /\+36 дней в подарок/, '6-month bonus is explained without mental arithmetic');
+assert.match(markup, /216 дней/, '6-month total access is 216 days');
+assert.match(markup, /\+180 дней в подарок \(6 месяцев\)/, '12-month bonus equals another six months');
+assert.match(markup, /540 дней/, '12-month total access is 540 days');
+assert.match(markup, /Бонус увеличивает время доступа, а не уменьшает цену/, 'Bonuses are not price discounts');
 assert.match(markup, /data-overview-tariff-save="tariff.start-plus"/, 'Price and bonuses have one save action for the selected tier');
 assert.match(markup, /data-overview-tariff-price="tariff.start-plus"/, 'Start+ has a visible price input');
 assert.match(markup, /data-overview-tariff-price="tariff.pro"/, 'Pro has a visible price input');
