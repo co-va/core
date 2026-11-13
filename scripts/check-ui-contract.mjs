@@ -93,6 +93,33 @@ for (const path of ['AGENTS.md', 'PROJECT_STATE.md']) {
 }
 if (role !== 'core' && existsSync(resolve(root, 'UI_ALPHABET.md')))
   problems.push('UI_ALPHABET.md must not be duplicated outside Core');
+
+if (role === 'core') {
+  const z = read('ui/v2/z-layout.js');
+  const v2 = read('ui/v2/v2.css');
+  const modal = read('ui/modals/modal.css');
+  const input = read('ui/inputs/inputs.css');
+  const css = read('css/style.css');
+  const admin = read('admin/admin.css');
+  if (!z.includes("const SURFACE_HEADER_SPACING = '12px'") ||
+      !z.includes("'padding-top:var(--v2-surface-header-spacing)'") ||
+      !z.includes("'padding-bottom:var(--v2-surface-header-spacing)'") ||
+      !z.includes("'gap:var(--v2-surface-header-spacing)'"))
+    problems.push('Core shared Z/Q Header must use one 12px token');
+  if (!v2.includes('padding:0 18px calc(24px + env(safe-area-inset-bottom))') ||
+      !v2.includes('bottom:0;padding-top:0}'))
+    problems.push('Core shared Z/Q must not duplicate Header top padding');
+  if (!v2.includes('.v2-q-title,.v2-z-title{box-sizing:border-box;display:flex;align-items:center;width:100%;min-width:0;height:46px;min-height:46px;max-height:46px;'))
+    problems.push('Core Z/Q text title must be exactly 46px');
+  if (!modal.includes('.modal-sheet.modal--surface-app:not(.modal--technical){background:var(--v2-white,#fff)}') ||
+      !admin.includes('.admin-mobile-app .v2-z{background:var(--v2-white,#fff)}'))
+    problems.push('Core Z/Q surfaces must be white');
+  if (!css.includes('--ui-field-height:46px;') ||
+      !input.includes('height:var(--ui-field-height);min-height:var(--ui-field-height);max-height:var(--ui-field-height)') ||
+      !admin.includes('.admin-mobile-app .admin-field select{'))
+    problems.push('Core shared mobile editor fields must be 46px');
+}
+
 if (problems.length) {
   problems.forEach((problem) => console.error('UI CONTRACT FAILED: ' + problem));
   process.exitCode = 1;
