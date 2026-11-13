@@ -262,3 +262,9 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - User PR [#21](https://github.com/co-va/user/pull/21) слит в `main`; проверенный merge `bfb8b539b74a3cb03454712d2d3f1e024d3b0130`. Именно `co-va/user/main` — выпущенный эталон; Core/staging `UI_ALPHABET.md` теперь прямо ссылается на него. `user/staging` остаётся для разработки.
 - Пройдено шесть PR workflow: Repository, Shared UI, Profile, Record, Staging Smoke, Check (включая браузерную геометрию). Продвижение Professional/Core к `main` этим действием не производится — соответствующие ветки разрабатываются независимо, их изменения и приёмка не подменяются.
 - По юридическим документам: Core/main исходники `server/src/account/account-runtime.controller.ts` и `server/src/document-registry/account-document.service.ts` содержат `privacyPolicy` в `GET /account/platform-state` и миграцию `20261111190000_platform_user_privacy_policy`; ответ работающего production API отдельно не подтверждён (нет доступа к авторизованному runtime). Не считать deploy доказанным по CI.
+
+### 2026-11-13 — Коррекция цвета оболочки Z/Q (приоритет последнего согласования)
+
+- По уточнению владельца Z/Q и Header — тёплый `#F5F5F3` (`--v2-zq-surface`), в том числе Z вокруг Журнала. Полосатое рабочее поле Журнала `.time-timeline` и поля ввода/селекторы остаются белыми `#FFFFFF`. Это заменяет прежнюю запись о белой внешней поверхности Z/Q. H/X/S и технические модалы не менялись.
+- Центральный `UI_ALPHABET.md` обновлён, существующий `scripts/check-ui-contract.mjs` проверяет новое правило, мобильный Admin приведён к нему без изменения desktop-сетки. Размеры 46 px и отступы Header 12 px остаются прежними.
+- По User: прежний `user/main` commit `bfb8b539` ещё содержит старый белый фон; исправление цвета будет считаться выпущенным эталоном только после отдельного PR с CI. Не объявлять весь эталон полностью синхронизированным до фактического обновления User/main.

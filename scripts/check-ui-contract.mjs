@@ -107,13 +107,16 @@ if (role === 'core') {
       !z.includes("'gap:var(--v2-surface-header-spacing)'"))
     problems.push('Core shared Z/Q Header must use one 12px token');
   if (!v2.includes('padding:0 18px calc(24px + env(safe-area-inset-bottom))') ||
-      !v2.includes('bottom:0;padding-top:0}'))
+      !v2.includes('bottom:0;padding-top:0;background:var(--v2-zq-surface)}'))
     problems.push('Core shared Z/Q must not duplicate Header top padding');
   if (!v2.includes('.v2-q-title,.v2-z-title{box-sizing:border-box;display:flex;align-items:center;width:100%;min-width:0;height:46px;min-height:46px;max-height:46px;'))
     problems.push('Core Z/Q text title must be exactly 46px');
-  if (!modal.includes('.modal-sheet.modal--surface-app:not(.modal--technical){background:var(--v2-white,#fff)}') ||
-      !admin.includes('.admin-mobile-app .v2-z{background:var(--v2-white,#fff)}'))
-    problems.push('Core Z/Q surfaces must be white');
+  if (!v2.includes('--v2-zq-surface:#F5F5F3;') ||
+      !v2.includes('background:var(--v2-zq-surface);color:var(--v2-ink);box-shadow:-6px 2px 18px rgba(0,0,0,.10)') ||
+      !z.includes("'background:var(--v2-zq-surface,#F5F5F3)'") ||
+      !modal.includes('.modal-sheet.modal--surface-app:not(.modal--technical){background:var(--v2-zq-surface,#F5F5F3)}') ||
+      !admin.includes('.admin-mobile-app .v2-z{background:var(--v2-zq-surface,#F5F5F3)}'))
+    problems.push('Core Z/Q shells and Headers must be warm #F5F5F3, preserving white input fields');
   if (!css.includes('--ui-field-height:46px;') ||
       !input.includes('height:var(--ui-field-height);min-height:var(--ui-field-height);max-height:var(--ui-field-height)') ||
       !admin.includes('.admin-mobile-app .admin-field select{'))

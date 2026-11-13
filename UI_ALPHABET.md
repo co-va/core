@@ -42,7 +42,7 @@
 
 | Контракт | Строгое правило | Эталонные реализации User |
 | --- | --- | --- |
-| `shared.modal` / `shared.shell` | Z и Q — ровно `#FFFFFF`, без кремового `--app-bg:#F5F5F3`; H остаётся графитовым `#2F3338`. Не менять X/S/technical только ради этого правила. | `ui/v2/v2.css`, `ui/modals/modal.css` |
+| `shared.modal` / `shared.shell` | Z и Q, включая Header, — **светлый тёплый серо-бежевый `#F5F5F3`** (`--v2-zq-surface`), не белый. Поля ввода, селекторы и **полосатая сетка Журнала внутри Z** остаются белыми `#FFFFFF` для глубины. H — графитовый `#2F3338`; X/S/technical не менять. Токен Z/Q независим от переопределений `--app-bg`. | `ui/v2/v2.css`, `ui/modals/modal.css` |
 | Поля — `shared.input` | **Ровно 46 px** у однострочных текстовых полей, телефона, Email, ссылок и аналогичных редакторов: `height = min-height = max-height = 46px`. `textarea` имеет самостоятельную высоту. Обычные кнопки **сохраняют 48 px**; нельзя менять их общий токен ради полей. | `css/style.css` (`--ui-field-height:46px`), `ui/inputs/inputs.css`, `ui/profile/profile.css`, `ui/auth/auth.css` |
 | Селекторы — `shared.selector` | **Ровно 46 px** у селектора, поиска внутри него, строки выбора и пикеров времени, длительности и цвета; даже двухстрочное значение не увеличивает высоту. `height = min-height = max-height = 46px`. | `ui/selectors/selectors.css`, `ui/time/time.css`, `ui/duration/duration.css`, `ui/colors/colors.css` |
 | `shared.modal` / `shared.shell` — Header | Один Header для Z и Q. **12 px сверху, 12 px снизу, 12 px между вставленными элементами**. Увеличивается средняя часть только при добавлении новых элементов; стрелка центрирована. Вставленный текстовый заголовок — прозрачная ячейка **строго 46 px** (не текстовый input, не min-height без верхнего ограничения). Дополнительные отступы Z 14/22 px и Q 18/20 px запрещены. | `ui/v2/z-layout.js`, `ui/v2/v2.css`, `ui/v2/surface-header.css`, `user/note-view.js` |
@@ -51,8 +51,10 @@
 
 **Сверка исполнений (13.11.2026):**
 - User: **`co-va/user/main`** merge `bfb8b539b74a3cb03454712d2d3f1e024d3b0130`, PR #21 — действующий эталон четырёх правил; все шесть проверок PR успешны (Repository, Shared UI, Profile, Record, Staging Smoke, Check с браузерным тестом вычисленной геометрии).
-- Professional: `co-va/professional/staging` `0b1a270ded84a97501eea44c2da6d6d008c296c9` — внедрены белая Q, фиксированные 46 px у заголовков/полей/селекторов и уже имевшиеся 12 px Header. Статическая сверка исходников пройдена; **актуального прогона CI/браузерной приёмки этого SHA нет**, не считать подтверждённым на устройстве.
-- Core / мобильный Admin: `co-va/core/staging` `ed6cee63eb73b3d4cb09531c23893686fb2244aa` — мобильные Z/Q, 12 px Header, 46 px полей и текстовых заголовков, белые поверхности. `Check Core`, `Onboarding Smoke`, `Document Viewer Mobile Runtime`, `Staging Preview Availability` и остальные workflow этого SHA — PASS. Десктоп Admin и business/API вне области изменения.
+- Professional: `co-va/professional/staging` `0b1a270ded84a97501eea44c2da6d6d008c296c9` — внедрены фиксированные 46 px у заголовков/полей/селекторов и уже имевшиеся 12 px Header. Статическая сверка исходников пройдена; **актуального прогона CI/браузерной приёмки этого SHA нет**, не считать подтверждённым на устройстве.
+- Core / мобильный Admin: `co-va/core/staging` `ed6cee63eb73b3d4cb09531c23893686fb2244aa` — мобильные Z/Q, 12 px Header, 46 px полей и текстовых заголовков; исходно белые поверхности заменяются на тёплый `#F5F5F3` отдельным уточнением 13.11.2026. `Check Core`, `Onboarding Smoke`, `Document Viewer Mobile Runtime`, `Staging Preview Availability` и остальные workflow этого SHA — PASS. Десктоп Admin и business/API вне области изменения.
+
+**Уточнение владельца от 13.11.2026 (приоритетнее раннего цвета):** общий фон Z/Q — тёплый `#F5F5F3`; белые поля и полосатое рабочее поле Журнала — `#FFFFFF`. Изменение цветов должно пройти CI и отдельный PR в `User/main`; прежний merge `bfb8b539` подтверждает геометрию, **не обновлённый цвет**.
 
 **Статус:** геометрия эталона подтверждена владельцем и CI в User, но визуальная приёмка всех потребителей в Professional/Admin не следует автоматически. В каждой реализации отдельно сохранять commit SHA, проверку и факт приёмки; не маркировать весь продукт как `locked` без доказательств.
 

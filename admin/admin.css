@@ -278,7 +278,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-drawer .admin-actions{background:var(--white)}
 @media(max-width:760px){
-  .admin-mobile-app .v2-z{background:var(--v2-white,#fff)}
+  .admin-mobile-app .v2-z{background:var(--v2-zq-surface,#F5F5F3)}
   .admin-mobile-app .admin-content{background:transparent}
   .admin-mobile-app .admin-card,
   .admin-mobile-app .admin-tool-row,
