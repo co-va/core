@@ -838,7 +838,8 @@ function renderTariffs() {
     const input = content.querySelector('[data-overview-tariff-price="' + key + '"]');
     const message = content.querySelector('[data-overview-tariff-message="' + key + '"]');
     const rawPrice = String(input?.value || '').trim();
-    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : NaN;
+    // An empty price is an unapproved tariff (0), not an invalid bonus draft.
+    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : 0;
     const priceMinor = Math.round(price * 100);
     const readBonus = (months) => {
       const edited = overviewSelectedTariff === key
@@ -850,7 +851,7 @@ function renderTariffs() {
     const bonus12 = readBonus(12);
     const validBonuses = [bonus6, bonus12].every((value) =>
       Number.isSafeInteger(value) && value >= 0 && value <= 100);
-    if (!Number.isFinite(price) || price <= 0 || priceMinor > 100000000 ||
+    if (!Number.isFinite(price) || price < 0 || priceMinor > 100000000 ||
         Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
       if (message) { message.textContent = 'Введите цену и проверьте бонусы'; message.classList.add('error'); }
       return;
@@ -1813,11 +1814,11 @@ function openAccessDrawer(tenantId) {
 }
 
 document.addEventListener('admin:tool-readiness-changed', () => {
-  overviewTariffStatus = 'idle';
-  overviewTariffData = null;
   void refreshData().then(() => {
     if (state.section === 'tariffs') renderTariffs();
-  }).catch(() => {});
+  }).catch(() => {
+    // Keep the last confirmed state if the Admin API is temporarily unavailable.
+  });
 });
 
 function capabilityEditor(capability, resolved) {
