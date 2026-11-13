@@ -10,6 +10,7 @@ const buildToken = rawToken.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'buil
 const platformFiles = [
   'css/style.css',
   'core/auth.js',
+  'core/tariff-benefits.js',
   'core/environment.js',
   'core/password-reset-page.js',
   'core/phone/index.js',
