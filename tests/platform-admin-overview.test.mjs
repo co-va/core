@@ -254,4 +254,38 @@ assert.deepEqual(savedDraft, ['tariff.start-plus', 0, 20, 50],
 assert.match(markup, /Цена не установлена/, 'Draft tariff remains visibly unpriced');
 assert.match(markup, /Не предлагается/, 'Unpriced tariff is not advertised as saleable');
 
+// Readiness is unknown until Core replies; it must not appear as an editable NOT_READY.
+const adminCatalogCode = readFileSync(new URL('../admin/commercial-catalog.js', import.meta.url), 'utf8');
+const readinessSelectCode = adminCatalogCode.slice(
+  adminCatalogCode.indexOf('function readinessSelect('),
+  adminCatalogCode.indexOf('function aggregateKeys(')
+);
+const isolatedReadinessSelect = runInNewContext(readinessSelectCode + '\nreadinessSelect', {
+  readinessValue: (item) => item?.status || 'NOT_READY',
+  readinessOptions: (value) => '<option value="READY"' + (value === 'READY' ? ' selected' : '') + '>Готово</option>',
+  escapeHtml: (value) => String(value),
+});
+const unknownReadiness = isolatedReadinessSelect('cabinet.people', new Map(), 'status');
+assert.match(unknownReadiness, /Нет данных/, 'Unloaded status must be explicitly unknown');
+assert.match(unknownReadiness, / disabled>/, 'Unknown readiness may not be changed');
+const knownReadiness = isolatedReadinessSelect('cabinet.people',
+  new Map([['cabinet.people', { status: 'READY' }]]), 'status');
+assert.doesNotMatch(knownReadiness, / disabled>/, 'Confirmed readiness becomes editable');
+const hydrateReadinessCode = adminCatalogCode.slice(
+  adminCatalogCode.indexOf('function hydrateReadiness('),
+  adminCatalogCode.indexOf('function hydrateAllReadiness(')
+);
+const isolatedHydrateReadiness = runInNewContext(hydrateReadinessCode + '\nhydrateReadiness', {
+  readinessByKey: (items) => new Map(items.map((item) => [item.key, item])),
+  readinessValue: (item) => item?.status || 'NOT_READY',
+});
+const statusSelect = { dataset: { readinessKey: 'cabinet.people' }, value: '', disabled: true, title: '' };
+const statusRoot = { querySelectorAll: (selector) => selector === '[data-readiness-key]' ? [statusSelect] : [] };
+isolatedHydrateReadiness(statusRoot, []);
+assert.equal(statusSelect.disabled, true, 'Empty API response cannot silently enable readiness editing');
+assert.equal(statusSelect.value, '', 'Empty API response cannot fabricate NOT_READY');
+isolatedHydrateReadiness(statusRoot, [{ key: 'cabinet.people', status: 'READY' }]);
+assert.equal(statusSelect.disabled, false, 'Confirmed API data enables editing');
+assert.equal(statusSelect.value, 'READY', 'Confirmed API state is rendered without inventing a default');
+
 console.log('Platform Admin Overview data boundaries, labels and actions: PASS');
