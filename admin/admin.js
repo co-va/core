@@ -1,5 +1,5 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
-import { tariffBenefits, tariffHeadline } from '../core/tariff-benefits.js';
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../core/tariff-benefits.js';
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
@@ -629,6 +629,22 @@ function renderTariffs() {
     { key: 'tariff.pro', name: 'Pro' },
   ].map((tariff) => ({ ...tariff, ...liveTariffs.find((item) => item.key === tariff.key) }));
   const selectedTariff = tariffCards.find((item) => item.key === overviewSelectedTariff);
+  const previewBenefits = (tier, index) => {
+    const previous = index > 0 ? tariffCards[index - 1] : null;
+    const all = tariffBenefits(tier);
+    const priorBenefits = previous ? tariffBenefits(previous) : [];
+    const inherits = priorBenefits.length > 0 && priorBenefits.every((benefit) =>
+      all.some((entry) => entry.title === benefit.title));
+    const extra = inherits ? tariffNewBenefits(tier, previous) : all;
+    const summary = [
+      ...(inherits ? [`Все возможности ${previous.name}`] : []),
+      ...extra.map((benefit) => benefit.title),
+    ];
+    return summary.length
+      ? summary.slice(0, 5).map((name) => `<span>✓ ${escapeHtml(name)}</span>`).join('')
+        + (summary.length > 5 ? `<span>+ ещё ${summary.length - 5}</span>` : '')
+      : '<span>Состав не настроен</span>';
+  };
   const formatTariffPrice = (item) => item.key === 'tariff.start' ? '0 ₽'
     : Number(item.priceMinor) > 0
       ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
@@ -644,17 +660,14 @@ function renderTariffs() {
         <strong>Кабинет <span>/ Professional</span></strong>
       </div>
       <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
-        ${tariffCards.map((item) => `
+        ${tariffCards.map((item, index) => `
           <button type="button" class="admin-overview-metric${overviewSelectedTariff === item.key ? ' is-selected' : ''}"
             data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}">
             <span class="admin-overview-metric-label">${item.name}</span>
             <strong class="admin-overview-metric-value">${formatTariffPrice(item)}</strong>
             <span class="admin-tariff-headline">${escapeHtml(tariffHeadline(item.key))}</span>
             <span class="admin-tariff-includes">Что вы получите</span>
-            <span class="admin-tariff-preview-list">${tariffBenefits(item).length
-              ? tariffBenefits(item).slice(0, 4).map((benefit) => `<span>✓ ${escapeHtml(benefit.title)}</span>`).join('')
-                + (tariffBenefits(item).length > 4 ? `<span>+ ещё ${tariffBenefits(item).length - 4}</span>` : '')
-              : '<span>Состав не настроен</span>'}</span>
+            <span class="admin-tariff-preview-list">${previewBenefits(item, index)}</span>
             <span class="admin-overview-metric-hint">Подключено: ${Number.isInteger(item.connected) ? item.connected : '—'}</span>
             <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
           </button>`).join('')}
