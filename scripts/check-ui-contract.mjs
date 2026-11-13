@@ -36,7 +36,9 @@ const expectedIds = [
   'shared.list', 'shared.button', 'shared.input',
   'shared.selector', 'shared.card-appearance', 'shared.shell',
 ];
-const rows = [...source.matchAll(/^\|\s*\x60(shared\.[a-z][a-z-]*)\x60\s*\|([^\n]+)$/gm)];
+const registryStart = source.indexOf('| Контрактный ID |');
+const registryTable = registryStart < 0 ? '' : source.slice(registryStart).split('\n\n')[0];
+const rows = [...registryTable.matchAll(/^\|\s*\x60(shared\.[a-z][a-z-]*)\x60\s*\|([^\n]+)$/gm)];
 const counts = new Map();
 for (const row of rows) counts.set(row[1], (counts.get(row[1]) || 0) + 1);
 const problems = [];
