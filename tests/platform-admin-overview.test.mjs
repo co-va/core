@@ -314,4 +314,43 @@ isolatedHydrateReadiness(statusRoot, [{ key: 'cabinet.people', status: 'READY' }
 assert.equal(statusSelect.disabled, false, 'Confirmed API data enables editing');
 assert.equal(statusSelect.value, 'READY', 'Confirmed API state is rendered without inventing a default');
 
+
+// Exercise the real click handler: every card sends only its own publication change.
+const publicationHandlerStart = source.indexOf("  content.querySelectorAll('[data-overview-tariff-publication]').forEach(");
+const publicationHandlerEnd = source.indexOf("  content.querySelectorAll('[data-overview-section]')", publicationHandlerStart);
+assert.ok(publicationHandlerStart > 0 && publicationHandlerEnd > publicationHandlerStart,
+  'Per-tariff publication handler exists');
+const publicationButtons = ['tariff.start', 'tariff.start-plus', 'tariff.pro'].map((key) => ({
+  dataset: { overviewTariffPublication: key },
+  disabled: false,
+  addEventListener(type, callback) { if (type === 'click') this.click = callback; },
+}));
+const publicationRequests = [];
+const publicationContext = {
+  content: {
+    querySelectorAll: (selector) => selector === '[data-overview-tariff-publication]' ? publicationButtons : [],
+    querySelector: () => ({ textContent: '', classList: { add() {} } }),
+  },
+  tariffCards: [
+    { key: 'tariff.start', isSaleable: true, priceMinor: 0 },
+    { key: 'tariff.start-plus', isSaleable: false, priceMinor: 100000 },
+    { key: 'tariff.pro', isSaleable: false, priceMinor: 150000 },
+  ],
+  updateTariffPublication: async (key, publish) => {
+    publicationRequests.push([key, publish]);
+    return { tiers: [] };
+  },
+  overviewTariffData: null,
+  overviewTariffStatus: 'idle',
+  renderTariffs: () => {},
+};
+runInNewContext(source.slice(publicationHandlerStart, publicationHandlerEnd), publicationContext);
+for (const action of publicationButtons) {
+  assert.equal(typeof action.click, 'function', 'Each card gets a click handler');
+  await action.click();
+}
+assert.deepEqual(publicationRequests, [
+  ['tariff.start', false], ['tariff.start-plus', true], ['tariff.pro', true],
+], 'Each publication changes only the selected tier; no readiness-based gate');
+
 console.log('Platform Admin Overview data boundaries, labels and actions: PASS');
