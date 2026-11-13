@@ -44,13 +44,13 @@ export function renderCommercialFinance(content, data, {
           <strong>${price(summary.pendingMinor)}</strong>
           <span>${Number(summary.pendingOrders || 0)} счетов</span>
         </section>
-        <section class="admin-stat"><span>Платежи, подтверждённые в Core</span>
+        <section class="admin-stat"><span>Отмечено как оплачено</span>
           <strong>${price(summary.confirmedMinor)}</strong>
           <span>${Number(summary.confirmedPayments || 0)} платежей</span>
         </section>
-        <section class="admin-stat"><span>Не распределены по счёту / кошельку</span>
+        <section class="admin-stat"><span>Без указанного кошелька</span>
           <strong>${Number(summary.paymentsWithoutWallet || 0)}</strong>
-          <span>Из подтверждённых платежей</span>
+          <span>Среди оплаченных</span>
         </section>
       </div>
       <section class="admin-card admin-finance-info">
@@ -60,7 +60,7 @@ export function renderCommercialFinance(content, data, {
           <div><span>Реквизиты и инструкция</span><strong>${setup.instructionsConfigured ? 'Настроены' : 'Не настроены'}</strong></div>
           <div><span>Сверка с банком</span><strong>Не подключена</strong></div>
         </div>
-        <p>Платёж перечисляется по указанным реквизитам или ссылке — не во внутренний кошелёк платформы. Статус «Оплачено» означает подтверждение в Core, а не доказательство поступления по банковской выписке.</p>
+        <p>«Оплачено» — отметка в системе. Фактическое поступление денег нужно проверять по банковской выписке.</p>
       </section>
       <section class="admin-card admin-finance-ledger">
         <h3>Счета <span>${orders.length ? '(последние ' + orders.length + ')' : ''}</span></h3>
@@ -96,7 +96,7 @@ export function renderCommercialFinance(content, data, {
                 <td class="admin-finance-amount">${price(payment.amountMinor,payment.currency)}</td>
                 <td>${payment.provider === 'MANUAL' ? 'Ручное подтверждение' : safe(payment.provider)}</td>
                 <td>${payment.walletKey ? safe(payment.walletKey) : 'Не назначено'}</td>
-                <td>${payment.status === 'SUCCEEDED' ? 'Подтверждено в Core' : status(payment.status)}</td>
+                <td>${payment.status === 'SUCCEEDED' ? 'Отмечено как оплачено' : status(payment.status)}</td>
               </tr>`).join('') : '<tr><td colspan="6">Платежей пока нет</td></tr>'}
             </tbody>
           </table>
