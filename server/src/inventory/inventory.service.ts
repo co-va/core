@@ -486,6 +486,10 @@ export class InventoryService {
 
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
+    // Public manual number writes must carry the last visible value. Internal
+    // transfer/import transactions may pass their own DB context instead.
+    if (!db && 'position' in source && !('expectedPosition' in source))
+      throw new BadRequestException('Обновите склад перед изменением номера.');
     // A number edit or company transfer is atomic with its order adjustment.
     if (!db && ('position' in source || 'manufacturer' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
@@ -498,6 +502,11 @@ export class InventoryService {
       await this.lockInventoryOrder(owner, tenantId);
     const current = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!current) throw new NotFoundException('Позиция склада не найдена');
+    if ('position' in source && 'expectedPosition' in source
+      && (!Number.isSafeInteger(source.expectedPosition)
+        || Number(source.expectedPosition) !== Number(current.position))) {
+      throw new BadRequestException('Порядок изменился в другом окне. Обновите склад.');
+    }
 
     const data: AnyRecord = {};
     if ('name' in source) {
