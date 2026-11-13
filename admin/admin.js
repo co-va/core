@@ -1,8 +1,9 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/tariff-benefits.js';
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, loadTariffs, updateTariffSettings, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublication, summarizeTariffReadiness, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { renderCommercialFinance } from './commercial-finance.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
@@ -538,8 +539,9 @@ function requestOverviewTariffs(force = false) {
   if (typeof loadTariffs !== 'function') { overviewTariffStatus = 'unavailable'; return; }
   if (overviewTariffStatus === 'loading' || (!force && overviewTariffStatus !== 'idle')) return;
   overviewTariffStatus = 'loading';
-  void loadTariffs(force)
-    .then((data) => {
+  void Promise.all([loadTariffs(force), adminRequest('/tool-readiness').catch(() => null)])
+    .then(([data, readiness]) => {
+      if (Array.isArray(readiness)) state.toolReadiness = readiness;
       overviewTariffData = data;
       overviewTariffStatus = 'ready';
     })
@@ -555,6 +557,16 @@ if (typeof document !== 'undefined') document.addEventListener('admin:tariff-cha
   overviewTariffStatus = 'idle';
   overviewTariffData = null;
   if (state.section === 'tariffs') renderTariffs();
+});
+
+if (typeof document !== 'undefined') document.addEventListener('admin:tool-readiness-changed', () => {
+  void adminRequest('/tool-readiness').then((items) => {
+    state.toolReadiness = Array.isArray(items) ? items : [];
+    if (state.section === 'tariffs') renderTariffs();
+  }).catch(() => {
+    state.toolReadiness = [];
+    if (state.section === 'tariffs') renderTariffs();
+  });
 });
 
 function requestOverviewUserStats(force = false) {
@@ -628,13 +640,54 @@ function renderTariffs() {
     { key: 'tariff.pro', name: 'Pro' },
   ].map((tariff) => ({ ...tariff, ...liveTariffs.find((item) => item.key === tariff.key) }));
   const selectedTariff = tariffCards.find((item) => item.key === overviewSelectedTariff);
-  const formatTariffPrice = (item) => item.key === 'tariff.start' ? '0 ₽'
-    : Number(item.priceMinor) > 0
-      ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
-      : '—';
+  const readinessFor = (tier) => summarizeTariffReadiness(
+    tier.key, overviewTariffData?.assignments || {}, state.toolReadiness || []);
+  const statusLabels = { READY: 'Готово', TESTING: 'Проверка', NOT_READY: 'Не готово', UNKNOWN: 'Нет данных' };
+  const saleState = (tier) => tier.key === 'tariff.start' ? 'Предлагается'
+    : typeof tier.isSaleable !== 'boolean' ? 'Нет данных о публикации'
+      : tier.isSaleable && Number(tier.priceMinor) > 0 ? 'Предлагается' : 'Не предлагается';
+  const progressText = (health) => health.percent === null
+    ? 'Готовность: нет данных'
+    : health.ready + ' из ' + health.total + ' готово · ' + health.percent + '%';
+  const progressTrack = (health, name) => health.percent === null
+    ? '<div class="admin-overview-tool-track admin-tariff-progress is-unknown" aria-label="Нет данных о готовности"></div>'
+    : '<div class="admin-overview-tool-track admin-tariff-progress" role="progressbar" aria-label="Готовность ' +
+        escapeHtml(name) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + health.percent + '">' +
+        '<span class="is-ready" style="width:' + (health.ready * 100 / health.total) + '%"></span>' +
+        '<span class="is-testing" style="width:' + (health.testing * 100 / health.total) + '%"></span>' +
+        '<span class="is-not-ready" style="width:' +
+          ((health.notReady + health.unknown) * 100 / health.total) + '%"></span></div>';
+  const selectedHealth = selectedTariff ? readinessFor(selectedTariff) : null;
 
+  const previewBenefits = (tier, index) => {
+    const current = readinessFor(tier).rows.filter((row) => row.included);
+    const previous = index > 0 ? tariffCards[index - 1] : null;
+    const earlier = previous ? readinessFor(previous).rows.filter((row) => row.included) : [];
+    const priorKeys = new Set(earlier.map((row) => row.key));
+    const newTools = current.filter((row) => !priorKeys.has(row.key));
+    const names = [
+      ...(previous && earlier.length ? ['Все инструменты ' + previous.name] : []),
+      ...newTools.map((row) => row.name),
+    ];
+    return names.length
+      ? names.slice(0, 4).map((name) => '<span>✓ ' + escapeHtml(name) + '</span>').join('') +
+        (names.length > 4 ? '<span>+ ещё ' + (names.length - 4) + '</span>' : '')
+      : '<span>В тарифе нет новых инструментов</span>';
+  };
+
+  const giftDescription = (days) => {
+    if (!days) return 'Без дополнительных дней';
+    const giftMonths = days % 30 === 0 ? days / 30 : 0;
+    return '+' + days + ' дней в подарок' +
+      (giftMonths ? ' (' + giftMonths + ' ' + (giftMonths === 1 ? 'месяц' :
+        giftMonths < 5 ? 'месяца' : 'месяцев') + ')' : '');
+  };
+  const durationDescription = (days) => days % 30 === 0
+    ? (days / 30) + ' ' + (days / 30 === 1 ? 'месяц' : (days / 30) < 5 ? 'месяца' : 'месяцев') + ' по 30 дней'
+    : '';
   const existingSection = content.querySelector('.admin-tariff-section');
-  const currentScroll = typeof window !== 'undefined' ? window.scrollY : 0;
+  const scrollOwner = content.closest?.('.admin-main') || content;
+  const currentScroll = scrollOwner?.scrollTop;
   const currentSelection = existingSection?.querySelector('[data-overview-tariff][aria-pressed="true"]')?.dataset.overviewTariff;
   content.innerHTML = `
     <div class="admin-overview admin-tariff-section">
@@ -643,17 +696,40 @@ function renderTariffs() {
         <strong>Кабинет <span>/ Professional</span></strong>
       </div>
       <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
-        ${tariffCards.map((item) => `
-          <button type="button" class="admin-overview-metric${overviewSelectedTariff === item.key ? ' is-selected' : ''}"
-            data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}">
-            <span class="admin-overview-metric-label">${item.name}</span>
-            <strong class="admin-overview-metric-value">${formatTariffPrice(item)}</strong>
-            <span class="admin-overview-metric-hint">Подключено: ${Number.isInteger(item.connected) ? item.connected : '—'}</span>
-            <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
-          </button>`).join('')}
+        ${tariffCards.map((item, index) => `
+          <article class="admin-overview-metric admin-tariff-offer${overviewSelectedTariff === item.key ? ' is-selected' : ''}">
+            <button type="button" class="admin-tariff-offer-trigger"
+              data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}"
+              aria-label="Показать условия ${item.name}">
+              <span class="admin-overview-metric-label">${item.name}</span>
+              <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
+            </button>
+            ${item.key === 'tariff.start'
+              ? '<strong class="admin-overview-metric-value">Бесплатно</strong>'
+              : `<label class="admin-tariff-price-field">
+                  <span>Цена за 30 дней, ₽</span>
+                  <input type="number" min="0" max="1000000" step="0.01" inputmode="decimal"
+                    data-overview-tariff-price="${item.key}"
+                    value="${overviewTariffStatus === 'ready' && Number(item.priceMinor) > 0 ? Number(item.priceMinor) / 100 : ''}"
+                    placeholder="${overviewTariffStatus === 'ready' ? 'Введите цену' : 'Нет данных'}"
+                    ${overviewTariffStatus !== 'ready' ? 'disabled' : ''}>
+                </label>
+                <div class="admin-tariff-save-row">
+                  <button type="button" class="admin-button" data-overview-tariff-save="${item.key}"
+                    ${overviewTariffStatus !== 'ready' ? 'disabled' : ''}>Сохранить</button>
+                  <span class="admin-inline-message" data-overview-tariff-message="${item.key}"
+                    aria-live="polite">${overviewSelectedTariff === item.key ? escapeHtml(overviewTariffMessage) : ''}</span>
+                </div>`}
+            <span class="admin-tariff-state">${escapeHtml(saleState(item))}</span>
+            <strong class="admin-tariff-progress-label">${escapeHtml(progressText(readinessFor(item)))}</strong>
+            ${progressTrack(readinessFor(item), item.name)}
+            <span class="admin-tariff-headline">${escapeHtml(tariffHeadline(item.key))}</span>
+            <span class="admin-tariff-includes">Включено в тариф</span>
+            <span class="admin-tariff-preview-list">${previewBenefits(item, index)}</span>
+          </article>`).join('')}
       </section>
-      ${overviewSelectedTariff && overviewTariffStatus === 'unavailable' ? `
-        <section class="admin-overview-detail"><p class="admin-overview-empty">Данные тарифов недоступны.</p></section>` : ''}
+      ${overviewTariffStatus === 'unavailable' ? `
+        <section class="admin-overview-detail"><p class="admin-overview-empty">Не удалось загрузить данные тарифов. Повторите загрузку, чтобы редактировать цены.</p><button type="button" class="admin-button" data-overview-tariff-retry>Повторить загрузку</button></section>` : ''}
       ${overviewSelectedTariff && overviewTariffStatus === 'ready' && selectedTariff ? `
         <section class="admin-overview-detail" aria-label="Состав тарифа ${escapeHtml(selectedTariff.name)}">
           <div class="admin-overview-detail-heading">
@@ -662,19 +738,10 @@ function renderTariffs() {
           </div>
           ${selectedTariff.key !== 'tariff.start' ? `
             <div class="admin-overview-tariff-editor">
-              <div class="admin-overview-tariff-controls">
-                <label class="admin-field"><span>Цена за 30 дней, ₽</span>
-                  <input type="number" min="0" step="0.01" inputmode="decimal" data-overview-tariff-price
-                    value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Цена не установлена">
-                </label>
-                <div class="admin-overview-tariff-actions">
-                  <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
-                  <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
-                </div>
-              </div>
+              <p class="admin-tariff-terms-hint">Бонус увеличивает время доступа, а не уменьшает цену. Для расчёта 1 месяц = 30 дней. Изменения сохраняются на карточке тарифа выше.</p>
               <div class="admin-overview-tariff-periods">
                 <div class="admin-overview-tariff-period-row is-heading">
-                  <span>Оплата</span><span>Бонус времени</span><span>Всего дней</span><span>Стоимость, ₽</span>
+                  <span>Оплаченный срок</span><span>В подарок</span><span>Всего доступа</span><span>Стоимость, ₽</span>
                 </div>
                 ${[1, 6, 12].map((months) => {
                   const period = selectedTariff.periods?.find((item) => item.months === months);
@@ -682,39 +749,61 @@ function renderTariffs() {
                   const bonusDays = Math.round(months * 30 * percent / 100);
                   const fullDays = months * 30 + bonusDays;
                   return `<div class="admin-overview-tariff-period-row" data-overview-tariff-months="${months}">
-                    <span>${months} ${months === 1 ? 'месяц' : 'месяцев'} <small>${months * 30} дней</small></span>
-                    <span>${months === 1 ? '—' : `
+                    <span class="admin-tariff-paid-period"><strong>${months} ${months === 1 ? 'месяц' : months === 6 ? 'месяцев' : 'месяцев'}</strong>
+                      <small>${months * 30} оплаченных дней</small></span>
+                    <span class="admin-tariff-gift-cell">${months === 1 ? '<span>Без бонуса</span>' : `
                       <label class="admin-overview-tariff-percent">
                         <input type="number" min="0" max="100" step="1" inputmode="numeric"
-                          data-overview-tariff-bonus="${months}" value="${percent}" aria-label="Бонус за ${months} месяцев"> %
-                      </label>`}</span>
-                    <span data-overview-tariff-days="${months}">${fullDays} дней${bonusDays ? ` (+${bonusDays})` : ''}</span>
-                    <span data-overview-tariff-sum="${months}">${selectedTariff.priceMinor
+                          data-overview-tariff-bonus="${months}" value="${percent}" aria-label="Дополнительное время за ${months} месяцев, процентов"> % времени
+                      </label>
+                      <small data-overview-tariff-gift="${months}">${giftDescription(bonusDays)}</small>`}</span>
+                    <span class="admin-tariff-total-cell">
+                      <strong data-overview-tariff-days="${months}">${fullDays} дней</strong>
+                      <small data-overview-tariff-equivalent="${months}">${durationDescription(fullDays)}</small>
+                    </span>
+                    <span class="admin-tariff-cost-cell" data-overview-tariff-sum="${months}">${selectedTariff.priceMinor
                       ? escapeHtml(new Intl.NumberFormat('ru-RU').format(selectedTariff.priceMinor * months / 100)) + ' ₽'
-                      : '—'}</span>
+                      : 'Цена не установлена'}</span>
                   </div>`;
                 }).join('')}
               </div>
 
-            </div>` : '<p class="admin-overview-tariff-free">Бесплатный LIVE Start без ограничения срока. Цена и бонусы не требуются.</p>'}
+            </div>` : '<p class="admin-overview-tariff-free">Бесплатно без ограничения срока.</p>'}
+          ${selectedTariff.key !== 'tariff.start' ? `
+            <div class="admin-tariff-publication">
+              <span><strong>Предложение</strong><small>Публикация не меняет готовность инструментов.</small></span>
+              <button type="button" class="admin-button secondary" data-overview-tariff-publication
+                ${typeof selectedTariff.isSaleable !== 'boolean' ||
+                  (!selectedTariff.isSaleable && (!Number(selectedTariff.priceMinor) || selectedHealth?.percent === null))
+                  ? 'disabled' : ''}>${selectedTariff.isSaleable === true ? 'Снять с предложения' : 'Предлагать'}</button>
+              <span class="admin-inline-message" data-overview-publication-message aria-live="polite"></span>
+            </div>` : ''}
           <div class="admin-overview-tariff-tools-heading">
-            <strong>Состав тарифа</strong>
+            <strong>Состав и готовность</strong>
             <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Настроить в «Инструментах» <span aria-hidden="true">↗</span></button>
           </div>
           <div class="admin-overview-detail-list admin-overview-tariff-list">
-            ${selectedTariff.tools?.length ? selectedTariff.tools.map((tool) => `
-              <div class="admin-overview-person">
-                <span><strong>${escapeHtml(tool.name)}</strong></span>
-              </div>`).join('') : '<p class="admin-overview-empty">Инструменты не назначены.</p>'}
+            ${selectedHealth?.rows?.map((row) => `
+              <div class="admin-overview-person admin-tariff-tool-row${row.included ? '' : ' is-excluded'}">
+                <span><strong>${escapeHtml(row.name)}</strong></span>
+                <span class="admin-tariff-tool-inclusion">${row.included ? '✓' : '—'}</span>
+                <span class="admin-tariff-tool-readiness">${row.included ? escapeHtml(statusLabels[row.status]) : '—'}</span>
+              </div>`).join('') || '<p class="admin-overview-empty">Состав тарифа пока не настроен.</p>'}
           </div>
+          <p class="admin-tariff-method-note">Процент рассчитан по статусам включённых инструментов в администраторе. Проверка на устройстве и выпуск в производство — отдельные этапы.</p>
         </section>` : ''}
 
     </div>`;
-  // Tariff-card selection must not jump the document back to the Overview position.
-  if (existingSection && currentSelection !== overviewSelectedTariff && typeof window !== 'undefined') {
-    window.scrollTo(0, currentScroll);
+  // The Admin shell scrolls internally; never scroll the browser window.
+  if (existingSection && currentSelection !== overviewSelectedTariff && Number.isFinite(currentScroll)) {
+    scrollOwner.scrollTop = currentScroll;
   }
   if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+  content.querySelector('[data-overview-tariff-retry]')?.addEventListener('click', () => {
+    overviewTariffStatus = 'idle';
+    requestOverviewTariffs(true);
+    renderTariffs();
+  });
   content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
     button.addEventListener('click', () => {
       overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
@@ -727,7 +816,7 @@ function renderTariffs() {
     overviewSelectedTariff = '';
     renderTariffs();
   });
-  const tariffPriceInput = content.querySelector('[data-overview-tariff-price]');
+  const tariffPriceInput = selectedTariff ? content.querySelector('[data-overview-tariff-price="' + selectedTariff.key + '"]') : null;
   const tariffBonusInputs = [...content.querySelectorAll('[data-overview-tariff-bonus]')];
   const refreshTariffPreview = () => {
     const amount = Number(String(tariffPriceInput?.value || '').replace(',', '.'));
@@ -738,36 +827,70 @@ function renderTariffs() {
       const safeBonus = Number.isFinite(bonus) && bonus >= 0 ? bonus : 0;
       const gift = Math.round(months * 30 * safeBonus / 100);
       const days = content.querySelector('[data-overview-tariff-days="' + months + '"]');
+      const giftText = content.querySelector('[data-overview-tariff-gift="' + months + '"]');
+      const equivalent = content.querySelector('[data-overview-tariff-equivalent="' + months + '"]');
       const cost = content.querySelector('[data-overview-tariff-sum="' + months + '"]');
-      if (days) days.textContent = (months * 30 + gift) + ' дней' + (gift ? ' (+' + gift + ')' : '');
+      if (giftText) giftText.textContent = giftDescription(gift);
+      if (days) days.textContent = (months * 30 + gift) + ' дней';
+      if (equivalent) equivalent.textContent = durationDescription(months * 30 + gift);
       if (cost) cost.textContent = validPrice
-        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽' : '—';
+        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽'
+        : 'Цена не установлена';
     }
   };
   tariffPriceInput?.addEventListener('input', refreshTariffPreview);
   tariffBonusInputs.forEach((input) => input.addEventListener('input', refreshTariffPreview));
-  content.querySelector('[data-overview-tariff-save]')?.addEventListener('click', async (event) => {
+  content.querySelectorAll('[data-overview-tariff-save]').forEach((control) => control.addEventListener('click', async (event) => {
     const button = event.currentTarget;
-    const message = content.querySelector('[data-overview-tariff-message]');
-    const rawPrice = String(tariffPriceInput?.value || '').trim();
-    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : 0;
+    const key = button.dataset.overviewTariffSave;
+    const tier = tariffCards.find((item) => item.key === key);
+    if (!tier || overviewTariffStatus !== 'ready') return;
+    const input = content.querySelector('[data-overview-tariff-price="' + key + '"]');
+    const message = content.querySelector('[data-overview-tariff-message="' + key + '"]');
+    const rawPrice = String(input?.value || '').trim();
+    const price = rawPrice ? Number(rawPrice.replace(',', '.')) : NaN;
     const priceMinor = Math.round(price * 100);
-    const bonus6 = Number(content.querySelector('[data-overview-tariff-bonus="6"]')?.value);
-    const bonus12 = Number(content.querySelector('[data-overview-tariff-bonus="12"]')?.value);
-    const validBonuses = [bonus6,bonus12].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 100);
-    if (!Number.isFinite(price) || price < 0 || Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
-      if (message) { message.textContent = 'Проверьте цену и бонусы (0–100%)'; message.classList.add('error'); }
+    const readBonus = (months) => {
+      const edited = overviewSelectedTariff === key
+        ? content.querySelector('[data-overview-tariff-bonus="' + months + '"]') : null;
+      return edited ? Number(edited.value) :
+        Number(tier.periods?.find((period) => period.months === months)?.bonusPercent ?? (months === 6 ? 20 : 50));
+    };
+    const bonus6 = readBonus(6);
+    const bonus12 = readBonus(12);
+    const validBonuses = [bonus6, bonus12].every((value) =>
+      Number.isSafeInteger(value) && value >= 0 && value <= 100);
+    if (!Number.isFinite(price) || price <= 0 || priceMinor > 100000000 ||
+        Math.abs(price * 100 - priceMinor) > 0.000001 || !validBonuses) {
+      if (message) { message.textContent = 'Введите цену и проверьте бонусы'; message.classList.add('error'); }
       return;
     }
     button.disabled = true;
     if (message) { message.textContent = 'Сохранение…'; message.classList.remove('error'); }
     try {
-      overviewTariffData = await updateTariffSettings(button.dataset.overviewTariffSave, priceMinor, bonus6, bonus12);
+      overviewTariffData = await updateTariffSettings(key, priceMinor, bonus6, bonus12);
       overviewTariffStatus = 'ready';
-      overviewTariffMessage = priceMinor > 0 ? 'Тариф сохранён' : 'Бонусы сохранены; цена ещё не установлена';
+      overviewSelectedTariff = key;
+      overviewTariffMessage = 'Сохранено';
       renderTariffs();
     } catch (error) {
       if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить тариф'; message.classList.add('error'); }
+      button.disabled = false;
+    }
+  }));
+
+  content.querySelector('[data-overview-tariff-publication]')?.addEventListener('click', async (event) => {
+    if (!selectedTariff || typeof selectedTariff.isSaleable !== 'boolean') return;
+    const button = event.currentTarget;
+    const message = content.querySelector('[data-overview-publication-message]');
+    button.disabled = true;
+    try {
+      overviewTariffData = await updateTariffPublication(selectedTariff.key, !selectedTariff.isSaleable);
+      overviewTariffStatus = 'ready';
+      overviewSelectedTariff = selectedTariff.key;
+      renderTariffs();
+    } catch (error) {
+      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось изменить публикацию'; message.classList.add('error'); }
       button.disabled = false;
     }
   });

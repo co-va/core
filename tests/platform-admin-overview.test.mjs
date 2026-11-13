@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/tariff-benefits.js';
 
 const source = readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../admin/admin.css', import.meta.url), 'utf8');
+const commercialService = readFileSync(new URL('../server/src/saas-admin/commercial-catalog.service.ts', import.meta.url), 'utf8');
+const landingTariffs = readFileSync(new URL('../landing/tariffs.js', import.meta.url), 'utf8');
+const landingHtml = readFileSync(new URL('../landing/index.html', import.meta.url), 'utf8');
 const adminService = readFileSync(new URL('../server/src/saas-admin/saas-admin.service.ts', import.meta.url), 'utf8');
 const adminController = readFileSync(new URL('../server/src/saas-admin/saas-admin.controller.ts', import.meta.url), 'utf8');
 const userSummaryStart = adminService.indexOf('async userAccountOverview()');
@@ -72,6 +76,11 @@ const context = {
   escapeHtml: (text) => String(text || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
   openAccessDrawer: (tenantId) => { openedTenant = tenantId; },
   renderCurrentSection: () => { currentSectionRendered = state.section; },
+  tariffBenefits, tariffHeadline, tariffNewBenefits,
+  summarizeTariffReadiness: () => ({
+    total: 1, ready: 0, testing: 1, notReady: 0, unknown: 0, percent: 0,
+    rows: [{ key: 'cabinet.people', name: 'Контакты', included: true, status: 'TESTING' }],
+  }),
   adminRequest: async () => { throw new Error('Preview backend does not have the new endpoint'); },
 };
 runInNewContext(source.slice(start, end) + '\nrenderOverview();', context);
@@ -103,6 +112,14 @@ assert.match(markup, /Пробный режим/);
 assert.match(markup, /Рабочий режим/);
 assert.match(markup, /Завершения регистрации/);
 assert.match(markup, /За последние 30 дней/);
+assert.match(commercialService, /isSaleable: byKey\.get\(key\)\?\.isSaleable === true/,
+  'Tariff API reports the existing persisted publication switch');
+assert.match(commercialService, /purchasable: index === 0 \|\| \(tier\.isSaleable === true && tier\.priceMinor > 0\)/,
+  'Price alone cannot publish a paid tariff');
+assert.match(landingTariffs, /offer\?\.published === true && offer\?\.purchasable === true/,
+  'Landing respects the authoritative publication policy');
+assert.match(landingHtml, /\.tariff-card\[hidden\]\{display:none\}/,
+  'An unpublished paid tariff must not be visible on the landing page');
 assert.match(source, /<header class="admin-toolbar">/, 'Shared desktop H must remain in shell');
 assert.match(styles, /@media\(min-width:761px\)\{[\s\S]*?\.admin-shell\{height:100dvh;min-height:0;overflow:hidden\}/, 'Desktop shell must hold height to viewport');
 assert.match(styles, /\.admin-main\{min-height:0;overflow-y:auto;/, 'Only dashboard content scrolls inside desktop shell');
@@ -142,14 +159,14 @@ const tariffSource = `
 overviewTariffData = {
   tiers: [
     {key:'tariff.start',name:'Start',priceMinor:0,connected:4,tools:[]},
-    {key:'tariff.start-plus',name:'Start+',priceMinor:100000,connected:0,
+    {key:'tariff.start-plus',name:'Start+',priceMinor:100000,isSaleable:false,connected:0,
       tools:[{key:'tool.loyalty.deposit',name:'Депозит'}],
       periods:[
         {months:1,paidDays:30,bonusPercent:0,bonusDays:0,accessDays:30},
         {months:6,paidDays:180,bonusPercent:20,bonusDays:36,accessDays:216},
         {months:12,paidDays:360,bonusPercent:50,bonusDays:180,accessDays:540},
       ]},
-    {key:'tariff.pro',name:'Pro',priceMinor:0,connected:0,tools:[]},
+    {key:'tariff.pro',name:'Pro',priceMinor:0,isSaleable:false,connected:0,tools:[]},
   ]
 };
 overviewTariffStatus = 'ready';
@@ -160,10 +177,23 @@ runInNewContext(tariffSource.replace(/renderOverview\(\);\s*$/, 'renderTariffs()
 assert.match(markup, /Цена за 30 дней, ₽/, 'The tariff editor defines the monthly unit');
 assert.match(markup, /data-overview-tariff-bonus="6"/);
 assert.match(markup, /data-overview-tariff-bonus="12"/);
-assert.match(markup, /216 дней \(\+36\)/, '6-month gift is paid days plus bonus');
-assert.match(markup, /540 дней \(\+180\)/, '12-month gift is paid days plus bonus');
-assert.match(markup, /Сохранить тариф/, 'Price and bonus settings are saved as one configuration');
+assert.match(markup, /180 оплаченных дней/, '6-month duration is explicitly paid days');
+assert.match(markup, /\+36 дней в подарок/, '6-month bonus is explained without mental arithmetic');
+assert.match(markup, /216 дней/, '6-month total access is 216 days');
+assert.match(markup, /\+180 дней в подарок \(6 месяцев\)/, '12-month bonus equals another six months');
+assert.match(markup, /540 дней/, '12-month total access is 540 days');
+assert.match(markup, /Бонус увеличивает время доступа, а не уменьшает цену/, 'Bonuses are not price discounts');
+assert.match(markup, /data-overview-tariff-save="tariff.start-plus"/, 'Price and bonuses have one save action for the selected tier');
+assert.match(markup, /data-overview-tariff-price="tariff.start-plus"/, 'Start+ has a visible price input');
+assert.match(markup, /data-overview-tariff-price="tariff.pro"/, 'Pro has a visible price input');
+assert.doesNotMatch(markup, /Подключено: 4/, 'Offer cards do not confuse accounts with included benefits');
 assert.match(markup, /data-overview-section="capabilities"/, 'Tools composition has one canonical editor');
+assert.match(markup, /Состав и готовность/, 'Tariff detail shows tool statuses, not benefits alone');
+assert.match(markup, /data-overview-tariff-publication/, 'Publication is an explicit action');
+assert.match(markup, /admin-tariff-progress/, 'Progress track uses the existing Admin readiness palette');
+assert.match(markup, /Контакты/, 'Tariff detail lists canonical tool names');
+assert.match(markup, /Проверка/, 'Testing tools remain visibly incomplete');
+assert.match(markup, /Не предлагается/, 'An unpublished paid tariff is not claimed saleable');
 
 listeners.get('group')();
 assert.match(markup, /Ирина/, 'KPI drilldown must show matching person');

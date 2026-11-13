@@ -477,6 +477,49 @@ function flatToolKey(area, item, parentKey) {
   return parentKey + '.' + String(item.label || '').toLowerCase().replace(/[^a-zа-яё0-9]+/g, '-');
 }
 
+// Read-only tariff health: same TOOL_MAP and commercial keys as the Tools registry.
+// Never interpret a checked tariff square as a READY status.
+export function summarizeTariffReadiness(tariffKey, assignments = {}, readiness = []) {
+  const tiers = ['tariff.start', 'tariff.start-plus', 'tariff.pro'];
+  const rank = tiers.indexOf(tariffKey);
+  const statusByKey = new Map((Array.isArray(readiness) ? readiness : [])
+    .map((row) => [row.key, row.status]));
+  const rows = [];
+  const visit = (items, parentKey = '', ancestors = [], path = []) => {
+    for (const item of items) {
+      const key = flatToolKey('cabinet', item, parentKey);
+      const productKey = INLINE_COMMERCIAL_KEYS[key] || 'ui.' + key;
+      const candidates = [...ancestors, productKey];
+      const explicit = [...candidates].reverse().find((candidate) =>
+        Object.prototype.hasOwnProperty.call(assignments, candidate));
+      const minimum = explicit ? assignments[explicit] : 'tariff.start';
+      const included = minimum != null && rank >= tiers.indexOf(minimum) &&
+        tiers.indexOf(minimum) !== -1;
+      const titlePath = [...path, toolDisplayName(item)];
+      if (item.readinessKey) {
+        const status = statusByKey.get(item.readinessKey);
+        rows.push({
+          key: item.readinessKey, name: titlePath.join(' / '),
+          included, status: status === 'READY' || status === 'TESTING' ||
+            status === 'NOT_READY' ? status : 'UNKNOWN',
+        });
+      }
+      if (item.items?.length) visit(item.items, key, candidates, titlePath);
+    }
+  };
+  visit(TOOL_MAP.cabinet);
+  const selected = rows.filter((row) => row.included);
+  const ready = selected.filter((row) => row.status === 'READY').length;
+  const testing = selected.filter((row) => row.status === 'TESTING').length;
+  const notReady = selected.filter((row) => row.status === 'NOT_READY').length;
+  const unknown = selected.filter((row) => row.status === 'UNKNOWN').length;
+  return {
+    rows, total: selected.length, ready, testing, notReady, unknown,
+    percent: selected.length && !unknown ? Math.round(100 * ready / selected.length) : null,
+    incomplete: selected.filter((row) => row.status !== 'READY'),
+  };
+}
+
 function toolDisplayName(item) {
   if (item.readinessKey === 'cabinet.profile.workspaces') return 'Рабочее пространство';
   return String(item.label || '').startsWith('График (') ? 'График' : item.label;
@@ -630,6 +673,17 @@ export async function updateTariffPrice(key, priceMinor) {
   });
   catalogCache = null;
   catalogPromise = null;
+  return loadTariffs(true);
+}
+
+export async function updateTariffPublication(tariffKey, published) {
+  if (!['tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
+      typeof published !== 'boolean') throw new Error('Некорректная публикация тарифа');
+  await commercialRequest('/' + encodeURIComponent(tariffKey), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isSaleable: published }),
+  });
   return loadTariffs(true);
 }
 

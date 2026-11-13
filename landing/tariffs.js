@@ -1,3 +1,5 @@
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from './tariff-benefits.js';
+
 // Landing is a read-only storefront. Core owns pricing and the period quote.
 const registrationOrigin = 'https://prof.va-tools.ru/invite/';
 const source = new URLSearchParams(location.search);
@@ -20,26 +22,63 @@ function currency(minor) {
     maximumFractionDigits: 0 }).format(minor / 100);
 }
 
+function renderIncludedTools() {
+  const tiers = offers?.professional || [];
+  document.querySelectorAll('[data-tariff-tools]').forEach((list) => {
+    const index = tiers.findIndex((tier) => tier.key === list.dataset.tariffTools);
+    const tier = tiers[index];
+    const previous = index > 0 ? tiers[index - 1] : null;
+    const benefits = tariffBenefits(tier);
+    const earlier = previous ? tariffBenefits(previous) : [];
+    const inherits = earlier.length > 0 && earlier.every((item) =>
+      benefits.some((entry) => entry.title === item.title));
+    const additional = inherits ? tariffNewBenefits(tier, previous) : benefits;
+    const headline = document.querySelector('[data-tariff-headline="' + list.dataset.tariffTools + '"]');
+    if (headline) headline.textContent = tariffHeadline(list.dataset.tariffTools);
+    list.replaceChildren();
+    const appendBenefit = (title, detail = '', inherited = false) => {
+      const row = document.createElement('li');
+      if (inherited) row.className = 'is-inherited';
+      const strong = document.createElement('strong');
+      strong.textContent = title;
+      row.append(strong);
+      if (detail) {
+        const body = document.createElement('span');
+        body.textContent = detail;
+        row.append(body);
+      }
+      list.append(row);
+    };
+    if (inherits) appendBenefit('Все возможности ' + previous.name);
+    for (const benefit of additional) appendBenefit(benefit.title, benefit.detail);
+    if (!benefits.length) appendBenefit(offers ? 'Состав тарифа пока не настроен' : 'Пока не удалось загрузить состав тарифа');
+  });
+}
+
 function render() {
   const months = Number(periodSelect?.value || 1);
-  const chosen = offers?.periods?.find((item) => item.months === months);
   for (const link of links) {
     const key = link.dataset.tariffEntry;
     link.href = registrationUrl(key, months);
     if (key === 'demo' || key === 'start') continue;
     const offer = offers?.professional?.find((item) => item.key === 'tariff.' + key);
-    const available = offer?.purchasable === true && chosen;
+    const period = offer?.periods?.find((item) => item.months === months);
+    const available = offer?.published === true && offer?.purchasable === true &&
+      Number(offer.priceMinor) > 0 && Boolean(period);
+    const card = link.closest('.tariff-card');
+    if (card) card.hidden = !available;
     link.setAttribute('aria-disabled', String(!available));
     link.tabIndex = available ? 0 : -1;
     const node = [...priceNodes].find((item) => item.dataset.tariffPrice === 'tariff.' + key);
     if (node) node.textContent = available
       ? currency(offer.priceMinor * months) : 'Цена не установлена';
     const detail = document.querySelector('[data-tariff-description="tariff.' + key + '"]');
-    if (detail && available) {
-      detail.textContent = chosen.accessDays + ' дней доступа' +
-        (chosen.bonusDays ? ' · ' + chosen.bonusDays + ' дней дополнительно' : '');
-    }
+    if (detail) detail.textContent = available
+      ? period.accessDays + ' дней доступа' +
+        (period.bonusDays ? ' · ' + period.bonusDays + ' дней в подарок' : '')
+      : 'Стоимость и срок доступа появятся после настройки тарифа.';
   }
+  renderIncludedTools();
 }
 
 periodSelect?.addEventListener('change', render);

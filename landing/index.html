@@ -47,11 +47,21 @@
     .tariff-period select{min-width:240px;max-width:100%;padding:10px 12px;border:1px solid #aaa;border-radius:8px;background:#fff;color:var(--landing-ink);font:inherit}
     .tariff-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
     .tariff-card{display:flex;flex-direction:column;gap:14px;min-height:230px;padding:24px;border:1px solid #d1d1d1;border-radius:18px;background:#fff}
+    .tariff-card[hidden]{display:none}
     .tariff-card h3{margin:0;font-size:24px;letter-spacing:-.02em}
     .tariff-card p{margin:0;color:var(--landing-copy);font-size:14px;line-height:1.4}
     .tariff-card strong{display:block;font-size:25px}
     .tariff-card .action{margin-top:auto;width:fit-content}
     .tariff-card .action[aria-disabled="true"]{pointer-events:none;opacity:.55}
+    .tariff-included{margin-top:2px;border-top:1px solid #E5E5E3;padding-top:15px}
+    .tariff-included>span{display:block;margin-bottom:9px;color:var(--landing-ink);font-size:13px;font-weight:750}
+    .tariff-included ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+    .tariff-included li{position:relative;padding-left:17px;color:var(--landing-copy);font-size:13px;line-height:1.35}
+    .tariff-included li::before{content:"✓";position:absolute;left:0;color:#333;font-weight:800}
+    .tariff-included li strong{display:block;font-size:13px;font-weight:750;color:var(--landing-ink)}
+    .tariff-included li span{display:block;margin-top:3px;color:var(--landing-copy)}
+    .tariff-included li.is-inherited{font-weight:700}
+    .tariff-value{font-weight:700;color:var(--landing-ink)!important}
     .tariff-demo{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-top:18px;padding:22px 24px;border:1px solid #d1d1d1;border-radius:18px;background:#fff}
     .tariff-demo strong{display:block;font-size:20px}
     .tariff-demo p{margin:5px 0 0;color:var(--landing-copy);font-size:14px}
@@ -208,19 +218,25 @@
           <article class="tariff-card">
             <h3>Start</h3>
             <strong>Бесплатно</strong>
-            <p>LIVE без ограничения срока. Состав и количественные ограничения определяются тарифом.</p>
+            <p data-tariff-description="tariff.start">Без ограничения срока.</p>
+            <p class="tariff-value" data-tariff-headline="tariff.start"></p>
+            <div class="tariff-included"><span>Что вы получите</span><ul data-tariff-tools="tariff.start"><li>Загрузка предложения…</li></ul></div>
             <a class="action" data-tariff-entry="start" href="https://prof.va-tools.ru/invite/?tariff=start">Выбрать Start</a>
           </article>
-          <article class="tariff-card">
+          <article class="tariff-card" hidden>
             <h3>Start+</h3>
             <strong data-tariff-price="tariff.start-plus">Цена не установлена</strong>
-            <p data-tariff-description="tariff.start-plus">Расширенный тариф. Срок оплаты выбирается выше.</p>
+            <p data-tariff-description="tariff.start-plus">Стоимость и срок доступа зависят от периода оплаты.</p>
+            <p class="tariff-value" data-tariff-headline="tariff.start-plus"></p>
+            <div class="tariff-included"><span>Что вы получите</span><ul data-tariff-tools="tariff.start-plus"><li>Загрузка предложения…</li></ul></div>
             <a class="action" data-tariff-entry="start-plus" aria-disabled="true" tabindex="-1" href="https://prof.va-tools.ru/invite/?tariff=start-plus">Выбрать Start+</a>
           </article>
-          <article class="tariff-card">
+          <article class="tariff-card" hidden>
             <h3>Pro</h3>
             <strong data-tariff-price="tariff.pro">Цена не установлена</strong>
-            <p data-tariff-description="tariff.pro">Максимальный тариф. Срок оплаты выбирается выше.</p>
+            <p data-tariff-description="tariff.pro">Стоимость и срок доступа зависят от периода оплаты.</p>
+            <p class="tariff-value" data-tariff-headline="tariff.pro"></p>
+            <div class="tariff-included"><span>Что вы получите</span><ul data-tariff-tools="tariff.pro"><li>Загрузка предложения…</li></ul></div>
             <a class="action" data-tariff-entry="pro" aria-disabled="true" tabindex="-1" href="https://prof.va-tools.ru/invite/?tariff=pro">Выбрать Pro</a>
           </article>
         </div>

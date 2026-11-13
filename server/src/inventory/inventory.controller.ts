@@ -31,6 +31,11 @@ export class InventoryController {
     return this.inventory.updateItem(request.auth!.tenantId, itemId, body);
   }
 
+  @Post('items/reorder')
+  reorderItems(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.reorderItems(request.auth!.tenantId, body);
+  }
+
   @Post('items/:itemId/offers')
   createSupplierOffer(
     @Req() request: AuthenticatedRequest,

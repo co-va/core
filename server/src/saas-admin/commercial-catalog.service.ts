@@ -268,6 +268,7 @@ export class CommercialCatalogService {
         key,
         name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
         priceMinor: byKey.get(key)?.priceMinor ?? 0,
+        isSaleable: byKey.get(key)?.isSaleable === true,
         periods: periodFor(key),
         connected: counts[index],
         tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
@@ -301,7 +302,9 @@ export class CommercialCatalogService {
       professional: catalog.tiers.map((tier, index) => ({
         ...tier,
         free: index === 0,
-        purchasable: index === 0 || tier.priceMinor > 0,
+        published: index === 0 || tier.isSaleable === true,
+        // Price alone must never start selling an unapproved tariff.
+        purchasable: index === 0 || (tier.isSaleable === true && tier.priceMinor > 0),
       })),
       user: catalog.userTiers.map((tier, index) => ({
         ...tier,
