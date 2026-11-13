@@ -52,6 +52,17 @@ for (const path of ['admin', 'landing', ...platformFiles]) {
   cpSync(source, target, { recursive: true });
 }
 
+
+/*
+ * Production Admin must load the canonical source HTML with current modules.
+ * admin/index.html is a generated, inlined staging-preview artifact and can
+ * be stale after selective releases. Do not ship that snapshot as live Admin.
+ */
+const adminSourceHtml = join(root, 'admin/index.source.html');
+const liveAdminHtml = join(out, 'admin/index.html');
+if (!existsSync(adminSourceHtml)) throw new Error('Admin source HTML missing');
+writeFileSync(liveAdminHtml, readFileSync(adminSourceHtml, 'utf8'));
+
 function versionModuleSpecifier(specifier) {
   if (!/^\.{1,2}\/.+\.(?:js|mjs)$/.test(specifier)) return specifier;
   return `${specifier}?build=${buildToken}`;
