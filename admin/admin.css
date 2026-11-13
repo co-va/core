@@ -1292,3 +1292,33 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-finance-metrics .admin-stat strong{font-size:23px}
   .admin-finance-ledger h3{padding:16px 15px 10px}
 }
+
+/* Tariff editor: readable type hierarchy within the established Admin cards. */
+.admin-tariff-section .admin-tariff-offer{padding:23px 24px 22px}
+.admin-tariff-section .admin-tariff-offer-trigger{min-height:31px}
+.admin-tariff-section .admin-overview-metric-label{font-size:19px;font-weight:760;line-height:1.25;color:#202427}
+.admin-tariff-section .admin-tariff-headline{font-size:16px;font-weight:720;line-height:1.45;color:#24282B}
+.admin-tariff-section .admin-tariff-includes{font-size:14px;font-weight:720;color:#41464A}
+.admin-tariff-section .admin-tariff-preview-list{gap:9px;margin-top:11px}
+.admin-tariff-section .admin-tariff-preview-list>span{font-size:15px;line-height:1.4;color:#292E32}
+.admin-tariff-section .admin-tariff-price-field{font-size:14px;color:#363C40}
+.admin-tariff-section .admin-tariff-price-field input{min-height:44px;font-size:17px;border-color:#9B9FA2}
+.admin-tariff-section .admin-overview-detail-heading strong{font-size:19px;color:#212528}
+.admin-tariff-section .admin-overview-tariff-tools-heading strong{font-size:17px;color:#222629}
+.admin-tariff-section .admin-overview-tariff-list .admin-overview-person{padding:13px 3px}
+.admin-tariff-section .admin-overview-tariff-list .admin-overview-person strong{font-size:16px;color:#25292C}
+.admin-tariff-section .admin-overview-tariff-list .admin-overview-person small{font-size:14px;line-height:1.4;color:#50565A}
+.admin-tariff-section .admin-tariff-terms-hint{font-size:14px;line-height:1.5;color:#43494D}
+.admin-tariff-section .admin-overview-tariff-period-row{grid-template-columns:1.05fr 1.25fr 1fr 1fr;gap:14px;min-height:76px;padding:12px 5px;font-size:15px;color:#25292C}
+.admin-tariff-section .admin-overview-tariff-period-row.is-heading{min-height:43px;font-size:14px;color:#42484C}
+.admin-tariff-section .admin-overview-tariff-period-row strong{font-size:16px;font-weight:730;color:#202427}
+.admin-tariff-section .admin-overview-tariff-period-row small{display:block;margin-top:5px;font-size:14px;line-height:1.35;color:#4C5357}
+.admin-tariff-section .admin-overview-tariff-percent{font-size:14px;font-weight:650;color:#25292C}
+.admin-tariff-section .admin-overview-tariff-percent input{height:38px;font-size:16px;color:#222629;border-color:#9B9FA2}
+.admin-tariff-section .admin-tariff-cost-cell{font-size:15px;font-weight:650}
+.admin-tariff-section .admin-tariff-missing{font-size:14px;line-height:1.5}
+@media(max-width:760px){
+  .admin-tariff-section .admin-overview-tariff-period-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-height:0;padding:15px 4px}
+  .admin-tariff-section .admin-overview-tariff-period-row.is-heading{display:none}
+  .admin-tariff-section .admin-tariff-offer{padding:20px}
+}

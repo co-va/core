@@ -652,6 +652,16 @@ function renderTariffs() {
       : '<span>Состав не настроен</span>';
   };
 
+  const giftDescription = (days) => {
+    if (!days) return 'Без дополнительных дней';
+    const giftMonths = days % 30 === 0 ? days / 30 : 0;
+    return '+' + days + ' дней в подарок' +
+      (giftMonths ? ' (' + giftMonths + ' ' + (giftMonths === 1 ? 'месяц' :
+        giftMonths < 5 ? 'месяца' : 'месяцев') + ')' : '');
+  };
+  const durationDescription = (days) => days % 30 === 0
+    ? (days / 30) + ' ' + (days / 30 === 1 ? 'месяц' : (days / 30) < 5 ? 'месяца' : 'месяцев') + ' по 30 дней'
+    : '';
   const existingSection = content.querySelector('.admin-tariff-section');
   const scrollOwner = content.closest?.('.admin-main') || content;
   const currentScroll = scrollOwner?.scrollTop;
@@ -708,10 +718,10 @@ function renderTariffs() {
           </div>
           ${selectedTariff.key !== 'tariff.start' ? `
             <div class="admin-overview-tariff-editor">
-              <p class="admin-tariff-terms-hint">Условия оплаты. Изменения сохраняются кнопкой «Сохранить» на карточке выше.</p>
+              <p class="admin-tariff-terms-hint">Бонус увеличивает время доступа, а не уменьшает цену. Для расчёта 1 месяц = 30 дней. Изменения сохраняются на карточке тарифа выше.</p>
               <div class="admin-overview-tariff-periods">
                 <div class="admin-overview-tariff-period-row is-heading">
-                  <span>Оплата</span><span>Бонус времени</span><span>Всего дней</span><span>Стоимость, ₽</span>
+                  <span>Оплаченный срок</span><span>В подарок</span><span>Всего доступа</span><span>Стоимость, ₽</span>
                 </div>
                 ${[1, 6, 12].map((months) => {
                   const period = selectedTariff.periods?.find((item) => item.months === months);
@@ -719,16 +729,21 @@ function renderTariffs() {
                   const bonusDays = Math.round(months * 30 * percent / 100);
                   const fullDays = months * 30 + bonusDays;
                   return `<div class="admin-overview-tariff-period-row" data-overview-tariff-months="${months}">
-                    <span>${months} ${months === 1 ? 'месяц' : 'месяцев'} <small>${months * 30} дней</small></span>
-                    <span>${months === 1 ? '—' : `
+                    <span class="admin-tariff-paid-period"><strong>${months} ${months === 1 ? 'месяц' : months === 6 ? 'месяцев' : 'месяцев'}</strong>
+                      <small>${months * 30} оплаченных дней</small></span>
+                    <span class="admin-tariff-gift-cell">${months === 1 ? '<span>Без бонуса</span>' : `
                       <label class="admin-overview-tariff-percent">
                         <input type="number" min="0" max="100" step="1" inputmode="numeric"
-                          data-overview-tariff-bonus="${months}" value="${percent}" aria-label="Бонус за ${months} месяцев"> %
-                      </label>`}</span>
-                    <span data-overview-tariff-days="${months}">${fullDays} дней${bonusDays ? ` (+${bonusDays})` : ''}</span>
-                    <span data-overview-tariff-sum="${months}">${selectedTariff.priceMinor
+                          data-overview-tariff-bonus="${months}" value="${percent}" aria-label="Дополнительное время за ${months} месяцев, процентов"> % времени
+                      </label>
+                      <small data-overview-tariff-gift="${months}">${giftDescription(bonusDays)}</small>`}</span>
+                    <span class="admin-tariff-total-cell">
+                      <strong data-overview-tariff-days="${months}">${fullDays} дней</strong>
+                      <small data-overview-tariff-equivalent="${months}">${durationDescription(fullDays)}</small>
+                    </span>
+                    <span class="admin-tariff-cost-cell" data-overview-tariff-sum="${months}">${selectedTariff.priceMinor
                       ? escapeHtml(new Intl.NumberFormat('ru-RU').format(selectedTariff.priceMinor * months / 100)) + ' ₽'
-                      : '—'}</span>
+                      : 'Цена не установлена'}</span>
                   </div>`;
                 }).join('')}
               </div>
@@ -780,10 +795,15 @@ function renderTariffs() {
       const safeBonus = Number.isFinite(bonus) && bonus >= 0 ? bonus : 0;
       const gift = Math.round(months * 30 * safeBonus / 100);
       const days = content.querySelector('[data-overview-tariff-days="' + months + '"]');
+      const giftText = content.querySelector('[data-overview-tariff-gift="' + months + '"]');
+      const equivalent = content.querySelector('[data-overview-tariff-equivalent="' + months + '"]');
       const cost = content.querySelector('[data-overview-tariff-sum="' + months + '"]');
-      if (days) days.textContent = (months * 30 + gift) + ' дней' + (gift ? ' (+' + gift + ')' : '');
+      if (giftText) giftText.textContent = giftDescription(gift);
+      if (days) days.textContent = (months * 30 + gift) + ' дней';
+      if (equivalent) equivalent.textContent = durationDescription(months * 30 + gift);
       if (cost) cost.textContent = validPrice
-        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽' : '—';
+        ? new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(amount * months) + ' ₽'
+        : 'Цена не установлена';
     }
   };
   tariffPriceInput?.addEventListener('input', refreshTariffPreview);
