@@ -225,8 +225,8 @@ export class InventoryService {
     const positionOf = (item: AnyRecord) => Number.isSafeInteger(item.position) && item.position > 0
       ? item.position : Number.MAX_SAFE_INTEGER;
     const orderedItems = [...items].sort((left: AnyRecord, right: AnyRecord) =>
-      positionOf(left) - positionOf(right)
-      || collator.compare(String(left.manufacturer || ''), String(right.manufacturer || ''))
+      collator.compare(String(left.manufacturer || ''), String(right.manufacturer || ''))
+      || positionOf(left) - positionOf(right)
       || collator.compare(String(left.name || ''), String(right.name || ''))
       || String(left.itemId || '').localeCompare(String(right.itemId || '')));
 
@@ -308,20 +308,62 @@ export class InventoryService {
     return Number(value);
   }
 
-  // Global uniqueness within one tenant, irrespective of manufacturer.
-  // Transaction-scoped lock prevents two simultaneous requests from taking the same number.
-  private async ensureInventoryPositionAvailable(owner: Tx, tenantId: string, position: number, excludeId = '') {
+  // Serialize reorder and number edits for this tenant. Only product positions
+  // are written; stock quantities, lots, movements and company data remain intact.
+  private async lockInventoryOrder(tx: Tx, tenantId: string) {
+    const key = `inventory-order:${tenantId}`;
+    await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${key}))`;
+  }
+
+  // An occupied number is an insertion point, not a validation failure.
+  // Shift the consecutive occupied slots inside this manufacturer only.
+  private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '') {
     if (position === 0) return;
-    const lockKey = `inventory-position:${tenantId}`;
-    await owner.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${lockKey}))`;
-    const occupied = await owner.inventoryItem.findFirst({
-      where: { tenantId, archivedAt: null, position, ...(excludeId ? { id: { not: excludeId } } : {}) },
-      select: { name: true, manufacturer: true },
+    const rows: AnyRecord[] = await tx.inventoryItem.findMany({
+      where: {
+        tenantId, archivedAt: null, manufacturer, position: { gte: position },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, position: true },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
     });
-    if (occupied) {
-      const product = [occupied.manufacturer, occupied.name].filter(Boolean).join(' · ');
-      throw new BadRequestException(`№ ${position} уже занят: ${product || 'другой товар'}`);
+    let occupied = position;
+    for (const row of rows) {
+      if (row.position !== occupied) break;
+      occupied += 1;
+      await tx.inventoryItem.update({ where: { id: row.id }, data: { position: occupied } });
     }
+  }
+
+  // Reorder all active items from precisely one manufacturer, in a single DB
+  // update. This is invoked only on drop, never during pointer movement.
+  async reorderItems(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const manufacturer = text(source.manufacturer);
+    const ids = Array.isArray(source.itemIds) ? source.itemIds.map(text) : [];
+    if (!ids.length || ids.length > 10000 || new Set(ids).size !== ids.length || ids.some(id => !id))
+      throw new BadRequestException('Некорректный список материалов');
+
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await this.lockInventoryOrder(tx, tenantId);
+      const items: AnyRecord[] = await tx.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null, manufacturer },
+        select: { id: true, itemId: true, position: true },
+      });
+      const byId = new Map(items.map(item => [item.itemId, item]));
+      if (ids.length !== items.length || ids.some(id => !byId.has(id)))
+        throw new BadRequestException('Список материалов изменился. Откройте компанию повторно.');
+      const ordered = ids.map(id => byId.get(id));
+      if (ordered.every((item, index) => item.position === index + 1)) return;
+      const cases = ordered.map((item, index) => Prisma.sql`WHEN ${item.id} THEN ${index + 1}`);
+      const internalIds = ordered.map(item => item.id);
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "InventoryItem"
+        SET "position" = CASE "id" ${Prisma.join(cases, ' ')} ELSE "position" END
+        WHERE "tenantId" = ${tenantId} AND "id" IN (${Prisma.join(internalIds)})
+      `);
+    }, { timeout: 20000 });
+    return this.snapshot(tenantId);
   }
 
   async createItem(tenantId: string, body: unknown, db?: Tx) {
@@ -340,7 +382,10 @@ export class InventoryService {
     }
 
     const work = async (tx: Tx) => {
-      await this.ensureInventoryPositionAvailable(tx, tenantId, position);
+      if (position) {
+        await this.lockInventoryOrder(tx, tenantId);
+        await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
+      }
       await tx.inventoryItem.create({
         data: {
           tenantId,
@@ -394,8 +439,8 @@ export class InventoryService {
 
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
-    // A change to the number must read, validate and write under the same lock.
-    if (!db && 'position' in source) {
+    // A number edit or company transfer is atomic with its order adjustment.
+    if (!db && ('position' in source || 'manufacturer' in source)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
       });
@@ -439,10 +484,12 @@ export class InventoryService {
     if ('trackLots' in source) data.trackLots = source.trackLots !== false;
     if ('canConsume' in source) data.canConsume = source.canConsume !== false;
     if ('canSell' in source) data.canSell = source.canSell === true;
-    if ('position' in source) {
-      data.position = this.inventoryPosition(source.position);
-      if (data.position > 0 && data.position !== current.position)
-        await this.ensureInventoryPositionAvailable(owner, tenantId, data.position, current.id);
+    if ('position' in source) data.position = this.inventoryPosition(source.position);
+    const manufacturer = 'manufacturer' in data ? data.manufacturer : current.manufacturer;
+    const nextPosition = 'position' in data ? data.position : current.position;
+    if (nextPosition > 0 && (nextPosition !== current.position || manufacturer !== current.manufacturer)) {
+      await this.lockInventoryOrder(owner, tenantId);
+      await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition, current.id);
     }
     if (source.archived === true) data.archivedAt = new Date();
 
