@@ -68,7 +68,7 @@ const db = {
     findFirst: async ({ where }) => items.find(item =>
       item.position === where.position &&
       item.itemId !== 'archived' &&
-      (!where.id?.not || item.id !== where.id)) || null,
+      (!where.id?.not || item.id !== where.id.not)) || null,
   },
 };
 items[15].position = 7;
