@@ -251,8 +251,10 @@ function readinessOptions(value) {
 }
 
 function readinessSelect(readinessKey, byKey, className) {
-  const value = readinessValue(byKey.get(readinessKey));
-  return `<span class="admin-tool-readiness-editor"><select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="Статус управляет доступом">${readinessOptions(value)}</select></span>`;
+  const known = byKey.has(readinessKey);
+  const value = known ? readinessValue(byKey.get(readinessKey)) : '';
+  const loadingOption = `<option value=""${known ? ' hidden' : ' selected'}>Нет данных</option>`;
+  return `<span class="admin-tool-readiness-editor"><select class="${className} admin-tool-readiness-select" data-readiness-key="${escapeHtml(readinessKey)}" data-previous="${value}" title="Статус управляет доступом" ${known ? '' : 'disabled'}>${loadingOption}${readinessOptions(value)}</select></span>`;
 }
 
 function aggregateKeys(item) {
@@ -348,11 +350,14 @@ function renderArchitecture(area, readiness = []) {
 function hydrateReadiness(root, items = []) {
   const byKey = readinessByKey(items);
   root.querySelectorAll('[data-readiness-key]').forEach((select) => {
-    const value = readinessValue(byKey.get(String(select.dataset.readinessKey || '')));
+    const key = String(select.dataset.readinessKey || '');
+    const known = byKey.has(key);
+    const value = known ? readinessValue(byKey.get(key)) : '';
     select.value = value;
     select.dataset.previous = value;
-    select.disabled = false;
-    select.title = 'Статус управляет доступом';
+    // Never expose an editable fake NOT_READY state before Core confirms it.
+    select.disabled = !known;
+    select.title = known ? 'Статус управляет доступом' : 'Нет подтверждённого статуса';
   });
   root.querySelectorAll('[data-readiness-count]').forEach((node) => {
     const total = Number(node.dataset.readinessCount || 0);
