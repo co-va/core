@@ -69,6 +69,8 @@ function render() {
     if (card) card.hidden = !available;
     link.setAttribute('aria-disabled', String(!available));
     link.tabIndex = available ? 0 : -1;
+    // The free Start plan has no paid period or price to render.
+    if (key === 'start') continue;
     const node = [...priceNodes].find((item) => item.dataset.tariffPrice === 'tariff.' + key);
     if (node) node.textContent = available
       ? currency(offer.priceMinor * months) : 'Цена не установлена';
