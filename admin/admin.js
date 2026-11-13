@@ -660,20 +660,19 @@ function renderTariffs() {
   const selectedHealth = selectedTariff ? readinessFor(selectedTariff) : null;
 
   const previewBenefits = (tier, index) => {
+    const current = readinessFor(tier).rows.filter((row) => row.included);
     const previous = index > 0 ? tariffCards[index - 1] : null;
-    const all = tariffBenefits(tier);
-    const priorBenefits = previous ? tariffBenefits(previous) : [];
-    const inherits = priorBenefits.length > 0 && priorBenefits.every((benefit) =>
-      all.some((entry) => entry.title === benefit.title));
-    const extra = inherits ? tariffNewBenefits(tier, previous) : all;
-    const summary = [
-      ...(inherits ? [`Все возможности ${previous.name}`] : []),
-      ...extra.map((benefit) => benefit.title),
+    const earlier = previous ? readinessFor(previous).rows.filter((row) => row.included) : [];
+    const priorKeys = new Set(earlier.map((row) => row.key));
+    const newTools = current.filter((row) => !priorKeys.has(row.key));
+    const names = [
+      ...(previous && earlier.length ? ['Все инструменты ' + previous.name] : []),
+      ...newTools.map((row) => row.name),
     ];
-    return summary.length
-      ? summary.slice(0, 5).map((name) => `<span>✓ ${escapeHtml(name)}</span>`).join('')
-        + (summary.length > 5 ? `<span>+ ещё ${summary.length - 5}</span>` : '')
-      : '<span>Состав не настроен</span>';
+    return names.length
+      ? names.slice(0, 4).map((name) => '<span>✓ ' + escapeHtml(name) + '</span>').join('') +
+        (names.length > 4 ? '<span>+ ещё ' + (names.length - 4) + '</span>' : '')
+      : '<span>В тарифе нет новых инструментов</span>';
   };
 
   const giftDescription = (days) => {
@@ -725,7 +724,7 @@ function renderTariffs() {
             <strong class="admin-tariff-progress-label">${escapeHtml(progressText(readinessFor(item)))}</strong>
             ${progressTrack(readinessFor(item), item.name)}
             <span class="admin-tariff-headline">${escapeHtml(tariffHeadline(item.key))}</span>
-            <span class="admin-tariff-includes">Что получит человек</span>
+            <span class="admin-tariff-includes">Включено в тариф</span>
             <span class="admin-tariff-preview-list">${previewBenefits(item, index)}</span>
           </article>`).join('')}
       </section>
