@@ -93,6 +93,41 @@ for (const path of ['AGENTS.md', 'PROJECT_STATE.md']) {
 }
 if (role !== 'core' && existsSync(resolve(root, 'UI_ALPHABET.md')))
   problems.push('UI_ALPHABET.md must not be duplicated outside Core');
+
+if (role === 'core') {
+  const z = read('ui/v2/z-layout.js');
+  const v2 = read('ui/v2/v2.css');
+  const modal = read('ui/modals/modal.css');
+  const input = read('ui/inputs/inputs.css');
+  const css = read('css/style.css');
+  const admin = read('admin/admin.css');
+  if (!z.includes("const SURFACE_HEADER_SPACING = '12px'") ||
+      !z.includes("'padding-top:var(--v2-surface-header-spacing)'") ||
+      !z.includes("'padding-bottom:var(--v2-surface-header-spacing)'") ||
+      !z.includes("'gap:var(--v2-surface-header-spacing)'"))
+    problems.push('Core shared Z/Q Header must use one 12px token');
+  if (!v2.includes('padding:0 18px calc(24px + env(safe-area-inset-bottom))') ||
+      !v2.includes('bottom:0;padding-top:0;background:var(--v2-inner-surface)}'))
+    problems.push('Core shared Z/Q must not duplicate Header top padding');
+  if (!v2.includes('.v2-q-title,.v2-z-title{box-sizing:border-box;display:flex;align-items:center;width:100%;min-width:0;height:46px;min-height:46px;max-height:46px;'))
+    problems.push('Core Z/Q text title must be exactly 46px');
+  if (!v2.includes('--v2-inner-surface:#F5F5F3;') ||
+      !v2.includes('background:var(--v2-inner-surface);color:var(--v2-ink);box-shadow:-6px 2px 18px rgba(0,0,0,.10)') ||
+      !z.includes("'background:var(--v2-inner-surface,#F5F5F3)'") ||
+      !modal.includes('.modal-sheet.modal--surface-app:not(.modal--technical){background:var(--v2-inner-surface,#F5F5F3)}') ||
+      !admin.includes('.admin-mobile-app .v2-z{background:var(--v2-inner-surface,#F5F5F3)}'))
+    problems.push('Core X/S/Q/Z must share warm #F5F5F3, preserving white inputs and technical modal');
+  if (!v2.includes('.v2-layer{position:absolute;box-sizing:border-box;overflow:auto;background:var(--v2-inner-surface);') ||
+      !v2.includes('.v2-layer--technical{background:var(--v2-white,#fff);top:50%;') ||
+      modal.split('\n').filter(line=>line.includes('.modal-sheet.modal--bottom.modal--')).some(line=>line.includes('background:var(--white)')) ||
+      !modal.includes('background:var(--v2-inner-surface,#F5F5F3);overflow:'))
+    problems.push('Core X/S/Q/Z common warm surface and white technical modal must not diverge');
+  if (!css.includes('--ui-field-height:46px;') ||
+      !input.includes('height:var(--ui-field-height);min-height:var(--ui-field-height);max-height:var(--ui-field-height)') ||
+      !admin.includes('.admin-mobile-app .admin-field select{'))
+    problems.push('Core shared mobile editor fields must be 46px');
+}
+
 if (problems.length) {
   problems.forEach((problem) => console.error('UI CONTRACT FAILED: ' + problem));
   process.exitCode = 1;

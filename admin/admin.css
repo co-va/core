@@ -109,7 +109,7 @@ button,input,select,textarea{font:inherit}
 .admin-auth-screen .v2-sticker{border-radius:0}
 .admin-auth-screen .field,.admin-auth-screen .password-field{min-width:0}
 .admin-auth-screen .field input,.admin-auth-screen .password-field__control input{
-  min-width:0;min-height:52px;border-radius:0;font-size:16px
+  min-width:0;height:var(--ui-field-height);min-height:var(--ui-field-height);max-height:var(--ui-field-height);border-radius:0;font-size:16px
 }
 .admin-auth-screen .ui-button{min-height:48px}
 .admin-auth-screen .v2-sticker-link{border-radius:0}
@@ -180,7 +180,10 @@ button,input,select,textarea{font:inherit}
   .admin-mobile-app .admin-invite-primary-actions .admin-button{width:100%}
   .admin-mobile-app .admin-inline-actions{gap:8px}
   .admin-mobile-app .admin-field,.admin-mobile-app .admin-form{min-width:0}
-  .admin-mobile-app .admin-field input,.admin-mobile-app .admin-field select,
+  .admin-mobile-app .admin-field input:not([type="checkbox"]):not([type="hidden"]),
+  .admin-mobile-app .admin-field select{
+    width:100%;min-width:0;height:var(--ui-field-height);min-height:var(--ui-field-height);max-height:var(--ui-field-height);font-size:16px;border-radius:0
+  }
   .admin-mobile-app .admin-field textarea{
     width:100%;min-width:0;font-size:16px;border-radius:0
   }
@@ -275,7 +278,7 @@ html:has(.admin-shell){background:var(--surface-dark)}
 }
 .admin-drawer .admin-actions{background:var(--white)}
 @media(max-width:760px){
-  .admin-mobile-app .v2-z{background:var(--app-bg)}
+  .admin-mobile-app .v2-z{background:var(--v2-inner-surface,#F5F5F3)}
   .admin-mobile-app .admin-content{background:transparent}
   .admin-mobile-app .admin-card,
   .admin-mobile-app .admin-tool-row,
