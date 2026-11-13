@@ -92,8 +92,8 @@ const APP_CATALOG: CatalogManifestItem[] = [
 
   { key: 'package.full', name: 'Полный пакет', description: 'Единый пакет доступных платных наборов и инструментов', type: 'PACKAGE', position: 900, isSaleable: true, isFree: false, priceMinor: 199900, capabilityKeys: [], includedKeys: ['folder.finance', 'tool.inventory'] },
 
-  // These three existing-model package records are initially not sold by the legacy
-  // per-product checkout. Pricing/selection is prepared without changing live access.
+  // Start is the existing free public offer; Start+ and Pro stay unpublished
+  // until individually enabled by the administrator. This does not change entitlements.
   { key: 'tariff.start', name: 'Start', description: 'Базовый тариф Professional', type: 'PACKAGE', position: 930, isSaleable: true, isFree: true, priceMinor: 0, capabilityKeys: [] },
   { key: 'tariff.start-plus', name: 'Start+', description: 'Расширенный тариф Professional', type: 'PACKAGE', position: 940, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start'] },
   { key: 'tariff.pro', name: 'Pro', description: 'Максимальный тариф Professional', type: 'PACKAGE', position: 950, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start-plus'] },
