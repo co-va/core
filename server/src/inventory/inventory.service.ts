@@ -352,32 +352,60 @@ export class InventoryService {
     }
   }
 
-  // Reorder all active items from precisely one manufacturer, in a single DB
-  // update. This is invoked only on drop, never during pointer movement.
+  // A drag only permutes explicit numbered slots. The 0 (unassigned)
+  // positions stay unassigned; never normalize an entire partially numbered
+  // physical shelf because one row was accidentally dragged.
   async reorderItems(tenantId: string, body: unknown) {
     const source = objectValue(body);
     const manufacturer = text(source.manufacturer);
     const ids = Array.isArray(source.itemIds) ? source.itemIds.map(text) : [];
+    const previous = Array.isArray(source.previousPositions) ? source.previousPositions : [];
     if (!ids.length || ids.length > 10000 || new Set(ids).size !== ids.length || ids.some(id => !id))
       throw new BadRequestException('Некорректный список материалов');
+    // Required optimistic concurrency: older tabs must not overwrite a more
+    // recent manual numbering performed on another phone or computer.
+    if (previous.length !== ids.length || previous.some(value =>
+      !Number.isSafeInteger(value) || Number(value) < 0)) {
+      throw new BadRequestException('Список изменился. Обновите склад перед перемещением.');
+    }
 
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
       const items: AnyRecord[] = await tx.inventoryItem.findMany({
         where: { tenantId, archivedAt: null, manufacturer },
-        select: { id: true, itemId: true, position: true },
+        select: { id: true, itemId: true, name: true, position: true },
       });
       const byId = new Map(items.map(item => [item.itemId, item]));
       if (ids.length !== items.length || ids.some(id => !byId.has(id)))
         throw new BadRequestException('Список материалов изменился. Откройте компанию повторно.');
-      const ordered = ids.map(id => {
-        const item = byId.get(id);
-        if (!item) throw new BadRequestException('Материал больше не доступен.');
-        return item;
-      });
-      if (ordered.every((item, index) => item.position === index + 1)) return;
-      const cases = ordered.map((item, index) => Prisma.sql`WHEN ${item.id} THEN ${index + 1}`);
-      const internalIds = ordered.map(item => item.id);
+      const ordered = ids.map(id => byId.get(id)!);
+      if (ordered.some((item, index) => Number(item.position) !== previous[index])) {
+        throw new BadRequestException('Порядок изменён в другом окне. Обновите список перед перемещением.');
+      }
+
+      const positions = items.map(item => Number(item.position) || 0)
+        .filter(position => position > 0).sort((a, b) => a - b);
+      if (new Set(positions).size !== positions.length)
+        throw new BadRequestException('Обнаружены повторяющиеся номера. Перемещение отменено.');
+      const numberedCount = positions.length;
+      if (ordered.slice(0, numberedCount).some(item => Number(item.position) <= 0))
+        throw new BadRequestException('Нельзя переместить ненумерованную позицию между пронумерованными.');
+
+      // An unnumbered row has no persistent rank yet. A drag among such rows
+      // must be refused, not converted into numbering 200+ unrelated items.
+      const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+      const originalUnnumbered = items.filter(item => Number(item.position) <= 0)
+        .sort((a, b) => collator.compare(String(a.name || ''), String(b.name || ''))
+          || String(a.itemId).localeCompare(String(b.itemId)));
+      if (ordered.slice(numberedCount).some((item, index) => item.itemId !== originalUnnumbered[index]?.itemId))
+        throw new BadRequestException('Сначала назначьте номер позиции. Ненумерованный список не перемещён.');
+
+      const changed = ordered.slice(0, numberedCount)
+        .map((item, index) => ({ item, position: positions[index] }))
+        .filter(({ item, position }) => item.position !== position);
+      if (!changed.length) return;
+      const cases = changed.map(({ item, position }) => Prisma.sql`WHEN ${item.id} THEN ${position}`);
+      const internalIds = changed.map(({ item }) => item.id);
       await tx.$executeRaw(Prisma.sql`
         UPDATE "InventoryItem"
         SET "position" = CASE "id" ${Prisma.join(cases, ' ')} ELSE "position" END
@@ -458,6 +486,10 @@ export class InventoryService {
 
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
+    // Public manual number writes must carry the last visible value. Internal
+    // transfer/import transactions may pass their own DB context instead.
+    if (!db && 'position' in source && !('expectedPosition' in source))
+      throw new BadRequestException('Обновите склад перед изменением номера.');
     // A number edit or company transfer is atomic with its order adjustment.
     if (!db && ('position' in source || 'manufacturer' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
@@ -470,6 +502,11 @@ export class InventoryService {
       await this.lockInventoryOrder(owner, tenantId);
     const current = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!current) throw new NotFoundException('Позиция склада не найдена');
+    if ('position' in source && 'expectedPosition' in source
+      && (!Number.isSafeInteger(source.expectedPosition)
+        || Number(source.expectedPosition) !== Number(current.position))) {
+      throw new BadRequestException('Порядок изменился в другом окне. Обновите склад.');
+    }
 
     const data: AnyRecord = {};
     if ('name' in source) {
