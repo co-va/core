@@ -76,9 +76,13 @@ await assert.rejects(() => handlers.ensureInventoryPositionAvailable(db, 'tenant
   /№ 7 уже занят: CHI · Оттенок 16/);
 await handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 7, 'id-15');
 assert.equal(locks, 2, 'Number validation is transaction-locked');
+items[201].position = 9;
+await assert.rejects(() => handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 9),
+  /№ 9 уже занят: Wella · Оттенок 202/);
+items[201].position = 0;
 await handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 0);
-assert.equal(locks, 2, 'Unlimited blank numbers do not reserve a slot');
+assert.equal(locks, 3, 'Unlimited blank numbers do not reserve a slot');
 await handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 9);
-assert.equal(locks, 3, 'A unique number is accepted');
+assert.equal(locks, 4, 'A unique number is accepted');
 
 console.log('PASS: 256 goods; unique global numbers, empty allowed, cross-brand duplicates rejected');
