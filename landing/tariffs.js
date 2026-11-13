@@ -1,4 +1,4 @@
-import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../core/tariff-benefits.js';
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from './tariff-benefits.js';
 
 // Landing is a read-only storefront. Core owns pricing and the period quote.
 const registrationOrigin = 'https://prof.va-tools.ru/invite/';
