@@ -5,7 +5,7 @@ const source = readFileSync('server/src/inventory/inventory.service.ts', 'utf8')
 const controller = readFileSync('server/src/inventory/inventory.controller.ts', 'utf8');
 assert.match(source, /items: orderedItems\.map/, 'Snapshot returns one shared position order');
 assert.match(source, /position: item.position/, 'Manual numbers are included in inventory snapshot');
-assert.match(source, /await this\.freeInventoryPosition\(owner, tenantId, manufacturer, nextPosition, current\.id\)/,
+assert.match(source, /await this\.freeInventoryPosition\(owner, tenantId, manufacturer, nextPosition, current\.id,/,
   'Manual numbered insertion is automatic, not a duplicate error');
 assert.match(source, /pg_advisory_xact_lock/, 'Both manual edits and drag reorder use a transaction lock');
 assert.match(controller, /@Post\('items\/reorder'\)/, 'Single company reorder API is exposed');
