@@ -1,52 +1,37 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync('server/src/inventory/inventory.service.ts', 'utf8');
-assert.match(source, /position: item.position/, 'Position must be returned in inventory snapshot');
-const from = source.indexOf('  async moveItem(');
-const to = source.indexOf('  private async findCatalogItem(', from);
-assert.ok(from > 0 && to > from, 'Atomic item move must exist');
-const method = source.slice(from, to)
-  .replace('async moveItem(tenantId: string, itemId: string, body: unknown)', 'async function moveItem(tenantId, itemId, body)')
-  .replaceAll('(tx: Tx)', '(tx)')
-  .replaceAll('const rows: AnyRecord[]', 'const rows')
-  .replaceAll('(row: AnyRecord)', '(row)');
-const move = new Function('objectValue', 'BadRequestException', 'NotFoundException',
-  method + ';return moveItem;')(value => value && typeof value === 'object' ? value : {}, Error, Error);
-const all = Array.from({ length: 256 }, (_, i) => ({
-  id: `id-${i}`, itemId: `item-${i}`,
-  name: `Оттенок ${String(i + 1).padStart(3, '0')}`,
+const service = readFileSync('server/src/inventory/inventory.service.ts', 'utf8');
+const controller = readFileSync('server/src/inventory/inventory.controller.ts', 'utf8');
+assert.match(service, /position: item.position/, 'Snapshot exposes stored number');
+assert.match(service, /items: orderedItems\.map/, 'Snapshot respects user sort order');
+assert.match(service, /item\.position > 0/, 'Only positive numbers are considered assigned');
+assert.match(service, /data\.position = source\.position/, 'Individual item update stores its number');
+assert.match(service, /source\.position < 0/, 'Invalid negative numbers are rejected');
+assert.doesNotMatch(service, /async moveItem\(/, 'Mass renumbering must not exist');
+assert.doesNotMatch(controller, /@Post\('items\/:itemId\/move'\)/, 'No mass renumbering endpoint');
+
+const start = service.indexOf("    const collator = new Intl.Collator('ru',");
+const end = service.indexOf('\n\n    return {', start);
+assert.ok(start > 0 && end > start, 'Snapshot sorting block exists');
+const code = service.slice(start, end).replaceAll(': AnyRecord', '');
+const sort = new Function('items', code + '\nreturn orderedItems;');
+const items = Array.from({ length: 256 }, (_, i) => ({
+  itemId: 'item-' + i, name: 'Оттенок ' + (i + 1),
   manufacturer: i < 200 ? 'CHI' : 'Other', position: 0,
 }));
-let writes = 0;
-const tx = {
-  inventoryItem: {
-    findFirst: async ({ where }) => all.find(row => row.itemId === where.itemId && !row.archivedAt) || null,
-    findMany: async ({ where }) => all.filter(row => row.manufacturer === where.manufacturer).map(row => ({ ...row })),
-    update: async ({ where, data }) => {
-      const row = all.find(item => item.id === where.id);
-      row.position = data.position;
-      writes++;
-    },
-  },
-};
-let transactions = 0;
-const context = {
-  prisma: { $transaction: async (fn, options) => {
-    assert.ok(options.timeout >= 20000, 'Batch reindex must have adequate transaction timeout');
-    transactions++;
-    return fn(tx);
-  } },
-  snapshot: async () => all.map(item => ({ ...item })),
-};
-await move.call(context, 'tenant', 'item-99', { position: 1 });
-assert.equal(all.find(row => row.itemId === 'item-99').position, 1);
-assert.equal(new Set(all.filter(row => row.manufacturer === 'CHI').map(row => row.position)).size, 200);
-assert.equal(all.find(row => row.itemId === 'item-200').position, 0, 'Other manufacturer is unchanged');
-assert.equal(transactions, 1);
-assert.equal(writes, 200, 'One move reindexes the entire unnumbered manufacturer automatically');
-await move.call(context, 'tenant', 'item-99', { position: 150 });
-assert.equal(all.find(row => row.itemId === 'item-99').position, 150);
-assert.equal(new Set(all.filter(row => row.manufacturer === 'CHI').map(row => row.position)).size, 200);
-await assert.rejects(() => move.call(context, 'tenant', 'item-99', { position: 0 }), /положительным/);
-console.log('PASS: 256 catalog items, automatic manufacturer numbering, atomic moves and validation');
+items[110].position = 30;
+items[70].position = 2;
+items[15].position = 8;
+let sorted = sort(items);
+const group = sorted.filter(row => row.manufacturer === 'CHI');
+assert.deepEqual(group.slice(0, 3).map(row => row.itemId), ['item-70', 'item-15', 'item-110']);
+assert.equal(group[3].position, 0, 'Unnumbered products remain unnumbered');
+assert.equal(items.filter(row => row.position > 0).length, 3, 'Nothing is auto-numbered');
+items[70].position = 0;
+sorted = sort(items);
+assert.equal(sorted.filter(row => row.manufacturer === 'CHI')[0].itemId, 'item-15',
+  'Removing an assigned number returns item to the unnumbered group');
+assert.equal(items.filter(row => row.position > 0).length, 2, 'Only chosen positions remain');
+
+console.log('PASS: 256 products retain blank numbers, snapshot orders only explicit positions');
