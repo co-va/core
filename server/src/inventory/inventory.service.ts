@@ -382,10 +382,8 @@ export class InventoryService {
     }
 
     const work = async (tx: Tx) => {
-      if (position) {
-        await this.lockInventoryOrder(tx, tenantId);
-        await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
-      }
+      await this.lockInventoryOrder(tx, tenantId);
+      if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
       await tx.inventoryItem.create({
         data: {
           tenantId,
@@ -440,13 +438,15 @@ export class InventoryService {
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
     // A number edit or company transfer is atomic with its order adjustment.
-    if (!db && ('position' in source || 'manufacturer' in source)) {
+    if (!db && ('position' in source || 'manufacturer' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
       });
       return this.snapshot(tenantId);
     }
     const owner = db || this.prisma;
+    if (db && ('position' in source || 'manufacturer' in source || source.archived === true))
+      await this.lockInventoryOrder(owner, tenantId);
     const current = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!current) throw new NotFoundException('Позиция склада не найдена');
 
@@ -488,7 +488,6 @@ export class InventoryService {
     const manufacturer = 'manufacturer' in data ? data.manufacturer : current.manufacturer;
     const nextPosition = 'position' in data ? data.position : current.position;
     if (nextPosition > 0 && (nextPosition !== current.position || manufacturer !== current.manufacturer)) {
-      await this.lockInventoryOrder(owner, tenantId);
       await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition, current.id);
     }
     if (source.archived === true) data.archivedAt = new Date();
