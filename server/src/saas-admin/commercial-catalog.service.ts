@@ -92,9 +92,9 @@ const APP_CATALOG: CatalogManifestItem[] = [
 
   { key: 'package.full', name: 'Полный пакет', description: 'Единый пакет доступных платных наборов и инструментов', type: 'PACKAGE', position: 900, isSaleable: true, isFree: false, priceMinor: 199900, capabilityKeys: [], includedKeys: ['folder.finance', 'tool.inventory'] },
 
-  // These three existing-model package records are initially not sold by the legacy
-  // per-product checkout. Pricing/selection is prepared without changing live access.
-  { key: 'tariff.start', name: 'Start', description: 'Базовый тариф Professional', type: 'PACKAGE', position: 930, isSaleable: false, isFree: true, priceMinor: 0, capabilityKeys: [] },
+  // Start is the existing free public offer; Start+ and Pro stay unpublished
+  // until individually enabled by the administrator. This does not change entitlements.
+  { key: 'tariff.start', name: 'Start', description: 'Базовый тариф Professional', type: 'PACKAGE', position: 930, isSaleable: true, isFree: true, priceMinor: 0, capabilityKeys: [] },
   { key: 'tariff.start-plus', name: 'Start+', description: 'Расширенный тариф Professional', type: 'PACKAGE', position: 940, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start'] },
   { key: 'tariff.pro', name: 'Pro', description: 'Максимальный тариф Professional', type: 'PACKAGE', position: 950, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: [], includedKeys: ['tariff.start-plus'] },
   // User uses exactly the same three-level tier mechanism, with its own
@@ -302,9 +302,9 @@ export class CommercialCatalogService {
       professional: catalog.tiers.map((tier, index) => ({
         ...tier,
         free: index === 0,
-        published: index === 0 || tier.isSaleable === true,
-        // Price alone must never start selling an unapproved tariff.
-        purchasable: index === 0 || (tier.isSaleable === true && tier.priceMinor > 0),
+        published: tier.isSaleable === true,
+        // Each tariff is published independently; only paid tiers require a price.
+        purchasable: tier.isSaleable === true && (index === 0 || tier.priceMinor > 0),
       })),
       user: catalog.userTiers.map((tier, index) => ({
         ...tier,
