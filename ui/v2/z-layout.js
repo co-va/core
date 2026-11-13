@@ -18,7 +18,7 @@ const SURFACE_HEADER_STYLE = [
   'align-items:center',
   'padding-top:var(--v2-surface-header-spacing)',
   'padding-bottom:var(--v2-surface-header-spacing)',
-  'background:var(--v2-zq-surface,#F5F5F3)',
+  'background:var(--v2-inner-surface,#F5F5F3)',
 ].join(';');
 
 const SURFACE_HEADER_CONTENT_STYLE = [
