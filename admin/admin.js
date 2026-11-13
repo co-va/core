@@ -633,13 +633,14 @@ function renderTariffs() {
       ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(item.priceMinor) / 100) + ' ₽'
       : '—';
 
+  const existingSection = content.querySelector('.admin-tariff-section');
+  const currentScroll = typeof window !== 'undefined' ? window.scrollY : 0;
+  const currentSelection = existingSection?.querySelector('[data-overview-tariff][aria-pressed="true"]')?.dataset.overviewTariff;
   content.innerHTML = `
     <div class="admin-overview admin-tariff-section">
       <div class="admin-heading"><h2>Тарифы</h2></div>
-      <p class="admin-tariff-context">Состав и лимиты определяются в «Инструментах». Здесь настраиваются цена за 30 дней и бонусные дни.</p>
       <div class="admin-overview-tariffs-heading">
-        <strong>Тарифы <span>/ Professional</span></strong>
-        <span>Выберите Start+ или Pro для настройки цены и срока</span>
+        <strong>Кабинет <span>/ Professional</span></strong>
       </div>
       <section class="admin-overview-metrics admin-overview-tariff-metrics" aria-label="Тарифы Professional">
         ${tariffCards.map((item) => `
@@ -666,6 +667,10 @@ function renderTariffs() {
                   <input type="number" min="0" step="0.01" inputmode="decimal" data-overview-tariff-price
                     value="${selectedTariff.priceMinor ? selectedTariff.priceMinor / 100 : ''}" placeholder="Цена не установлена">
                 </label>
+                <div class="admin-overview-tariff-actions">
+                  <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
+                  <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
+                </div>
               </div>
               <div class="admin-overview-tariff-periods">
                 <div class="admin-overview-tariff-period-row is-heading">
@@ -690,10 +695,7 @@ function renderTariffs() {
                   </div>`;
                 }).join('')}
               </div>
-              <div class="admin-overview-tariff-footer">
-                <button type="button" class="admin-button" data-overview-tariff-save="${selectedTariff.key}">Сохранить тариф</button>
-                <span class="admin-inline-message" data-overview-tariff-message aria-live="polite">${escapeHtml(overviewTariffMessage)}</span>
-              </div>
+
             </div>` : '<p class="admin-overview-tariff-free">Бесплатный LIVE Start без ограничения срока. Цена и бонусы не требуются.</p>'}
           <div class="admin-overview-tariff-tools-heading">
             <strong>Состав тарифа</strong>
@@ -708,18 +710,22 @@ function renderTariffs() {
         </section>` : ''}
 
     </div>`;
+  // Tariff-card selection must not jump the document back to the Overview position.
+  if (existingSection && currentSelection !== overviewSelectedTariff && typeof window !== 'undefined') {
+    window.scrollTo(0, currentScroll);
+  }
   if (overviewTariffStatus === 'idle') requestOverviewTariffs();
   content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
     button.addEventListener('click', () => {
       overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
       overviewDetailGroup = '';
       overviewTariffMessage = '';
-      renderOverview();
+      if (state.section === 'tariffs') renderTariffs();
     });
   });
   content.querySelector('[data-overview-tariff-close]')?.addEventListener('click', () => {
     overviewSelectedTariff = '';
-    renderOverview();
+    renderTariffs();
   });
   const tariffPriceInput = content.querySelector('[data-overview-tariff-price]');
   const tariffBonusInputs = [...content.querySelectorAll('[data-overview-tariff-bonus]')];
@@ -759,7 +765,7 @@ function renderTariffs() {
       overviewTariffData = await updateTariffSettings(button.dataset.overviewTariffSave, priceMinor, bonus6, bonus12);
       overviewTariffStatus = 'ready';
       overviewTariffMessage = priceMinor > 0 ? 'Тариф сохранён' : 'Бонусы сохранены; цена ещё не установлена';
-      renderOverview();
+      renderTariffs();
     } catch (error) {
       if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось сохранить тариф'; message.classList.add('error'); }
       button.disabled = false;
