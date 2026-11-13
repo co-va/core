@@ -633,9 +633,8 @@ function renderTariffs() {
   const readinessFor = (tier) => summarizeTariffReadiness(
     tier.key, overviewTariffData?.assignments || {}, state.toolReadiness || []);
   const statusLabels = { READY: 'Готово', TESTING: 'Проверка', NOT_READY: 'Не готово', UNKNOWN: 'Нет данных' };
-  const saleState = (tier) => tier.key === 'tariff.start' ? 'Предлагается'
-    : typeof tier.isSaleable !== 'boolean' ? 'Нет данных о публикации'
-      : tier.isSaleable && Number(tier.priceMinor) > 0 ? 'Предлагается' : 'Не предлагается';
+  const saleState = (tier) => typeof tier.isSaleable !== 'boolean' ? 'Нет данных о публикации'
+    : tier.isSaleable ? 'Опубликован' : 'Не опубликован';
   const progressText = (health) => health.percent === null
     ? 'Готовность: нет данных'
     : health.ready + ' из ' + health.total + ' готово · ' + health.percent + '%';
@@ -705,12 +704,22 @@ function renderTariffs() {
                     ${overviewTariffStatus !== 'ready' ? 'disabled' : ''}>
                 </label>
                 <div class="admin-tariff-save-row">
-                  <button type="button" class="admin-button" data-overview-tariff-save="${item.key}"
+                  <button type="button" class="admin-button secondary" data-overview-tariff-save="${item.key}"
                     ${overviewTariffStatus !== 'ready' ? 'disabled' : ''}>Сохранить</button>
                   <span class="admin-inline-message" data-overview-tariff-message="${item.key}"
                     aria-live="polite">${overviewSelectedTariff === item.key ? escapeHtml(overviewTariffMessage) : ''}</span>
                 </div>`}
             <span class="admin-tariff-state">${escapeHtml(saleState(item))}</span>
+            <div class="admin-tariff-publication-row">
+              <button type="button" class="admin-button admin-tariff-publication-action"
+                data-overview-tariff-publication="${item.key}"
+                aria-label="${item.isSaleable ? 'Снять с публикации' : 'Опубликовать'} тариф ${item.name}"
+                ${typeof item.isSaleable !== 'boolean' ||
+                  (!item.isSaleable && item.key !== 'tariff.start' && !(Number(item.priceMinor) > 0))
+                  ? 'disabled' : ''}
+                title="${item.key !== 'tariff.start' && !Number(item.priceMinor) && !item.isSaleable ? 'Сначала сохраните цену' : ''}">${item.isSaleable ? 'Снять с публикации' : 'Опубликовать'}</button>
+              <span class="admin-inline-message" data-overview-publication-message="${item.key}" role="status"></span>
+            </div>
             <strong class="admin-tariff-progress-label">${escapeHtml(progressText(readinessFor(item)))}</strong>
             ${progressTrack(readinessFor(item), item.name)}
             <span class="admin-tariff-headline">${escapeHtml(tariffHeadline(item.key))}</span>
@@ -759,15 +768,6 @@ function renderTariffs() {
               </div>
 
             </div>` : '<p class="admin-overview-tariff-free">Бесплатно без ограничения срока.</p>'}
-          ${selectedTariff.key !== 'tariff.start' ? `
-            <div class="admin-tariff-publication">
-              <span><strong>Предложение</strong><small>Публикация не меняет готовность инструментов.</small></span>
-              <button type="button" class="admin-button secondary" data-overview-tariff-publication
-                ${typeof selectedTariff.isSaleable !== 'boolean' ||
-                  (!selectedTariff.isSaleable && (!Number(selectedTariff.priceMinor) || selectedHealth?.percent === null))
-                  ? 'disabled' : ''}>${selectedTariff.isSaleable === true ? 'Снять с предложения' : 'Предлагать'}</button>
-              <span class="admin-inline-message" data-overview-publication-message aria-live="polite"></span>
-            </div>` : ''}
           <div class="admin-overview-tariff-tools-heading">
             <strong>Состав и готовность</strong>
             <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Настроить в «Инструментах» <span aria-hidden="true">↗</span></button>
@@ -870,20 +870,25 @@ function renderTariffs() {
     }
   }));
 
-  content.querySelector('[data-overview-tariff-publication]')?.addEventListener('click', async (event) => {
-    if (!selectedTariff || typeof selectedTariff.isSaleable !== 'boolean') return;
-    const button = event.currentTarget;
-    const message = content.querySelector('[data-overview-publication-message]');
-    button.disabled = true;
-    try {
-      overviewTariffData = await updateTariffPublication(selectedTariff.key, !selectedTariff.isSaleable);
-      overviewTariffStatus = 'ready';
-      overviewSelectedTariff = selectedTariff.key;
-      renderTariffs();
-    } catch (error) {
-      if (message) { message.textContent = error instanceof Error ? error.message : 'Не удалось изменить публикацию'; message.classList.add('error'); }
-      button.disabled = false;
-    }
+  content.querySelectorAll('[data-overview-tariff-publication]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const key = button.dataset.overviewTariffPublication;
+      const tier = tariffCards.find((item) => item.key === key);
+      if (!tier || button.disabled || typeof tier.isSaleable !== 'boolean') return;
+      const message = content.querySelector('[data-overview-publication-message="' + key + '"]');
+      button.disabled = true;
+      try {
+        overviewTariffData = await updateTariffPublication(key, !tier.isSaleable);
+        overviewTariffStatus = 'ready';
+        renderTariffs();
+      } catch (error) {
+        if (message) {
+          message.textContent = error instanceof Error ? error.message : 'Не удалось изменить публикацию';
+          message.classList.add('error');
+        }
+        button.disabled = false;
+      }
+    });
   });
 
   content.querySelectorAll('[data-overview-section]').forEach((button) => {

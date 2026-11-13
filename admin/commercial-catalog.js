@@ -682,7 +682,7 @@ export async function updateTariffPrice(key, priceMinor) {
 }
 
 export async function updateTariffPublication(tariffKey, published) {
-  if (!['tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
+  if (!['tariff.start', 'tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
       typeof published !== 'boolean') throw new Error('Некорректная публикация тарифа');
   await commercialRequest('/' + encodeURIComponent(tariffKey), {
     method: 'PUT',

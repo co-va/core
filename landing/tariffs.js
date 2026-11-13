@@ -60,15 +60,17 @@ function render() {
   for (const link of links) {
     const key = link.dataset.tariffEntry;
     link.href = registrationUrl(key, months);
-    if (key === 'demo' || key === 'start') continue;
+    if (key === 'demo') continue;
     const offer = offers?.professional?.find((item) => item.key === 'tariff.' + key);
     const period = offer?.periods?.find((item) => item.months === months);
     const available = offer?.published === true && offer?.purchasable === true &&
-      Number(offer.priceMinor) > 0 && Boolean(period);
+      (key === 'start' || (Number(offer.priceMinor) > 0 && Boolean(period)));
     const card = link.closest('.tariff-card');
     if (card) card.hidden = !available;
     link.setAttribute('aria-disabled', String(!available));
     link.tabIndex = available ? 0 : -1;
+    // The free Start plan has no paid period or price to render.
+    if (key === 'start') continue;
     const node = [...priceNodes].find((item) => item.dataset.tariffPrice === 'tariff.' + key);
     if (node) node.textContent = available
       ? currency(offer.priceMinor * months) : 'Цена не установлена';
