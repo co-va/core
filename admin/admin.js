@@ -559,16 +559,6 @@ if (typeof document !== 'undefined') document.addEventListener('admin:tariff-cha
   if (state.section === 'tariffs') renderTariffs();
 });
 
-if (typeof document !== 'undefined') document.addEventListener('admin:tool-readiness-changed', () => {
-  void adminRequest('/tool-readiness').then((items) => {
-    state.toolReadiness = Array.isArray(items) ? items : [];
-    if (state.section === 'tariffs') renderTariffs();
-  }).catch(() => {
-    state.toolReadiness = [];
-    if (state.section === 'tariffs') renderTariffs();
-  });
-});
-
 function requestOverviewUserStats(force = false) {
   if (overviewUserStatsStatus === 'loading' || (!force && overviewUserStatsStatus !== 'idle')) return;
   overviewUserStatsStatus = 'loading';
@@ -1822,7 +1812,13 @@ function openAccessDrawer(tenantId) {
   });
 }
 
-document.addEventListener('admin:tool-readiness-changed', () => { void refreshData(); });
+document.addEventListener('admin:tool-readiness-changed', () => {
+  void refreshData().then(() => {
+    if (state.section === 'tariffs') renderTariffs();
+  }).catch(() => {
+    // Keep the last confirmed state if the Admin API is temporarily unavailable.
+  });
+});
 
 function capabilityEditor(capability, resolved) {
   if (capability.valueType === 'LIMIT') {
