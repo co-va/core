@@ -104,6 +104,9 @@ async function bootstrap() {
           headers: { 'Cache-Control': 'no-store' },
         });
       }
+      if (request.path === '/core/tariff-benefits.js') {
+        return staticSite(request, response, () => response.status(404).send('Not Found'));
+      }
       if (request.path.startsWith('/css/') || request.path.startsWith('/ui/')) {
         return staticSite(request, response, () => response.status(404).send('Not Found'));
       }
