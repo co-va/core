@@ -1,88 +1,124 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const service = readFileSync('server/src/inventory/inventory.service.ts', 'utf8');
+const source = readFileSync('server/src/inventory/inventory.service.ts', 'utf8');
 const controller = readFileSync('server/src/inventory/inventory.controller.ts', 'utf8');
+assert.match(source, /items: orderedItems\.map/, 'Snapshot returns one shared position order');
+assert.match(source, /position: item.position/, 'Manual numbers are included in inventory snapshot');
+assert.match(source, /await this\.freeInventoryPosition\(owner, tenantId, manufacturer, nextPosition, current\.id\)/,
+  'Manual numbered insertion is automatic, not a duplicate error');
+assert.match(source, /pg_advisory_xact_lock/, 'Both manual edits and drag reorder use a transaction lock');
+assert.match(controller, /@Post\('items\/reorder'\)/, 'Single company reorder API is exposed');
 
-assert.match(service, /position: item\.position/, 'API snapshot exposes the user-provided number');
-assert.match(service, /items: orderedItems\.map/, 'Snapshot uses the shared position sorting');
-assert.match(service, /data\.position = this\.inventoryPosition\(source\.position\)/,
-  'Single product update stores the assigned number');
-assert.match(service, /await this\.ensureInventoryPositionAvailable\(tx, tenantId, position\)/,
-  'Creation validates uniqueness');
-assert.match(service, /await this\.ensureInventoryPositionAvailable\(owner, tenantId, data\.position, current\.id\)/,
-  'Updates validate uniqueness globally');
-assert.match(service, /this\.prisma\.\$transaction\(async \(tx: Tx\) =>/,
-  'Ordinary updates use transactions for number changes');
-assert.match(service, /pg_advisory_xact_lock/, 'Cross-request serialization prevents concurrent duplicate assignment');
-assert.doesNotMatch(service, /async moveItem\(/, 'No mass renumbering');
-assert.doesNotMatch(controller, /@Post\('items\/:itemId\/move'\)/, 'No mass move endpoint');
-
-const start = service.indexOf("    const collator = new Intl.Collator('ru',");
-const end = service.indexOf('\n\n    return {', start);
-assert.ok(start > 0 && end > start, 'Snapshot sorting block exists');
-const sortCode = service.slice(start, end).replaceAll(': AnyRecord', '');
-const sort = new Function('items', sortCode + '\nreturn orderedItems;');
-const items = Array.from({ length: 256 }, (_, i) => ({
-  id: `id-${i}`, itemId: `item-${i}`, name: `Оттенок ${i + 1}`,
-  manufacturer: i < 200 ? 'CHI' : 'Wella', position: 0,
+const start = source.indexOf("    const collator = new Intl.Collator('ru',");
+const end = source.indexOf('\n\n    return {', start);
+assert.ok(start > 0 && end > start, 'Snapshot sort exists');
+const sort = new Function('items',
+  source.slice(start, end).replaceAll(': AnyRecord', '') + '\nreturn orderedItems;');
+const all = Array.from({ length: 256 }, (_, index) => ({
+  id: 'id-' + index, itemId: 'item-' + index,
+  name: 'Оттенок ' + (index + 1),
+  manufacturer: index < 200 ? 'CHI' : 'Wella', position: 0,
+  balance: 110 + index,
 }));
-items[201].position = 1;
-items[15].position = 3;
-items[110].position = 25;
-let sorted = sort(items);
-assert.deepEqual(sorted.slice(0, 3).map(item => item.itemId),
-  ['item-201', 'item-15', 'item-110'],
-  'Global numbering must override manufacturer grouping');
-assert.equal(sorted[3].position, 0, 'Unnumbered materials follow assigned positions');
-assert.equal(items.filter(item => item.position > 0).length, 3, 'No automatic numbering');
-items[201].position = 0;
-sorted = sort(items);
-assert.equal(sorted[0].itemId, 'item-15', 'Cleared number returns to unnumbered positions');
+all[201].position = 1;
+all[15].position = 3;
+all[110].position = 25;
+const sorted = sort(all);
+assert.equal(sorted[0].manufacturer, 'CHI', 'Company grouping precedes manual numbers');
+assert.equal(sorted[0].itemId, 'item-15');
+assert.equal(sorted[1].itemId, 'item-110');
+assert.equal(sorted.find(item => item.manufacturer === 'Wella').itemId, 'item-201');
+assert.equal(all.filter(item => item.position > 0).length, 3, 'No numbering before explicit user action');
 
-const from = service.indexOf('  private inventoryPosition(');
-const to = service.indexOf('  async createItem(', from);
-assert.ok(from > 0 && to > from, 'Position-validation methods exist');
-const methods = service.slice(from, to)
+const rawHelpers = source.slice(source.indexOf('  private inventoryPosition('),
+  source.indexOf('  // Reorder all active items', source.indexOf('  private inventoryPosition(')));
+assert.ok(rawHelpers.startsWith('  private inventoryPosition('));
+const helperFunctions = rawHelpers
   .replace('private inventoryPosition(value: unknown): number', 'function inventoryPosition(value)')
-  .replace(
-    "private async ensureInventoryPositionAvailable(owner: Tx, tenantId: string, position: number, excludeId = '')",
-    "async function ensureInventoryPositionAvailable(owner, tenantId, position, excludeId = '')"
-  );
-const handlers = new Function('BadRequestException',
-  methods + '\nreturn { inventoryPosition, ensureInventoryPositionAvailable };')(Error);
+  .replace('private async lockInventoryOrder(tx: Tx, tenantId: string)', 'async function lockInventoryOrder(tx, tenantId)')
+  .replace("private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '')",
+    "async function freeInventoryPosition(tx, tenantId, manufacturer, position, excludeId = '')")
+  .replaceAll('const rows: AnyRecord[]', 'const rows');
+const helpers = new Function('BadRequestException',
+  helperFunctions + '\nreturn { inventoryPosition, lockInventoryOrder, freeInventoryPosition };')(Error);
+assert.equal(helpers.inventoryPosition(0), 0, 'Blank number is represented as 0');
+assert.equal(helpers.inventoryPosition(5), 5, 'No zero padding');
+assert.throws(() => helpers.inventoryPosition(-1), /целым/);
 
-assert.equal(handlers.inventoryPosition(null), 0);
-assert.equal(handlers.inventoryPosition(undefined), 0);
-assert.equal(handlers.inventoryPosition(0), 0);
-assert.equal(handlers.inventoryPosition(7), 7, 'No leading zero padding');
-assert.throws(() => handlers.inventoryPosition(-1), /целым/);
-assert.throws(() => handlers.inventoryPosition(1.5), /целым/);
-assert.throws(() => handlers.inventoryPosition(2147483648), /целым/);
-assert.throws(() => handlers.inventoryPosition('7'), /целым/);
-
-let locks = 0;
-const db = {
-  $queryRaw: async () => { locks++; return [{ locked: 1 }]; },
+const numbered = Array.from({length: 10}, (_,i) => ({
+  id:'chi-' + i, manufacturer:'CHI', position:i+1,
+}));
+numbered.push({id:'wella-4',manufacturer:'Wella',position:4});
+const mockDb = {
+  $queryRaw: async () => [{locked:1}],
   inventoryItem: {
-    findFirst: async ({ where }) => items.find(item =>
-      item.position === where.position &&
-      item.itemId !== 'archived' &&
-      (!where.id?.not || item.id !== where.id.not)) || null,
+    findMany: async ({where}) => numbered.filter(item => item.manufacturer === where.manufacturer
+      && item.position >= where.position.gte && item.id !== where.id?.not)
+      .sort((a,b)=>a.position-b.position).map(item=>({...item})),
+    update: async ({where,data}) => {
+      const found = numbered.find(item=>item.id===where.id);
+      assert.ok(found);
+      assert.deepEqual(Object.keys(data), ['position'], 'Only positions change');
+      found.position = data.position;
+    },
   },
 };
-items[15].position = 7;
-await assert.rejects(() => handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 7),
-  /№ 7 уже занят: CHI · Оттенок 16/);
-await handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 7, 'id-15');
-assert.equal(locks, 2, 'Number validation is transaction-locked');
-items[201].position = 9;
-await assert.rejects(() => handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 9),
-  /№ 9 уже занят: Wella · Оттенок 202/);
-items[201].position = 0;
-await handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 0);
-assert.equal(locks, 3, 'Unlimited blank numbers do not reserve a slot');
-await handlers.ensureInventoryPositionAvailable(db, 'tenant-1', 9);
-assert.equal(locks, 4, 'A unique number is accepted');
+await helpers.freeInventoryPosition(mockDb,'tenant','CHI',4);
+assert.deepEqual(numbered.filter(item=>item.manufacturer==='CHI').map(item=>item.position),
+  [1,2,3,5,6,7,8,9,10,11], 'Inserting number 4 moves only CHI numbers 4–10');
+assert.equal(numbered.find(item=>item.id==='wella-4').position,4,
+  'The same number may exist in another company');
 
-console.log('PASS: 256 goods; unique global numbers, empty allowed, cross-brand duplicates rejected');
+const Prisma = {
+  sql:(strings,...values)=>({ strings:Array.from(strings),values }),
+  join:(values,separator)=>({joined:values,separator}),
+};
+const startReorder = source.indexOf('  async reorderItems(');
+const endReorder = source.indexOf('  async createItem(', startReorder);
+assert.ok(startReorder>0 && endReorder>startReorder);
+const reorderFunction = source.slice(startReorder,endReorder)
+  .replace('async reorderItems(tenantId: string, body: unknown)', 'async function reorderItems(tenantId, body)')
+  .replaceAll('(tx: Tx)', '(tx)')
+  .replaceAll('const items: AnyRecord[]', 'const items');
+const reorder = new Function('objectValue','text','BadRequestException','Prisma',
+  reorderFunction + '\nreturn reorderItems;')(
+    value=>value && typeof value==='object' ? value : {},
+    value=>String(value??'').trim(),Error,Prisma);
+let writes = 0;
+const tx = {
+  inventoryItem: {
+    findMany:async ({where}) => all.filter(item=>item.manufacturer===where.manufacturer)
+      .map(({id,itemId,position})=>({id,itemId,position})),
+  },
+  $executeRaw:async (query)=>{
+    writes++;
+    const cases = query.values[0].joined;
+    assert.equal(query.values[1], 'tenant');
+    assert.equal(cases.length,200);
+    for(const row of cases){
+      const [id,position] = row.values;
+      const item=all.find(value=>value.id===id);
+      item.position=position;
+    }
+  },
+};
+const context = {
+  prisma:{$transaction:async(fn,options)=>{
+    assert.ok(options.timeout>=20000);
+    return fn(tx);
+  }},
+  lockInventoryOrder:async()=>{},
+  snapshot:async()=>all,
+};
+const reversed = all.filter(item=>item.manufacturer==='CHI').map(item=>item.itemId).reverse();
+await reorder.call(context,'tenant',{manufacturer:'CHI',itemIds:reversed});
+assert.equal(writes,1, '200 positions are saved with a single SQL update');
+assert.deepEqual(sort(all).slice(0,200).map(item=>item.itemId),reversed,
+  'All CHI rows persist the dragged order');
+assert.equal(all.find(item=>item.itemId==='item-201').position,1,
+  'Wella ordering remains unchanged');
+assert.equal(all[30].balance,140, 'Stock balances are never changed by ordering');
+await assert.rejects(()=>reorder.call(context,'tenant',{manufacturer:'CHI',itemIds:reversed.slice(1)}),
+  /Список материалов изменился/);
+console.log('PASS: 256 goods, per-company numbers, insertion shift, single-SQL reorder; balances unchanged');
