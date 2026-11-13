@@ -63,7 +63,10 @@ function render() {
     if (key === 'demo' || key === 'start') continue;
     const offer = offers?.professional?.find((item) => item.key === 'tariff.' + key);
     const period = offer?.periods?.find((item) => item.months === months);
-    const available = offer?.purchasable === true && Number(offer.priceMinor) > 0 && Boolean(period);
+    const available = offer?.published === true && offer?.purchasable === true &&
+      Number(offer.priceMinor) > 0 && Boolean(period);
+    const card = link.closest('.tariff-card');
+    if (card) card.hidden = !available;
     link.setAttribute('aria-disabled', String(!available));
     link.tabIndex = available ? 0 : -1;
     const node = [...priceNodes].find((item) => item.dataset.tariffPrice === 'tariff.' + key);
