@@ -104,8 +104,10 @@ async function bootstrap() {
           headers: { 'Cache-Control': 'no-store' },
         });
       }
-      if (request.path === '/core/tariff-benefits.js') {
-        return staticSite(request, response, () => response.status(404).send('Not Found'));
+      if (request.path === '/tariff-benefits.js') {
+        return response.sendFile(resolve(siteRoot, 'landing/tariff-benefits.js'), {
+          headers: { 'Cache-Control': 'no-store' },
+        });
       }
       if (request.path.startsWith('/css/') || request.path.startsWith('/ui/')) {
         return staticSite(request, response, () => response.status(404).send('Not Found'));
@@ -122,6 +124,7 @@ async function bootstrap() {
       if (request.path === '/') return response.redirect(302, '/admin/');
       if (
         request.path.startsWith('/admin/')
+        || request.path === '/landing/tariff-benefits.js'
         || request.path.startsWith('/core/')
         || request.path.startsWith('/ui/')
         || request.path.startsWith('/css/')
