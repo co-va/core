@@ -1,6 +1,7 @@
 :root{
   --v2-base:var(--surface-dark);
   --v2-white:#FFFFFF;
+  --v2-inner-surface:#F5F5F3;
   --v2-ink:#111111;
   --v2-muted:#777A7D;
   --v2-disabled:#D8D3CF;
@@ -96,8 +97,8 @@
   position:relative;touch-action:auto;z-index:3;box-sizing:border-box;width:calc(100% - var(--v2-edge));
   height:100%;min-height:0;
   margin-left:var(--v2-edge);display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none;
-  border-radius:var(--v2-z-radius) 0 0 0;padding:22px 18px calc(24px + env(safe-area-inset-bottom));
-  background:var(--v2-white);color:var(--v2-ink);box-shadow:-6px 2px 18px rgba(0,0,0,.10)
+  border-radius:var(--v2-z-radius) 0 0 0;padding:0 18px calc(24px + env(safe-area-inset-bottom));
+  background:var(--v2-inner-surface);color:var(--v2-ink);box-shadow:-6px 2px 18px rgba(0,0,0,.10)
 }
 [data-v2-z-header],[data-v2-q-header]{flex:0 0 auto}
 [data-v2-z-body],[data-v2-q-body]{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
@@ -236,15 +237,15 @@
 .v2-layer-portal{z-index:1200;overflow:hidden;pointer-events:none;border-radius:var(--v2-z-radius) 0 0 0}
 .v2-layer-portal--viewport{position:fixed;right:auto;bottom:auto}
 .v2-layer-portal.is-q{border-radius:0}
-.v2-layer-portal.is-q>.v2-layer-backdrop[data-v2-q="true"]>.v2-layer--standard{top:var(--v2-q-top,72px);left:var(--v2-q-left,16px);right:0;bottom:0}
-.v2-q-title{margin:0;font-size:23px;line-height:1.1;font-weight:800}
+.v2-layer-portal.is-q>.v2-layer-backdrop[data-v2-q="true"]>.v2-layer--standard{top:var(--v2-q-top,72px);left:var(--v2-q-left,16px);right:0;bottom:0;padding-top:0;background:var(--v2-inner-surface)}
+.v2-q-title,.v2-z-title{box-sizing:border-box;display:flex;align-items:center;width:100%;min-width:0;height:46px;min-height:46px;max-height:46px;margin:0;border:0;padding:0;background:transparent;box-shadow:none;overflow:hidden;font-size:23px;line-height:1;font-weight:800}
 .v2-layer-portal>.v2-layer-backdrop--contained{position:absolute;inset:0;width:auto;margin:0;pointer-events:auto}
 .v2-layer-backdrop--technical{position:fixed;inset:0;width:min(100%,var(--app-max-width));margin:0 auto;background:var(--v2-base)}
-.v2-layer{position:absolute;box-sizing:border-box;overflow:auto;background:#fff;color:var(--v2-ink)}
+.v2-layer{position:absolute;box-sizing:border-box;overflow:auto;background:var(--v2-inner-surface);color:var(--v2-ink)}
 .v2-layer--top{top:0;left:0;right:0;max-height:52%;padding:20px 18px max(24px,var(--v2-layer-gesture-size));border-radius:var(--v2-z-radius) 0 0 0;box-shadow:0 12px 32px rgba(0,0,0,.20);animation:v2-top-in .22s ease-out both;transform:translateY(var(--v2-layer-drag-y,0))}
 .v2-layer--standard{inset:0;padding:20px 18px 24px;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--v2-z-radius) 0 0 0;box-shadow:0 12px 32px rgba(0,0,0,.20);animation:v2-standard-in .24s ease-out both;transform:translateX(var(--v2-layer-drag-x,0));touch-action:pan-y}
 .v2-layer--bottom{left:0;right:0;bottom:0;max-height:52%;padding:max(24px,var(--v2-layer-gesture-size)) 18px calc(20px + env(safe-area-inset-bottom));border-radius:0;box-shadow:0 -12px 30px rgba(0,0,0,.16);animation:v2-bottom-in .22s ease-out both;transform:translateY(var(--v2-layer-drag-y,0))}
-.v2-layer--technical{top:50%;left:50%;width:min(calc(100% - 50px),356px);max-height:calc(var(--app-stable-vh,100dvh) - 50px);padding:54px 18px 20px;border-radius:0;transform:translate(-50%,-50%);box-shadow:0 18px 46px rgba(0,0,0,.30);animation:v2-technical-in .18s ease-out both}
+.v2-layer--technical{background:var(--v2-white,#fff);top:50%;left:50%;width:min(calc(100% - 50px),356px);max-height:calc(var(--app-stable-vh,100dvh) - 50px);padding:54px 18px 20px;border-radius:0;transform:translate(-50%,-50%);box-shadow:0 18px 46px rgba(0,0,0,.30);animation:v2-technical-in .18s ease-out both}
 .v2-layer.is-dragging{animation:none;transition:none}.v2-layer.is-dismissing{animation:none;transition:transform .15s ease-in}
 .v2-layer__gesture-zone{position:absolute;z-index:4;left:0;right:0;height:var(--v2-layer-gesture-size);touch-action:none}.v2-layer__gesture-zone--top{bottom:0}.v2-layer__gesture-zone--bottom{top:0}
 .v2-layer__close{position:absolute;top:12px;right:12px;width:38px;height:38px;border:0;border-radius:0;background:transparent;color:var(--v2-ink);font-size:24px}.v2-layer__header{padding-right:48px;margin-bottom:18px}.v2-layer__header h2{margin:0;font-size:23px;line-height:1.1}
