@@ -653,7 +653,8 @@ function renderTariffs() {
   };
 
   const existingSection = content.querySelector('.admin-tariff-section');
-  const currentScroll = typeof window !== 'undefined' ? window.scrollY : 0;
+  const scrollOwner = content.closest?.('.admin-main') || content;
+  const currentScroll = scrollOwner?.scrollTop;
   const currentSelection = existingSection?.querySelector('[data-overview-tariff][aria-pressed="true"]')?.dataset.overviewTariff;
   content.innerHTML = `
     <div class="admin-overview admin-tariff-section">
@@ -746,9 +747,9 @@ function renderTariffs() {
         </section>` : ''}
 
     </div>`;
-  // Tariff-card selection must not jump the document back to the Overview position.
-  if (existingSection && currentSelection !== overviewSelectedTariff && typeof window !== 'undefined') {
-    window.scrollTo(0, currentScroll);
+  // The Admin shell scrolls internally; never scroll the browser window.
+  if (existingSection && currentSelection !== overviewSelectedTariff && Number.isFinite(currentScroll)) {
+    scrollOwner.scrollTop = currentScroll;
   }
   if (overviewTariffStatus === 'idle') requestOverviewTariffs();
   content.querySelector('[data-overview-tariff-retry]')?.addEventListener('click', () => {
