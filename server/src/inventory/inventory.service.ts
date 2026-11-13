@@ -353,7 +353,11 @@ export class InventoryService {
       const byId = new Map(items.map(item => [item.itemId, item]));
       if (ids.length !== items.length || ids.some(id => !byId.has(id)))
         throw new BadRequestException('Список материалов изменился. Откройте компанию повторно.');
-      const ordered = ids.map(id => byId.get(id));
+      const ordered = ids.map(id => {
+        const item = byId.get(id);
+        if (!item) throw new BadRequestException('Материал больше не доступен.');
+        return item;
+      });
       if (ordered.every((item, index) => item.position === index + 1)) return;
       const cases = ordered.map((item, index) => Prisma.sql`WHEN ${item.id} THEN ${index + 1}`);
       const internalIds = ordered.map(item => item.id);
