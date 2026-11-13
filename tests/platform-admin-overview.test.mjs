@@ -114,8 +114,10 @@ assert.match(markup, /Завершения регистрации/);
 assert.match(markup, /За последние 30 дней/);
 assert.match(commercialService, /isSaleable: byKey\.get\(key\)\?\.isSaleable === true/,
   'Tariff API reports the existing persisted publication switch');
-assert.match(commercialService, /purchasable: index === 0 \|\| \(tier\.isSaleable === true && tier\.priceMinor > 0\)/,
-  'Price alone cannot publish a paid tariff');
+assert.ok(commercialService.includes('published: tier.isSaleable === true'),
+  'Each Professional tariff has its own persisted publication flag');
+assert.ok(commercialService.includes('purchasable: tier.isSaleable === true && (index === 0 || tier.priceMinor > 0)'),
+  'Free Start requires publication; paid tiers additionally require a price');
 assert.match(landingTariffs, /offer\?\.published === true && offer\?\.purchasable === true/,
   'Landing respects the authoritative publication policy');
 assert.match(landingHtml, /\.tariff-card\[hidden\]\{display:none\}/,
@@ -158,7 +160,7 @@ assert.doesNotMatch(markup, /7 активных/, 'Dashboard cannot equate a rec
 const tariffSource = `
 overviewTariffData = {
   tiers: [
-    {key:'tariff.start',name:'Start',priceMinor:0,connected:4,tools:[]},
+    {key:'tariff.start',name:'Start',priceMinor:0,isSaleable:true,connected:4,tools:[]},
     {key:'tariff.start-plus',name:'Start+',priceMinor:100000,isSaleable:false,connected:0,
       tools:[{key:'tool.loyalty.deposit',name:'Депозит'}],
       periods:[
@@ -190,10 +192,34 @@ assert.doesNotMatch(markup, /Подключено: 4/, 'Offer cards do not confu
 assert.match(markup, /data-overview-section="capabilities"/, 'Tools composition has one canonical editor');
 assert.match(markup, /Состав и готовность/, 'Tariff detail shows tool statuses, not benefits alone');
 assert.match(markup, /data-overview-tariff-publication/, 'Publication is an explicit action');
+
+assert.equal((markup.match(/data-overview-tariff-publication="/g) || []).length, 3,
+  'Each card has a separate publication action, including free Start');
+for (const tier of ['start', 'start-plus', 'pro']) {
+  assert.match(markup, new RegExp('data-overview-tariff-publication="tariff\\.' + tier + '"'),
+    'Every tier exposes its own publication action');
+}
+const plusPublication = markup.match(/<button[^>]*data-overview-tariff-publication="tariff.start-plus"[^>]*>[\s\S]*?<\/button>/)?.[0] || '';
+assert.ok(plusPublication, 'Start+ action exists directly on its own card');
+assert.doesNotMatch(plusPublication, /\bdisabled\b/,
+  'Low readiness cannot block publishing a priced tariff');
+const proPublication = markup.match(/<button[^>]*data-overview-tariff-publication="tariff.pro"[^>]*>[\s\S]*?<\/button>/)?.[0] || '';
+assert.match(proPublication, /\bdisabled\b/, 'Unpriced Pro cannot be sold');
+assert.doesNotMatch(source, /selectedHealth\?\.percent === null/,
+  'Readiness remains informational, not a publication threshold');
+assert.match(landingTariffs, /if \(key === 'start'\) continue;/,
+  'Free Start does not require price or paid periods to appear');
+assert.match(landingHtml, /<article class="tariff-card" hidden>\s*<h3>Start<\/h3>/,
+  'Unpublished free Start does not flash before public API loads');
+const startPublicationMigration = readFileSync(
+  new URL('../server/prisma/migrations/20261113170000_start_publication_preserve_existing/migration.sql', import.meta.url), 'utf8');
+assert.match(startPublicationMigration, /"key" = 'tariff.start' AND "isSaleable" = false/,
+  'One-time migration preserves the public state of legacy Start');
+
 assert.match(markup, /admin-tariff-progress/, 'Progress track uses the existing Admin readiness palette');
 assert.match(markup, /Контакты/, 'Tariff detail lists canonical tool names');
 assert.match(markup, /Проверка/, 'Testing tools remain visibly incomplete');
-assert.match(markup, /Не предлагается/, 'An unpublished paid tariff is not claimed saleable');
+assert.match(markup, /Не опубликован/, 'Unpublished paid tariff is not claimed published');
 
 listeners.get('group')();
 assert.match(markup, /Ирина/, 'KPI drilldown must show matching person');
@@ -252,7 +278,7 @@ await tariffDraftSave({ currentTarget: draftSaveButton });
 assert.deepEqual(savedDraft, ['tariff.start-plus', 0, 20, 50],
   'Saving bonuses without an approved tariff price sends zero (not NaN) to Core');
 assert.match(markup, /Цена не установлена/, 'Draft tariff remains visibly unpriced');
-assert.match(markup, /Не предлагается/, 'Unpriced tariff is not advertised as saleable');
+assert.match(markup, /Не опубликован/, 'Unpriced tariff is not advertised as published');
 
 // Readiness is unknown until Core replies; it must not appear as an editable NOT_READY.
 const adminCatalogCode = readFileSync(new URL('../admin/commercial-catalog.js', import.meta.url), 'utf8');
@@ -287,5 +313,44 @@ assert.equal(statusSelect.value, '', 'Empty API response cannot fabricate NOT_RE
 isolatedHydrateReadiness(statusRoot, [{ key: 'cabinet.people', status: 'READY' }]);
 assert.equal(statusSelect.disabled, false, 'Confirmed API data enables editing');
 assert.equal(statusSelect.value, 'READY', 'Confirmed API state is rendered without inventing a default');
+
+
+// Exercise the real click handler: every card sends only its own publication change.
+const publicationHandlerStart = source.indexOf("  content.querySelectorAll('[data-overview-tariff-publication]').forEach(");
+const publicationHandlerEnd = source.indexOf("  content.querySelectorAll('[data-overview-section]')", publicationHandlerStart);
+assert.ok(publicationHandlerStart > 0 && publicationHandlerEnd > publicationHandlerStart,
+  'Per-tariff publication handler exists');
+const publicationButtons = ['tariff.start', 'tariff.start-plus', 'tariff.pro'].map((key) => ({
+  dataset: { overviewTariffPublication: key },
+  disabled: false,
+  addEventListener(type, callback) { if (type === 'click') this.click = callback; },
+}));
+const publicationRequests = [];
+const publicationContext = {
+  content: {
+    querySelectorAll: (selector) => selector === '[data-overview-tariff-publication]' ? publicationButtons : [],
+    querySelector: () => ({ textContent: '', classList: { add() {} } }),
+  },
+  tariffCards: [
+    { key: 'tariff.start', isSaleable: true, priceMinor: 0 },
+    { key: 'tariff.start-plus', isSaleable: false, priceMinor: 100000 },
+    { key: 'tariff.pro', isSaleable: false, priceMinor: 150000 },
+  ],
+  updateTariffPublication: async (key, publish) => {
+    publicationRequests.push([key, publish]);
+    return { tiers: [] };
+  },
+  overviewTariffData: null,
+  overviewTariffStatus: 'idle',
+  renderTariffs: () => {},
+};
+runInNewContext(source.slice(publicationHandlerStart, publicationHandlerEnd), publicationContext);
+for (const action of publicationButtons) {
+  assert.equal(typeof action.click, 'function', 'Each card gets a click handler');
+  await action.click();
+}
+assert.deepEqual(publicationRequests, [
+  ['tariff.start', false], ['tariff.start-plus', true], ['tariff.pro', true],
+], 'Each publication changes only the selected tier; no readiness-based gate');
 
 console.log('Platform Admin Overview data boundaries, labels and actions: PASS');
