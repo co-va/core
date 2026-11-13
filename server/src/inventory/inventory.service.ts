@@ -225,8 +225,8 @@ export class InventoryService {
     const positionOf = (item: AnyRecord) => Number.isSafeInteger(item.position) && item.position > 0
       ? item.position : Number.MAX_SAFE_INTEGER;
     const orderedItems = [...items].sort((left: AnyRecord, right: AnyRecord) =>
-      collator.compare(String(left.manufacturer || ''), String(right.manufacturer || ''))
-      || positionOf(left) - positionOf(right)
+      positionOf(left) - positionOf(right)
+      || collator.compare(String(left.manufacturer || ''), String(right.manufacturer || ''))
       || collator.compare(String(left.name || ''), String(right.name || ''))
       || String(left.itemId || '').localeCompare(String(right.itemId || '')));
 
@@ -301,12 +301,36 @@ export class InventoryService {
     };
   }
 
+  private inventoryPosition(value: unknown): number {
+    if (value == null) return 0;
+    if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2147483647)
+      throw new BadRequestException('Порядковый номер должен быть целым положительным числом или пустым');
+    return Number(value);
+  }
+
+  // Global uniqueness within one tenant, irrespective of manufacturer.
+  // Transaction-scoped lock prevents two simultaneous requests from taking the same number.
+  private async ensureInventoryPositionAvailable(owner: Tx, tenantId: string, position: number, excludeId = '') {
+    if (position === 0) return;
+    const lockKey = `inventory-position:${tenantId}`;
+    await owner.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${lockKey}))`;
+    const occupied = await owner.inventoryItem.findFirst({
+      where: { tenantId, archivedAt: null, position, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { name: true, manufacturer: true },
+    });
+    if (occupied) {
+      const product = [occupied.manufacturer, occupied.name].filter(Boolean).join(' · ');
+      throw new BadRequestException(`№ ${position} уже занят: ${product || 'другой товар'}`);
+    }
+  }
+
   async createItem(tenantId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
     const name = text(source.name);
     if (!name) throw new BadRequestException('Укажите наименование позиции');
     const unit = text(source.unit) || 'шт.';
     const itemId = text(source.itemId) || randomUUID();
+    const position = this.inventoryPosition(source.position);
     const initialQuantity = nonNegative(source.quantity);
     const purchasePrice = nullableNonNegative(source.purchasePrice ?? source.actualPrice ?? source.lastPurchasePrice);
     const grossWeight = nullableNonNegative(source.grossWeight);
@@ -316,6 +340,7 @@ export class InventoryService {
     }
 
     const work = async (tx: Tx) => {
+      await this.ensureInventoryPositionAvailable(tx, tenantId, position);
       await tx.inventoryItem.create({
         data: {
           tenantId,
@@ -340,7 +365,7 @@ export class InventoryService {
           trackLots: source.trackLots !== false,
           canConsume: source.canConsume !== false,
           canSell: source.canSell === true,
-          position: Number.isInteger(source.position) ? source.position : 0,
+          position,
         },
       });
 
@@ -368,8 +393,15 @@ export class InventoryService {
   }
 
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
-    const owner = db || this.prisma;
     const source = objectValue(body);
+    // A change to the number must read, validate and write under the same lock.
+    if (!db && 'position' in source) {
+      await this.prisma.$transaction(async (tx: Tx) => {
+        await this.updateItem(tenantId, itemId, body, tx);
+      });
+      return this.snapshot(tenantId);
+    }
+    const owner = db || this.prisma;
     const current = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!current) throw new NotFoundException('Позиция склада не найдена');
 
@@ -408,9 +440,9 @@ export class InventoryService {
     if ('canConsume' in source) data.canConsume = source.canConsume !== false;
     if ('canSell' in source) data.canSell = source.canSell === true;
     if ('position' in source) {
-      if (!Number.isSafeInteger(source.position) || source.position < 0)
-        throw new BadRequestException('Порядковый номер должен быть целым неотрицательным числом');
-      data.position = source.position;
+      data.position = this.inventoryPosition(source.position);
+      if (data.position > 0 && data.position !== current.position)
+        await this.ensureInventoryPositionAvailable(owner, tenantId, data.position, current.id);
     }
     if (source.archived === true) data.archivedAt = new Date();
 
@@ -418,8 +450,6 @@ export class InventoryService {
     return db ? { itemId } : this.snapshot(tenantId);
   }
 
-  // A single move reindexes every active item of this manufacturer atomically.
-  // Existing catalogs with position=0 are numbered automatically on the first move.
   private async findCatalogItem(owner: Tx | PrismaService, tenantId: string, itemId: string) {
     const item = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!item) throw new NotFoundException('Продукт не найден');
