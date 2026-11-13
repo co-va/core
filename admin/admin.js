@@ -1,4 +1,5 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
+import { tariffBenefits, tariffHeadline } from '../core/tariff-benefits.js';
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
@@ -648,12 +649,18 @@ function renderTariffs() {
             data-overview-tariff="${item.key}" aria-pressed="${overviewSelectedTariff === item.key}">
             <span class="admin-overview-metric-label">${item.name}</span>
             <strong class="admin-overview-metric-value">${formatTariffPrice(item)}</strong>
+            <span class="admin-tariff-headline">${escapeHtml(tariffHeadline(item.key))}</span>
+            <span class="admin-tariff-includes">Что вы получите</span>
+            <span class="admin-tariff-preview-list">${tariffBenefits(item).length
+              ? tariffBenefits(item).slice(0, 4).map((benefit) => `<span>✓ ${escapeHtml(benefit.title)}</span>`).join('')
+                + (tariffBenefits(item).length > 4 ? `<span>+ ещё ${tariffBenefits(item).length - 4}</span>` : '')
+              : '<span>Состав не настроен</span>'}</span>
             <span class="admin-overview-metric-hint">Подключено: ${Number.isInteger(item.connected) ? item.connected : '—'}</span>
             <span class="admin-overview-metric-action" aria-hidden="true">↗</span>
           </button>`).join('')}
       </section>
       ${overviewSelectedTariff && overviewTariffStatus === 'unavailable' ? `
-        <section class="admin-overview-detail"><p class="admin-overview-empty">Данные тарифов недоступны.</p></section>` : ''}
+        <section class="admin-overview-detail"><p class="admin-overview-empty">Не удалось загрузить настройки тарифов. Цена пока недоступна для редактирования.</p><button type="button" class="admin-button" data-overview-tariff-retry>Повторить загрузку</button></section>` : ''}
       ${overviewSelectedTariff && overviewTariffStatus === 'ready' && selectedTariff ? `
         <section class="admin-overview-detail" aria-label="Состав тарифа ${escapeHtml(selectedTariff.name)}">
           <div class="admin-overview-detail-heading">
@@ -696,16 +703,16 @@ function renderTariffs() {
                 }).join('')}
               </div>
 
-            </div>` : '<p class="admin-overview-tariff-free">Бесплатный LIVE Start без ограничения срока. Цена и бонусы не требуются.</p>'}
+            </div>` : '<p class="admin-overview-tariff-free">Бесплатно без ограничения срока.</p>'}
           <div class="admin-overview-tariff-tools-heading">
-            <strong>Состав тарифа</strong>
+            <strong>Что получит человек</strong>
             <button type="button" class="admin-overview-inline-link" data-overview-section="capabilities">Настроить в «Инструментах» <span aria-hidden="true">↗</span></button>
           </div>
           <div class="admin-overview-detail-list admin-overview-tariff-list">
-            ${selectedTariff.tools?.length ? selectedTariff.tools.map((tool) => `
+            ${tariffBenefits(selectedTariff).length ? tariffBenefits(selectedTariff).map((benefit) => `
               <div class="admin-overview-person">
-                <span><strong>${escapeHtml(tool.name)}</strong></span>
-              </div>`).join('') : '<p class="admin-overview-empty">Инструменты не назначены.</p>'}
+                <span><strong>${escapeHtml(benefit.title)}</strong><small>${escapeHtml(benefit.detail)}</small></span>
+              </div>`).join('') : '<p class="admin-overview-empty">Состав тарифа пока не настроен.</p>'}
           </div>
         </section>` : ''}
 
@@ -715,6 +722,11 @@ function renderTariffs() {
     window.scrollTo(0, currentScroll);
   }
   if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+  content.querySelector('[data-overview-tariff-retry]')?.addEventListener('click', () => {
+    overviewTariffStatus = 'idle';
+    requestOverviewTariffs(true);
+    renderTariffs();
+  });
   content.querySelectorAll('[data-overview-tariff]').forEach((button) => {
     button.addEventListener('click', () => {
       overviewSelectedTariff = overviewSelectedTariff === button.dataset.overviewTariff ? '' : button.dataset.overviewTariff;
