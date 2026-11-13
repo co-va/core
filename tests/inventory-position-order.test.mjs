@@ -37,8 +37,8 @@ assert.ok(rawHelpers.startsWith('  private inventoryPosition('));
 const helperFunctions = rawHelpers
   .replace('private inventoryPosition(value: unknown): number', 'function inventoryPosition(value)')
   .replace('private async lockInventoryOrder(tx: Tx, tenantId: string)', 'async function lockInventoryOrder(tx, tenantId)')
-  .replace("private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '')",
-    "async function freeInventoryPosition(tx, tenantId, manufacturer, position, excludeId = '')")
+  .replace("private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '', oldPosition = 0)",
+    "async function freeInventoryPosition(tx, tenantId, manufacturer, position, excludeId = '', oldPosition = 0)")
   .replaceAll('const rows: AnyRecord[]', 'const rows');
 const helpers = new Function('BadRequestException',
   helperFunctions + '\nreturn { inventoryPosition, lockInventoryOrder, freeInventoryPosition };')(Error);
@@ -69,6 +69,22 @@ assert.deepEqual(numbered.filter(item=>item.manufacturer==='CHI').map(item=>item
   [1,2,3,5,6,7,8,9,10,11], 'Inserting number 4 moves only CHI numbers 4–10');
 assert.equal(numbered.find(item=>item.id==='wella-4').position,4,
   'The same number may exist in another company');
+// Moving the item originally numbered 2 to number 4 compacts the vacated place.
+const compact = Array.from({length:5},(_,i)=>({id:'g'+i,manufacturer:'CHI',position:i+1}));
+const compactDb = {
+  inventoryItem:{
+    findMany:async({where})=>compact.filter(item =>
+      (where.id?.not !== item.id) &&
+      item.position > (where.position.gt ?? -1) &&
+      item.position <= (where.position.lte ?? Infinity))
+      .map(item=>({...item})),
+    update:async({where,data})=>{compact.find(item=>item.id===where.id).position=data.position;}
+  }
+};
+await helpers.freeInventoryPosition(compactDb,'tenant','CHI',4,'g1',2);
+compact.find(item=>item.id==='g1').position=4;
+assert.deepEqual(compact.map(item=>item.position),[1,4,2,3,5],
+  'Moving number 2 to 4 shifts 3 and 4 down one slot');
 
 const Prisma = {
   sql:(strings,...values)=>({ strings:Array.from(strings),values }),
