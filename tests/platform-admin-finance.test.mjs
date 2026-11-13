@@ -41,5 +41,9 @@ assert.match(markup,/216 дней/);
 assert.match(markup,/Ручное подтверждение/);
 assert.match(markup,/&lt;script&gt;/);
 assert.doesNotMatch(markup,/<script>/);
-assert.match(markup,/Подтверждено в Core/);
+assert.match(markup,/Отмечено как оплачено/, 'Use the published Admin wording, not internal Core jargon');
+assert.match(markup,/Фактическое поступление денег нужно проверять по банковской выписке/,
+  'Payment status must never claim bank settlement');
+assert.doesNotMatch(markup,/Подтверждено в Core/,
+  'Do not return technical payment labels to the Administrator');
 console.log('Admin Finance reads commercial receipts and payment history without claiming bank settlement: PASS');
