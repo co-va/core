@@ -398,6 +398,14 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-overview-heading h2{font-size:30px;letter-spacing:-.04em}
 .admin-overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .admin-overview-tariff-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.admin-tariff-section .admin-overview-metric{min-height:284px}
+.admin-tariff-headline{display:block;margin-top:12px;font-size:13px;font-weight:700;line-height:1.35;color:#303438}
+.admin-tariff-includes{display:block;margin-top:13px;font-size:12px;font-weight:700;color:#4A5155}
+.admin-tariff-preview-list{display:grid;gap:5px;margin:7px 0 5px}
+.admin-tariff-preview-list>span{display:block;font-size:12px;line-height:1.35;color:#41474B}
+.admin-tariff-section .admin-overview-tariff-list .admin-overview-person{cursor:default}
+.admin-tariff-section .admin-overview-tariff-list .admin-overview-person:hover{background:transparent}
+
 .admin-overview-tariffs-heading{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px 14px;margin-top:12px;color:var(--white)}
 .admin-overview-tariffs-heading strong{font-size:22px;letter-spacing:-.02em}
 .admin-overview-tariffs-heading strong span{font-size:14px;font-weight:500;color:var(--admin-pearl)}
