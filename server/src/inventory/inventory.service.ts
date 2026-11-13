@@ -219,8 +219,19 @@ export class InventoryService {
       linesByMovement.set(line.inventoryMovementId, group);
     });
 
+    // Positions are user-assigned. 0 means "not assigned" and always comes last.
+    // Do not generate sequential numbers or alter other catalog records on update.
+    const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+    const positionOf = (item: AnyRecord) => Number.isSafeInteger(item.position) && item.position > 0
+      ? item.position : Number.MAX_SAFE_INTEGER;
+    const orderedItems = [...items].sort((left: AnyRecord, right: AnyRecord) =>
+      collator.compare(String(left.manufacturer || ''), String(right.manufacturer || ''))
+      || positionOf(left) - positionOf(right)
+      || collator.compare(String(left.name || ''), String(right.name || ''))
+      || String(left.itemId || '').localeCompare(String(right.itemId || '')));
+
     return {
-      items: items.map((item: AnyRecord) => {
+      items: orderedItems.map((item: AnyRecord) => {
         const grossWeight = item.grossWeight == null ? null : decimalNumber(item.grossWeight);
         const tareWeight = item.tareWeight == null ? null : decimalNumber(item.tareWeight);
         const itemOffers = offersByItem.get(item.id) || [];
@@ -396,7 +407,11 @@ export class InventoryService {
     if ('trackLots' in source) data.trackLots = source.trackLots !== false;
     if ('canConsume' in source) data.canConsume = source.canConsume !== false;
     if ('canSell' in source) data.canSell = source.canSell === true;
-    if ('position' in source && Number.isInteger(source.position)) data.position = source.position;
+    if ('position' in source) {
+      if (!Number.isSafeInteger(source.position) || source.position < 0)
+        throw new BadRequestException('Порядковый номер должен быть целым неотрицательным числом');
+      data.position = source.position;
+    }
     if (source.archived === true) data.archivedAt = new Date();
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
@@ -405,36 +420,6 @@ export class InventoryService {
 
   // A single move reindexes every active item of this manufacturer atomically.
   // Existing catalogs with position=0 are numbered automatically on the first move.
-  async moveItem(tenantId: string, itemId: string, body: unknown) {
-    const value = objectValue(body).position;
-    const target = Number(value);
-    if (!Number.isSafeInteger(target) || target < 1)
-      throw new BadRequestException('Порядковый номер должен быть целым положительным числом');
-
-    await this.prisma.$transaction(async (tx: Tx) => {
-      const current = await tx.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
-      if (!current) throw new NotFoundException('Позиция склада не найдена');
-      const rows: AnyRecord[] = await tx.inventoryItem.findMany({
-        where: { tenantId, archivedAt: null, manufacturer: current.manufacturer },
-        select: { id: true, itemId: true, name: true, position: true },
-      });
-      const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
-      const rank = (row: AnyRecord) => Number(row.position) > 0 ? Number(row.position) : Number.MAX_SAFE_INTEGER;
-      rows.sort((a, b) => rank(a) - rank(b)
-        || collator.compare(String(a.name || ''), String(b.name || ''))
-        || String(a.itemId).localeCompare(String(b.itemId)));
-      const from = rows.findIndex(row => row.itemId === itemId);
-      if (from < 0) throw new NotFoundException('Позиция склада не найдена');
-      const [moved] = rows.splice(from, 1);
-      rows.splice(Math.min(target - 1, rows.length), 0, moved);
-      for (let index = 0; index < rows.length; index += 1) {
-        if (rows[index].position === index + 1) continue;
-        await tx.inventoryItem.update({ where: { id: rows[index].id }, data: { position: index + 1 } });
-      }
-    }, { timeout: 20000 });
-    return this.snapshot(tenantId);
-  }
-
   private async findCatalogItem(owner: Tx | PrismaService, tenantId: string, itemId: string) {
     const item = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!item) throw new NotFoundException('Продукт не найден');
