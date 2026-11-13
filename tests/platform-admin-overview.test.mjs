@@ -114,10 +114,10 @@ assert.match(markup, /Завершения регистрации/);
 assert.match(markup, /За последние 30 дней/);
 assert.match(commercialService, /isSaleable: byKey\.get\(key\)\?\.isSaleable === true/,
   'Tariff API reports the existing persisted publication switch');
-assert.match(commercialService, /published: tier\\.isSaleable === true/,
+assert.ok(commercialService.includes('published: tier.isSaleable === true'),
   'Each Professional tariff has its own persisted publication flag');
-assert.match(commercialService, /purchasable: tier\\.isSaleable === true && \\(index === 0 \\|\\| tier\\.priceMinor > 0\\)/,
-  'Even free Start requires publication; paid tiers additionally require a price');
+assert.ok(commercialService.includes('purchasable: tier.isSaleable === true && (index === 0 || tier.priceMinor > 0)'),
+  'Free Start requires publication; paid tiers additionally require a price');
 assert.match(landingTariffs, /offer\?\.published === true && offer\?\.purchasable === true/,
   'Landing respects the authoritative publication policy');
 assert.match(landingHtml, /\.tariff-card\[hidden\]\{display:none\}/,
