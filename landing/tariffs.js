@@ -1,3 +1,5 @@
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../core/tariff-benefits.js';
+
 // Landing is a read-only storefront. Core owns pricing and the period quote.
 const registrationOrigin = 'https://prof.va-tools.ru/invite/';
 const source = new URLSearchParams(location.search);
@@ -21,22 +23,36 @@ function currency(minor) {
 }
 
 function renderIncludedTools() {
-  for (const list of document.querySelectorAll('[data-tariff-tools]')) {
-    const offer = offers?.professional?.find((item) => item.key === list.dataset.tariffTools);
-    const names = [...new Set((offer?.tools || []).map((tool) => String(tool?.name || '').trim()).filter(Boolean))];
+  const tiers = offers?.professional || [];
+  document.querySelectorAll('[data-tariff-tools]').forEach((list) => {
+    const index = tiers.findIndex((tier) => tier.key === list.dataset.tariffTools);
+    const tier = tiers[index];
+    const previous = index > 0 ? tiers[index - 1] : null;
+    const benefits = tariffBenefits(tier);
+    const earlier = previous ? tariffBenefits(previous) : [];
+    const inherits = earlier.length > 0 && earlier.every((item) =>
+      benefits.some((entry) => entry.title === item.title));
+    const additional = inherits ? tariffNewBenefits(tier, previous) : benefits;
+    const headline = document.querySelector('[data-tariff-headline="' + list.dataset.tariffTools + '"]');
+    if (headline) headline.textContent = tariffHeadline(list.dataset.tariffTools);
     list.replaceChildren();
-    for (const name of names) {
+    const appendBenefit = (title, detail = '', inherited = false) => {
       const row = document.createElement('li');
-      row.textContent = name;
+      if (inherited) row.className = 'is-inherited';
+      const strong = document.createElement('strong');
+      strong.textContent = title;
+      row.append(strong);
+      if (detail) {
+        const body = document.createElement('span');
+        body.textContent = detail;
+        row.append(body);
+      }
       list.append(row);
-    }
-    if (!names.length) {
-      const row = document.createElement('li');
-      row.className = 'is-unavailable';
-      row.textContent = offers ? 'Состав тарифа пока не настроен' : 'Состав тарифа недоступен';
-      list.append(row);
-    }
-  }
+    };
+    if (inherits) appendBenefit('Все возможности ' + previous.name);
+    for (const benefit of additional) appendBenefit(benefit.title, benefit.detail);
+    if (!benefits.length) appendBenefit(offers ? 'Состав тарифа пока не настроен' : 'Пока не удалось загрузить состав тарифа');
+  });
 }
 
 function render() {
