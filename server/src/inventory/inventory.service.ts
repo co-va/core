@@ -149,7 +149,7 @@ export class InventoryService {
     const [items, lots, movements, lines, supplierOffers] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
-        orderBy: [{ position: 'asc' }, { manufacturer: 'asc' }, { name: 'asc' }],
+        orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
       }),
       this.prisma.inventoryLot.findMany({
         where: { tenantId, quantityRemaining: { gt: 0 } },
@@ -227,6 +227,7 @@ export class InventoryService {
         const basePricing = resolveInventoryBasePricing(item, itemOffers);
         return {
           itemId: item.itemId,
+          position: item.position,
           name: item.name,
           manufacturer: item.manufacturer,
           productType: item.productType,
@@ -400,6 +401,38 @@ export class InventoryService {
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
     return db ? { itemId } : this.snapshot(tenantId);
+  }
+
+  // A single move reindexes every active item of this manufacturer atomically.
+  // Existing catalogs with position=0 are numbered automatically on the first move.
+  async moveItem(tenantId: string, itemId: string, body: unknown) {
+    const value = objectValue(body).position;
+    const target = Number(value);
+    if (!Number.isSafeInteger(target) || target < 1)
+      throw new BadRequestException('Порядковый номер должен быть целым положительным числом');
+
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const current = await tx.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
+      if (!current) throw new NotFoundException('Позиция склада не найдена');
+      const rows: AnyRecord[] = await tx.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null, manufacturer: current.manufacturer },
+        select: { id: true, itemId: true, name: true, position: true },
+      });
+      const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+      const rank = (row: AnyRecord) => Number(row.position) > 0 ? Number(row.position) : Number.MAX_SAFE_INTEGER;
+      rows.sort((a, b) => rank(a) - rank(b)
+        || collator.compare(String(a.name || ''), String(b.name || ''))
+        || String(a.itemId).localeCompare(String(b.itemId)));
+      const from = rows.findIndex(row => row.itemId === itemId);
+      if (from < 0) throw new NotFoundException('Позиция склада не найдена');
+      const [moved] = rows.splice(from, 1);
+      rows.splice(Math.min(target - 1, rows.length), 0, moved);
+      for (let index = 0; index < rows.length; index += 1) {
+        if (rows[index].position === index + 1) continue;
+        await tx.inventoryItem.update({ where: { id: rows[index].id }, data: { position: index + 1 } });
+      }
+    }, { timeout: 20000 });
+    return this.snapshot(tenantId);
   }
 
   private async findCatalogItem(owner: Tx | PrismaService, tenantId: string, itemId: string) {
