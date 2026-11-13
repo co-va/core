@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+// UI-CONTRACT-1: fast gate against cross-repository contract drift.
+// This is not a visual approval or a screenshot regression test.
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (path) => readFileSync(resolve(root, path), 'utf8');
+const packageName = JSON.parse(read('package.json')).name;
+const roles = {
+  'co-va-core-platform': 'core',
+  '@co-va/user': 'user',
+  '@co-va/professional': 'professional',
+};
+const role = roles[packageName];
+if (!role) throw new Error('UI CONTRACT: unknown repository package ' + packageName);
+
+const contractUrl = 'https://raw.githubusercontent.com/co-va/core/staging/UI_ALPHABET.md';
+async function loadCanonicalContract() {
+  if (role === 'core') return read('UI_ALPHABET.md');
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(contractUrl, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return await response.text();
+    } catch (error) { lastError = error; }
+  }
+  throw new Error('UI CONTRACT: canonical Core staging contract unavailable; cannot verify: ' + lastError);
+}
+
+const source = await loadCanonicalContract();
+const expectedIds = [
+  'shared.modal', 'shared.mini-card', 'shared.calendar',
+  'shared.list', 'shared.button', 'shared.input',
+  'shared.selector', 'shared.card-appearance', 'shared.shell',
+];
+const rows = [...source.matchAll(/^\|\s*\x60(shared\.[a-z][a-z-]*)\x60\s*\|([^\n]+)$/gm)];
+const counts = new Map();
+for (const row of rows) counts.set(row[1], (counts.get(row[1]) || 0) + 1);
+const problems = [];
+if (!source.includes('UI-CONTRACT-1')) problems.push('Unexpected UI contract version');
+for (const id of expectedIds) if (counts.get(id) !== 1) problems.push('Missing or duplicate contract ID: ' + id);
+for (const id of counts.keys()) if (!expectedIds.includes(id)) problems.push('New contract ID requires coordinated consumer update: ' + id);
+
+const requiredFiles = {
+  core: {
+    'shared.modal': ['ui/v2/z-layout.js', 'ui/modals/index.js'],
+    'shared.list': ['ui/lists/list-entry.css'],
+    'shared.button': ['ui/buttons/index.js'],
+    'shared.input': ['ui/inputs/index.js'],
+    'shared.selector': ['ui/selectors/index.js'],
+    'shared.shell': ['ui/v2/shell.js', 'admin/admin.js'],
+  },
+  user: {
+    'shared.modal': ['ui/v2/z-layout.js', 'ui/modals/index.js'],
+    'shared.mini-card': ['ui/cards/mini-card.js', 'ui/cards/mini-card.css'],
+    'shared.calendar': ['ui/calendar/calendar.css'],
+    'shared.list': ['ui/lists/list-entry.css'],
+    'shared.button': ['ui/buttons/index.js', 'ui/buttons/buttons.css'],
+    'shared.input': ['ui/inputs/index.js', 'ui/inputs/inputs.css'],
+    'shared.selector': ['ui/selectors/index.js', 'ui/selectors/selectors.css'],
+    'shared.card-appearance': ['ui/cards/entity-card-constructor.js'],
+    'shared.shell': ['ui/v2/shell.js'],
+  },
+  professional: {
+    'shared.modal': ['ui/v2/z-layout.js', 'ui/modals/index.js'],
+    'shared.mini-card': ['ui/cards/mini-card.js', 'ui/cards/mini-card.css'],
+    'shared.calendar': ['ui/calendar/calendar.css'],
+    'shared.list': ['ui/lists/list-entry.css'],
+    'shared.button': ['ui/buttons/index.js', 'ui/buttons/buttons.css'],
+    'shared.input': ['ui/inputs/index.js', 'ui/inputs/inputs.css'],
+    'shared.selector': ['ui/selectors/index.js', 'ui/selectors/selectors.css'],
+    'shared.card-appearance': ['ui/cards/entity-card-constructor.js'],
+    'shared.shell': ['ui/v2/shell.js'],
+  },
+};
+for (const [id, paths] of Object.entries(requiredFiles[role])) {
+  if (!counts.has(id)) problems.push('No canonical ID for implementation: ' + id);
+  for (const path of paths) {
+    if (!existsSync(resolve(root, path))) problems.push(id + ': missing owner file ' + path);
+  }
+}
+for (const path of ['AGENTS.md', 'PROJECT_STATE.md']) {
+  if (!existsSync(resolve(root, path))) {
+    problems.push('Missing agent/project entry: ' + path);
+  } else if (!read(path).includes('UI_ALPHABET.md')) {
+    problems.push('Entry no longer points to the canonical UI contract: ' + path);
+  }
+}
+if (role !== 'core' && existsSync(resolve(root, 'UI_ALPHABET.md')))
+  problems.push('UI_ALPHABET.md must not be duplicated outside Core');
+if (problems.length) {
+  problems.forEach((problem) => console.error('UI CONTRACT FAILED: ' + problem));
+  process.exitCode = 1;
+} else {
+  console.log('UI CONTRACT PASS: ' + role + ' uses Core UI-CONTRACT-1, 9 unique IDs and existing source owners.');
+}
