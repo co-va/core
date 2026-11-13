@@ -206,4 +206,86 @@ assert.equal(currentSectionRendered, 'tenants', 'Person action must navigate to 
 
 listeners.get('section')();
 assert.equal(currentSectionRendered, 'capabilities', 'Tools action must navigate to Tools');
+// A paid tariff can have its bonus periods configured before its price is approved.
+// The server accepts priceMinor=0; it remains non-purchasable until priced and published.
+let tariffDraftSave = null;
+let savedDraft = null;
+const draftPriceInput = { value: '', addEventListener() {} };
+const draftBonus6 = { value: '20', addEventListener() {} };
+const draftBonus12 = { value: '50', addEventListener() {} };
+const draftMessage = { textContent: '', classList: { add() {}, remove() {} } };
+const draftSaveButton = {
+  dataset: { overviewTariffSave: 'tariff.start-plus' },
+  disabled: false,
+  addEventListener(eventName, handler) {
+    if (eventName === 'click') tariffDraftSave = handler;
+  },
+};
+const originalQueryOne = content.querySelector.bind(content);
+const originalQueryAll = content.querySelectorAll.bind(content);
+content.querySelector = (selector) => {
+  if (selector === '[data-overview-tariff-price="tariff.start-plus"]') return draftPriceInput;
+  if (selector === '[data-overview-tariff-bonus="6"]') return draftBonus6;
+  if (selector === '[data-overview-tariff-bonus="12"]') return draftBonus12;
+  if (selector === '[data-overview-tariff-message="tariff.start-plus"]') return draftMessage;
+  return originalQueryOne(selector);
+};
+content.querySelectorAll = (selector) => {
+  if (selector === '[data-overview-tariff-save]') return [draftSaveButton];
+  if (selector === '[data-overview-tariff-bonus]') return [draftBonus6, draftBonus12];
+  return originalQueryAll(selector);
+};
+context.updateTariffSettings = async (...args) => {
+  savedDraft = args;
+  return {
+    tiers: [
+      { key: 'tariff.start', name: 'Start', priceMinor: 0, tools: [] },
+      { key: 'tariff.start-plus', name: 'Start+', priceMinor: 0, isSaleable: false, tools: [],
+        periods: [{ months: 6, bonusPercent: 20 }, { months: 12, bonusPercent: 50 }] },
+      { key: 'tariff.pro', name: 'Pro', priceMinor: 0, isSaleable: false, tools: [] },
+    ],
+  };
+};
+runInNewContext("overviewTariffData.tiers.find((tier) => tier.key === 'tariff.start-plus').priceMinor = 0; renderTariffs();", context);
+assert.equal(typeof tariffDraftSave, 'function', 'Tariff save action is reachable');
+await tariffDraftSave({ currentTarget: draftSaveButton });
+assert.deepEqual(savedDraft, ['tariff.start-plus', 0, 20, 50],
+  'Saving bonuses without an approved tariff price sends zero (not NaN) to Core');
+assert.match(markup, /Цена не установлена/, 'Draft tariff remains visibly unpriced');
+assert.match(markup, /Не предлагается/, 'Unpriced tariff is not advertised as saleable');
+
+// Readiness is unknown until Core replies; it must not appear as an editable NOT_READY.
+const adminCatalogCode = readFileSync(new URL('../admin/commercial-catalog.js', import.meta.url), 'utf8');
+const readinessSelectCode = adminCatalogCode.slice(
+  adminCatalogCode.indexOf('function readinessSelect('),
+  adminCatalogCode.indexOf('function aggregateKeys(')
+);
+const isolatedReadinessSelect = runInNewContext(readinessSelectCode + '\nreadinessSelect', {
+  readinessValue: (item) => item?.status || 'NOT_READY',
+  readinessOptions: (value) => '<option value="READY"' + (value === 'READY' ? ' selected' : '') + '>Готово</option>',
+  escapeHtml: (value) => String(value),
+});
+const unknownReadiness = isolatedReadinessSelect('cabinet.people', new Map(), 'status');
+assert.match(unknownReadiness, /Нет данных/, 'Unloaded status must be explicitly unknown');
+assert.match(unknownReadiness, / disabled>/, 'Unknown readiness may not be changed');
+const knownReadiness = isolatedReadinessSelect('cabinet.people',
+  new Map([['cabinet.people', { status: 'READY' }]]), 'status');
+assert.doesNotMatch(knownReadiness, / disabled>/, 'Confirmed readiness becomes editable');
+const hydrateReadinessCode = adminCatalogCode.slice(
+  adminCatalogCode.indexOf('function hydrateReadiness('),
+  adminCatalogCode.indexOf('function hydrateAllReadiness(')
+);
+const isolatedHydrateReadiness = runInNewContext(hydrateReadinessCode + '\nhydrateReadiness', {
+  readinessByKey: (items) => new Map(items.map((item) => [item.key, item])),
+  readinessValue: (item) => item?.status || 'NOT_READY',
+});
+const statusSelect = { dataset: { readinessKey: 'cabinet.people' }, value: '', disabled: true, title: '' };
+const statusRoot = { querySelectorAll: (selector) => selector === '[data-readiness-key]' ? [statusSelect] : [] };
+isolatedHydrateReadiness(statusRoot, []);
+assert.equal(statusSelect.disabled, true, 'Empty API response cannot silently enable readiness editing');
+assert.equal(statusSelect.value, '', 'Empty API response cannot fabricate NOT_READY');
+isolatedHydrateReadiness(statusRoot, [{ key: 'cabinet.people', status: 'READY' }]);
+assert.equal(statusSelect.disabled, false, 'Confirmed API data enables editing');
+assert.equal(statusSelect.value, 'READY', 'Confirmed API state is rendered without inventing a default');
+
 console.log('Platform Admin Overview data boundaries, labels and actions: PASS');
