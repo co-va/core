@@ -313,3 +313,36 @@ if (!ui.includes("readinessKey: 'cabinet.profile.workspaces'")) throw new Error(
 if (!service.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace readiness status must be saved in the registry');
 if (ui.includes('DEMO — без лимита; LIVE — по разрешению')) throw new Error('Do not replace a readiness status with technical text');
 if (policy.includes("'cabinet.profile.workspaces'")) throw new Error('Workplace access/quota must remain separate from readiness status');
+
+
+// A single tariff indicator must use the persisted Tools readiness and the
+// minimum-tariff membership, including inherited and excluded descendants.
+const tariffSource = ui.slice(ui.indexOf('const INLINE_COMMERCIAL_KEYS = Object.freeze('),
+  ui.indexOf('const tariffLevels = Object.freeze(')).replaceAll('export function ', 'function ');
+const summarizeTariffReadiness = runInNewContext(
+  mapSource + '\n' + tariffSource + '\nsummarizeTariffReadiness');
+const allReady = serviceKeys.map((key) => ({ key, status: 'READY' }));
+const startReady = summarizeTariffReadiness('tariff.start', {}, allReady);
+assert.ok(startReady.total > 20, 'Tariff health counts the existing Tool map, not a marketing shortlist');
+assert.equal(startReady.percent, 100, 'All assigned READY leaves mean 100 percent');
+const partiallyReady = summarizeTariffReadiness('tariff.start', {}, allReady.map((row) =>
+  row.key === 'cabinet.people' ? { ...row, status: 'TESTING' } : row));
+assert.equal(partiallyReady.percent < 100, true, 'TESTING is not READY');
+assert.equal(partiallyReady.testing, 1, 'Testing count is a separate status');
+const scoped = {
+  'tool.people': null,
+  'folder.finance': 'tariff.start-plus',
+  'ui.cabinet.finance.cash.wallets': 'tariff.pro',
+};
+const tierStart = summarizeTariffReadiness('tariff.start', scoped, allReady);
+const tierPlus = summarizeTariffReadiness('tariff.start-plus', scoped, allReady);
+const tierPro = summarizeTariffReadiness('tariff.pro', scoped, allReady);
+const present = (tier, key) => tier.rows.find((row) => row.key === key)?.included;
+assert.equal(present(tierStart, 'cabinet.people'), false, 'Excluded tool must never count in Start');
+assert.equal(present(tierStart, 'cabinet.finance.dds'), false, 'Finance folder belongs to Start+');
+assert.equal(present(tierPlus, 'cabinet.finance.dds'), true, 'Paid finance tool inherits its folder');
+assert.equal(present(tierPlus, 'cabinet.finance.cash.wallets'), false, 'Explicit Pro wallet override wins');
+assert.equal(present(tierPro, 'cabinet.finance.cash.wallets'), true, 'Higher tariff inherits the wallet');
+assert.equal(summarizeTariffReadiness('tariff.start', {}, []).percent, null,
+  'Unavailable readiness is unknown, never 0 or 100 percent');
+console.log('Admin tariff readiness and inheritance: OK');
