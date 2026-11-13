@@ -39,7 +39,8 @@ const helperFunctions = rawHelpers
   .replace('private async lockInventoryOrder(tx: Tx, tenantId: string)', 'async function lockInventoryOrder(tx, tenantId)')
   .replace("private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '', oldPosition = 0)",
     "async function freeInventoryPosition(tx, tenantId, manufacturer, position, excludeId = '', oldPosition = 0)")
-  .replaceAll('const rows: AnyRecord[]', 'const rows');
+  .replaceAll('const rows: AnyRecord[]', 'const rows')
+  .replaceAll('const between: AnyRecord[]', 'const between');
 const helpers = new Function('BadRequestException',
   helperFunctions + '\nreturn { inventoryPosition, lockInventoryOrder, freeInventoryPosition };')(Error);
 assert.equal(helpers.inventoryPosition(0), 0, 'Blank number is represented as 0');
