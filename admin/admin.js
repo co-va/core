@@ -1,5 +1,5 @@
 import { apiRequest, clearAuthToken, getCurrentAccount, login } from '../core/auth.js';
-import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../core/tariff-benefits.js';
+import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/tariff-benefits.js';
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
