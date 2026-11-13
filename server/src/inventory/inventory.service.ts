@@ -317,8 +317,25 @@ export class InventoryService {
 
   // An occupied number is an insertion point, not a validation failure.
   // Shift the consecutive occupied slots inside this manufacturer only.
-  private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '') {
+  private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '', oldPosition = 0) {
     if (position === 0) return;
+    // Moving an already-numbered item down uses the vacated slot above it:
+    // 2 → 4 shifts old 3 to 2 and old 4 to 3, instead of leaving an empty 2.
+    if (oldPosition > 0 && oldPosition < position) {
+      const between: AnyRecord[] = await tx.inventoryItem.findMany({
+        where: {
+          tenantId, archivedAt: null, manufacturer,
+          position: { gt: oldPosition, lte: position },
+          ...(excludeId ? { id: { not: excludeId } } : {}),
+        },
+        select: { id: true, position: true },
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      });
+      for (const row of between) {
+        await tx.inventoryItem.update({ where: { id: row.id }, data: { position: row.position - 1 } });
+      }
+      return;
+    }
     const rows: AnyRecord[] = await tx.inventoryItem.findMany({
       where: {
         tenantId, archivedAt: null, manufacturer, position: { gte: position },
@@ -329,7 +346,7 @@ export class InventoryService {
     });
     let occupied = position;
     for (const row of rows) {
-      if (row.position !== occupied) break;
+      if (row.position !== occupied || (oldPosition > 0 && occupied >= oldPosition)) break;
       occupied += 1;
       await tx.inventoryItem.update({ where: { id: row.id }, data: { position: occupied } });
     }
@@ -492,7 +509,8 @@ export class InventoryService {
     const manufacturer = 'manufacturer' in data ? data.manufacturer : current.manufacturer;
     const nextPosition = 'position' in data ? data.position : current.position;
     if (nextPosition > 0 && (nextPosition !== current.position || manufacturer !== current.manufacturer)) {
-      await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition, current.id);
+      await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition, current.id,
+        manufacturer === current.manufacturer ? current.position : 0);
     }
     if (source.archived === true) data.archivedAt = new Date();
 
