@@ -74,6 +74,10 @@ const context = {
   openAccessDrawer: (tenantId) => { openedTenant = tenantId; },
   renderCurrentSection: () => { currentSectionRendered = state.section; },
   tariffBenefits, tariffHeadline, tariffNewBenefits,
+  summarizeTariffReadiness: () => ({
+    total: 1, ready: 0, testing: 1, notReady: 0, unknown: 0, percent: 0,
+    rows: [{ key: 'cabinet.people', name: 'Контакты', included: true, status: 'TESTING' }],
+  }),
   adminRequest: async () => { throw new Error('Preview backend does not have the new endpoint'); },
 };
 runInNewContext(source.slice(start, end) + '\nrenderOverview();', context);
@@ -144,14 +148,14 @@ const tariffSource = `
 overviewTariffData = {
   tiers: [
     {key:'tariff.start',name:'Start',priceMinor:0,connected:4,tools:[]},
-    {key:'tariff.start-plus',name:'Start+',priceMinor:100000,connected:0,
+    {key:'tariff.start-plus',name:'Start+',priceMinor:100000,isSaleable:false,connected:0,
       tools:[{key:'tool.loyalty.deposit',name:'Депозит'}],
       periods:[
         {months:1,paidDays:30,bonusPercent:0,bonusDays:0,accessDays:30},
         {months:6,paidDays:180,bonusPercent:20,bonusDays:36,accessDays:216},
         {months:12,paidDays:360,bonusPercent:50,bonusDays:180,accessDays:540},
       ]},
-    {key:'tariff.pro',name:'Pro',priceMinor:0,connected:0,tools:[]},
+    {key:'tariff.pro',name:'Pro',priceMinor:0,isSaleable:false,connected:0,tools:[]},
   ]
 };
 overviewTariffStatus = 'ready';
@@ -173,6 +177,12 @@ assert.match(markup, /data-overview-tariff-price="tariff.start-plus"/, 'Start+ h
 assert.match(markup, /data-overview-tariff-price="tariff.pro"/, 'Pro has a visible price input');
 assert.doesNotMatch(markup, /Подключено: 4/, 'Offer cards do not confuse accounts with included benefits');
 assert.match(markup, /data-overview-section="capabilities"/, 'Tools composition has one canonical editor');
+assert.match(markup, /Состав и готовность/, 'Tariff detail shows tool statuses, not benefits alone');
+assert.match(markup, /data-overview-tariff-publication/, 'Publication is an explicit action');
+assert.match(markup, /admin-tariff-progress/, 'Progress track uses the existing Admin readiness palette');
+assert.match(markup, /Контакты/, 'Tariff detail lists canonical tool names');
+assert.match(markup, /Проверка/, 'Testing tools remain visibly incomplete');
+assert.match(markup, /Не предлагается/, 'An unpublished paid tariff is not claimed saleable');
 
 listeners.get('group')();
 assert.match(markup, /Ирина/, 'KPI drilldown must show matching person');
