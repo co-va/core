@@ -1,0 +1,28 @@
+name: Build release Admin bundle once
+on:
+  push:
+    branches: [release/admin-tariff-publication-20261113]
+permissions:
+  contents: write
+jobs:
+  build-admin-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --no-save --package-lock=false esbuild@0.25.12
+      - run: node scripts/build-admin-preview.mjs
+      - name: Publish reproducible Admin bundle on release branch
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- admin/index.html; then
+            echo 'Generated bundle unchanged'
+            exit 0
+          fi
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add admin/index.html
+          git commit -m 'build(admin): compile tariff publication UI from release sources'
+          git push origin HEAD:release/admin-tariff-publication-20261113
