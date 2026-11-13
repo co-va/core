@@ -32,7 +32,7 @@ assert.equal(sorted.find(item => item.manufacturer === 'Wella').itemId, 'item-20
 assert.equal(all.filter(item => item.position > 0).length, 3, 'No numbering before explicit user action');
 
 const rawHelpers = source.slice(source.indexOf('  private inventoryPosition('),
-  source.indexOf('  // Reorder all active items', source.indexOf('  private inventoryPosition(')));
+  source.indexOf('  // A drag only permutes explicit numbered slots', source.indexOf('  private inventoryPosition(')));
 assert.ok(rawHelpers.startsWith('  private inventoryPosition('));
 const helperFunctions = rawHelpers
   .replace('private inventoryPosition(value: unknown): number', 'function inventoryPosition(value)')
@@ -97,22 +97,26 @@ assert.ok(startReorder>0 && endReorder>startReorder);
 const reorderFunction = source.slice(startReorder,endReorder)
   .replace('async reorderItems(tenantId: string, body: unknown)', 'async function reorderItems(tenantId, body)')
   .replaceAll('(tx: Tx)', '(tx)')
-  .replaceAll('const items: AnyRecord[]', 'const items');
+  .replaceAll('const items: AnyRecord[]', 'const items')
+  .replaceAll('const changed: AnyRecord[]', 'const changed')
+  .replaceAll('byId.get(id)!', 'byId.get(id)');
 const reorder = new Function('objectValue','text','BadRequestException','Prisma',
   reorderFunction + '\nreturn reorderItems;')(
     value=>value && typeof value==='object' ? value : {},
     value=>String(value??'').trim(),Error,Prisma);
+
 let writes = 0;
+let rowsChanged = 0;
 const tx = {
   inventoryItem: {
     findMany:async ({where}) => all.filter(item=>item.manufacturer===where.manufacturer)
-      .map(({id,itemId,position})=>({id,itemId,position})),
+      .map(({id,itemId,name,position})=>({id,itemId,name,position})),
   },
   $executeRaw:async (query)=>{
     writes++;
     const cases = query.values[0].joined;
+    rowsChanged += cases.length;
     assert.equal(query.values[1], 'tenant');
-    assert.equal(cases.length,200);
     for(const row of cases){
       const [id,position] = row.values;
       const item=all.find(value=>value.id===id);
@@ -128,14 +132,42 @@ const context = {
   lockInventoryOrder:async()=>{},
   snapshot:async()=>all,
 };
-const reversed = all.filter(item=>item.manufacturer==='CHI').map(item=>item.itemId).reverse();
-await reorder.call(context,'tenant',{manufacturer:'CHI',itemIds:reversed});
-assert.equal(writes,1, '200 positions are saved with a single SQL update');
-assert.deepEqual(sort(all).slice(0,200).map(item=>item.itemId),reversed,
-  'All CHI rows persist the dragged order');
+const company = 'CHI';
+const orderedBefore = sort(all).filter(item=>item.manufacturer===company).map(item=>item.itemId);
+const first = orderedBefore[0], second = orderedBefore[1];
+const reordered = [...orderedBefore];
+[reordered[0],reordered[1]]=[reordered[1],reordered[0]];
+const beforePositions = reordered.map(id=>all.find(item=>item.itemId===id).position);
+await reorder.call(context,'tenant',{manufacturer:company,itemIds:reordered,previousPositions:beforePositions});
+assert.equal(writes,1, 'One SQL write on drop');
+assert.equal(rowsChanged,2, 'Only two swapped numbered rows changed, not all 200 goods');
+assert.equal(all.filter(item=>item.manufacturer===company && item.position===0).length,198,
+  'Unnumbered catalog remains unnumbered after drag');
+assert.deepEqual(sort(all).filter(item=>item.manufacturer===company).map(item=>item.itemId),reordered,
+  'Manual order after drag is persistent');
 assert.equal(all.find(item=>item.itemId==='item-201').position,1,
   'Wella ordering remains unchanged');
-assert.equal(all[30].balance,140, 'Stock balances are never changed by ordering');
-await assert.rejects(()=>reorder.call(context,'tenant',{manufacturer:'CHI',itemIds:reversed.slice(1)}),
-  /Список материалов изменился/);
-console.log('PASS: 256 goods, per-company numbers, insertion shift, single-SQL reorder; balances unchanged');
+assert.equal(all[30].balance,140,'Stock balances remain unchanged');
+await assert.rejects(()=>reorder.call(context,'tenant',{
+  manufacturer:company,itemIds:orderedBefore,
+  previousPositions:orderedBefore.map(id=>id===first?3:id===second?25:0),
+}),/Порядок изменён/,'Stale tab must not overwrite later changes');
+assert.equal(writes,1,'Stale write rejected before SQL');
+
+const unnumberedDrag = [...reordered];
+[unnumberedDrag[3],unnumberedDrag[4]]=[unnumberedDrag[4],unnumberedDrag[3]];
+await assert.rejects(()=>reorder.call(context,'tenant',{
+  manufacturer:company,itemIds:unnumberedDrag,
+  previousPositions:unnumberedDrag.map(id=>all.find(item=>item.itemId===id).position),
+}),/Сначала назначьте номер/,'Unnumbered rows cannot be rearranged invisibly');
+assert.equal(writes,1,'Unnumbered drag does not modify 200 products');
+await assert.rejects(()=>reorder.call(context,'tenant',{
+  manufacturer:company,itemIds:reordered.slice(1),
+  previousPositions:reordered.slice(1).map(()=>0),
+}),/Список материалов изменился/);
+
+assert.match(source,/Обновите склад перед изменением номера/,
+  'Legacy client without expected position is rejected');
+assert.match(source,/Порядок изменился в другом окне/,
+  'Stale single item number writes are rejected');
+console.log('PASS: partial physical shelf numbering, stale-tab guard, no mass renumbering and isolation by manufacturer');
