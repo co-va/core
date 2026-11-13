@@ -227,3 +227,10 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Guest and Account booking context obtain filtered, effective assignments from the same ProcedureService. A one-workplace context also provides its effective top-level duration for old consumers. A multi-workplace context exposes distinct effective fields in workplaces[]; clients must read assignment.duration when changing the selected workplace (the current Professional guest UI still reads procedure.duration for multi-workplace selection, and is intentionally not changed here).
 - Both guest creation and Account creation reject hidden public services/spaces on the server; manual Journal Records retain permission to use hidden public services. Record snapshots retain the effective service settings at creation; saved/historical Record data and their pricing are not recalculated.
 - Only co-va/core/staging changed for this handoff. Professional, User, main, existing admin staging changes, schema and live data are not modified. Source regressions run in tests/procedure-booking-contract.test.mjs; do not claim iPhone/Amvera end-to-end proof solely from CI.
+
+### 2026-11-12 — Физические тюбики отдельно от граммов (staging)
+
+- Дополняем InventoryItem nullable `containerCount`: известное фактическое число тюбиков, не выводимое из текущей массы. Старые позиции остаются NULL. Миграция аддитивная, старые движения и цены неизменны.
+- InventoryMovementLine фиксирует подписанное `containerDelta`, `expectedContainerCount`, `actualContainerCount`. Инвентаризация допускает изменение только тюбиков при нулевой разнице в граммах. Корректировки массы сохраняют старый механизм партий и себестоимости.
+- Расход граммов сам по себе не уменьшает число физических тюбиков. В приходе/расходе оператор задаёт явное изменение тюбиков, если оно известно. Для старых неучтённых позиций число тюбиков остаётся неизвестным до фактического пересчёта.
+- Стандартный перенос Excel теперь распознаёт независимые поля тюбиков; не подменяет их `Количество` или `Объём упаковки`. Старые перенесённые позиции автоматически из исходника не изменяются без доказанного сопоставления.
