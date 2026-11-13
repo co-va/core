@@ -5,6 +5,9 @@ import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/ta
 
 const source = readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../admin/admin.css', import.meta.url), 'utf8');
+const commercialService = readFileSync(new URL('../server/src/saas-admin/commercial-catalog.service.ts', import.meta.url), 'utf8');
+const landingTariffs = readFileSync(new URL('../landing/tariffs.js', import.meta.url), 'utf8');
+const landingHtml = readFileSync(new URL('../landing/index.html', import.meta.url), 'utf8');
 const adminService = readFileSync(new URL('../server/src/saas-admin/saas-admin.service.ts', import.meta.url), 'utf8');
 const adminController = readFileSync(new URL('../server/src/saas-admin/saas-admin.controller.ts', import.meta.url), 'utf8');
 const userSummaryStart = adminService.indexOf('async userAccountOverview()');
@@ -109,6 +112,14 @@ assert.match(markup, /Пробный режим/);
 assert.match(markup, /Рабочий режим/);
 assert.match(markup, /Завершения регистрации/);
 assert.match(markup, /За последние 30 дней/);
+assert.match(commercialService, /isSaleable: byKey\.get\(key\)\?\.isSaleable === true/,
+  'Tariff API reports the existing persisted publication switch');
+assert.match(commercialService, /purchasable: index === 0 \|\| \(tier\.isSaleable === true && tier\.priceMinor > 0\)/,
+  'Price alone cannot publish a paid tariff');
+assert.match(landingTariffs, /offer\?\.published === true && offer\?\.purchasable === true/,
+  'Landing respects the authoritative publication policy');
+assert.match(landingHtml, /\.tariff-card\[hidden\]\{display:none\}/,
+  'An unpublished paid tariff must not be visible on the landing page');
 assert.match(source, /<header class="admin-toolbar">/, 'Shared desktop H must remain in shell');
 assert.match(styles, /@media\(min-width:761px\)\{[\s\S]*?\.admin-shell\{height:100dvh;min-height:0;overflow:hidden\}/, 'Desktop shell must hold height to viewport');
 assert.match(styles, /\.admin-main\{min-height:0;overflow-y:auto;/, 'Only dashboard content scrolls inside desktop shell');
