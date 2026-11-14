@@ -12,7 +12,7 @@ function initial(t) {
     giftDays: num(t.periods?.find(x=>x.months===months)?.bonusDays||0,3650),
     discount:0, discountRub:0
   };
-  return {name:t.name,free:t.key==='tariff.start',price:amount,was:amount,periods,
+  return {name:t.name,free:t.key==='tariff.start',price:amount,was:amount,periods,published:t.isSaleable===true,
     publishFrom:'',publishUntil:'',toolOverrides:{}, campaign:{enabled:false,from:'',until:'',repeat:0,length:7,months:6,kind:'percent',discount:50,giftDays:0}};
 }
 function value(t){if(!drafts.has(t.key))drafts.set(t.key,initial(t));return drafts.get(t.key);}
@@ -54,7 +54,6 @@ const pick=(name,scope,key,val,opts)=>'<label class="tw-field"><span>'+esc(name)
 const duration=d=>d%30===0?(d/30)+' мес.':d+' дн.';
 export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools}){
   const selected=tiers.find(t=>t.key===selectedKey), d=selected&&value(selected);
-  const onStage=typeof location!=='undefined'&&/amvera\.tech$/.test(location.hostname);
   const cards=tiers.map(t=>{
     const v=value(t),h=previewReadiness(t,readinessFor),one=offer(v,1,previewDate),six=offer(v,6,previewDate);
     return '<article class="admin-overview-metric tw-card '+(selectedKey===t.key?'is-selected':'')+'">'+
@@ -65,23 +64,24 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
       '<span class="tw-promise">'+(v.free?'Без ограничения срока':'6 месяцев · '+(v.price<=0?'Цена не задана':rub(six.amount))+(six.gift?' · +'+duration(six.gift)+' в подарок':''))+'</span>'+
       '<span class="tw-muted tw-readiness">'+h.ready+' из '+h.total+' готово · '+(h.percent??0)+'%'+(h.testing?' · '+h.testing+' в проверке':'')+'</span>'+
       '<span class="tw-track"><i style="width:'+(h.percent||0)+'%"></i></span></button>'+
-      '<button type="button" class="tw-publish" data-tw-publish="'+esc(t.key)+'" '+(onStage?'disabled title="В предпросмотре публикация не изменяется"':'')+'>'+(t.isSaleable?'Опубликован':'Не опубликован')+'</button></article>';
+      '<span class="tw-publish tw-publication-state">'+(v.published?'Опубликован':'Не опубликован')+'</span></article>';
   }).join('');
   let editor='';
   if(d){
     const h=previewReadiness(selected,readinessFor),c=d.campaign;
     editor='<section class="tw-editor" aria-label="Управление тарифом '+esc(d.name)+'">'+
       '<div class="admin-overview-tariffs-heading tw-section-head">'+
-        '<strong>'+esc(d.name)+' <span>/ Ценовые условия</span></strong>'+
-        '<div class="tw-head-actions"><small>Интерактивный предпросмотр конструктора · без сохранения</small>'+
-        '<button type="button" class="admin-overview-inline-link tw-reset" data-tw-reset>Сбросить изменения '+esc(d.name)+'</button>'+
-        '<button type="button" class="tw-close" data-tw-close aria-label="Свернуть тариф">×</button></div></div>'+
-      '<section class="tw-panel tw-price-panel"><h4>Цена тарифа</h4><div class="tw-fields tw-fields--pricing">'+
+        '<strong>'+esc(d.name)+' <span>/ Интерактивный предпросмотр конструктора · без сохранения</span></strong>'+
+        '<div class="tw-head-actions"><button type="button" class="admin-overview-inline-link tw-reset" data-tw-reset>Сбросить изменения '+esc(d.name)+'</button></div></div>'+
+      '<section class="tw-panel tw-price-panel"><div class="tw-price-panel-head"><h4>Цена тарифа</h4>'+
+        '<div class="tw-publication-action"><span>Публикация тарифа</span>'+
+        '<button type="button" class="tw-publish-action" data-tw-publish title="Только предпросмотр, без сохранения">'+(d.published?'Снять с публикации':'Опубликовать')+'</button></div></div>'+
+        '<div class="tw-fields tw-fields--pricing">'+
         pick('Тип тарифа','base','free',d.free?'yes':'no',[['yes','Бесплатный'],['no','Платный']])+
         field('Цена продажи за 30 дней, ₽','base','price',d.price,'number','min="0" step="1" '+(d.free?'disabled':''))+
         field('Цена до скидки, ₽','base','was',d.was,'number','min="0" step="1" '+(d.free?'disabled':''))+
       '</div></section>'+
-      '<div class="tw-subhead"><strong>Условия по срокам</strong><span>30 дней = 1 месяц; скидка и подарочное время независимы</span></div>'+
+      '<div class="tw-subhead"><strong>Условия по срокам <span>/ 30 дней = 1 месяц; скидка и подарочное время независимы</span></strong></div>'+
       '<div class="tw-period-grid">'+[1,6,12].map(m=>{
         const p=d.periods[m],o=offer(d,m,previewDate);
         return '<section class="tw-panel tw-period"><h4>'+m+' '+(m===1?'месяц':'месяцев')+'</h4>'+
@@ -93,11 +93,9 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
           '</div><div class="tw-result"><strong>'+rub(o.amount)+'</strong><span>'+o.days+' дней доступа'+(o.gift?' · +'+duration(o.gift)+' в подарок':'')+'</span></div>'+
         '</section>';
       }).join('')+'</div>'+
-      '<section class="tw-panel tw-publication"><div><h4>Публикация тарифа</h4>'+
-        '<p>Показывает или скрывает тариф на сайте. Даты и скидки акции задаются отдельно ниже.</p></div>'+
-        '<span class="tw-status">'+(selected.isSaleable?'Опубликован':'Не опубликован')+'</span></section>'+
-      '<section class="tw-panel tw-campaign"><div class="tw-campaign-head"><h4>Акция</h4>'+
-        '<label class="tw-check"><input type="checkbox" data-tw-campaign="enabled" '+(c.enabled?'checked':'')+'> Включить акцию</label></div>'+
+            '<section class="tw-panel tw-campaign"><div class="tw-campaign-head"><h4>Акция</h4>'+
+        '<div class="tw-campaign-check">'+field('Проверить цену на дату','preview','date',previewDate,'date','title="Дата для проверки результата, не для публикации"')+
+        '<label class="tw-check"><input type="checkbox" data-tw-campaign="enabled" '+(c.enabled?'checked':'')+'> Включить акцию</label></div></div>'+
         '<div class="tw-fields tw-fields--campaign">'+
           pick('Для периода','campaign','months',c.months,[[1,'1 месяц'],[6,'6 месяцев'],[12,'12 месяцев']])+
           pick('Вид скидки','campaign','kind',c.kind,[['percent','Проценты'],['rub','Рубли']])+
@@ -108,8 +106,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
           field('Повтор через N месяцев','campaign','repeat',c.repeat,'number','min="0" max="120" step="1"')+
           field('Длительность акции, дней','campaign','length',c.length,'number','min="1" max="366" step="1"')+
         '</div><p class="tw-hint">Если повтор = 0, акция проходит один раз. Скидка акции добавляется к обычным условиям.</p></section>'+
-      '<div class="tw-subhead tw-preview-heading"><strong>Предпросмотр для покупателя</strong>'+
-        field('На дату','preview','date',previewDate,'date')+'</div>'+
+      '<div class="tw-subhead tw-preview-heading"><strong>Предпросмотр для покупателя</strong></div>'+
       '<div class="tw-offers-grid">'+[1,6,12].map(m=>{
         const o=offer(d,m,previewDate);
         return '<article class="tw-panel tw-offer"><strong class="tw-offer-period">'+m+' '+(m===1?'месяц':'месяцев')+(o.on?' · Акция':'')+'</strong>'+
@@ -132,8 +129,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
     '<div class="admin-overview-metrics admin-overview-tariff-metrics">'+cards+'</div>'+editor+'</div>';
   function rerender(){renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools});}
   content.querySelectorAll('[data-tw-open]').forEach(el=>el.addEventListener('click',()=>onSelect(el.dataset.twOpen)));
-  content.querySelector('[data-tw-close]')?.addEventListener('click',()=>onSelect(''));
-  content.querySelectorAll('[data-tw-publish]').forEach(el=>el.addEventListener('click',()=>onPublish(el.dataset.twPublish)));
+  content.querySelector('[data-tw-publish]')?.addEventListener('click',()=>{d.published=!d.published;rerender();});
   content.querySelector('[data-tw-tools-nav]')?.addEventListener('click',onTools);
   content.querySelector('[data-tw-reset]')?.addEventListener('click',()=>{drafts.delete(selectedKey);rerender();});
   const bind=(selector,fn)=>content.querySelectorAll(selector).forEach(el=>el.addEventListener('change',()=>{fn(el);rerender();}));
