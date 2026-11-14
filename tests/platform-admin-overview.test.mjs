@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/tariff-benefits.js';
+import { renderTariffWorkbench } from '../admin/tariff-workbench.js';
 
 const source = readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../admin/admin.css', import.meta.url), 'utf8');
@@ -354,3 +355,44 @@ assert.deepEqual(publicationRequests, [
 ], 'Each publication changes only the selected tier; no readiness-based gate');
 
 console.log('Platform Admin Overview data boundaries, labels and actions: PASS');
+
+
+// Verify the new staging tariff UI independently of the legacy fallback renderer.
+// The preview must not trigger an API price write.
+const previewRoot = {
+  innerHTML: '',
+  querySelectorAll() { return []; },
+  querySelector() { return null; },
+};
+renderTariffWorkbench({
+  content: previewRoot,
+  tiers: [{
+    key: 'tariff.start-plus', name: 'Start+', priceMinor: 100000,
+    isSaleable: false,
+    periods: [
+      {months:1,bonusDays:0},
+      {months:6,bonusDays:36},
+      {months:12,bonusDays:180},
+    ],
+  }],
+  selectedKey:'tariff.start-plus',
+  readinessFor: () => ({
+    total:20,ready:4,testing:3,percent:20,
+    rows:[{name:'Контакты',included:true,status:'READY'}],
+  }),
+  onSelect() {},
+  onPublish() { throw new Error('Preview must not publish'); },
+  onTools() {},
+});
+for (const fragment of [
+  'Управление тарифом', 'Цена продажи за 30 дней',
+  'Месяцев в подарок', 'Дополнительно дней',
+  'Условия по срокам', 'Публикация тарифа',
+  'Повтор через N месяцев', 'Длительность акции',
+  'Предпросмотр для покупателя', 'Инструменты тарифа',
+  '216 дней доступа', '540 дней доступа',
+]) assert.ok(previewRoot.innerHTML.includes(fragment), 'Staging preview missing: ' + fragment);
+assert.match(previewRoot.innerHTML, /data-tw-open="tariff.start-plus"/,
+  'Whole offer card has a single prominent disclosure action');
+assert.match(previewRoot.innerHTML, /Интерактивный предпросмотр конструктора/,
+  'Preview is clearly labelled non-persistent');
