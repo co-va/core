@@ -13,7 +13,7 @@ function initial(t) {
     discount:0, discountRub:0
   };
   return {name:t.name,free:t.key==='tariff.start',price:amount,was:amount,periods,
-    publishFrom:'',publishUntil:'', campaign:{enabled:false,from:'',until:'',repeat:0,length:7,months:6,kind:'percent',discount:50,giftDays:0}};
+    publishFrom:'',publishUntil:'',toolOverrides:{}, campaign:{enabled:false,from:'',until:'',repeat:0,length:7,months:6,kind:'percent',discount:50,giftDays:0}};
 }
 function value(t){if(!drafts.has(t.key))drafts.set(t.key,initial(t));return drafts.get(t.key);}
 function monthDate(s,n){
@@ -34,6 +34,13 @@ function active(c,date) {
   }
   return false;
 }
+function previewReadiness(t, getter) {
+  const b=getter(t), d=value(t);
+  const rows=(b.rows||[]).map(r=>({...r,included:Object.prototype.hasOwnProperty.call(d.toolOverrides,r.key)?d.toolOverrides[r.key]:r.included}));
+  const included=rows.filter(r=>r.included),ready=included.filter(r=>r.status==='READY').length;
+  const testing=included.filter(r=>r.status==='TESTING').length;
+  return {...b,rows,ready,testing,total:included.length,percent:included.length?Math.round(100*ready/included.length):0};
+}
 function offer(d,m,date) {
   const p=d.periods[m],before=d.free?0:d.price*m,was=d.free?0:Math.max(d.was,d.price)*m;
   const ordinary=Math.max(0,before*(1-num(p.discount,100)/100)-num(p.discountRub));
@@ -49,7 +56,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   const selected=tiers.find(x=>x.key===selectedKey), d=selected&&value(selected);
   const onStage=typeof location!=='undefined'&&/amvera\.tech$/.test(location.hostname);
   const cards=tiers.map(t=>{
-    const v=value(t),h=readinessFor(t),one=offer(v,1,previewDate),six=offer(v,6,previewDate);
+    const v=value(t),h=previewReadiness(t,readinessFor),one=offer(v,1,previewDate),six=offer(v,6,previewDate);
     return '<article class="admin-overview-metric tw-card '+(selectedKey===t.key?'is-selected':'')+'">'+
       '<button type="button" class="tw-open" data-tw-open="'+esc(t.key)+'" aria-expanded="'+(selectedKey===t.key)+'">'+
       '<span class="tw-top"><strong>'+esc(v.name)+'</strong><span>'+(selectedKey===t.key?'−':'+')+'</span></span>'+
@@ -62,7 +69,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   }).join('');
   let editor='';
   if(d){
-    const h=readinessFor(selected),c=d.campaign;
+    const h=previewReadiness(selected,readinessFor),c=d.campaign;
     editor='<section class="admin-overview-detail tw-editor"><header class="tw-title"><div><small>Управление тарифом</small><h3>'+esc(d.name)+'</h3></div><button type="button" class="admin-overview-close" data-tw-close aria-label="Свернуть">×</button></header>'+
     '<section class="tw-panel"><h4>Цена и условия</h4><div class="tw-fields">'+
       pick('Тип тарифа','base','free',d.free?'yes':'no',[['yes','Бесплатный'],['no','Платный']])+
@@ -101,7 +108,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
        pick('Показывать','filter','value',filter,[['included','Включённые'],['all','Все'],['testing','В проверке'],['not-ready','Не готово']])+
        '<button type="button" class="admin-button secondary" data-tw-tools-nav>Настроить инструменты</button></div>'+
        h.rows.filter(r=>filter==='all'||filter==='included'&&r.included||filter==='testing'&&r.status==='TESTING'||filter==='not-ready'&&r.status!=='READY').map(r=>
-         '<div class="tw-tool-row"><span>'+esc(r.name)+'</span><span>'+(r.included?'✓':'—')+'</span><small>'+esc(r.status==='READY'?'Готово':r.status==='TESTING'?'В проверке':r.status==='NOT_READY'?'Не готово':'Нет данных')+'</small></div>').join('')+
+         '<div class="tw-tool-row"><span>'+esc(r.name)+'</span><label><input type="checkbox" data-tw-include="'+esc(r.key)+'" '+(r.included?'checked':'')+' aria-label="Включить '+esc(r.name)+'"></label><small>'+esc(r.status==='READY'?'Готово':r.status==='TESTING'?'В проверке':r.status==='NOT_READY'?'Не готово':'Нет данных')+'</small></div>').join('')+
       '</div></details>'+
     '<footer class="tw-foot"><span>Это интерактивный макет: условия и акции пока не сохраняются и не влияют на покупки.</span><button type="button" class="admin-button secondary" data-tw-reset>Сбросить пробные изменения</button></footer></section>';
   }
@@ -119,6 +126,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   if(d){
     bind('[data-tw-base]',el=>{const k=el.dataset.twBase;d[k]=k==='free'?el.value==='yes':k==='price'||k==='was'?num(el.value):el.value;});
     bind('[data-tw-period]',el=>{const [m,key]=el.dataset.twPeriod.split('-');const p=d.periods[m];if(key==='giftMonths')p.giftDays=Math.round(num(el.value,120)*30)+(p.giftDays%30);else if(key==='giftRemainder')p.giftDays=Math.floor(p.giftDays/30)*30+Math.round(num(el.value,29));else p[key]=num(el.value,key==='discount'?100:1000000);});
+    bind('[data-tw-include]',el=>{d.toolOverrides[el.dataset.twInclude]=el.checked;toolsOpen=true;});
     bind('[data-tw-campaign]',el=>{const k=el.dataset.twCampaign;d.campaign[k]=k==='enabled'?el.checked:['repeat','length','months','discount','giftDays'].includes(k)?num(el.value):el.value;});
     content.querySelector('[data-tw-preview]')?.addEventListener('change',e=>{previewDate=e.target.value||iso();rerender();});
     content.querySelector('[data-tw-filter]')?.addEventListener('change',e=>{filter=e.target.value;toolsOpen=true;rerender();});
