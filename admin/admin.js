@@ -628,7 +628,18 @@ function renderTariffs() {
   // Keep the existing tariff controller below as fallback until commercial
   // periods, discounts and campaigns have been implemented on the Core server.
   if (typeof renderTariffWorkbench === 'function') {
-    const available = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
+    if (overviewTariffStatus !== 'ready') {
+      content.innerHTML = '<div class="admin-overview admin-tariff-section"><div class="admin-heading"><h2>Тарифы</h2></div>' +
+        (overviewTariffStatus === 'unavailable'
+          ? '<p>Не удалось получить тарифы из Core.</p><button type="button" class="admin-button" data-tw-retry>Повторить загрузку</button>'
+          : '<p>Загрузка условий тарифов…</p>') + '</div>';
+      content.querySelector('[data-tw-retry]')?.addEventListener('click', () => {
+        overviewTariffStatus = 'idle'; requestOverviewTariffs(true); renderTariffs();
+      });
+      if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+      return;
+    }
+    const available = overviewTariffData?.tiers || [];
     const tiers = [
       { key: 'tariff.start', name: 'Start' },
       { key: 'tariff.start-plus', name: 'Start+' },
