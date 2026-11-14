@@ -4,6 +4,7 @@ import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
 import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublication, summarizeTariffReadiness, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderTariffWorkbench } from './tariff-workbench.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { renderCommercialFinance } from './commercial-finance.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
@@ -623,6 +624,44 @@ function renderTariffs() {
   setActiveSection('Тарифы');
   const content = app.querySelector('[data-content]');
   if (!content) return;
+  // Staging workbench: a safe, interactive design preview, not a price API writer.
+  // Keep the existing tariff controller below as fallback until commercial
+  // periods, discounts and campaigns have been implemented on the Core server.
+  if (typeof renderTariffWorkbench === 'function') {
+    const available = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
+    const tiers = [
+      { key: 'tariff.start', name: 'Start' },
+      { key: 'tariff.start-plus', name: 'Start+' },
+      { key: 'tariff.pro', name: 'Pro' },
+    ].map(tier => ({ ...tier, ...available.find(item => item.key === tier.key) }));
+    renderTariffWorkbench({
+      content, tiers, selectedKey: overviewSelectedTariff,
+      readinessFor: tier => summarizeTariffReadiness(
+        tier.key, overviewTariffData?.assignments || {}, state.toolReadiness || []),
+      onSelect: key => {
+        overviewSelectedTariff = overviewSelectedTariff === key ? '' : key;
+        renderTariffs();
+      },
+      onPublish: async key => {
+        // Staging preview is read-only; never publish against production API.
+        if (typeof location !== 'undefined' && /amvera\.tech$/.test(location.hostname)) return;
+        const tier = tiers.find(item => item.key === key);
+        if (!tier || typeof tier.isSaleable !== 'boolean' ||
+            (!tier.isSaleable && tier.key !== 'tariff.start' && !Number(tier.priceMinor))) return;
+        try {
+          overviewTariffData = await updateTariffPublication(key, !tier.isSaleable);
+          overviewTariffStatus = 'ready';
+          renderTariffs();
+        } catch (error) {
+          const msg = content.querySelector('[data-tw-notice]');
+          if (msg) msg.textContent = error instanceof Error ? error.message : 'Не удалось изменить публикацию';
+        }
+      },
+      onTools: () => { state.section = 'capabilities'; renderCurrentSection(); },
+    });
+    if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+    return;
+  }
   const liveTariffs = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
   const tariffCards = [
     { key: 'tariff.start', name: 'Start' },
