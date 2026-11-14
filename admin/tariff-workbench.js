@@ -12,7 +12,7 @@ function initial(t) {
     giftDays: num(t.periods?.find(x=>x.months===months)?.bonusDays||0,3650),
     discount:0, discountRub:0
   };
-  return {name:t.name,free:amount===0,price:amount,was:amount,periods,
+  return {name:t.name,free:t.key==='tariff.start',price:amount,was:amount,periods,
     publishFrom:'',publishUntil:'', campaign:{enabled:false,from:'',until:'',repeat:0,length:7,months:6,kind:'percent',discount:50,giftDays:0}};
 }
 function value(t){if(!drafts.has(t.key))drafts.set(t.key,initial(t));return drafts.get(t.key);}
@@ -53,9 +53,9 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
     return '<article class="admin-overview-metric tw-card '+(selectedKey===t.key?'is-selected':'')+'">'+
       '<button type="button" class="tw-open" data-tw-open="'+esc(t.key)+'" aria-expanded="'+(selectedKey===t.key)+'">'+
       '<span class="tw-top"><strong>'+esc(v.name)+'</strong><span>'+(selectedKey===t.key?'−':'+')+'</span></span>'+
-      '<span class="tw-price">'+(v.free?'Бесплатно':rub(one.amount))+(one.was>one.amount?'<s>'+rub(one.was)+'</s>':'')+'</span>'+
+      '<span class="tw-price">'+(v.free?'Бесплатно':v.price<=0?'Цена не задана':rub(one.amount))+(one.was>one.amount?'<s>'+rub(one.was)+'</s>':'')+'</span>'+
       '<span class="tw-muted">'+(v.free?'Без оплаты':'за 30 дней')+(one.discount?' · −'+one.discount+'%':'')+'</span>'+
-      '<span class="tw-promise">'+(v.free?'Без ограничения срока':'6 месяцев · '+rub(six.amount)+(six.gift?' · +'+duration(six.gift)+' в подарок':''))+'</span>'+
+      '<span class="tw-promise">'+(v.free?'Без ограничения срока':'6 месяцев · '+(v.price<=0?'Цена не задана':rub(six.amount))+(six.gift?' · +'+duration(six.gift)+' в подарок':''))+'</span>'+
       '<span class="tw-muted tw-readiness">'+h.ready+' из '+h.total+' готово · '+(h.percent??0)+'%'+(h.testing?' · '+h.testing+' в проверке':'')+'</span>'+
       '<span class="tw-track"><i style="width:'+(h.percent||0)+'%"></i></span></button>'+
       '<button type="button" class="tw-publish" data-tw-publish="'+esc(t.key)+'" '+(onStage?'disabled title="В предпросмотре публикация не изменяется"':'')+'>'+(t.isSaleable?'Опубликован':'Не опубликован')+'</button></article>';
@@ -73,7 +73,8 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
       [1,6,12].map(m=>{
         const p=d.periods[m],o=offer(d,m,previewDate);
         return '<div class="tw-period"><strong>'+m+' мес.</strong><div class="tw-fields">'+
-          field('Дней в подарок','period',m+'-giftDays',p.giftDays,'number','min="0" max="3650" step="1"')+
+          field('Месяцев в подарок','period',m+'-giftMonths',Math.floor(p.giftDays/30),'number','min="0" max="120" step="1"')+
+          field('Дополнительно дней','period',m+'-giftRemainder',p.giftDays%30,'number','min="0" max="29" step="1"')+
           field('Скидка, %','period',m+'-discount',p.discount,'number','min="0" max="100" step="1"')+
           field('Скидка, ₽','period',m+'-discountRub',p.discountRub,'number','min="0" step="1"')+
         '</div><div class="tw-result"><strong>'+rub(o.amount)+'</strong><span>'+o.days+' дней доступа'+(o.gift?' · +'+duration(o.gift)+' в подарок':'')+'</span></div></div>';
@@ -117,7 +118,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   const bind=(selector,fn)=>content.querySelectorAll(selector).forEach(el=>el.addEventListener('change',()=>{fn(el);rerender();}));
   if(d){
     bind('[data-tw-base]',el=>{const k=el.dataset.twBase;d[k]=k==='free'?el.value==='yes':k==='price'||k==='was'?num(el.value):el.value;});
-    bind('[data-tw-period]',el=>{const [m,key]=el.dataset.twPeriod.split('-');d.periods[m][key]=num(el.value,key==='giftDays'?3650:key==='discount'?100:1000000);});
+    bind('[data-tw-period]',el=>{const [m,key]=el.dataset.twPeriod.split('-');const p=d.periods[m];if(key==='giftMonths')p.giftDays=Math.round(num(el.value,120)*30)+(p.giftDays%30);else if(key==='giftRemainder')p.giftDays=Math.floor(p.giftDays/30)*30+Math.round(num(el.value,29));else p[key]=num(el.value,key==='discount'?100:1000000);});
     bind('[data-tw-campaign]',el=>{const k=el.dataset.twCampaign;d.campaign[k]=k==='enabled'?el.checked:['repeat','length','months','discount','giftDays'].includes(k)?num(el.value):el.value;});
     content.querySelector('[data-tw-preview]')?.addEventListener('change',e=>{previewDate=e.target.value||iso();rerender();});
     content.querySelector('[data-tw-filter]')?.addEventListener('change',e=>{filter=e.target.value;toolsOpen=true;rerender();});
