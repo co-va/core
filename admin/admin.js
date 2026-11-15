@@ -3,7 +3,7 @@ import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/ta
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublication, summarizeTariffReadiness, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublication, saveTariffDraft, summarizeTariffReadiness, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
 import { renderTariffWorkbench } from './tariff-workbench.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { renderCommercialFinance } from './commercial-finance.js';
@@ -667,6 +667,12 @@ function renderTariffs() {
           const msg = content.querySelector('[data-tw-notice]');
           if (msg) msg.textContent = error instanceof Error ? error.message : 'Не удалось изменить публикацию';
         }
+      },
+      onSave: async (tariffKey, expectedRevision, configuration) => {
+        const result = await saveTariffDraft(tariffKey, expectedRevision, configuration);
+        overviewTariffData = result;
+        overviewTariffStatus = 'ready';
+        return result;
       },
       onTools: () => { state.section = 'capabilities'; renderCurrentSection(); },
     });
