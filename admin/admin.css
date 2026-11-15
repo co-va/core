@@ -1342,3 +1342,100 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .admin-tariff-tool-inclusion{text-align:center;font-size:14px;font-weight:700;color:var(--text)}
 .admin-tariff-tool-readiness{text-align:right;font-size:12px;font-weight:700;color:var(--text);white-space:nowrap}
 .admin-tariff-method-note{margin:10px 0 6px;font-size:12px;line-height:1.4;color:var(--text-secondary)}
+
+
+/* Tariff workbench uses the Overview's graphite canvas and white cards. */
+.tw{gap:17px}
+.tw .tw-card{position:relative;display:block;min-height:238px;padding:20px;border:1px solid var(--border);border-radius:18px;background:var(--white);box-shadow:0 3px 10px rgba(0,0,0,.045)}
+.tw .tw-card.is-selected{border-color:var(--admin-pearl);box-shadow:0 0 0 1px var(--admin-pearl)}
+.tw-open{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;border:0;padding:0;background:transparent;text-align:left;color:var(--text);font:inherit;cursor:pointer}
+.tw-top{display:flex;justify-content:space-between;gap:12px;min-height:30px;padding-right:105px}
+.tw-top strong{font-size:20px;line-height:1.3;font-weight:760}
+.tw-top>span{position:absolute;right:22px;top:57px;font-size:23px}
+.tw-price{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;font-size:clamp(28px,2.8vw,36px);font-weight:760;line-height:1.2;margin-top:15px;letter-spacing:-.03em}
+.tw-price s{font-size:15px;font-weight:450;color:var(--text-secondary);letter-spacing:0}
+.tw-muted{font-size:13px;color:var(--text-secondary);line-height:1.4}
+.tw-promise{font-size:14px;font-weight:650;line-height:1.5;min-height:40px}
+.tw-readiness{margin-top:5px}
+.tw-track{height:6px;background:var(--border);border-radius:4px;overflow:hidden}
+.tw-track i{display:block;height:100%;background:var(--surface-dark)}
+.tw-publish{position:absolute;right:15px;top:16px;font-size:11px;line-height:1.25;padding:7px 9px;max-width:125px;border-radius:7px;border:1px solid var(--border);background:var(--white);color:var(--text);cursor:pointer}
+.tw-publication-state{cursor:default;pointer-events:none;opacity:.82}
+.tw-editor{display:grid;gap:14px;min-width:0}
+.tw .tw-section-head{display:flex;justify-content:space-between;align-items:center;gap:10px 18px;margin:3px 0 0}
+.tw-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.tw .tw-head-actions .admin-overview-inline-link{color:var(--white);font-size:12px;padding:5px 0;text-decoration:underline;text-underline-offset:3px}
+.tw-panel{min-width:0;border:1px solid var(--border);border-radius:18px;padding:18px 20px;background:var(--white);box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.tw-panel h4{font-size:17px;font-weight:740;margin:0 0 12px;color:var(--text)}
+.tw-price-panel-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px 16px;margin-bottom:14px}
+.tw-price-panel-head h4{margin:0}
+.tw-publication-action{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.tw-publication-action>span{font-size:12px;color:var(--text-secondary)}
+.tw-publish-action{padding:7px 12px;min-height:32px;border:1px solid var(--border);border-radius:8px;background:var(--surface-dark);color:var(--white);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.tw-publish-action:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.tw-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
+.tw-fields--pricing{grid-template-columns:repeat(3,minmax(0,1fr))}
+.tw-fields--campaign{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tw-field{display:grid;gap:6px;font-size:12px;color:var(--text-secondary);min-width:0}
+.tw-field>span{min-height:32px;display:flex;align-items:end;line-height:1.3}
+.tw-field input,.tw-field select{width:100%;box-sizing:border-box;height:46px;min-height:46px;max-height:46px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);font-size:16px}
+.tw-field input:disabled{opacity:.5}
+.tw-subhead{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:5px 16px;margin:4px 0 0;color:var(--white)}
+.tw-subhead strong{font-size:21px;font-weight:720;letter-spacing:-.02em}
+.tw-subhead>span,.tw-subhead strong span{font-size:12px;font-weight:500;letter-spacing:0;color:var(--admin-pearl)}
+.tw-period-grid,.tw-offers-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tw-period{display:flex;flex-direction:column;gap:0}
+.tw-period h4{font-size:19px;margin-bottom:15px}
+.tw-period-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.tw-result{display:grid;align-content:end;gap:5px;margin-top:auto;padding-top:16px;font-size:13px;color:var(--text-secondary);line-height:1.35}
+.tw-result strong{font-size:25px;color:var(--text);line-height:1.1}
+.tw-campaign-head{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:12px}
+.tw-campaign-head h4{margin:0}
+.tw-campaign-check{display:flex;align-items:center;justify-content:flex-end;gap:18px;flex-wrap:wrap}
+.tw-campaign-check .tw-field{width:190px}
+.tw-campaign-check .tw-field>span{min-height:0}
+.tw-campaign-check .tw-check{white-space:nowrap}
+.tw-check{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text)}
+.tw-check input{width:18px;height:18px}
+.tw-hint{font-size:12px;line-height:1.45;color:var(--text-secondary);margin:10px 0 0}
+.tw-preview-heading{align-items:end}
+.tw-offer{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-height:128px}
+.tw-offer-period{font-size:14px}
+.tw-offer-price{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;font-size:25px;font-weight:760;line-height:1.2}
+.tw-offer-price s{font-size:12px;font-weight:400;color:var(--text-secondary)}
+.tw-offer-access{font-size:14px;font-weight:650}
+.tw-offer small{font-size:12px;color:var(--text-secondary);line-height:1.45}
+.tw-tools{min-width:0}
+.tw .tw-tools-summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 12px;padding:0 4px;list-style:none}
+.tw-tools-summary::-webkit-details-marker{display:none}
+.tw-tools-summary::marker{content:""}
+.tw-tools-chevron{font-size:24px;line-height:1;color:var(--white);transition:transform .15s ease}
+.tw-tools[open] .tw-tools-chevron{transform:rotate(180deg)}
+.tw .tw-tools-inner{padding:16px 20px;min-width:0}
+.tw-tool-actions{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.tw-tool-actions .tw-field{min-width:165px}
+.tw .tw-tool-actions .admin-overview-inline-link{font-size:13px;align-self:end;margin:0;padding:6px 0}
+.tw-tool-row{display:grid;grid-template-columns:minmax(0,1fr) 28px 94px;gap:10px;align-items:center;min-height:38px;padding:5px 3px;border-bottom:1px solid var(--border);font-size:14px;color:var(--text)}
+.tw-tool-row:last-child{border-bottom:0}
+.tw-tool-row input{width:18px;height:18px;margin:0;accent-color:var(--surface-dark)}
+.tw-tool-row small{text-align:right;font-size:12px;color:var(--text-secondary)}
+@media(max-width:1100px){.tw-period-grid,.tw-offers-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tw-fields--campaign{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:761px) and (max-width:930px){.tw-period-grid,.tw-offers-grid{grid-template-columns:1fr}}
+@media(max-width:760px){
+  .admin-mobile-app .tw .admin-overview-tariff-metrics{grid-template-columns:1fr}
+  .admin-mobile-app .tw-card{min-height:205px;padding:18px}
+  .tw .tw-section-head{align-items:flex-start;flex-direction:column}
+  .tw-head-actions{justify-content:flex-start}
+  .tw-fields--campaign{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tw-campaign-head{align-items:flex-start;flex-direction:column}
+  .tw-campaign-check{justify-content:flex-start;width:100%}
+  .tw-campaign-check .tw-field{width:min(100%,205px)}
+  .tw-period-grid,.tw-offers-grid{grid-template-columns:1fr}
+  .tw-preview-heading{align-items:flex-start}
+  .tw-panel{padding:16px}
+}
+@media(max-width:430px){
+  .tw-fields--pricing,.tw-fields--campaign{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tw-fields--pricing .tw-field:first-child{grid-column:1/-1}
+  .tw-tool-row{grid-template-columns:minmax(0,1fr) 24px 82px}
+}

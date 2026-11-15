@@ -910,6 +910,19 @@ model AdminToolReadiness {
 
 // Administrator-defined quantity caps inside the existing commercial tariffs.
 // Does not replace PlanCapability or change any live tenant entitlement.
+// Administrator-only tariff configuration. Drafts do not alter published prices,
+// access grants, or CommercialOrder snapshots until a separate reviewed release.
+model CommercialTariffDraft {
+  tariffKey        String   @id
+  configuration    Json
+  revision         Int      @default(1)
+  updatedByAdminId String?
+  createdAt        DateTime @default(now()) @db.Timestamp(3)
+  updatedAt        DateTime @default(now()) @db.Timestamp(3)
+
+  @@map("CommercialTariffDraft")
+}
+
 model CommercialTariffLimit {
   tariffKey String
   toolKey   String

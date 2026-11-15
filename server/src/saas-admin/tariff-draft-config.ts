@@ -1,0 +1,157 @@
+import { BadRequestException } from '@nestjs/common';
+
+// Admin editor configuration is a DRAFT. It is not an order or a grant of access.
+export type TariffDraftPeriod = {
+  months: 1 | 6 | 12;
+  giftDays: number;
+  discountPercent: number;
+  discountMinor: number;
+};
+export type TariffDraftCampaign = {
+  enabled: boolean;
+  periodMonths: 1 | 6 | 12;
+  discountType: 'percent' | 'rub';
+  discountValue: number;
+  giftDays: number;
+  startsOn: string;
+  endsOn: string;
+  repeatEveryMonths: number;
+  durationDays: number;
+};
+export type TariffDraftConfig = {
+  free: boolean;
+  priceMinor: number;
+  referencePriceMinor: number;
+  periods: TariffDraftPeriod[];
+  campaign: TariffDraftCampaign;
+};
+
+const MONTHS = [1, 6, 12] as const;
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new BadRequestException(label + ': неверный объект');
+  }
+  return value as Record<string, unknown>;
+}
+function bool(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw new BadRequestException(label + ': требуется логическое значение');
+  return value;
+}
+function int(value: unknown, label: string, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > max) {
+    throw new BadRequestException(label + ': некорректное число');
+  }
+  return value;
+}
+function date(value: unknown, label: string): string {
+  if (value === '' || value === null || value === undefined) return '';
+  if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(value) ||
+    Number.isNaN(Date.parse(value + 'T12:00:00Z')) ||
+    new Date(value + 'T12:00:00Z').toISOString().slice(0, 10) !== value) {
+    throw new BadRequestException(label + ': неверная дата');
+  }
+  return value;
+}
+function periodMonth(value: unknown): 1 | 6 | 12 {
+  if (value === 1 || value === 6 || value === 12) return value;
+  throw new BadRequestException('Период должен быть 1, 6 или 12 месяцев');
+}
+export function normalizeTariffDraft(value: unknown): TariffDraftConfig {
+  const obj = object(value, 'Тариф');
+  const free = bool(obj.free, 'Тип тарифа');
+  const priceMinor = int(obj.priceMinor, 'Цена продажи', 100_000_000);
+  const referencePriceMinor = int(obj.referencePriceMinor, 'Цена до скидки', 100_000_000);
+  if (!free && priceMinor === 0) {
+    // An unpriced paid tier may be edited, but is never eligible for publication.
+  }
+  if (!Array.isArray(obj.periods) || obj.periods.length !== MONTHS.length) {
+    throw new BadRequestException('Нужны условия для 1, 6 и 12 месяцев');
+  }
+  const periods: TariffDraftPeriod[] = obj.periods.map((raw) => {
+    const row = object(raw, 'Условия периода');
+    return {
+      months: periodMonth(row.months),
+      giftDays: int(row.giftDays, 'Подарочные дни', 3650),
+      discountPercent: int(row.discountPercent, 'Процент скидки', 100),
+      discountMinor: int(row.discountMinor, 'Скидка в рублях', 100_000_000),
+    };
+  });
+  if (new Set(periods.map((p) => p.months)).size !== 3) {
+    throw new BadRequestException('Периоды должны быть уникальными');
+  }
+  periods.sort((a, b) => a.months - b.months);
+  const campaignRaw = object(obj.campaign, 'Акция');
+  const enabled = bool(campaignRaw.enabled, 'Акция');
+  const discountType = campaignRaw.discountType;
+  if (discountType !== 'percent' && discountType !== 'rub') {
+    throw new BadRequestException('Вид скидки акции должен быть процентами или рублями');
+  }
+  const startsOn = date(campaignRaw.startsOn, 'Начало акции');
+  const endsOn = date(campaignRaw.endsOn, 'Окончание акции');
+  if (enabled && !startsOn) throw new BadRequestException('Для включённой акции требуется дата начала');
+  if (startsOn && endsOn && endsOn < startsOn) {
+    throw new BadRequestException('Конец акции не может быть раньше начала');
+  }
+  const repeatEveryMonths = int(campaignRaw.repeatEveryMonths, 'Повтор акции', 120);
+  const durationDays = int(campaignRaw.durationDays, 'Длительность акции', 366);
+  if (durationDays < 1) throw new BadRequestException('Акция должна длиться не менее дня');
+  const discountValue = int(campaignRaw.discountValue, 'Скидка акции',
+    discountType === 'percent' ? 100 : 100_000_000);
+  return {
+    free, priceMinor, referencePriceMinor, periods,
+    campaign: {
+      enabled,
+      periodMonths: periodMonth(campaignRaw.periodMonths),
+      discountType,
+      discountValue,
+      giftDays: int(campaignRaw.giftDays, 'Подарочные дни акции', 3650),
+      startsOn, endsOn, repeatEveryMonths, durationDays,
+    },
+  };
+}
+
+
+// Applied only to explicitly published tariff terms. The order creator takes
+// the resulting immutable price/duration snapshot when the order is created.
+export function tariffOfferOnDate(config: TariffDraftConfig, months: 1 | 6 | 12, date: string) {
+  const period = config.periods.find((row) => row.months === months);
+  if (!period) throw new BadRequestException('Период тарифа не найден');
+  const monthly = config.free ? 0 : config.priceMinor;
+  const base = monthly * months;
+  const ordinaryDiscount = Math.round(base * period.discountPercent / 100) + period.discountMinor;
+  const ordinary = Math.max(0, base - ordinaryDiscount);
+  const campaign = config.campaign;
+  let campaignActive = false;
+  if (campaign.enabled && campaign.periodMonths === months && campaign.startsOn &&
+      date >= campaign.startsOn && (!campaign.endsOn || date <= campaign.endsOn)) {
+    const start = new Date(campaign.startsOn + 'T12:00:00Z');
+    const end = new Date(date + 'T12:00:00Z');
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+      for (let i = 0; i <= 1200; i += campaign.repeatEveryMonths || 1201) {
+        const current = new Date(start);
+        const day = start.getUTCDate();
+        current.setUTCDate(1);
+        current.setUTCMonth(current.getUTCMonth() + i);
+        const maxDay = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth()+1, 0)).getUTCDate();
+        current.setUTCDate(Math.min(day, maxDay));
+        if (current > end) break;
+        const last = new Date(current);
+        last.setUTCDate(last.getUTCDate() + campaign.durationDays - 1);
+        if (end <= last) { campaignActive = true; break; }
+      }
+    }
+  }
+  const promotionDiscount = campaignActive
+    ? (campaign.discountType === 'percent'
+        ? Math.round(ordinary * campaign.discountValue / 100)
+        : campaign.discountValue) : 0;
+  const totalMinor = Math.max(0, ordinary - promotionDiscount);
+  const paidDays = months * 30;
+  const bonusDays = period.giftDays + (campaignActive ? campaign.giftDays : 0);
+  return {
+    months, paidDays, bonusDays, accessDays: paidDays + bonusDays,
+    priceMinor: monthly, referencePriceMinor: config.referencePriceMinor,
+    subtotalMinor: base, discountMinor: base-totalMinor, totalMinor,
+    campaignActive,
+  };
+}
