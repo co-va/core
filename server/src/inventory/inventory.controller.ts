@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
@@ -99,7 +99,7 @@ export class InventoryController {
     @Res() response: import('express').Response,
   ) {
     if (format !== 'pdf' && format !== 'xlsx') {
-      throw new (await import('@nestjs/common')).BadRequestException('Формат: PDF или Excel');
+      throw new BadRequestException('Формат: PDF или Excel');
     }
     const order = await this.documents.supplierDocument(request.auth!.tenantId, orderId);
     const bytes = format === 'pdf'
