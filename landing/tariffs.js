@@ -73,7 +73,7 @@ function render() {
     if (key === 'start') continue;
     const node = [...priceNodes].find((item) => item.dataset.tariffPrice === 'tariff.' + key);
     if (node) node.textContent = available
-      ? currency(offer.priceMinor * months) : 'Цена не установлена';
+      ? currency(typeof period?.totalMinor === 'number' ? period.totalMinor : offer.priceMinor * months) : 'Цена не установлена';
     const detail = document.querySelector('[data-tariff-description="tariff.' + key + '"]');
     if (detail) detail.textContent = available
       ? period.accessDays + ' дней доступа' +
