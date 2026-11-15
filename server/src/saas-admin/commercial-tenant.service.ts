@@ -310,12 +310,18 @@ export class CommercialTenantService {
     const tariff = (await this.catalogService.tariffs()).tiers.find((item) => item.key === tariffKey);
     const period = tariff?.periods?.find((item) => item.months === periodMonths);
     if (!period) throw new BadRequestException('Условия периода не найдены');
+    if (tariff?.isSaleable !== true) throw new BadRequestException('Тариф не опубликован');
     const monthlyPriceMinor = tariff?.priceMinor ?? 0;
     if (!Number.isSafeInteger(monthlyPriceMinor) || monthlyPriceMinor <= 0) {
       throw new BadRequestException('Цена тарифа ещё не установлена администратором');
     }
-    const totalMinor = monthlyPriceMinor * periodMonths;
-    if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) {
+    const subtotalMinor = monthlyPriceMinor * periodMonths;
+    const totalMinor = 'totalMinor' in period && typeof period.totalMinor === 'number'
+      ? period.totalMinor : subtotalMinor;
+    const discountMinor = subtotalMinor - totalMinor;
+    if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0 ||
+        !Number.isSafeInteger(subtotalMinor) || !Number.isSafeInteger(discountMinor) ||
+        discountMinor < 0 || discountMinor > subtotalMinor) {
       throw new BadRequestException('Ошибка расчёта стоимости тарифа');
     }
     const tenant = await this.prisma.tenantAccess.findUnique({
@@ -355,9 +361,10 @@ export class CommercialTenantService {
           "totalMinor","currency","catalogVersion","createdByAdminId",
           "tariffKey","periodMonths","paidDays","bonusDays","accessDays",
           "createdAt","updatedAt")
-         VALUES ($1,$2,'PENDING',$3,0,0,$3,'RUB',$4,NULL,$5,$6,$7,$8,$9,
+         VALUES ($1,$2,'PENDING',$3,0,$4,$5,'RUB',$6,NULL,$7,$8,$9,$10,$11,
           CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
-        id, tenantId, totalMinor, publication?.version || null, tariffKey,
+        id, tenantId, subtotalMinor, discountMinor, totalMinor,
+        publication?.version || null, tariffKey,
         periodMonths, period.paidDays, period.bonusDays, accessDays,
       );
       await tx.$executeRawUnsafe(
@@ -367,13 +374,14 @@ export class CommercialTenantService {
         randomUUID(), id, tariffKey, tariff?.name || tariffKey,
         monthlyPriceMinor, periodMonths, totalMinor,
         JSON.stringify({ tariffKey, periodMonths, monthlyPriceMinor,
+          subtotalMinor, discountMinor, totalMinor,
           paidDays: period.paidDays, bonusDays: period.bonusDays,
           accessDays, catalogVersion: publication?.version || null }),
       );
     });
     await this.audit(null, tenantId, 'COMMERCIAL_TARIFF_ORDER_CREATED', 'ORDER', id, {
       tariffKey, periodMonths, paidDays: period.paidDays,
-      bonusDays: period.bonusDays, accessDays, totalMinor,
+      bonusDays: period.bonusDays, accessDays, subtotalMinor, discountMinor, totalMinor,
     });
     return this.orderHistory(tenantId);
   }

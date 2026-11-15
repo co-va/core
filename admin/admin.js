@@ -3,7 +3,8 @@ import { tariffBenefits, tariffHeadline, tariffNewBenefits } from '../landing/ta
 import { startAccountPresence, stopAccountPresence } from './presence.js';
 import { renderDocumentRegistry } from './document-registry/view.js';
 import { DOCUMENT_CATALOG } from './document-registry/catalog.js';
-import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublication, summarizeTariffReadiness, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublication, saveTariffDraft, publishTariffDraft, summarizeTariffReadiness, TOOL_MAP, TOOL_CAPABILITY_BINDINGS, TOOL_COMMERCIAL_BINDINGS, visibleToolChildren } from './commercial-catalog.js';
+import { renderTariffWorkbench } from './tariff-workbench.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { renderCommercialFinance } from './commercial-finance.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
@@ -623,6 +624,51 @@ function renderTariffs() {
   setActiveSection('Тарифы');
   const content = app.querySelector('[data-content]');
   if (!content) return;
+  // Canonical tariff editor. Saving a draft and publishing are independent actions.
+  // Preserve the legacy renderer below for compatibility and regression checks.
+  if (typeof renderTariffWorkbench === 'function') {
+    if (overviewTariffStatus !== 'ready') {
+      content.innerHTML = '<div class="admin-overview admin-tariff-section"><div class="admin-heading"><h2>Тарифы</h2></div>' +
+        (overviewTariffStatus === 'unavailable'
+          ? '<p>Не удалось получить тарифы из Core.</p><button type="button" class="admin-button" data-tw-retry>Повторить загрузку</button>'
+          : '<p>Загрузка условий тарифов…</p>') + '</div>';
+      content.querySelector('[data-tw-retry]')?.addEventListener('click', () => {
+        overviewTariffStatus = 'idle'; requestOverviewTariffs(true); renderTariffs();
+      });
+      if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+      return;
+    }
+    const available = overviewTariffData?.tiers || [];
+    const tiers = [
+      { key: 'tariff.start', name: 'Start' },
+      { key: 'tariff.start-plus', name: 'Start+' },
+      { key: 'tariff.pro', name: 'Pro' },
+    ].map(tier => ({ ...tier, ...available.find(item => item.key === tier.key) }));
+    renderTariffWorkbench({
+      content, tiers, selectedKey: overviewSelectedTariff,
+      readinessFor: tier => summarizeTariffReadiness(
+        tier.key, overviewTariffData?.assignments || {}, state.toolReadiness || []),
+      onSelect: key => {
+        overviewSelectedTariff = overviewSelectedTariff === key ? '' : key;
+        renderTariffs();
+      },
+      onPublish: async (key, revision, published) => {
+        const result = await publishTariffDraft(key, revision, published);
+        overviewTariffData = result;
+        overviewTariffStatus = 'ready';
+        return result;
+      },
+      onSave: async (tariffKey, expectedRevision, configuration) => {
+        const result = await saveTariffDraft(tariffKey, expectedRevision, configuration);
+        overviewTariffData = result;
+        overviewTariffStatus = 'ready';
+        return result;
+      },
+      onTools: () => { state.section = 'capabilities'; renderCurrentSection(); },
+    });
+    if (overviewTariffStatus === 'idle') requestOverviewTariffs();
+    return;
+  }
   const liveTariffs = overviewTariffStatus === 'ready' ? overviewTariffData?.tiers || [] : [];
   const tariffCards = [
     { key: 'tariff.start', name: 'Start' },
