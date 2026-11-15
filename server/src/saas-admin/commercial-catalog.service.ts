@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { normalizeTariffDraft, type TariffDraftConfig } from './tariff-draft-config';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { READINESS_KEYS } from './tool-readiness.service';
@@ -216,6 +217,12 @@ export class CommercialCatalogService {
     const bonusRows = await this.prisma.$queryRawUnsafe<Array<{tariffKey:string;months:number;bonusPercent:number}>>(
       `SELECT "tariffKey","months","bonusPercent" FROM "CommercialTariffPeriod"`,
     );
+    const draftRows = await this.prisma.$queryRawUnsafe<Array<{tariffKey:string;configuration:TariffDraftConfig;revision:number;updatedAt:Date}>>(
+      `SELECT "tariffKey","configuration","revision","updatedAt" FROM "CommercialTariffDraft"`,
+    );
+    const drafts = new Map(draftRows.map((row) => [row.tariffKey, {
+      ...row.configuration, revision: row.revision, updatedAt: row.updatedAt,
+    }]));
     const bonuses = new Map<string, Map<number, number>>();
     for (const row of bonusRows) {
       if (!bonuses.has(row.tariffKey)) bonuses.set(row.tariffKey, new Map());
@@ -269,6 +276,8 @@ export class CommercialCatalogService {
         name: byKey.get(key)?.name || ['Start', 'Start+', 'Pro'][index],
         priceMinor: byKey.get(key)?.priceMinor ?? 0,
         isSaleable: byKey.get(key)?.isSaleable === true,
+        isFree: byKey.get(key)?.isFree === true,
+        draft: drafts.get(key) || null,
         periods: periodFor(key),
         connected: counts[index],
         tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
@@ -353,6 +362,47 @@ export class CommercialCatalogService {
     });
     await this.audit(actorAdminId,'TARIFF_SETTINGS_UPDATED','TARIFF',tariffKey,
       {priceMinor,bonus6,bonus12});
+    return this.tariffs();
+  }
+
+
+  // Draft state is isolated from published commercial terms and existing orders.
+  // Optimistic revision checks prevent accidental overwrites across Admin tabs.
+  async saveTariffDraft(input: Record<string, unknown>, actorAdminId: string) {
+    const tariffKey = text(input.tariffKey);
+    if (!TARIFF_KEYS.includes(tariffKey as (typeof TARIFF_KEYS)[number])) {
+      throw new BadRequestException('Неизвестный тариф Professional');
+    }
+    const expectedRevision = input.expectedRevision;
+    if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) ||
+        expectedRevision < 0) throw new BadRequestException('Некорректная версия условий');
+    const configuration = normalizeTariffDraft(input.configuration);
+    await this.syncAppCatalog();
+    const newRevision = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRawUnsafe<Array<{revision:number}>>(
+        `SELECT "revision" FROM "CommercialTariffDraft" WHERE "tariffKey"=$1 FOR UPDATE`, tariffKey,
+      );
+      const current = rows[0]?.revision ?? 0;
+      if (current !== expectedRevision) {
+        throw new ConflictException('Условия изменились в другой сессии. Обновите тариф.');
+      }
+      if (current) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "CommercialTariffDraft" SET "configuration"=$2::jsonb,"revision"=$3,
+           "updatedByAdminId"=$4,"updatedAt"=CURRENT_TIMESTAMP WHERE "tariffKey"=$1`,
+          tariffKey, JSON.stringify(configuration), current + 1, actorAdminId,
+        );
+      } else {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "CommercialTariffDraft"
+            ("tariffKey","configuration","revision","updatedByAdminId")
+            VALUES ($1,$2::jsonb,1,$3)`,
+          tariffKey, JSON.stringify(configuration), actorAdminId,
+        );
+      }
+      return current + 1;
+    });
+    await this.audit(actorAdminId,'TARIFF_DRAFT_SAVED','TARIFF',tariffKey,{revision:newRevision});
     return this.tariffs();
   }
 
