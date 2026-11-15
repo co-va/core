@@ -463,9 +463,11 @@ export class CommercialCatalogService {
           throw new BadRequestException('Установите цену платного тарифа перед публикацией');
         }
         for (const months of [1,6,12] as const) {
-          const preview = tariffOfferOnDate(config, months, '2026-11-15');
-          if (!config.free && preview.totalMinor <= 0) {
-            throw new BadRequestException('Условия периода не могут давать бесплатный платный тариф');
+          const ordinary = tariffOfferOnDate(config, months, '1970-01-01');
+          const promotion = config.campaign.enabled && config.campaign.periodMonths === months
+            ? tariffOfferOnDate(config, months, config.campaign.startsOn) : ordinary;
+          if (!config.free && (ordinary.totalMinor <= 0 || promotion.totalMinor <= 0)) {
+            throw new BadRequestException('Скидка не должна обнулять цену платного тарифа');
           }
         }
         await tx.$executeRawUnsafe(
