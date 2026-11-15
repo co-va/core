@@ -1000,6 +1000,13 @@ model InventoryItem {
   trackLots         Boolean  @default(true)
   canConsume        Boolean  @default(true)
   canSell           Boolean  @default(false)
+  consumeUnit       String?
+  consumeQuantity   Decimal? @db.Decimal(14, 3)
+  saleUnit          String?
+  saleQuantity      Decimal? @db.Decimal(14, 3)
+  saleMarkupMode    String?
+  saleMarkupValue   Decimal? @db.Decimal(14, 4)
+  salePrice         Decimal? @db.Decimal(14, 4)
   position          Int      @default(0)
   archivedAt        DateTime?
   createdAt         DateTime @default(now())

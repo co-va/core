@@ -8,6 +8,7 @@ import { FinanceService } from '../finance/finance.service';
 import { resolveSelectedRecordProgramPricePercent } from '../loyalty/price-condition';
 import { ProcedureService } from '../procedure/procedure.service';
 import { TimeService } from '../time/time.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 type JsonObject = Record<string, any>;
 
@@ -95,6 +96,7 @@ export class RecordService {
     private readonly time: TimeService,
     private readonly finance: FinanceService,
     private readonly procedures: ProcedureService,
+    private readonly inventory: InventoryService,
   ) {}
 
   private subject(person: JsonObject) {
@@ -284,14 +286,16 @@ export class RecordService {
     const resolvedPosition = Number.isInteger(position)
       ? Number(position)
       : (await this.prisma.record.count({ where: { tenantId } }));
-    if (createHistory) {
-      await this.prisma.$transaction([
-        this.prisma.record.create({ data: { tenantId, recordId: id, position: resolvedPosition, data: json(record) } }),
-        this.prisma.recordEvent.create({ data: { tenantId, eventId: event.id, recordId: id, position: 0, data: json(event) } }),
-      ]);
-    } else {
-      await this.prisma.record.create({ data: { tenantId, recordId: id, position: resolvedPosition, data: json(record) } });
-    }
+    await this.prisma.$transaction(async tx => {
+      // Stock and Record must commit together, never independently.
+      await this.inventory.syncRecordSalesInTx(tx, tenantId, id, products, {
+        personKey: text(person.key), workplaceKey: workplaceId,
+      });
+      await tx.record.create({ data: { tenantId, recordId: id, position: resolvedPosition, data: json(record) } });
+      if (createHistory) await tx.recordEvent.create({
+        data: { tenantId, eventId: event.id, recordId: id, position: 0, data: json(event) },
+      });
+    });
     await this.finance.upsertSettlement(tenantId, 'record', id, settlement);
     return record;
   }
@@ -494,6 +498,10 @@ export class RecordService {
     });
   }
 
+  async releaseRecordSalesInTx(tx: Prisma.TransactionClient, tenantId: string, recordId: string) {
+    await this.inventory.syncRecordSalesInTx(tx, tenantId, recordId, []);
+  }
+
   async upsertFromOwner(tenantId: string, recordId: string, body: unknown) {
     const source = objectValue(body);
     const incoming = clone(objectValue(source.record ?? source));
@@ -622,12 +630,17 @@ export class RecordService {
       sourceRequestId: text(current.sourceRequestId),
     };
 
-    await this.prisma.record.update({
-      where: { tenantId_recordId: { tenantId, recordId: id } },
-      data: {
-        position: Number.isInteger(Number(source.position)) ? Number(source.position) : existing.position,
-        data: json(stored),
-      },
+    await this.prisma.$transaction(async tx => {
+      if (productsChanged) await this.inventory.syncRecordSalesInTx(tx, tenantId, id, products, {
+        personKey: text(person.key), workplaceKey: incomingWorkplaceId,
+      });
+      await tx.record.update({
+        where: { tenantId_recordId: { tenantId, recordId: id } },
+        data: {
+          position: Number.isInteger(Number(source.position)) ? Number(source.position) : existing.position,
+          data: json(stored),
+        },
+      });
     });
     if (settlement) await this.finance.upsertSettlement(tenantId, 'record', id, settlement);
     return stored;

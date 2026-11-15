@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const inv = readFileSync('server/src/inventory/inventory.service.ts','utf8');
+const rec = readFileSync('server/src/record/record.service.ts','utf8');
+const core = readFileSync('server/src/business-state/business-state.service.ts','utf8');
+const mod = readFileSync('server/src/record/record.module.ts','utf8');
+assert.match(inv,/async syncRecordSalesInTx\(/);
+assert.match(inv,/sourceType = 'record-sale'/);
+assert.match(inv,/kind: 'SALE'/);
+assert.match(inv,/kind: 'RETURN'/);
+assert.match(inv,/FOR UPDATE/);
+assert.match(inv,/Недостаточный остаток/);
+assert.match(rec,/await this\.inventory\.syncRecordSalesInTx\(tx, tenantId, id, products/);
+assert.match(rec,/async releaseRecordSalesInTx/);
+assert.match(core,/await this\.records\.releaseRecordSalesInTx/);
+assert.match(mod,/InventoryModule/);
+console.log('PASS: atomic record-sale inventory synchronization wired');

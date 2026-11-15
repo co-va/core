@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
 import { effectiveSupplierOfferPrice, resolveInventoryBasePricing, supplierOfferUnitPrice } from './inventory-pricing';
+import { canonicalInventoryUnit, stockQuantityForUnit } from './inventory-usage';
 
 type AnyRecord = Record<string, any>;
 type Tx = AnyRecord;
@@ -12,6 +13,8 @@ type Tx = AnyRecord;
 type PreparedLine = {
   itemId: string;
   quantity: number;
+  // Only when explicitly supplied; legacy movements already use stock units.
+  quantityUnit: string;
   direction: 'IN' | 'OUT';
   unitCost: number | null;
   expectedQuantity: number | null;
@@ -112,6 +115,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
     return {
       itemId: text(row.itemId),
       quantity: Math.abs(signed),
+      quantityUnit: text(row.quantityUnit),
       direction,
       unitCost: nullableNonNegative(row.unitCost ?? row.actualPrice),
       expectedQuantity: nullableNonNegative(row.expectedQuantity),
@@ -128,6 +132,39 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
   }).filter((row) => row.itemId && (row.quantity > 0
     || row.containerDelta !== null && row.containerDelta !== 0
     || kind === 'ADJUSTMENT' && row.actualContainerCount !== null));
+}
+
+function optionalUsageUnit(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const unit = canonicalInventoryUnit(value);
+  if (!unit) throw new BadRequestException('Единица списания: г, мл или шт.');
+  return unit;
+}
+
+function optionalUsageQuantity(value: unknown): number | null {
+  return optionalOfferAmount(value, 'Количество списания', 100000000);
+}
+
+function applyMovementQuantityUnits(lines: PreparedLine[], items: AnyRecord[]) {
+  const byId = new Map(items.map(item => [item.itemId, item]));
+  for (const line of lines) {
+    if (!line.quantityUnit) continue;
+    const item = byId.get(line.itemId);
+    if (!item) throw new BadRequestException('Продукт не найден: ' + line.itemId);
+    try {
+      const unit = canonicalInventoryUnit(line.quantityUnit);
+      line.quantity = stockQuantityForUnit({
+        unit: item.unit,
+        packageQuantity: item.packageQuantity,
+        netPackageWeight: item.grossWeight != null && item.tareWeight != null
+          ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+      }, line.quantity, line.quantityUnit);
+      if (unit === 'шт.' && canonicalInventoryUnit(item.unit) === 'шт.' && !Number.isSafeInteger(line.quantity))
+        throw new Error('Количество штук должно быть целым');
+    } catch (error) {
+      throw new BadRequestException(String(error instanceof Error ? error.message : error));
+    }
+  }
 }
 
 function decimalNumber(value: unknown): number {
@@ -269,6 +306,13 @@ export class InventoryService {
           trackLots: item.trackLots,
           canConsume: item.canConsume,
           canSell: item.canSell,
+          consumeUnit: item.consumeUnit || canonicalInventoryUnit(item.unit),
+          consumeQuantity: item.consumeQuantity == null ? null : decimalNumber(item.consumeQuantity),
+          saleUnit: item.saleUnit || canonicalInventoryUnit(item.unit),
+          saleQuantity: item.saleQuantity == null ? null : decimalNumber(item.saleQuantity),
+          saleMarkupMode: item.saleMarkupMode || 'percent',
+          saleMarkupValue: item.saleMarkupValue == null ? null : decimalNumber(item.saleMarkupValue),
+          salePrice: item.salePrice == null ? null : decimalNumber(item.salePrice),
           balance: balances.get(item.id) || 0,
           createdAt: item.createdAt,
           updatedAt: item.updatedAt,
@@ -710,6 +754,13 @@ export class InventoryService {
           trackLots: source.trackLots !== false,
           canConsume: source.canConsume !== false,
           canSell: source.canSell === true,
+          consumeUnit: optionalUsageUnit(source.consumeUnit),
+          consumeQuantity: optionalUsageQuantity(source.consumeQuantity),
+          saleUnit: optionalUsageUnit(source.saleUnit),
+          saleQuantity: optionalUsageQuantity(source.saleQuantity),
+          saleMarkupMode: source.saleMarkupMode === 'amount' ? 'amount' : 'percent',
+          saleMarkupValue: optionalOfferAmount(source.saleMarkupValue, 'Наценка'),
+          salePrice: optionalOfferAmount(source.salePrice, 'Цена продажи'),
           position,
         },
       });
@@ -795,6 +846,16 @@ export class InventoryService {
     if ('trackLots' in source) data.trackLots = source.trackLots !== false;
     if ('canConsume' in source) data.canConsume = source.canConsume !== false;
     if ('canSell' in source) data.canSell = source.canSell === true;
+    if ('consumeUnit' in source) data.consumeUnit = optionalUsageUnit(source.consumeUnit);
+    if ('saleUnit' in source) data.saleUnit = optionalUsageUnit(source.saleUnit);
+    if ('consumeQuantity' in source) data.consumeQuantity = optionalUsageQuantity(source.consumeQuantity);
+    if ('saleQuantity' in source) data.saleQuantity = optionalUsageQuantity(source.saleQuantity);
+    if ('saleMarkupMode' in source) {
+      if (!['percent', 'amount'].includes(String(source.saleMarkupMode))) throw new BadRequestException('Наценка: выберите % или ₽');
+      data.saleMarkupMode = source.saleMarkupMode;
+    }
+    if ('saleMarkupValue' in source) data.saleMarkupValue = optionalOfferAmount(source.saleMarkupValue, 'Наценка');
+    if ('salePrice' in source) data.salePrice = optionalOfferAmount(source.salePrice, 'Цена продажи');
     if ('position' in source) data.position = this.inventoryPosition(source.position);
     const manufacturer = 'manufacturer' in data ? data.manufacturer : current.manufacturer;
     const nextPosition = 'position' in data ? data.position : current.position;
@@ -901,6 +962,134 @@ export class InventoryService {
     return this.snapshot(tenantId);
   }
 
+  // This is called INSIDE the Record owner's transaction. A stock sale is a
+  // movement fact owned by Inventory; Service stores no duplicate product row.
+  // Always compare the desired totals with previous SALE/RETURN movements.
+  // Retried record writes become no-ops; quantity edits create only the delta.
+  async syncRecordSalesInTx(
+    tx: Tx, tenantId: string, recordId: string, products: AnyRecord[],
+    context: { personKey?: string; workplaceKey?: string } = {},
+  ) {
+    const sourceType = 'record-sale';
+    const requested = (Array.isArray(products) ? products : []).filter(row => text(row?.inventoryItemId));
+    const movementsBefore = await tx.inventoryMovement.findMany({
+      where: { tenantId, sourceType, sourceId: recordId },
+      include: { lines: { include: { item: true } } },
+    });
+    const affected = new Set<string>(requested.map(row => text(row.inventoryItemId)));
+    for (const movement of movementsBefore as AnyRecord[]) {
+      for (const line of movement.lines as AnyRecord[]) affected.add(text(line.item?.itemId));
+    }
+    if (!affected.size) return;
+    const ids = [...affected].filter(Boolean).sort();
+    const catalog = await tx.inventoryItem.findMany({
+      where: { tenantId, itemId: { in: ids } },
+      orderBy: { itemId: 'asc' },
+    });
+    if (catalog.length !== ids.length) throw new BadRequestException('Складская позиция продажи не найдена');
+    // Serialize movement and stock reads for the same product, including
+    // concurrent retries of a single record's sale.
+    for (const item of catalog as AnyRecord[]) {
+      await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+    }
+    const byId = new Map((catalog as AnyRecord[]).map(row => [text(row.itemId), row]));
+    const movements = await tx.inventoryMovement.findMany({
+      where: { tenantId, sourceType, sourceId: recordId },
+      include: { lines: { include: { item: true } } },
+    });
+    const previous = new Map<string, number>();
+    const previousContainers = new Map<string, number>();
+    for (const movement of movements as AnyRecord[]) {
+      for (const line of movement.lines as AnyRecord[]) {
+        const id = text(line.item?.itemId);
+        if (!id) continue;
+        const direction = line.direction === 'OUT' ? 1 : -1;
+        previous.set(id, (previous.get(id) || 0) + direction * decimalNumber(line.quantity));
+        previousContainers.set(id, (previousContainers.get(id) || 0) - Number(line.containerDelta || 0));
+      }
+    }
+    const desired = new Map<string, number>();
+    const desiredContainers = new Map<string, number>();
+    for (const sale of requested) {
+      const id = text(sale.inventoryItemId);
+      const item = byId.get(id) as AnyRecord | undefined;
+      if (!item)
+        throw new BadRequestException('Товар не найден: ' + id);
+      const amount = Number(sale.quantity);
+      if (!Number.isFinite(amount) || amount <= 0)
+        throw new BadRequestException('Укажите количество продажи: ' + item.name);
+      const requestedUnit = text(sale.unit) || text(item.saleUnit) || text(item.unit);
+      if (item.saleUnit && requestedUnit !== text(item.saleUnit))
+        throw new BadRequestException('Единица продажи изменилась. Откройте товар повторно.');
+      let stockAmount: number;
+      try {
+        stockAmount = stockQuantityForUnit({
+          unit: item.unit,
+          packageQuantity: item.packageQuantity,
+          netPackageWeight: item.grossWeight != null && item.tareWeight != null
+            ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+        }, amount, requestedUnit);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Неверная единица продажи');
+      }
+      desired.set(id, (desired.get(id) || 0) + stockAmount);
+      const physicalUnit = canonicalInventoryUnit(item.unit);
+      if (requestedUnit === 'шт.' && (physicalUnit === 'г' || physicalUnit === 'мл')) {
+        desiredContainers.set(id, (desiredContainers.get(id) || 0) + amount);
+      }
+    }
+    const saleLines: AnyRecord[] = [];
+    const returnLines: AnyRecord[] = [];
+    for (const id of ids) {
+      const item = byId.get(id) as AnyRecord;
+      const diff = Math.round(((desired.get(id) || 0) - (previous.get(id) || 0)) * 1000) / 1000;
+      const countDiff = (desiredContainers.get(id) || 0) - (previousContainers.get(id) || 0);
+      if (diff > EPSILON && (item.archivedAt || item.canSell !== true))
+        throw new BadRequestException('Товар недоступен для продажи: ' + item.name);
+      if (diff > EPSILON || countDiff > 0)
+        saleLines.push({ itemId: id, quantity: Math.max(0, diff),
+          ...(countDiff > 0 ? { containerDelta: -countDiff } : {}) });
+      if (diff < -EPSILON || countDiff < 0)
+        returnLines.push({ itemId: id, quantity: Math.max(0, -diff),
+          ...(countDiff < 0 ? { containerDelta: -countDiff } : {}) });
+    }
+    if (!saleLines.length && !returnLines.length) return;
+    // Reject negative stock before creating an outbound sale. Existing
+    // manual movements retain their existing semantics.
+    if (saleLines.length) {
+      const internalIds = saleLines.map(line => (byId.get(line.itemId) as AnyRecord).id);
+      const stockLines = await tx.inventoryMovementLine.findMany({
+        where: { tenantId, inventoryItemId: { in: internalIds } },
+      });
+      const balances = new Map<string, number>();
+      for (const line of stockLines as AnyRecord[]) {
+        balances.set(line.inventoryItemId, (balances.get(line.inventoryItemId) || 0)
+          + (line.direction === 'OUT' ? -1 : 1) * decimalNumber(line.quantity));
+      }
+      for (const line of saleLines) {
+        const key = (byId.get(line.itemId) as AnyRecord).id;
+        const amount = balances.get(key) || 0;
+        const credit = returnLines.find(row => row.itemId === line.itemId)?.quantity || 0;
+        if (amount + credit + EPSILON < line.quantity)
+          throw new BadRequestException('Недостаточный остаток: ' + (byId.get(line.itemId) as AnyRecord).name);
+      }
+    }
+    const metadata = {
+      sourceType, sourceId: recordId, recordId, personKey: text(context.personKey),
+      workplaceKey: text(context.workplaceKey),
+    };
+    // Restore before the additional sale so that corrections can be
+    // applied without transient negative stock within one transaction.
+    if (returnLines.length) await this.createMovementInTx(tx, tenantId, {
+      ...metadata, kind: 'RETURN', lines: returnLines,
+      note: 'Корректировка продажи по записи',
+    }, { allowRecordSale: true });
+    if (saleLines.length) await this.createMovementInTx(tx, tenantId, {
+      ...metadata, kind: 'SALE', lines: saleLines,
+      note: 'Продажа по записи',
+    }, { allowRecordSale: true });
+  }
+
   async createMovement(tenantId: string, body: unknown) {
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.createMovementInTx(tx, tenantId, objectValue(body));
@@ -937,6 +1126,10 @@ export class InventoryService {
 
     const desired = normalizedMovementLines(original.kind, source.lines);
     if (!desired.length) throw new BadRequestException('В корректировке нет позиций');
+    const desiredItems = await this.prisma.inventoryItem.findMany({
+      where: { tenantId, itemId: { in: desired.map(line => line.itemId) }, archivedAt: null },
+    });
+    applyMovementQuantityUnits(desired, desiredItems as AnyRecord[]);
 
     const currentByItem = new Map<string, { signed: number; unitCost: number; containers: number }>();
     (original.lines as AnyRecord[]).forEach((line) => {
@@ -1217,11 +1410,14 @@ export class InventoryService {
   }
 
   private async createMovementInTx(tx: Tx, tenantId: string, raw: AnyRecord,
-    options: { allowPurchaseOrderReceipt?: boolean } = {}) {
+    options: { allowPurchaseOrderReceipt?: boolean; allowRecordSale?: boolean } = {}) {
     // The generic movement endpoint cannot impersonate a purchase receipt.
     // The Purchase Order owner alone authorizes this source in its transaction.
     if (text(raw.sourceType) === 'inventory-purchase-order' && !options.allowPurchaseOrderReceipt) {
       throw new BadRequestException('Приход по заказу создаётся только при получении заказа');
+    }
+    if (text(raw.sourceType) === 'record-sale' && !options.allowRecordSale) {
+      throw new BadRequestException('Продажа из записи создаётся только при сохранении записи');
     }
     const kind = text(raw.kind).toUpperCase();
     if (!MOVEMENT_KINDS.has(kind)) throw new BadRequestException('Неизвестный тип складского движения');
@@ -1230,10 +1426,13 @@ export class InventoryService {
 
     const requestedIds = [...new Set(lines.map((line) => line.itemId))];
     const items = await tx.inventoryItem.findMany({
-      where: { tenantId, itemId: { in: requestedIds }, archivedAt: null },
+      where: { tenantId, itemId: { in: requestedIds },
+        // Allow an original record sale to be returned after product archiving.
+        ...(options.allowRecordSale && kind === 'RETURN' ? {} : { archivedAt: null }) },
     });
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
+    applyMovementQuantityUnits(lines, items as AnyRecord[]);
 
     const selectedOfferIds = [...new Set(lines
       .filter((line) => line.direction === 'IN' && line.offerId && !raw.historicalTransfer)
