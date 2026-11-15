@@ -523,7 +523,7 @@ export class InventoryService {
             String(line.unit).toLocaleLowerCase('ru-RU')) ? line.packages : null,
           supplier: order.supplier, offerId: '',
         })),
-      });
+      }, { allowPurchaseOrderReceipt: true });
       await tx.inventoryPurchaseOrder.update({
         where: { id: order.id }, data: { receiptMovementId: movementId },
       });
@@ -1188,7 +1188,13 @@ export class InventoryService {
     }
   }
 
-  private async createMovementInTx(tx: Tx, tenantId: string, raw: AnyRecord) {
+  private async createMovementInTx(tx: Tx, tenantId: string, raw: AnyRecord,
+    options: { allowPurchaseOrderReceipt?: boolean } = {}) {
+    // The generic movement endpoint cannot impersonate a purchase receipt.
+    // The Purchase Order owner alone authorizes this source in its transaction.
+    if (text(raw.sourceType) === 'inventory-purchase-order' && !options.allowPurchaseOrderReceipt) {
+      throw new BadRequestException('Приход по заказу создаётся только при получении заказа');
+    }
     const kind = text(raw.kind).toUpperCase();
     if (!MOVEMENT_KINDS.has(kind)) throw new BadRequestException('Неизвестный тип складского движения');
     const lines = normalizedMovementLines(kind, raw.lines);
