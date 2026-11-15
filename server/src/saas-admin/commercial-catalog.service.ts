@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { normalizeTariffDraft, type TariffDraftConfig } from './tariff-draft-config';
+import { normalizeTariffDraft, tariffOfferOnDate, type TariffDraftConfig } from './tariff-draft-config';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { READINESS_KEYS } from './tool-readiness.service';
@@ -223,12 +223,34 @@ export class CommercialCatalogService {
     const drafts = new Map(draftRows.map((row) => [row.tariffKey, {
       ...row.configuration, revision: row.revision, updatedAt: row.updatedAt,
     }]));
+    const activeRows = await this.prisma.$queryRawUnsafe<Array<{
+      tariffKey:string; configuration:TariffDraftConfig; publishedDraftRevision:number; publishedAt:Date;
+    }>>(`SELECT "tariffKey","configuration","publishedDraftRevision","publishedAt"
+       FROM "CommercialTariffPublishedTerms"`);
+    const activeTerms = new Map(activeRows.map((row) => [row.tariffKey, row]));
+    const today = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
     const bonuses = new Map<string, Map<number, number>>();
     for (const row of bonusRows) {
       if (!bonuses.has(row.tariffKey)) bonuses.set(row.tariffKey, new Map());
       bonuses.get(row.tariffKey)!.set(row.months, row.bonusPercent);
     }
-    const periodFor = (tariffKey: string) => tariffPeriods(bonuses.get(tariffKey) || new Map());
+    const periodFor = (tariffKey: string) => {
+      const active = activeTerms.get(tariffKey);
+      if (!active) return tariffPeriods(bonuses.get(tariffKey) || new Map());
+      return ([1,6,12] as const).map((months) => {
+        const quote = tariffOfferOnDate(active.configuration, months, today);
+        return {
+          months, paidDays:quote.paidDays, bonusDays:quote.bonusDays,
+          accessDays:quote.accessDays,
+          bonusPercent: Math.round(quote.bonusDays / quote.paidDays * 100),
+          subtotalMinor:quote.subtotalMinor, totalMinor:quote.totalMinor,
+          discountMinor:quote.discountMinor, campaignActive:quote.campaignActive,
+          referencePriceMinor:quote.referencePriceMinor,
+        };
+      });
+    };
     const limitRows = await this.prisma.$queryRawUnsafe<Array<{toolKey:string;tariffKey:string;maxCount:number|null}>>(
       `SELECT "toolKey","tariffKey","maxCount" FROM "CommercialTariffLimit" ORDER BY "toolKey","tariffKey"`,
     );
@@ -278,6 +300,7 @@ export class CommercialCatalogService {
         isSaleable: byKey.get(key)?.isSaleable === true,
         isFree: byKey.get(key)?.isFree === true,
         draft: drafts.get(key) || null,
+        publishedDraftRevision: activeTerms.get(key)?.publishedDraftRevision || null,
         periods: periodFor(key),
         connected: counts[index],
         tools: [...expand(key)].filter((childKey) => !ALL_TARIFF_KEYS.includes(childKey as TariffKey))
@@ -406,6 +429,62 @@ export class CommercialCatalogService {
     return this.tariffs();
   }
 
+  // Activate new terms only when explicitly published; prior orders stay immutable.
+  async publishTariffDraft(input: Record<string, unknown>, actorAdminId: string) {
+    const tariffKey = text(input.tariffKey);
+    if (!TARIFF_KEYS.includes(tariffKey as (typeof TARIFF_KEYS)[number])) {
+      throw new BadRequestException('Тариф не найден');
+    }
+    if (typeof input.expectedRevision !== 'number' ||
+        !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+      throw new BadRequestException('Сначала сохраните условия тарифа');
+    }
+    const publish = input.published;
+    if (typeof publish !== 'boolean') throw new BadRequestException('Не указан статус публикации');
+    await this.syncAppCatalog();
+    await this.prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRawUnsafe<Array<{configuration:TariffDraftConfig;revision:number}>>(
+        `SELECT "configuration","revision" FROM "CommercialTariffDraft" WHERE "tariffKey"=$1 FOR UPDATE`, tariffKey,
+      );
+      if (!row || row.revision !== input.expectedRevision) {
+        throw new ConflictException('Условия тарифа изменились. Сохраните их заново.');
+      }
+      const config = normalizeTariffDraft(row.configuration);
+      if (publish) {
+        if (tariffKey === 'tariff.start' && !config.free) {
+          throw new BadRequestException('Платный Start пока нельзя опубликовать: регистрация рассчитана на бесплатный Start');
+        }
+        if (!config.free && config.priceMinor === 0) {
+          throw new BadRequestException('Установите цену платного тарифа перед публикацией');
+        }
+        for (const months of [1,6,12] as const) {
+          if (!config.free && tariffOfferOnDate(config, months, '2026-11-15').totalMinor === 0) {
+            throw new BadRequestException('Условия периода не могут давать бесплатный платный тариф');
+          }
+        }
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "CommercialTariffPublishedTerms"
+             ("tariffKey","configuration","publishedDraftRevision","publishedByAdminId")
+           VALUES ($1,$2::jsonb,$3,$4)
+           ON CONFLICT ("tariffKey") DO UPDATE SET
+             "configuration"=EXCLUDED."configuration",
+             "publishedDraftRevision"=EXCLUDED."publishedDraftRevision",
+             "publishedByAdminId"=EXCLUDED."publishedByAdminId",
+             "publishedAt"=CURRENT_TIMESTAMP`,
+          tariffKey, JSON.stringify(config), row.revision, actorAdminId,
+        );
+      }
+      await tx.$executeRawUnsafe(
+        `UPDATE "CommercialProduct" SET
+          "priceMinor"=$2,"isFree"=$3,"isSaleable"=$4,"updatedAt"=CURRENT_TIMESTAMP
+         WHERE "key"=$1`,
+        tariffKey, config.free ? 0 : config.priceMinor, config.free, publish,
+      );
+    });
+    await this.audit(actorAdminId,'TARIFF_DRAFT_PUBLICATION','TARIFF',tariffKey,
+      { published: publish, revision: input.expectedRevision });
+    return this.tariffs();
+  }
   async updateTariffLimit(input: Record<string, unknown>, actorAdminId: string) {
     const toolKey = text(input.toolKey);
     const tariffKey = text(input.tariffKey);
