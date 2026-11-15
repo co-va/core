@@ -48,6 +48,12 @@ const catalog = [
     unit: 'г', packageQuantity: 60, referencePrice: 500 },
   { id: 'db-b', itemId: 'b', name: 'Gloves', manufacturer: 'CHI',
     unit: 'шт.', packageQuantity: null, referencePrice: 100 },
+  { id: 'db-c', itemId: 'c', name: 'Colour unknown tare', manufacturer: 'CHI',
+    unit: 'г', packageQuantity: null, grossWeight: 80, tareWeight: null, referencePrice: 500 },
+  { id: 'db-d', itemId: 'd', name: 'Colour unknown full weight', manufacturer: 'CHI',
+    unit: 'г', packageQuantity: null, grossWeight: null, tareWeight: null, referencePrice: 500 },
+  { id: 'db-e', itemId: 'e', name: 'Colour with measured tare', manufacturer: 'CHI',
+    unit: 'г', packageQuantity: null, grossWeight: 80, tareWeight: 10, referencePrice: 500 },
 ];
 const orders = [], receipts = [], expenses = [];
 const tx = {
@@ -115,6 +121,18 @@ const created = await owner.createPurchaseOrder('tenant', {
 const orderId = created.orders[0].orderId;
 assert.equal(orders.length, 1);
 assert.equal(orders[0].lines[0].packageSize, 60);
+const physicalOrder = await owner.createPurchaseOrder('tenant', {
+  supplier: 'Seller', lines: [{itemId:'c',packages:2}],
+});
+const unknownMassOrder = await owner.createPurchaseOrder('tenant', {
+  supplier: 'Seller', lines: [{itemId:'d',packages:2}],
+});
+const measuredTareOrder = await owner.createPurchaseOrder('tenant', {
+  supplier: 'Seller', lines: [{itemId:'e',packages:2}],
+});
+assert.equal(physicalOrder.orders[1].lines[0].packages, 2);
+assert.equal(physicalOrder.orders[1].lines[0].packageSize, 0,
+  'Missing tare must not invent grams for either order or receipt');
 await owner.updatePurchaseOrder('tenant', orderId, {
   supplier: 'Seller', lines: [{ itemId: 'a', packages: 3, packPrice: 550 }],
 });
@@ -129,6 +147,35 @@ assert.equal(receipts.length, 1);
 assert.equal(receipts[0].lines[0].quantity, 180);
 assert.equal(receipts[0].lines[0].containerDelta, 3);
 assert.equal(receipts[0].options.allowPurchaseOrderReceipt, true);
+await owner.payPurchaseOrder('tenant', orders[1].orderId,
+  {walletId:'wallet', walletName:'Cash'});
+await owner.receivePurchaseOrder('tenant', orders[1].orderId,
+  {receivedAt:'2026-11-16T12:00:00Z'});
+assert.equal(receipts.length, 2, 'Receipt of physical tubes must succeed without known tare');
+assert.equal(receipts[1].lines[0].containerDelta, 2);
+assert.equal(receipts[1].lines[0].quantity, 160,
+  'Unknown tare means gross grams count as product until measured');
+assert.equal(receipts[1].lines[0].unitCost, 500 / 80,
+  'Full gross grams are the temporary costing denominator');
+await owner.receivePurchaseOrder('tenant', orders[1].orderId,
+  {receivedAt:'2026-11-16T12:00:00Z'});
+assert.equal(receipts.length, 2, 'Physical receipt remains idempotent');
+await owner.payPurchaseOrder('tenant', unknownMassOrder.orders[2].orderId,
+  {walletId:'wallet',walletName:'Cash'});
+await owner.receivePurchaseOrder('tenant', unknownMassOrder.orders[2].orderId,
+  {receivedAt:'2026-11-16T12:00:00Z'});
+assert.equal(receipts[2].lines[0].containerDelta, 2);
+assert.equal(receipts[2].lines[0].quantity, 0,
+  'Unknown full weight must not invent grams, but can receive pieces');
+assert.equal(receipts[2].lines[0].unitCost, null);
+await owner.payPurchaseOrder('tenant', measuredTareOrder.orders[3].orderId,
+  {walletId:'wallet',walletName:'Cash'});
+await owner.receivePurchaseOrder('tenant', measuredTareOrder.orders[3].orderId,
+  {receivedAt:'2026-11-16T12:00:00Z'});
+assert.equal(receipts[3].lines[0].containerDelta, 2);
+assert.equal(receipts[3].lines[0].quantity, 140,
+  'Gross 80 minus measured tare 10 = 70 g per tube');
+assert.equal(receipts[3].lines[0].unitCost, 500 / 70);
 await assert.rejects(() => owner.updatePurchaseOrder('tenant', orderId, { lines: [{ itemId: 'a', packages: 4 }] }));
 await assert.rejects(() => owner.deletePurchaseOrder('tenant', orderId));
 await assert.rejects(() => owner.createPurchaseOrder('tenant', { lines: [{ itemId: 'a', packages: 1.5 }] }));
