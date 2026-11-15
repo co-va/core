@@ -332,7 +332,9 @@ export class CommercialCatalogService {
       // Backward-compatible period list; every paid offer has its own periods.
       periods: catalog.tiers.find((tier) => tier.key === 'tariff.start-plus')?.periods || tariffPeriods(new Map()),
       professional: catalog.tiers.map((tier, index) => ({
-        ...tier,
+        // Drafts and editor revisions belong exclusively to guarded Admin APIs.
+        key: tier.key, name: tier.name, priceMinor: tier.priceMinor,
+        isSaleable: tier.isSaleable, periods: tier.periods, tools: tier.tools,
         free: index === 0,
         published: tier.isSaleable === true,
         // Each tariff is published independently; only paid tiers require a price.
