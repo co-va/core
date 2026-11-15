@@ -73,6 +73,31 @@ export class InventoryController {
     return this.inventory.setPrimarySupplierOffer(request.auth!.tenantId, itemId, body);
   }
 
+  @Post('orders')
+  createOrder(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.createPurchaseOrder(request.auth!.tenantId, body);
+  }
+
+  @Put('orders/:orderId')
+  updateOrder(@Req() request: AuthenticatedRequest, @Param('orderId') orderId: string, @Body() body: unknown) {
+    return this.inventory.updatePurchaseOrder(request.auth!.tenantId, orderId, body);
+  }
+
+  @Delete('orders/:orderId')
+  deleteOrder(@Req() request: AuthenticatedRequest, @Param('orderId') orderId: string) {
+    return this.inventory.deletePurchaseOrder(request.auth!.tenantId, orderId);
+  }
+
+  @Post('orders/:orderId/pay')
+  payOrder(@Req() request: AuthenticatedRequest, @Param('orderId') orderId: string, @Body() body: unknown) {
+    return this.inventory.payPurchaseOrder(request.auth!.tenantId, orderId, body);
+  }
+
+  @Post('orders/:orderId/receive')
+  receiveOrder(@Req() request: AuthenticatedRequest, @Param('orderId') orderId: string, @Body() body: unknown) {
+    return this.inventory.receivePurchaseOrder(request.auth!.tenantId, orderId, body);
+  }
+
   @Post('movements')
   createMovement(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.createMovement(request.auth!.tenantId, body);
