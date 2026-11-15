@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
+import { InventoryOrderExportService } from './inventory-order-export.service';
 
 type AuthenticatedRequest = Request & {
   auth?: { platformAccountId: string; tenantId: string; role: string };
@@ -10,7 +11,8 @@ type AuthenticatedRequest = Request & {
 @Controller('inventory')
 @UseGuards(JwtAuthGuard)
 export class InventoryController {
-  constructor(private readonly inventory: InventoryService) {}
+  constructor(private readonly inventory: InventoryService,
+    private readonly documents: InventoryOrderExportService) {}
 
   @Get()
   snapshot(@Req() request: AuthenticatedRequest) {
@@ -86,6 +88,29 @@ export class InventoryController {
   @Delete('orders/:orderId')
   deleteOrder(@Req() request: AuthenticatedRequest, @Param('orderId') orderId: string) {
     return this.inventory.deletePurchaseOrder(request.auth!.tenantId, orderId);
+  }
+
+  // Download/share only a saved, tenant-owned supplier document.
+  @Get('orders/:orderId/export/:format')
+  async exportOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId') orderId: string,
+    @Param('format') format: string,
+    @Res() response: import('express').Response,
+  ) {
+    if (format !== 'pdf' && format !== 'xlsx') {
+      throw new BadRequestException('Формат: PDF или Excel');
+    }
+    const order = await this.documents.supplierDocument(request.auth!.tenantId, orderId);
+    const bytes = format === 'pdf'
+      ? await this.documents.pdf(order)
+      : await this.documents.excel(order);
+    const label = String(orderId).replaceAll('-', '').slice(0, 12).toUpperCase();
+    response.setHeader('Content-Type', format === 'pdf' ? 'application/pdf'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    response.setHeader('Content-Disposition', `attachment; filename="zakaz_${label}.${format}"`);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.send(bytes);
   }
 
   @Post('orders/:orderId/pay')
