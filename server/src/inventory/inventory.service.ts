@@ -147,7 +147,7 @@ export class InventoryService {
   constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
 
   async snapshot(tenantId: string) {
-    const [items, lots, movements, lines, supplierOffers] = await Promise.all([
+    const [items, lots, movements, lines, supplierOffers, orders] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -168,6 +168,11 @@ export class InventoryService {
       this.prisma.inventorySupplierOffer.findMany({
         where: { tenantId, isActive: true },
         orderBy: [{ supplier: 'asc' }, { updatedAt: 'desc' }],
+      }),
+      this.prisma.inventoryPurchaseOrder.findMany({
+        where: { tenantId },
+        include: { lines: { orderBy: { position: 'asc' } } },
+        orderBy: [{ createdAt: 'desc' }, { orderId: 'asc' }],
       }),
     ]);
 
@@ -269,6 +274,30 @@ export class InventoryService {
           updatedAt: item.updatedAt,
         };
       }),
+      orders: orders.map((order: AnyRecord) => ({
+        orderId: order.orderId,
+        status: order.status,
+        supplier: order.supplier,
+        note: order.note,
+        financeOperationId: order.financeOperationId,
+        receiptMovementId: order.receiptMovementId,
+        paidAt: order.paidAt,
+        receivedAt: order.receivedAt,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        total: Math.round((order.lines || []).reduce((sum: number, line: AnyRecord) =>
+          sum + Number(line.packages) * decimalNumber(line.packPrice), 0) * 100) / 100,
+        lines: (order.lines || []).map((line: AnyRecord) => ({
+          itemId: line.itemId,
+          name: line.name,
+          manufacturer: line.manufacturer,
+          unit: line.unit,
+          packageSize: decimalNumber(line.packageSize),
+          packages: line.packages,
+          packPrice: decimalNumber(line.packPrice),
+          offerId: line.offerId,
+        })),
+      })),
       lots: lots.map((lot: AnyRecord) => ({
         lotId: lot.lotId,
         itemId: (itemByInternal.get(lot.inventoryItemId) as AnyRecord | undefined)?.itemId || '',
