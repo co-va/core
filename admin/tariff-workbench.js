@@ -18,7 +18,7 @@ function initial(t) {
   return {name:t.name,revision:cfg?.revision ?? 0,
     free:cfg?.free ?? t.isFree ?? t.key==='tariff.start',
     price:amount,was:num(Number(cfg?.referencePriceMinor ?? cfg?.priceMinor ?? t.priceMinor)/100),
-    periods,published:t.isSaleable===true,
+    periods,published:t.isSaleable===true,dirty:false,
     toolOverrides:{},campaign:{
       enabled:campaign.enabled ?? false,from:campaign.startsOn ?? '',
       until:campaign.endsOn ?? '',repeat:campaign.repeatEveryMonths ?? 0,
@@ -88,6 +88,11 @@ const pick=(name,scope,key,val,opts)=>'<label class="tw-field"><span>'+esc(name)
 const duration=d=>d%30===0?(d/30)+' мес.':d+' дн.';
 export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools,onSave}){
   const selected=tiers.find(t=>t.key===selectedKey), d=selected&&value(selected);
+  const previewOnly=typeof location!=='undefined' && /\.amvera\.tech$/.test(location.hostname);
+  const canActivate=!!d && !previewOnly && !d.dirty && d.revision>0;
+  const updatedTerms=!!d && selected.publishedDraftRevision!==d.revision;
+  const publishTarget=!!d && (!d.published || updatedTerms);
+  const publishLabel=updatedTerms&&d.published?'Опубликовать изменения':d.published?'Снять с публикации':'Опубликовать';
   const cards=tiers.map(t=>{
     const v=value(t),h=previewReadiness(t,readinessFor),one=offer(v,1,previewDate),six=offer(v,6,previewDate);
     return '<article class="admin-overview-metric tw-card '+(selectedKey===t.key?'is-selected':'')+'">'+
@@ -105,16 +110,16 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
     const h=previewReadiness(selected,readinessFor),c=d.campaign;
     editor='<section class="tw-editor" aria-label="Управление тарифом '+esc(d.name)+'">'+
       '<div class="admin-overview-tariffs-heading tw-section-head">'+
-        '<strong>'+esc(d.name)+' <span>/ Интерактивный предпросмотр конструктора · без сохранения</span></strong>'+
+        '<strong>'+esc(d.name)+' <span>/ '+(previewOnly?'Интерактивный предпросмотр конструктора · без сохранения':'Управление тарифом')+'</span></strong>'+
         '<div class="tw-head-actions"><button type="button" class="admin-overview-inline-link tw-reset" data-tw-reset>Сбросить изменения '+esc(d.name)+'</button></div></div>'+
       '<section class="tw-panel tw-price-panel"><div class="tw-price-panel-head"><h4>Цена тарифа</h4>'+
         '<div class="tw-publication-action"><span>Публикация тарифа</span>'+
-        '<button type="button" class="tw-publish-action" data-tw-publish disabled title="Публикация станет доступна после подключения продажи тарифов">'+(d.published?'Опубликован':'Опубликовать')+'</button></div></div>'+
+        '<button type="button" class="tw-publish-action" data-tw-publish '+(!canActivate?'disabled ':'')+'title="'+(previewOnly?'В staging-превью публикация заблокирована':d.dirty||d.revision===0?'Сначала сохраните изменения':'Изменяет доступность тарифа на сайте')+'">'+publishLabel+'</button></div></div>'+
         '<div class="tw-fields tw-fields--pricing">'+
         pick('Тип тарифа','base','free',d.free?'yes':'no',[['yes','Бесплатный'],['no','Платный']])+
         field('Цена продажи за 30 дней, ₽','base','price',d.price,'number','min="0" step="1" '+(d.free?'disabled':''))+
         field('Цена до скидки, ₽','base','was',d.was,'number','min="0" step="1" '+(d.free?'disabled':''))+
-      '</div><div class="tw-save-row"><button type="button" class="tw-publish-action" data-tw-save>Сохранить условия</button><span data-tw-save-message aria-live="polite">'+(typeof location!=='undefined'&&/amvera\\.tech$/.test(location.hostname)?'Сохранение доступно после выпуска в основную версию':'')+'</span></div></section>'+ 
+      '</div><div class="tw-save-row"><button type="button" class="tw-publish-action" data-tw-save '+(previewOnly?'disabled ':'')+'>Сохранить условия</button><span data-tw-save-message aria-live="polite">'+(previewOnly?'Сохранение в staging-превью заблокировано':d.dirty?'Есть несохранённые изменения':'')+'</span></div></section>'+ 
       '<div class="tw-subhead"><strong>Условия по срокам <span>/ 30 дней = 1 месяц; скидка и подарочное время независимы</span></strong></div>'+
       '<div class="tw-period-grid">'+[1,6,12].map(m=>{
         const p=d.periods[m],o=offer(d,m,previewDate);
@@ -166,7 +171,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   content.querySelector('[data-tw-save]')?.addEventListener('click',async (event)=>{
     const button=event.currentTarget;
     const status=content.querySelector('[data-tw-save-message]');
-    if(typeof location!=='undefined' && /amvera\\.tech$/.test(location.hostname)) {
+    if(previewOnly) {
       if(status)status.textContent='В staging-превью сохранение заблокировано';
       return;
     }
@@ -178,19 +183,35 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
       const saved=result?.tiers?.find(t=>t.key===selectedKey);
       if(saved){
         drafts.set(selectedKey,initial(saved));
-        if(status)status.textContent='Сохранено';
+        rerender();
+        const note=content.querySelector('[data-tw-save-message]');
+        if(note)note.textContent='Условия сохранены';
       }
     }catch(error){
       if(status)status.textContent=error instanceof Error?error.message:'Ошибка сохранения';
     }finally{button.disabled=false;}
   });
+  content.querySelector('[data-tw-publish]')?.addEventListener('click',async (event)=>{
+    if (!canActivate || !onPublish) return;
+    const button=event.currentTarget;
+    button.disabled=true;
+    try{
+      const result=await onPublish(selectedKey,d.revision,publishTarget);
+      const tier=result?.tiers?.find(t=>t.key===selectedKey);
+      if(tier){drafts.set(selectedKey,initial(tier));rerender();}
+    }catch(error){
+      const status=content.querySelector('[data-tw-save-message]');
+      if(status)status.textContent=error instanceof Error?error.message:'Ошибка публикации';
+      button.disabled=false;
+    }
+  });
   content.querySelector('[data-tw-tools-nav]')?.addEventListener('click',onTools);
   content.querySelector('[data-tw-reset]')?.addEventListener('click',()=>{drafts.delete(selectedKey);rerender();});
-  const bind=(selector,fn)=>content.querySelectorAll(selector).forEach(el=>el.addEventListener('change',()=>{fn(el);rerender();}));
+  const bind=(selector,fn,markDirty=true)=>content.querySelectorAll(selector).forEach(el=>el.addEventListener('change',()=>{fn(el);if(markDirty)d.dirty=true;rerender();}));
   if(d){
     bind('[data-tw-base]',el=>{const k=el.dataset.twBase;d[k]=k==='free'?el.value==='yes':k==='price'||k==='was'?num(el.value):el.value;});
     bind('[data-tw-period]',el=>{const [m,key]=el.dataset.twPeriod.split('-');const p=d.periods[m];if(key==='giftMonths')p.giftDays=Math.round(num(el.value,120)*30)+(p.giftDays%30);else if(key==='giftRemainder')p.giftDays=Math.floor(p.giftDays/30)*30+Math.round(num(el.value,29));else p[key]=num(el.value,key==='discount'?100:1000000);});
-    bind('[data-tw-include]',el=>{d.toolOverrides[el.dataset.twInclude]=el.checked;toolsOpen=true;});
+    bind('[data-tw-include]',el=>{d.toolOverrides[el.dataset.twInclude]=el.checked;toolsOpen=true;},false);
     bind('[data-tw-campaign]',el=>{const k=el.dataset.twCampaign;d.campaign[k]=k==='enabled'?el.checked:['repeat','length','months','discount','giftDays'].includes(k)?num(el.value):el.value;});
     content.querySelector('[data-tw-preview]')?.addEventListener('change',e=>{previewDate=e.target.value||iso();rerender();});
     content.querySelector('[data-tw-filter]')?.addEventListener('change',e=>{filter=e.target.value;toolsOpen=true;rerender();});
