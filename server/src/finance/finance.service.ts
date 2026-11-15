@@ -1099,6 +1099,7 @@ export class FinanceService {
     const id = text(operationId);
     const current = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } }, include: { ledgerEntries: true } });
     if (!current) throw new NotFoundException('Операция не найдена');
+    if (current.sourceType === 'inventory-purchase-order') throw new BadRequestException('Оплата заказа изменяется только через заказ');
     if (current.kind === 'cancel' || current.status === 'cancelled') throw new BadRequestException('Отменённую операцию корректировать нельзя');
     const related = await this.prisma.financeOperation.findFirst({ where: { tenantId, originalOperationId: current.operationId }, select: { operationId: true } });
     if (related) throw new BadRequestException('Операцию со связанными возвратами или отменами сначала нужно привести в исходное состояние');
@@ -1241,6 +1242,7 @@ export class FinanceService {
     const occurredAt = requiredOccurredAt(input.occurredAt);
     const original = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } } });
     if (!original) throw new NotFoundException('Операция не найдена');
+    if (original.sourceType === 'inventory-purchase-order') throw new BadRequestException('Оплату заказа нельзя отменять отдельно от заказа');
     if (original.status === 'cancelled') return this.snapshot(tenantId);
     if (original.kind === 'deposit-funding' || original.kind === 'deposit-withdrawal') {
       throw new BadRequestException('Финансовый факт Депозита отменяется через сам Депозит, чтобы не разрушить его состояние.');
@@ -1270,8 +1272,9 @@ export class FinanceService {
   async hardDeleteOperation(tenantId: string, operationId: string) {
     const id = text(operationId);
     if (!id) throw new BadRequestException('Операция не найдена');
-    const current = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } }, select: { operationId: true } });
+    const current = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } }, select: { operationId: true, sourceType: true } });
     if (!current) return this.snapshot(tenantId);
+    if (current.sourceType === 'inventory-purchase-order') throw new BadRequestException('Оплату заказа нельзя удалить отдельно от заказа');
     await this.serializable(async (tx) => {
       const operationIds = new Set([current.operationId]);
       let frontier = [current.operationId];
@@ -1281,7 +1284,9 @@ export class FinanceService {
         next.forEach((relatedId) => operationIds.add(relatedId));
         frontier = next;
       }
-      const operations = await tx.financeOperation.findMany({ where: { tenantId, operationId: { in: [...operationIds] } }, select: { kind: true, data: true } });
+      const operations = await tx.financeOperation.findMany({ where: { tenantId, operationId: { in: [...operationIds] } }, select: { kind: true, data: true, sourceType: true } });
+      if (operations.some(row => row.sourceType === 'inventory-purchase-order'))
+        throw new BadRequestException('Оплату заказа нельзя удалить отдельно от заказа');
       if (operations.some((row) => row.kind === 'deposit-funding' || row.kind === 'deposit-withdrawal' || depositAllocationsValue(objectValue(row.data).depositAllocations).length)) {
         throw new BadRequestException('Операция связана с Депозитом. Используйте отмену или удаление из контура Депозита.');
       }

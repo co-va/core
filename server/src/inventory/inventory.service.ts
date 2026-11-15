@@ -417,6 +417,7 @@ export class InventoryService {
       const order = await tx.inventoryPurchaseOrder.findUnique({
         where: { tenantId_orderId: { tenantId, orderId } },
       });
+      if (!order) throw new BadRequestException('Заказ не найден');
       await tx.inventoryPurchaseOrderLine.deleteMany({
         where: { tenantId, purchaseOrderId: order.id },
       });
@@ -520,7 +521,7 @@ export class InventoryService {
           unitCost: decimalNumber(line.packPrice) / decimalNumber(line.packageSize),
           containerDelta: ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(
             String(line.unit).toLocaleLowerCase('ru-RU')) ? line.packages : null,
-          supplier: order.supplier, offerId: line.offerId || '',
+          supplier: order.supplier, offerId: '',
         })),
       });
       await tx.inventoryPurchaseOrder.update({
