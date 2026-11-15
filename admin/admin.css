@@ -1439,3 +1439,13 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .tw-fields--pricing .tw-field:first-child{grid-column:1/-1}
   .tw-tool-row{grid-template-columns:minmax(0,1fr) 24px 82px}
 }
+
+/* Tariff loading is visible on the graphite Admin surface, not black on black. */
+.admin-tariff-section .tw-load-state{
+  display:grid;gap:12px;justify-items:start;
+  padding:20px 22px;max-width:460px;
+  border:1px solid rgba(255,255,255,.15);border-radius:12px;
+  color:var(--white,#fff);font-size:15px;line-height:1.5;
+}
+.admin-tariff-section .tw-load-state strong{font-size:17px;color:inherit}
+.admin-tariff-section .tw-load-state p{margin:0;color:inherit;opacity:.88}

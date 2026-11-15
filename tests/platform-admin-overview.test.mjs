@@ -354,3 +354,28 @@ assert.deepEqual(publicationRequests, [
 ], 'Each publication changes only the selected tier; no readiness-based gate');
 
 console.log('Platform Admin Overview data boundaries, labels and actions: PASS');
+
+// Regression: tariff cards must render while tool-readiness is still pending.
+// This simulates a readiness request that never resolves; the tariff catalog
+// is authoritative and must be independently renderable.
+const tariffLoaderStart = source.indexOf('function requestOverviewTariffs(force = false)');
+const tariffLoaderEnd = source.indexOf("if (typeof document !== 'undefined') document.addEventListener('admin:tariff-changed'", tariffLoaderStart);
+assert.ok(tariffLoaderStart >= 0 && tariffLoaderEnd > tariffLoaderStart, 'Tariff loader exists');
+const loaderSource = source.slice(tariffLoaderStart, tariffLoaderEnd);
+const loadingProbe = {
+  Promise,
+  state: { section: 'tariffs', toolReadiness: [] },
+  loadTariffs: async () => ({ tiers: [{key:'tariff.start', name:'Start'}] }),
+  adminRequest: () => new Promise(() => {}),
+  renderTariffs() {},
+};
+runInNewContext([
+  "let overviewTariffData = null, overviewTariffStatus = 'idle', overviewTariffError = '', overviewTariffRequestId = 0;",
+  loaderSource,
+  'requestOverviewTariffs();'
+].join('\n'), loadingProbe);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(runInNewContext('overviewTariffStatus', loadingProbe), 'ready',
+  'Tariff loading cannot wait for unfinished readiness');
+assert.equal(runInNewContext('overviewTariffData.tiers[0].key', loadingProbe), 'tariff.start');
+assert.match(source, /tw-load-state/, 'Loading and errors must be legible on the graphite canvas');

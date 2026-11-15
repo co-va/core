@@ -534,24 +534,44 @@ let overviewTariffData = null;
 let overviewTariffStatus = 'idle';
 let overviewSelectedTariff = '';
 let overviewTariffMessage = '';
+let overviewTariffError = '';
+let overviewTariffRequestId = 0;
 
 function requestOverviewTariffs(force = false) {
-  // The isolated Overview contract tests evaluate this section without imports.
-  if (typeof loadTariffs !== 'function') { overviewTariffStatus = 'unavailable'; return; }
+  // Tariff data is authoritative. Readiness is a separate, optional signal:
+  // a slow readiness endpoint must never block the tariff editor.
+  if (typeof loadTariffs !== 'function') {
+    overviewTariffStatus = 'unavailable';
+    overviewTariffError = 'Модуль тарифов не загрузился';
+    if (state.section === 'tariffs') renderTariffs();
+    return;
+  }
   if (overviewTariffStatus === 'loading' || (!force && overviewTariffStatus !== 'idle')) return;
+  const requestId = ++overviewTariffRequestId;
   overviewTariffStatus = 'loading';
-  void Promise.all([loadTariffs(force), adminRequest('/tool-readiness').catch(() => null)])
-    .then(([data, readiness]) => {
-      if (Array.isArray(readiness)) state.toolReadiness = readiness;
+  overviewTariffError = '';
+  void loadTariffs(force)
+    .then((data) => {
+      if (requestId !== overviewTariffRequestId) return;
+      if (!data || !Array.isArray(data.tiers)) throw new Error('Core вернул неполный каталог тарифов');
       overviewTariffData = data;
       overviewTariffStatus = 'ready';
     })
-    .catch(() => {
+    .catch((error) => {
+      if (requestId !== overviewTariffRequestId) return;
       overviewTariffStatus = 'unavailable';
+      overviewTariffError = error instanceof Error ? error.message : 'Ошибка получения тарифов';
     })
     .finally(() => {
-      if (state.section === 'tariffs') renderTariffs();
+      if (requestId === overviewTariffRequestId && state.section === 'tariffs') renderTariffs();
     });
+  void adminRequest('/tool-readiness', { timeoutMs: 6000 })
+    .then((rows) => {
+      if (requestId !== overviewTariffRequestId || !Array.isArray(rows)) return;
+      state.toolReadiness = rows;
+      if (overviewTariffStatus === 'ready' && state.section === 'tariffs') renderTariffs();
+    })
+    .catch(() => { /* Readiness does not prevent opening and editing tariffs. */ });
 }
 
 if (typeof document !== 'undefined') document.addEventListener('admin:tariff-changed', () => {
@@ -630,8 +650,10 @@ function renderTariffs() {
     if (overviewTariffStatus !== 'ready') {
       content.innerHTML = '<div class="admin-overview admin-tariff-section"><div class="admin-heading"><h2>Тарифы</h2></div>' +
         (overviewTariffStatus === 'unavailable'
-          ? '<p>Не удалось получить тарифы из Core.</p><button type="button" class="admin-button" data-tw-retry>Повторить загрузку</button>'
-          : '<p>Загрузка условий тарифов…</p>') + '</div>';
+          ? '<div class="tw-load-state"><strong>Не удалось получить тарифы из Core</strong><p>' +
+            escapeHtml(overviewTariffError || 'Проверьте соединение с Core') +
+            '</p><button type="button" class="admin-button" data-tw-retry>Повторить загрузку</button></div>'
+          : '<div class="tw-load-state" role="status">Загружаем тарифы…</div>') + '</div>';
       content.querySelector('[data-tw-retry]')?.addEventListener('click', () => {
         overviewTariffStatus = 'idle'; requestOverviewTariffs(true); renderTariffs();
       });
