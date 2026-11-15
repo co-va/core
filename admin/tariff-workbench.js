@@ -88,7 +88,7 @@ const pick=(name,scope,key,val,opts)=>'<label class="tw-field"><span>'+esc(name)
 const duration=d=>d%30===0?(d/30)+' мес.':d+' дн.';
 export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools,onSave}){
   const selected=tiers.find(t=>t.key===selectedKey), d=selected&&value(selected);
-  const previewOnly=typeof location!=='undefined' && /\.amvera\.tech$/.test(location.hostname);
+  const previewOnly=typeof location==='undefined' || /\.amvera\.tech$/.test(location.hostname);
   const canActivate=!!d && !previewOnly && !d.dirty && d.revision>0;
   const updatedTerms=!!d && selected.publishedDraftRevision!==d.revision;
   const publishTarget=!!d && (!d.published || updatedTerms);
