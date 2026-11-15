@@ -998,20 +998,23 @@ export class InventoryService {
       include: { lines: { include: { item: true } } },
     });
     const previous = new Map<string, number>();
+    const previousContainers = new Map<string, number>();
     for (const movement of movements as AnyRecord[]) {
       for (const line of movement.lines as AnyRecord[]) {
         const id = text(line.item?.itemId);
         if (!id) continue;
         const direction = line.direction === 'OUT' ? 1 : -1;
         previous.set(id, (previous.get(id) || 0) + direction * decimalNumber(line.quantity));
+        previousContainers.set(id, (previousContainers.get(id) || 0) - Number(line.containerDelta || 0));
       }
     }
     const desired = new Map<string, number>();
+    const desiredContainers = new Map<string, number>();
     for (const sale of requested) {
       const id = text(sale.inventoryItemId);
       const item = byId.get(id) as AnyRecord | undefined;
-      if (!item || item.archivedAt || item.canSell !== true)
-        throw new BadRequestException('Товар недоступен для продажи: ' + id);
+      if (!item)
+        throw new BadRequestException('Товар не найден: ' + id);
       const amount = Number(sale.quantity);
       if (!Number.isFinite(amount) || amount <= 0)
         throw new BadRequestException('Укажите количество продажи: ' + item.name);
@@ -1030,13 +1033,25 @@ export class InventoryService {
         throw new BadRequestException(error instanceof Error ? error.message : 'Неверная единица продажи');
       }
       desired.set(id, (desired.get(id) || 0) + stockAmount);
+      const physicalUnit = canonicalInventoryUnit(item.unit);
+      if (requestedUnit === 'шт.' && (physicalUnit === 'г' || physicalUnit === 'мл')) {
+        desiredContainers.set(id, (desiredContainers.get(id) || 0) + amount);
+      }
     }
     const saleLines: AnyRecord[] = [];
     const returnLines: AnyRecord[] = [];
     for (const id of ids) {
+      const item = byId.get(id) as AnyRecord;
       const diff = Math.round(((desired.get(id) || 0) - (previous.get(id) || 0)) * 1000) / 1000;
-      if (diff > EPSILON) saleLines.push({ itemId: id, quantity: diff });
-      if (diff < -EPSILON) returnLines.push({ itemId: id, quantity: -diff });
+      const countDiff = (desiredContainers.get(id) || 0) - (previousContainers.get(id) || 0);
+      if (diff > EPSILON && (item.archivedAt || item.canSell !== true))
+        throw new BadRequestException('Товар недоступен для продажи: ' + item.name);
+      if (diff > EPSILON || countDiff > 0)
+        saleLines.push({ itemId: id, quantity: Math.max(0, diff),
+          ...(countDiff > 0 ? { containerDelta: -countDiff } : {}) });
+      if (diff < -EPSILON || countDiff < 0)
+        returnLines.push({ itemId: id, quantity: Math.max(0, -diff),
+          ...(countDiff < 0 ? { containerDelta: -countDiff } : {}) });
     }
     if (!saleLines.length && !returnLines.length) return;
     // Reject negative stock before creating an outbound sale. Existing
@@ -1411,7 +1426,9 @@ export class InventoryService {
 
     const requestedIds = [...new Set(lines.map((line) => line.itemId))];
     const items = await tx.inventoryItem.findMany({
-      where: { tenantId, itemId: { in: requestedIds }, archivedAt: null },
+      where: { tenantId, itemId: { in: requestedIds },
+        // Allow an original record sale to be returned after product archiving.
+        ...(options.allowRecordSale && kind === 'RETURN' ? {} : { archivedAt: null }) },
     });
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');

@@ -631,7 +631,7 @@ export class RecordService {
     };
 
     await this.prisma.$transaction(async tx => {
-      await this.inventory.syncRecordSalesInTx(tx, tenantId, id, products, {
+      if (productsChanged) await this.inventory.syncRecordSalesInTx(tx, tenantId, id, products, {
         personKey: text(person.key), workplaceKey: incomingWorkplaceId,
       });
       await tx.record.update({
