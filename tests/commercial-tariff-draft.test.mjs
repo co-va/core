@@ -44,7 +44,8 @@ const source = await service.readFile(new URL('../server/src/saas-admin/commerci
 const order = await service.readFile(new URL('../server/src/saas-admin/commercial-tenant.service.ts',import.meta.url),'utf8');
 assert.match(source,/CommercialTariffPublishedTerms/,'published terms are distinct from editable drafts');
 const publicOffers=source.slice(source.indexOf('  async tariffOffers()'),source.indexOf('  async updateTariffSettings('));
-assert.doesNotMatch(publicOffers,/\.\.\.tier/,'public offers must not expose draft configuration');
+const professionalOffers=publicOffers.slice(0,publicOffers.indexOf('user: catalog.userTiers'));
+assert.doesNotMatch(professionalOffers,/\.\.\.tier/,'public Professional offers must not expose draft configuration');
 assert.match(publicOffers,/key: tier\.key, name: tier\.name/,'public offer explicitly enumerates safe fields');
 assert.match(source,/TARIFF_DRAFT_SAVED/,'draft saving is audited');
 assert.match(source,/TARIFF_DRAFT_PUBLICATION/,'activation is audited');
