@@ -367,7 +367,7 @@ const loadingProbe = {
   state: { section: 'tariffs', toolReadiness: [] },
   loadTariffs: async () => ({ tiers: [{key:'tariff.start', name:'Start'}] }),
   adminRequest: () => new Promise(() => {}),
-  renderTariffs() { this.rendered = (this.rendered || 0) + 1; },
+  renderTariffs() {},
 };
 runInNewContext([
   "let overviewTariffData = null, overviewTariffStatus = 'idle', overviewTariffError = '', overviewTariffRequestId = 0;",
