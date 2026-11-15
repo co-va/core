@@ -274,3 +274,24 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Для всех обычных внутренних модалов **Z, Q, X, S один фон** `--v2-inner-surface:#F5F5F3`: общая оболочка, Header, листы X/S и панель действий X. Это заменяет прежние ограничения «не менять X/S» и прежний отдельный `--v2-zq-surface`.
 - **Технический модал белый `#FFFFFF`**, отдельный стикер на графитовом H. Белый фон также сохраняется у полей ввода, селекторов и полосатого рабочего поля Журнала `.time-timeline` внутри тёплого Z.
 - Обновлены только существующие общие стили, Admin mobile, UI-контракт и защита. Не менялась геометрия 46/12 px, desktop-сетка, API и данные. Ссылка на текущий `User/main` остаётся указанием на прежнюю проверенную геометрию до выхода нового PR по цветам.
+
+## 2026-11-15 — Purchase orders and receipts are counted in whole physical tubes
+
+- User's priority: complete an order today. An Order `packages: 2` is two **physical** tubes, unrelated to net grams or tare knowledge. Core formerly rejected an Order without `packageQuantity`, preventing ordering; this is removed. It stores `packageSize: 0` for a weighted item of unknown weight, not a fictional 1 gram.
+- On receipt, known net grams are used if available from saved order, current `packageQuantity`, or known `grossWeight - tareWeight`. If tare/net grams are unknown, receiving the already paid order **still succeeds**, creating a canonical, single, idempotent RECEIPT with `containerDelta: +packages` and `quantity: 0`, with explicit note that net grams are unresolved. This is an honest physical receipt, not a fake zero-weight opened tube. Financial action remains once.
+- Existing movement and lot accounting stores grams separately from physical container count. Zero gram receipt does not create a fictitious gram lot and does not silently change historical mass. Until measured/reconciled, unknown grams must not be reported as known. Physical containerCount NULL remains unknown, not guessed from available grams. Full unopened-vs-opened stock logic is **not yet implemented**; do not claim otherwise.
+- Изначально эти правила прихода проверялись в `core/staging`, затем были перенесены в `core/main` вместе с рабочим складом. Они не разрешают выдумывать массу и не предусматривают автоматического переписывания прошлых движений.
+
+### 2026-11-15 — Приход в штуках, неизвестная тара = 0 для учётного веса
+
+- По уточнению владельца: один приход фиксирует целые упаковки; расход может быть целыми штуками или граммами. В весовом товаре при наличии массы полной упаковки брутто `grossWeight` и известной тары `tareWeight` используем `grossWeight - tareWeight`; если тара не измерена (`null`) — **временно считаем все `grossWeight` граммы содержимым**, а не блокируем приход. Ноль тары — допустимое значение.
+- Если масса брутто неизвестна, используем заполненное `packageQuantity`, затем положительный снимок `packageSize` заказа; если неизвестно всё — фиксируем только физические штуки (`containerDelta`), масса остаётся неучтённой. Нельзя выдумывать граммы.
+- При известной таре себестоимость грамма делится на нетто (без веса тары). Транзакция RECEIPT атомарна и повторное получение идемпотентно. Изменение измеренной тары **не переписывает прошлые движения автоматически** — фактический учёт уточняется корректировкой/инвентаризацией, иначе будут нарушены исторические финансовые факты.
+- Отдельная модель «целые/начатые» пока ещё не реализована: нельзя делать вид, что агрегированный остаток точно определяет вскрытые тюбики. При реализации нужен отдельный учёт открытия.
+
+## Сверка веток Core — 2026-11-16
+
+- `main` — текущая выпущенная база кода для API, Администратора, склада, финансов и журнала. Нельзя заменять её старой копией `staging`.
+- `staging` выровнен по коду с `main` и сохраняет особый собранный `admin/index.html` для read-only предпросмотра и дополнительные проверки макета тарифов.
+- Предыдущая история `staging` до очистки сохранена в `backup/staging-before-tariff-repair-20261116` (исходный SHA `f3a85bc1`). Старую ветку не сливать поверх актуального `main`.
+- Разработку вести из актуального `main` в `staging`; проверенные исправления выпускать выборочно. Разницу в истории не трактовать как отсутствующие функции без сравнения фактических файлов.
