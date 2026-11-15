@@ -470,7 +470,7 @@ export class InventoryService {
         where: { id: order.id },
         data: { financeOperationId: 'inventory-purchase-' + orderId },
       });
-    });
+    }, { timeout: 60000, maxWait: 10000 });
     return this.snapshot(tenantId);
   }
 
@@ -527,7 +527,7 @@ export class InventoryService {
       await tx.inventoryPurchaseOrder.update({
         where: { id: order.id }, data: { receiptMovementId: movementId },
       });
-    });
+    }, { timeout: 60000, maxWait: 10000 });
     return this.snapshot(tenantId);
   }
 
