@@ -159,7 +159,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
           pick('Показывать','filter','value',filter,[['included','Включённые'],['all','Все'],['testing','В проверке'],['not-ready','Не готово']])+
           '<button type="button" class="admin-overview-inline-link" data-tw-tools-nav>Настроить в «Инструментах» ↗</button></div>'+
           h.rows.filter(r=>filter==='all'||filter==='included'&&r.included||filter==='testing'&&r.status==='TESTING'||filter==='not-ready'&&r.status!=='READY').map(r=>
-            '<div class="tw-tool-row"><span>'+esc(r.name)+'</span><label><input type="checkbox" data-tw-include="'+esc(r.key)+'" '+(r.included?'checked':'')+' aria-label="Включить '+esc(r.name)+'"></label><small>'+esc(r.status==='READY'?'Готово':r.status==='TESTING'?'В проверке':r.status==='NOT_READY'?'Не готово':'Нет данных')+'</small></div>').join('')+
+            '<div class="tw-tool-row"><span>'+esc(r.name)+'</span>'+(previewOnly?'<label><input type="checkbox" data-tw-include="'+esc(r.key)+'" '+(r.included?'checked':'')+' aria-label="Проверить включение '+esc(r.name)+'"></label>':'<span class="tw-tool-inclusion" title="Состав изменяется в разделе Инструменты">'+(r.included?'✓':'—')+'</span>')+'<small>'+esc(r.status==='READY'?'Готово':r.status==='TESTING'?'В проверке':r.status==='NOT_READY'?'Не готово':'Нет данных')+'</small></div>').join('')+
         '</div></details>'+
       '</section>';
   }
