@@ -1034,7 +1034,7 @@ export class InventoryService {
       }
       desired.set(id, (desired.get(id) || 0) + stockAmount);
       const physicalUnit = canonicalInventoryUnit(item.unit);
-      if (requestedUnit === 'шт.' && (physicalUnit === 'г' || physicalUnit === 'мл')) {
+      if (['шт.', 'уп.'].includes(requestedUnit) && (physicalUnit === 'г' || physicalUnit === 'мл')) {
         desiredContainers.set(id, (desiredContainers.get(id) || 0) + amount);
       }
     }
