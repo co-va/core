@@ -360,11 +360,11 @@ export class InventoryService {
       }
       const unit = text(item.unit) || 'шт.';
       const weighted = ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(unit.toLocaleLowerCase('ru-RU'));
+      // A purchase order commits whole packages, not grams. A missing net
+      // package weight must not prevent creating/editing/paying an order.
+      // Use 0 to explicitly mark unresolved gram content of a weighed pack.
       const configuredSize = item.packageQuantity == null ? 0 : decimalNumber(item.packageQuantity);
-      if (weighted && configuredSize <= 0) {
-        throw new BadRequestException('Для покупки тюбиков укажите объём упаковки в карточке: ' + text(item.name));
-      }
-      const packageSize = configuredSize > 0 ? configuredSize : 1;
+      const packageSize = configuredSize > 0 ? configuredSize : weighted ? 0 : 1;
       const offerId = text(row.offerId || item.primaryOfferId);
       const offer = offersById.get(offerId) as AnyRecord | undefined;
       if (row.offerId && (!offer || offer.inventoryItemId !== item.id)) {
@@ -515,14 +515,37 @@ export class InventoryService {
         movementId, kind: 'RECEIPT', sourceType: 'inventory-purchase-order',
         sourceId: orderId, occurredAt: receivedAt,
         supplier: order.supplier, note: 'Приход по заказу',
-        lines: order.lines.map((line: AnyRecord) => ({
-          itemId: line.itemId,
-          quantity: line.packages * decimalNumber(line.packageSize),
-          unitCost: decimalNumber(line.packPrice) / decimalNumber(line.packageSize),
-          containerDelta: ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(
-            String(line.unit).toLocaleLowerCase('ru-RU')) ? line.packages : null,
-          supplier: order.supplier, offerId: '',
-        })),
+        lines: order.lines.map((line: AnyRecord) => {
+          const item = byId.get(line.itemId) as AnyRecord;
+          const weighted = ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(
+            String(line.unit).toLocaleLowerCase('ru-RU'));
+          const savedSize = decimalNumber(line.packageSize);
+          const currentSize = decimalNumber(item.packageQuantity);
+          const gross = item.grossWeight == null ? 0 : decimalNumber(item.grossWeight);
+          const tare = item.tareWeight == null ? null : decimalNumber(item.tareWeight);
+          // Gross is the weight of a full tube. If tare is not measured yet,
+          // count ALL gross grams as product; zero tare is a valid reading.
+          // If tare is known, it is excluded from usable product and cost per
+          // gram. A recorded net/packageQuantity is used when gross is absent.
+          if (gross > 0 && tare !== null && tare > gross) {
+            throw new BadRequestException('Масса тары превышает вес полной упаковки: ' + text(line.name));
+          }
+          const measuredSize = gross > 0 ? gross - (tare === null ? 0 : tare) : 0;
+          const size = weighted && gross > 0 ? measuredSize
+            : currentSize > 0 ? currentSize
+            : savedSize > 0 ? savedSize : 0;
+          // A physical receipt by pieces is valid without any known mass.
+          // Unmeasured grams are not invented; receipts record tube count.
+          if (!weighted && size <= 0) throw new BadRequestException('Проверьте количество в упаковке: ' + text(line.name));
+          return {
+            itemId: line.itemId,
+            quantity: line.packages * size,
+            unitCost: size > 0 ? decimalNumber(line.packPrice) / size : null,
+            containerDelta: weighted ? line.packages : null,
+            supplier: order.supplier, offerId: '',
+            ...(weighted && size === 0 ? { note: 'Тюбики получены; вес содержимого пока не определён' } : {}),
+          };
+        }),
       }, { allowPurchaseOrderReceipt: true });
       await tx.inventoryPurchaseOrder.update({
         where: { id: order.id }, data: { receiptMovementId: movementId },
