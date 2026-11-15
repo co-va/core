@@ -302,6 +302,205 @@ export class InventoryService {
     };
   }
 
+
+  // Purchase orders are stored independently of movements. Only receiving one
+  // paid order posts a canonical RECEIPT, inside the same database transaction.
+  private async preparePurchaseOrderLines(tx: Tx, tenantId: string, body: unknown) {
+    const rows = Array.isArray(body) ? body.map(objectValue) : [];
+    if (!rows.length || rows.length > 500) throw new BadRequestException('Выберите позиции заказа');
+    const ids = rows.map(row => text(row.itemId));
+    if (ids.some(id => !id) || new Set(ids).size !== ids.length) {
+      throw new BadRequestException('В заказе не может быть пустых или повторяющихся позиций');
+    }
+    const items = await tx.inventoryItem.findMany({
+      where: { tenantId, itemId: { in: ids }, archivedAt: null },
+    });
+    const byId = new Map((items as AnyRecord[]).map(row => [row.itemId, row]));
+    if (byId.size !== ids.length) throw new BadRequestException('Не все позиции заказа найдены в складе');
+    const offerIds = [...new Set(rows.map((row, index) =>
+      text(row.offerId || byId.get(ids[index])?.primaryOfferId)).filter(Boolean))];
+    const offers = offerIds.length ? await tx.inventorySupplierOffer.findMany({
+      where: { tenantId, offerId: { in: offerIds }, isActive: true },
+    }) : [];
+    const offersById = new Map((offers as AnyRecord[]).map(row => [row.offerId, row]));
+    return rows.map((row, index) => {
+      const item = byId.get(ids[index]) as AnyRecord;
+      const packages = Number(row.packages);
+      if (!Number.isSafeInteger(packages) || packages < 1 || packages > 100000) {
+        throw new BadRequestException('Количество упаковок должно быть целым положительным числом');
+      }
+      const unit = text(item.unit) || 'шт.';
+      const weighted = ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(unit.toLocaleLowerCase('ru-RU'));
+      const configuredSize = item.packageQuantity == null ? 0 : decimalNumber(item.packageQuantity);
+      if (weighted && configuredSize <= 0) {
+        throw new BadRequestException('Для покупки тюбиков укажите объём упаковки в карточке: ' + text(item.name));
+      }
+      const packageSize = configuredSize > 0 ? configuredSize : 1;
+      const offerId = text(row.offerId || item.primaryOfferId);
+      const offer = offersById.get(offerId) as AnyRecord | undefined;
+      if (row.offerId && (!offer || offer.inventoryItemId !== item.id)) {
+        throw new BadRequestException('Поставщик не соответствует позиции: ' + text(item.name));
+      }
+      const offeredUnitCost = offer ? supplierOfferUnitPrice(offer) : null;
+      const suggestedPrice = offeredUnitCost == null
+        ? item.referencePrice == null ? 0 : decimalNumber(item.referencePrice)
+        : offeredUnitCost * packageSize;
+      const price = row.packPrice == null || row.packPrice === ''
+        ? suggestedPrice : Number(String(row.packPrice).replace(',', '.'));
+      if (!Number.isFinite(price) || price < 0 || price > 100000000) {
+        throw new BadRequestException('Проверьте цену упаковки: ' + text(item.name));
+      }
+      return {
+        tenantId, itemId: item.itemId, name: text(item.name),
+        manufacturer: text(item.manufacturer), unit, packageSize,
+        packages, packPrice: Math.round(price * 100) / 100,
+        offerId: offer ? offerId : '', position: index,
+      };
+    });
+  }
+
+  async createPurchaseOrder(tenantId: string, body: unknown) {
+    const raw = objectValue(body);
+    const orderId = randomUUID();
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const lines = await this.preparePurchaseOrderLines(tx, tenantId, raw.lines);
+      await tx.inventoryPurchaseOrder.create({
+        data: {
+          tenantId, orderId, supplier: optionalText(raw.supplier), note: optionalText(raw.note),
+          lines: { create: lines },
+        },
+      });
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async updatePurchaseOrder(tenantId: string, orderId: string, body: unknown) {
+    const raw = objectValue(body);
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const lines = await this.preparePurchaseOrderLines(tx, tenantId, raw.lines);
+      const claimed = await tx.inventoryPurchaseOrder.updateMany({
+        where: { tenantId, orderId, status: 'formed' },
+        data: { supplier: optionalText(raw.supplier), note: optionalText(raw.note) },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException('Изменять позиции можно только до оплаты заказа');
+      }
+      const order = await tx.inventoryPurchaseOrder.findUnique({
+        where: { tenantId_orderId: { tenantId, orderId } },
+      });
+      await tx.inventoryPurchaseOrderLine.deleteMany({
+        where: { tenantId, purchaseOrderId: order.id },
+      });
+      await tx.inventoryPurchaseOrderLine.createMany({
+        data: lines.map(line => ({ ...line, purchaseOrderId: order.id })),
+      });
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async deletePurchaseOrder(tenantId: string, orderId: string) {
+    const deleted = await this.prisma.inventoryPurchaseOrder.deleteMany({
+      where: { tenantId, orderId, status: 'formed' },
+    });
+    if (deleted.count !== 1) throw new BadRequestException('Удалять можно только неоплаченный заказ');
+    return this.snapshot(tenantId);
+  }
+
+  async payPurchaseOrder(tenantId: string, orderId: string, body: unknown) {
+    const raw = objectValue(body);
+    const walletId = text(raw.walletId);
+    const walletName = text(raw.walletName);
+    if (!walletId) throw new BadRequestException('Выберите кошелёк');
+    const paidAt = raw.paidAt ? new Date(String(raw.paidAt)) : new Date();
+    if (!Number.isFinite(paidAt.getTime())) throw new BadRequestException('Проверьте дату оплаты');
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const claimed = await tx.inventoryPurchaseOrder.updateMany({
+        where: { tenantId, orderId, status: 'formed' }, data: { status: 'paid', paidAt },
+      });
+      if (claimed.count !== 1) {
+        const existing = await tx.inventoryPurchaseOrder.findUnique({
+          where: { tenantId_orderId: { tenantId, orderId } },
+        });
+        if (existing?.status === 'paid' || existing?.status === 'received') return;
+        throw new BadRequestException('Нельзя оплатить заказ в текущем состоянии');
+      }
+      const order = await tx.inventoryPurchaseOrder.findUnique({
+        where: { tenantId_orderId: { tenantId, orderId } },
+        include: { lines: { orderBy: { position: 'asc' } } },
+      });
+      if (!order || !order.lines.length) throw new BadRequestException('В заказе нет товаров');
+      const operation = await this.finance.recordInventoryPurchaseExpenseInTx(
+        tx, tenantId, orderId, walletId, walletName, paidAt,
+        order.lines.map((line: AnyRecord) => ({
+          name: line.name, packages: line.packages, packPrice: decimalNumber(line.packPrice),
+        })),
+      );
+      if (!operation) throw new BadRequestException('Финансы не подтвердили расход');
+      await tx.inventoryPurchaseOrder.update({
+        where: { id: order.id },
+        data: { financeOperationId: 'inventory-purchase-' + orderId },
+      });
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async receivePurchaseOrder(tenantId: string, orderId: string, body: unknown) {
+    const raw = objectValue(body);
+    if (!raw.receivedAt) throw new BadRequestException('Укажите дату получения заказа');
+    const receivedAt = new Date(String(raw.receivedAt));
+    if (!Number.isFinite(receivedAt.getTime())) throw new BadRequestException('Некорректная дата поступления');
+    await this.prisma.$transaction(async (tx: Tx) => {
+      // An atomic status transition owns the one and only inventory receipt.
+      const claimed = await tx.inventoryPurchaseOrder.updateMany({
+        where: { tenantId, orderId, status: 'paid', financeOperationId: { not: '' } },
+        data: { status: 'received', receivedAt },
+      });
+      if (claimed.count !== 1) {
+        const existing = await tx.inventoryPurchaseOrder.findUnique({
+          where: { tenantId_orderId: { tenantId, orderId } },
+        });
+        if (existing?.status === 'received') return;
+        throw new BadRequestException('Получить можно только оплаченный заказ');
+      }
+      const order = await tx.inventoryPurchaseOrder.findUnique({
+        where: { tenantId_orderId: { tenantId, orderId } },
+        include: { lines: { orderBy: { position: 'asc' } } },
+      });
+      if (!order || !order.lines.length) throw new BadRequestException('Пустой заказ нельзя принять');
+      const itemIds = order.lines.map((line: AnyRecord) => line.itemId);
+      const actualItems = await tx.inventoryItem.findMany({
+        where: { tenantId, itemId: { in: itemIds }, archivedAt: null },
+      });
+      const byId = new Map((actualItems as AnyRecord[]).map(item => [item.itemId, item]));
+      if (byId.size !== order.lines.length || order.lines.some((line: AnyRecord) =>
+        text(byId.get(line.itemId)?.unit) !== line.unit)) {
+        throw new BadRequestException('Карточка материала изменилась или удалена. Проверьте заказ перед приходом');
+      }
+      const movementId = 'inventory-order-receipt-' + orderId;
+      const previous = await tx.inventoryMovement.findFirst({
+        where: { tenantId, sourceType: 'inventory-purchase-order', sourceId: orderId },
+      });
+      if (previous) throw new BadRequestException('По этому заказу приход уже был создан');
+      await this.createMovementInTx(tx, tenantId, {
+        movementId, kind: 'RECEIPT', sourceType: 'inventory-purchase-order',
+        sourceId: orderId, occurredAt: receivedAt,
+        supplier: order.supplier, note: 'Приход по заказу',
+        lines: order.lines.map((line: AnyRecord) => ({
+          itemId: line.itemId,
+          quantity: line.packages * decimalNumber(line.packageSize),
+          unitCost: decimalNumber(line.packPrice) / decimalNumber(line.packageSize),
+          containerDelta: ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(
+            String(line.unit).toLocaleLowerCase('ru-RU')) ? line.packages : null,
+          supplier: order.supplier, offerId: line.offerId || '',
+        })),
+      });
+      await tx.inventoryPurchaseOrder.update({
+        where: { id: order.id }, data: { receiptMovementId: movementId },
+      });
+    });
+    return this.snapshot(tenantId);
+  }
+
   private inventoryPosition(value: unknown): number {
     if (value == null) return 0;
     if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2147483647)
