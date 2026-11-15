@@ -901,6 +901,11 @@ export class InventoryService {
       include: { lines: { include: { item: true } } },
     });
     if (!original) throw new NotFoundException('Движение не найдено');
+    // A received purchase is a finalized order fact. A generic correction
+    // must not silently desynchronize its saved quantities from its receipt.
+    if (original.sourceType === 'inventory-purchase-order') {
+      throw new BadRequestException('Приход полученного заказа нельзя исправлять отдельно от заказа');
+    }
     // A physically counted stocktake is an absolute observation. Editing it
     // retroactively would silently invalidate later tube receipts/stocktakes.
     if (original.lines.some((line: AnyRecord) => line.actualContainerCount != null)) {
