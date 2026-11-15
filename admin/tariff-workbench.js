@@ -182,6 +182,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
       const result=await onSave(selectedKey,d.revision,draftPayload(d));
       const saved=result?.tiers?.find(t=>t.key===selectedKey);
       if(saved){
+        Object.assign(tiers.find(t=>t.key===selectedKey),saved);
         drafts.set(selectedKey,initial(saved));
         rerender();
         const note=content.querySelector('[data-tw-save-message]');
@@ -198,7 +199,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
     try{
       const result=await onPublish(selectedKey,d.revision,publishTarget);
       const tier=result?.tiers?.find(t=>t.key===selectedKey);
-      if(tier){drafts.set(selectedKey,initial(tier));rerender();}
+      if(tier){Object.assign(tiers.find(t=>t.key===selectedKey),tier);drafts.set(selectedKey,initial(tier));rerender();}
     }catch(error){
       const status=content.querySelector('[data-tw-save-message]');
       if(status)status.textContent=error instanceof Error?error.message:'Ошибка публикации';
