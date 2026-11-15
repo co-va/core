@@ -6,11 +6,12 @@ import { InventoryController } from './inventory.controller';
 import { InventoryExcelController } from './inventory-excel.controller';
 import { InventoryExcelService } from './inventory-excel-final.service';
 import { InventoryService } from './inventory.service';
+import { InventoryOrderExportService } from './inventory-order-export.service';
 
 @Module({
   imports: [AuthModule, FinanceModule],
   controllers: [InventoryController, InventoryExcelController],
-  providers: [InventoryService, InventoryExcelService, PrismaService],
+  providers: [InventoryService, InventoryExcelService, InventoryOrderExportService, PrismaService],
   exports: [InventoryService],
 })
 export class InventoryModule {}
