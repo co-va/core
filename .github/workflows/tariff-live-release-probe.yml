@@ -1,0 +1,29 @@
+name: Tariff Live Release Probe
+on:
+  push:
+    branches: [staging]
+    paths: ['.github/workflows/tariff-live-release-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check production Admin assets
+        shell: bash
+        run: |
+          set -uo pipefail
+          admin='https://admin.va-tools.ru/admin'
+          api='https://api.va-tools.ru'
+          js=$(curl --silent --show-error --location --connect-timeout 6 --max-time 20             --output /tmp/tariff-workbench-live.js --write-out '%{http_code}'             "$admin/tariff-workbench.js" 2>/dev/null) || js='000'
+          entry=$(curl --silent --show-error --location --connect-timeout 6 --max-time 20             --output /tmp/tariff-admin-live.js --write-out '%{http_code}'             "$admin/admin.js" 2>/dev/null) || entry='000'
+          endpoint=$(curl --silent --show-error --connect-timeout 6 --max-time 20             --request PUT --header 'Content-Type: application/json'             --data '{}' --output /tmp/tariff-api-response.json --write-out '%{http_code}'             "$api/saas-admin/commercial-catalog/tariffs/draft" 2>/dev/null) || endpoint='000'
+          echo "TARIFF_RELEASE_ASSET_STATUS=$js/$entry"
+          echo "TARIFF_RELEASE_ROUTE_UNAUTH_STATUS=$endpoint"
+          if [ "$js" = '200' ] && [ "$entry" = '200' ] && [ "$endpoint" = '401' ]             && grep -q 'draftPayload' /tmp/tariff-workbench-live.js             && grep -q 'tariff-workbench.js' /tmp/tariff-admin-live.js; then
+            echo 'TARIFF_LIVE_RELEASE_CONFIRMED'
+          else
+            echo 'TARIFF_LIVE_RELEASE_NOT_YET_CONFIRMED'
+            exit 1
+          fi
