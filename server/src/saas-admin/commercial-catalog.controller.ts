@@ -45,6 +45,11 @@ export class CommercialCatalogController {
     return this.catalog.saveTariffDraft(body || {}, request.platformAdminId!);
   }
 
+  @Put('tariffs/draft/publication')
+  publishTariffDraft(@Req() request: AdminRequest, @Body() body: Record<string, unknown>) {
+    return this.catalog.publishTariffDraft(body || {}, request.platformAdminId!);
+  }
+
   @Put('tariffs/assignment')
   assignTariff(@Req() request: AdminRequest, @Body() body: Record<string, unknown>) {
     return this.catalog.assignTariff(body || {}, request.platformAdminId!);
