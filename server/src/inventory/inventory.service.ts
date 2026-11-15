@@ -141,8 +141,8 @@ function compareDates(left: unknown, right: unknown): number {
 
 @Injectable()
 export class InventoryService {
-  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation']); }
-  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation'],before,after,checkOnly); }
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine'],before,after,checkOnly); }
 
   constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
 
@@ -460,7 +460,7 @@ export class InventoryService {
       });
       if (!order || !order.lines.length) throw new BadRequestException('В заказе нет товаров');
       const operation = await this.finance.recordInventoryPurchaseExpenseInTx(
-        tx, tenantId, orderId, walletId, walletName, paidAt,
+        tx as Prisma.TransactionClient, tenantId, orderId, walletId, walletName, paidAt,
         order.lines.map((line: AnyRecord) => ({
           name: line.name, packages: line.packages, packPrice: decimalNumber(line.packPrice),
         })),
