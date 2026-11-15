@@ -454,11 +454,15 @@ export class CommercialCatalogService {
         if (tariffKey === 'tariff.start' && !config.free) {
           throw new BadRequestException('Платный Start пока нельзя опубликовать: регистрация рассчитана на бесплатный Start');
         }
+        if (tariffKey !== 'tariff.start' && config.free) {
+          throw new BadRequestException('Бесплатные Start+ и Pro ещё не поддерживаются оформлением подписки');
+        }
         if (!config.free && config.priceMinor === 0) {
           throw new BadRequestException('Установите цену платного тарифа перед публикацией');
         }
         for (const months of [1,6,12] as const) {
-          if (!config.free && tariffOfferOnDate(config, months, '2026-11-15').totalMinor === 0) {
+          const preview = tariffOfferOnDate(config, months, '2026-11-15');
+          if (!config.free && preview.totalMinor <= 0) {
             throw new BadRequestException('Условия периода не могут давать бесплатный платный тариф');
           }
         }
@@ -474,12 +478,19 @@ export class CommercialCatalogService {
           tariffKey, JSON.stringify(config), row.revision, actorAdminId,
         );
       }
-      await tx.$executeRawUnsafe(
-        `UPDATE "CommercialProduct" SET
-          "priceMinor"=$2,"isFree"=$3,"isSaleable"=$4,"updatedAt"=CURRENT_TIMESTAMP
-         WHERE "key"=$1`,
-        tariffKey, config.free ? 0 : config.priceMinor, config.free, publish,
-      );
+      if (publish) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "CommercialProduct" SET
+            "priceMinor"=$2,"isFree"=$3,"isSaleable"=true,"updatedAt"=CURRENT_TIMESTAMP
+           WHERE "key"=$1`,
+          tariffKey, config.free ? 0 : config.priceMinor, config.free,
+        );
+      } else {
+        await tx.$executeRawUnsafe(
+          `UPDATE "CommercialProduct" SET "isSaleable"=false,"updatedAt"=CURRENT_TIMESTAMP
+           WHERE "key"=$1`, tariffKey,
+        );
+      }
     });
     await this.audit(actorAdminId,'TARIFF_DRAFT_PUBLICATION','TARIFF',tariffKey,
       { published: publish, revision: input.expectedRevision });
