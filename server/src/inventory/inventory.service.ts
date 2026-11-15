@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
 import { effectiveSupplierOfferPrice, resolveInventoryBasePricing, supplierOfferUnitPrice } from './inventory-pricing';
+import { canonicalInventoryUnit, stockQuantityForUnit } from './inventory-usage';
 
 type AnyRecord = Record<string, any>;
 type Tx = AnyRecord;
@@ -12,6 +13,8 @@ type Tx = AnyRecord;
 type PreparedLine = {
   itemId: string;
   quantity: number;
+  // Only when explicitly supplied; legacy movements already use stock units.
+  quantityUnit: string;
   direction: 'IN' | 'OUT';
   unitCost: number | null;
   expectedQuantity: number | null;
@@ -112,6 +115,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
     return {
       itemId: text(row.itemId),
       quantity: Math.abs(signed),
+      quantityUnit: text(row.quantityUnit),
       direction,
       unitCost: nullableNonNegative(row.unitCost ?? row.actualPrice),
       expectedQuantity: nullableNonNegative(row.expectedQuantity),
@@ -128,6 +132,39 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
   }).filter((row) => row.itemId && (row.quantity > 0
     || row.containerDelta !== null && row.containerDelta !== 0
     || kind === 'ADJUSTMENT' && row.actualContainerCount !== null));
+}
+
+function optionalUsageUnit(value: unknown): string | null {
+  if (value === null || value === '') return null;
+  const unit = canonicalInventoryUnit(value);
+  if (!unit) throw new BadRequestException('Единица списания: г, мл или шт.');
+  return unit;
+}
+
+function optionalUsageQuantity(value: unknown): number | null {
+  return optionalOfferAmount(value, 'Количество списания', 100000000);
+}
+
+function applyMovementQuantityUnits(lines: PreparedLine[], items: AnyRecord[]) {
+  const byId = new Map(items.map(item => [item.itemId, item]));
+  for (const line of lines) {
+    if (!line.quantityUnit) continue;
+    const item = byId.get(line.itemId);
+    if (!item) throw new BadRequestException('Продукт не найден: ' + line.itemId);
+    try {
+      const unit = canonicalInventoryUnit(line.quantityUnit);
+      line.quantity = stockQuantityForUnit({
+        unit: item.unit,
+        packageQuantity: item.packageQuantity,
+        netPackageWeight: item.grossWeight != null && item.tareWeight != null
+          ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+      }, line.quantity, line.quantityUnit);
+      if (unit === 'шт.' && canonicalInventoryUnit(item.unit) === 'шт.' && !Number.isSafeInteger(line.quantity))
+        throw new Error('Количество штук должно быть целым');
+    } catch (error) {
+      throw new BadRequestException(String(error instanceof Error ? error.message : error));
+    }
+  }
 }
 
 function decimalNumber(value: unknown): number {
@@ -269,6 +306,13 @@ export class InventoryService {
           trackLots: item.trackLots,
           canConsume: item.canConsume,
           canSell: item.canSell,
+          consumeUnit: item.consumeUnit || canonicalInventoryUnit(item.unit),
+          consumeQuantity: item.consumeQuantity == null ? null : decimalNumber(item.consumeQuantity),
+          saleUnit: item.saleUnit || canonicalInventoryUnit(item.unit),
+          saleQuantity: item.saleQuantity == null ? null : decimalNumber(item.saleQuantity),
+          saleMarkupMode: item.saleMarkupMode || 'percent',
+          saleMarkupValue: item.saleMarkupValue == null ? null : decimalNumber(item.saleMarkupValue),
+          salePrice: item.salePrice == null ? null : decimalNumber(item.salePrice),
           balance: balances.get(item.id) || 0,
           createdAt: item.createdAt,
           updatedAt: item.updatedAt,
@@ -710,6 +754,13 @@ export class InventoryService {
           trackLots: source.trackLots !== false,
           canConsume: source.canConsume !== false,
           canSell: source.canSell === true,
+          consumeUnit: optionalUsageUnit(source.consumeUnit),
+          consumeQuantity: optionalUsageQuantity(source.consumeQuantity),
+          saleUnit: optionalUsageUnit(source.saleUnit),
+          saleQuantity: optionalUsageQuantity(source.saleQuantity),
+          saleMarkupMode: source.saleMarkupMode === 'amount' ? 'amount' : 'percent',
+          saleMarkupValue: optionalOfferAmount(source.saleMarkupValue, 'Наценка'),
+          salePrice: optionalOfferAmount(source.salePrice, 'Цена продажи'),
           position,
         },
       });
@@ -795,6 +846,16 @@ export class InventoryService {
     if ('trackLots' in source) data.trackLots = source.trackLots !== false;
     if ('canConsume' in source) data.canConsume = source.canConsume !== false;
     if ('canSell' in source) data.canSell = source.canSell === true;
+    if ('consumeUnit' in source) data.consumeUnit = optionalUsageUnit(source.consumeUnit);
+    if ('saleUnit' in source) data.saleUnit = optionalUsageUnit(source.saleUnit);
+    if ('consumeQuantity' in source) data.consumeQuantity = optionalUsageQuantity(source.consumeQuantity);
+    if ('saleQuantity' in source) data.saleQuantity = optionalUsageQuantity(source.saleQuantity);
+    if ('saleMarkupMode' in source) {
+      if (!['percent', 'amount'].includes(String(source.saleMarkupMode))) throw new BadRequestException('Наценка: выберите % или ₽');
+      data.saleMarkupMode = source.saleMarkupMode;
+    }
+    if ('saleMarkupValue' in source) data.saleMarkupValue = optionalOfferAmount(source.saleMarkupValue, 'Наценка');
+    if ('salePrice' in source) data.salePrice = optionalOfferAmount(source.salePrice, 'Цена продажи');
     if ('position' in source) data.position = this.inventoryPosition(source.position);
     const manufacturer = 'manufacturer' in data ? data.manufacturer : current.manufacturer;
     const nextPosition = 'position' in data ? data.position : current.position;
@@ -937,6 +998,10 @@ export class InventoryService {
 
     const desired = normalizedMovementLines(original.kind, source.lines);
     if (!desired.length) throw new BadRequestException('В корректировке нет позиций');
+    const desiredItems = await this.prisma.inventoryItem.findMany({
+      where: { tenantId, itemId: { in: desired.map(line => line.itemId) }, archivedAt: null },
+    });
+    applyMovementQuantityUnits(desired, desiredItems as AnyRecord[]);
 
     const currentByItem = new Map<string, { signed: number; unitCost: number; containers: number }>();
     (original.lines as AnyRecord[]).forEach((line) => {
@@ -1234,6 +1299,7 @@ export class InventoryService {
     });
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
+    applyMovementQuantityUnits(lines, items as AnyRecord[]);
 
     const selectedOfferIds = [...new Set(lines
       .filter((line) => line.direction === 'IN' && line.offerId && !raw.historicalTransfer)
