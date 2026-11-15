@@ -523,13 +523,19 @@ export class InventoryService {
           const currentSize = decimalNumber(item.packageQuantity);
           const gross = item.grossWeight == null ? 0 : decimalNumber(item.grossWeight);
           const tare = item.tareWeight == null ? null : decimalNumber(item.tareWeight);
-          const measuredSize = tare !== null && tare >= 0 && gross > tare ? gross - tare : 0;
-          // At receiving time the person may not yet know the weight of the
-          // empty tube. Physical packages are a valid receipt fact on their
-          // own; never fabricate grams or block receipt because tare is unknown.
-          const size = savedSize > 0 ? savedSize
+          // Gross is the weight of a full tube. If tare is not measured yet,
+          // count ALL gross grams as product; zero tare is a valid reading.
+          // If tare is known, it is excluded from usable product and cost per
+          // gram. A recorded net/packageQuantity is used when gross is absent.
+          if (gross > 0 && tare !== null && tare > gross) {
+            throw new BadRequestException('Масса тары превышает вес полной упаковки: ' + text(line.name));
+          }
+          const measuredSize = gross > 0 ? gross - (tare === null ? 0 : tare) : 0;
+          const size = weighted && gross > 0 ? measuredSize
             : currentSize > 0 ? currentSize
-            : measuredSize > 0 ? measuredSize : 0;
+            : savedSize > 0 ? savedSize : 0;
+          // A physical receipt by pieces is valid without any known mass.
+          // Unmeasured grams are not invented; receipts record tube count.
           if (!weighted && size <= 0) throw new BadRequestException('Проверьте количество в упаковке: ' + text(line.name));
           return {
             itemId: line.itemId,
