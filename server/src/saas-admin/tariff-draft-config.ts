@@ -109,3 +109,49 @@ export function normalizeTariffDraft(value: unknown): TariffDraftConfig {
     },
   };
 }
+
+
+// Applied only to explicitly published tariff terms. The order creator takes
+// the resulting immutable price/duration snapshot when the order is created.
+export function tariffOfferOnDate(config: TariffDraftConfig, months: 1 | 6 | 12, date: string) {
+  const period = config.periods.find((row) => row.months === months);
+  if (!period) throw new BadRequestException('Период тарифа не найден');
+  const monthly = config.free ? 0 : config.priceMinor;
+  const base = monthly * months;
+  const ordinaryDiscount = Math.round(base * period.discountPercent / 100) + period.discountMinor;
+  const ordinary = Math.max(0, base - ordinaryDiscount);
+  const campaign = config.campaign;
+  let campaignActive = false;
+  if (campaign.enabled && campaign.periodMonths === months && campaign.startsOn &&
+      date >= campaign.startsOn && (!campaign.endsOn || date <= campaign.endsOn)) {
+    const start = new Date(campaign.startsOn + 'T12:00:00Z');
+    const end = new Date(date + 'T12:00:00Z');
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+      for (let i = 0; i <= 1200; i += campaign.repeatEveryMonths || 1201) {
+        const current = new Date(start);
+        const day = start.getUTCDate();
+        current.setUTCDate(1);
+        current.setUTCMonth(current.getUTCMonth() + i);
+        const maxDay = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth()+1, 0)).getUTCDate();
+        current.setUTCDate(Math.min(day, maxDay));
+        if (current > end) break;
+        const last = new Date(current);
+        last.setUTCDate(last.getUTCDate() + campaign.durationDays - 1);
+        if (end <= last) { campaignActive = true; break; }
+      }
+    }
+  }
+  const promotionDiscount = campaignActive
+    ? (campaign.discountType === 'percent'
+        ? Math.round(ordinary * campaign.discountValue / 100)
+        : campaign.discountValue) : 0;
+  const totalMinor = Math.max(0, ordinary - promotionDiscount);
+  const paidDays = months * 30;
+  const bonusDays = period.giftDays + (campaignActive ? campaign.giftDays : 0);
+  return {
+    months, paidDays, bonusDays, accessDays: paidDays + bonusDays,
+    priceMinor: monthly, referencePriceMinor: config.referencePriceMinor,
+    subtotalMinor: base, discountMinor: base-totalMinor, totalMinor,
+    campaignActive,
+  };
+}
