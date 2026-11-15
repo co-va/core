@@ -3,6 +3,7 @@ import { captureOwnedState, restoreOwnedState, TransferState } from '../data-tra
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { FinanceService } from '../finance/finance.service';
 import { effectiveSupplierOfferPrice, resolveInventoryBasePricing, supplierOfferUnitPrice } from './inventory-pricing';
 
 type AnyRecord = Record<string, any>;
@@ -143,7 +144,7 @@ export class InventoryService {
   transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation']); }
   restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation'],before,after,checkOnly); }
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
 
   async snapshot(tenantId: string) {
     const [items, lots, movements, lines, supplierOffers] = await Promise.all([

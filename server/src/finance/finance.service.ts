@@ -786,6 +786,47 @@ export class FinanceService {
     return this.snapshot(tenantId);
   }
 
+  // Reuse Finance's canonical ledger and MATERIALS article for a purchase order.
+  // This runs in the very same transaction that moves the order to "paid".
+  async recordInventoryPurchaseExpenseInTx(
+    tx: Prisma.TransactionClient, tenantId: string,
+    orderId: string, walletId: string, walletName: string,
+    paidAt: Date, lines: { name: string; packages: number; packPrice: number }[],
+  ) {
+    if (!text(walletId)) throw new BadRequestException('Выберите кошелёк для оплаты заказа');
+    if (!lines.length || lines.some(line =>
+      !Number.isSafeInteger(line.packages) || line.packages <= 0
+      || !Number.isFinite(line.packPrice) || line.packPrice <= 0)) {
+      throw new BadRequestException('Для оплаты заказа у всех позиций должна быть цена');
+    }
+    await this.ensureDefaultArticles(tenantId, tx);
+    const article = await tx.financeArticle.findFirst({
+      where: { tenantId, systemKey: 'MATERIALS', direction: 'OUT', archivedAt: null },
+    });
+    if (!article) throw new BadRequestException('Статья расходов «Материалы» не найдена');
+    const prepared = lines.map(line => ({
+      name: line.name, packages: line.packages, packPrice: money(line.packPrice),
+      total: money(line.packages * line.packPrice),
+    }));
+    const total = money(prepared.reduce((sum, line) => sum + line.total, 0));
+    return this.createOperationWithEntries(tx, tenantId, {
+      operationId: `inventory-purchase-${orderId}`,
+      kind: 'manual-expense',
+      source: { type: 'inventory-purchase-order', id: orderId },
+      occurredAt: paidAt,
+      data: { direction: 'OUT', articleId: article.articleId, walletId, walletName,
+        note: 'Оплата заказа на материалы', total,
+        lines: prepared.map(line => ({ lineName: line.name, quantity: line.packages,
+          unitPrice: line.packPrice, total: line.total, articleId: article.articleId })) },
+      entries: prepared.map(line => ({
+        walletId, walletName, direction: 'OUT', economicType: article.economicType,
+        amount: line.total, component: 'manual', articleId: article.articleId,
+        articleName: article.name, lineName: line.name, quantity: line.packages,
+        unitPrice: line.packPrice, note: 'Закупочный заказ',
+      })),
+    });
+  }
+
   async recordManualOperation(tenantId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
     const input = objectValue(body);
