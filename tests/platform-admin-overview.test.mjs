@@ -365,7 +365,12 @@ const loaderSource = source.slice(tariffLoaderStart, tariffLoaderEnd);
 const loadingProbe = {
   Promise,
   state: { section: 'tariffs', toolReadiness: [] },
-  loadTariffs: async () => ({ tiers: [{key:'tariff.start', name:'Start'}] }),
+  setTimeout, clearTimeout,
+  loadTariffs: async () => ({ tiers: [
+    {key:'tariff.start', name:'Start'},
+    {key:'tariff.start-plus', name:'Start+'},
+    {key:'tariff.pro', name:'Pro'},
+  ] }),
   adminRequest: () => new Promise(() => {}),
   renderTariffs() {},
 };
@@ -379,3 +384,32 @@ assert.equal(runInNewContext('overviewTariffStatus', loadingProbe), 'ready',
   'Tariff loading cannot wait for unfinished readiness');
 assert.equal(runInNewContext('overviewTariffData.tiers[0].key', loadingProbe), 'tariff.start');
 assert.match(source, /tw-load-state/, 'Loading and errors must be legible on the graphite canvas');
+
+assert.match(source, /Tariff workbench failed to render/,
+  'Tariff card rendering failures must show a real error instead of the old spinner');
+assert.match(source, /Core не ответил за 12 секунд/,
+  'Tariff response body must have a finite loading deadline');
+
+// A never-settling catalog must reach a visible error state; the date or
+// unrelated tool-readiness query must not keep the loading screen alive.
+let deadlineCallback;
+const stuckProbe = {
+  Promise,
+  setTimeout(callback) { deadlineCallback = callback; return 1; },
+  clearTimeout() {},
+  state: {section: 'tariffs', toolReadiness: []},
+  loadTariffs: () => new Promise(() => {}),
+  adminRequest: () => new Promise(() => {}),
+  renderTariffs() {},
+};
+runInNewContext([
+  "let overviewTariffData = null, overviewTariffStatus = 'idle', overviewTariffError = '', overviewTariffRequestId = 0;",
+  loaderSource,
+  'requestOverviewTariffs();'
+].join('\n'), stuckProbe);
+assert.equal(typeof deadlineCallback, 'function');
+deadlineCallback();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(runInNewContext('overviewTariffStatus', stuckProbe), 'unavailable',
+  'A stalled catalog read cannot leave tariffs loading indefinitely');
+assert.match(runInNewContext('overviewTariffError', stuckProbe), /12 секунд/);

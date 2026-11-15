@@ -550,10 +550,22 @@ function requestOverviewTariffs(force = false) {
   const requestId = ++overviewTariffRequestId;
   overviewTariffStatus = 'loading';
   overviewTariffError = '';
-  void loadTariffs(force)
+  // Bound the complete operation (including response.json), not only the
+  // network headers. A hung body must not leave Admin on an endless spinner.
+  let tariffTimeout;
+  const deadline = new Promise((_, reject) => {
+    tariffTimeout = setTimeout(() => reject(new Error(
+      'Core не ответил за 12 секунд. Нажмите «Повторить загрузку».'
+    )), 12000);
+  });
+  void Promise.race([loadTariffs(force), deadline])
     .then((data) => {
       if (requestId !== overviewTariffRequestId) return;
-      if (!data || !Array.isArray(data.tiers)) throw new Error('Core вернул неполный каталог тарифов');
+      if (!data || !Array.isArray(data.tiers) ||
+          !['tariff.start', 'tariff.start-plus', 'tariff.pro'].every(
+            (key) => data.tiers.some((tier) => tier?.key === key))) {
+        throw new Error('Core вернул неполный каталог тарифов');
+      }
       overviewTariffData = data;
       overviewTariffStatus = 'ready';
     })
@@ -563,6 +575,7 @@ function requestOverviewTariffs(force = false) {
       overviewTariffError = error instanceof Error ? error.message : 'Ошибка получения тарифов';
     })
     .finally(() => {
+      clearTimeout(tariffTimeout);
       if (requestId === overviewTariffRequestId && state.section === 'tariffs') renderTariffs();
     });
   void adminRequest('/tool-readiness', { timeoutMs: 6000 })
@@ -666,6 +679,7 @@ function renderTariffs() {
       { key: 'tariff.start-plus', name: 'Start+' },
       { key: 'tariff.pro', name: 'Pro' },
     ].map(tier => ({ ...tier, ...available.find(item => item.key === tier.key) }));
+    try {
     renderTariffWorkbench({
       content, tiers, selectedKey: overviewSelectedTariff,
       readinessFor: tier => summarizeTariffReadiness(
@@ -688,6 +702,21 @@ function renderTariffs() {
       },
       onTools: () => { state.section = 'capabilities'; renderCurrentSection(); },
     });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Неизвестная ошибка отображения';
+      console.error('Tariff workbench failed to render', error);
+      content.innerHTML = '<div class="admin-overview admin-tariff-section">' +
+        '<div class="admin-heading"><h2>Тарифы</h2></div>' +
+        '<div class="tw-load-state" role="alert"><strong>Ошибка отображения тарифов</strong><p>' +
+        escapeHtml(message) + '</p>' +
+        '<button type="button" class="admin-button" data-tw-retry>Повторить загрузку</button>' +
+        '</div></div>';
+      content.querySelector('[data-tw-retry]')?.addEventListener('click', () => {
+        overviewTariffStatus = 'idle';
+        requestOverviewTariffs(true);
+        renderTariffs();
+      });
+    }
     if (overviewTariffStatus === 'idle') requestOverviewTariffs();
     return;
   }
