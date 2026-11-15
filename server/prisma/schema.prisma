@@ -934,6 +934,46 @@ model CommercialTariffLimit {
   @@index([toolKey])
 }
 
+// Procurement owns a planned purchase; InventoryMovement alone owns stock changes.
+model InventoryPurchaseOrder {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  orderId            String
+  status             String   @default("formed")
+  supplier           String   @default("")
+  note               String   @default("")
+  financeOperationId String   @default("")
+  receiptMovementId  String   @default("")
+  paidAt             DateTime?
+  receivedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  lines InventoryPurchaseOrderLine[]
+
+  @@unique([tenantId, orderId])
+  @@index([tenantId, status, createdAt])
+}
+
+model InventoryPurchaseOrderLine {
+  id               String   @id @default(cuid())
+  tenantId         String
+  purchaseOrderId  String
+  itemId           String
+  name             String
+  manufacturer     String   @default("")
+  unit             String
+  packageSize      Decimal  @db.Decimal(14, 3)
+  packages         Int
+  packPrice        Decimal  @db.Decimal(14, 4)
+  offerId          String   @default("")
+  position         Int      @default(0)
+
+  order InventoryPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, purchaseOrderId, position])
+}
+
 model InventoryItem {
   id                String   @id @default(cuid())
   tenantId          String
