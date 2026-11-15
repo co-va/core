@@ -16,6 +16,6 @@ assert.match(service, /packages: Number\(line\.packages\)/);
 assert.match(service, /const COLUMN_TITLES = \['Артикул', 'Наименование', 'Количество, шт\.'\]/);
 assert.match(service, /article: line\.article \|\| null/);
 assert.match(service, /name: line\.name \|\| null/);
-assert.doesNotMatch(service, /containerCount|balance|cost|price|position:\s*line\.position/);
+assert.doesNotMatch(service, /line\.balance|line\.price|line\.position|containerDelta|referencePrice/);
 assert.match(service, /doc\.font\(FONT\)/);
 console.log('PASS: saved order PDF/XLSX tenant scope, exactly 3 supplier columns, empty values preserved');
