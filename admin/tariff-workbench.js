@@ -6,14 +6,27 @@ const num = (n,max=1000000) => Math.min(max,Math.max(0, Number(n)||0));
 const iso = () => new Date().toISOString().slice(0,10);
 let previewDate = iso(), toolsOpen = false, filter = 'included';
 function initial(t) {
-  const amount = num(Number(t.priceMinor)/100);
+  const cfg = t.draft || null;
+  const amount = num(Number(cfg?.priceMinor ?? t.priceMinor)/100);
   const periods = {};
   for(const months of [1,6,12]) periods[months] = {
-    giftDays: num(t.periods?.find(x=>x.months===months)?.bonusDays||0,3650),
-    discount:0, discountRub:0
+    giftDays: num(cfg?.periods?.find(x=>x.months===months)?.giftDays ?? t.periods?.find(x=>x.months===months)?.bonusDays ?? 0,3650),
+    discount:num(cfg?.periods?.find(x=>x.months===months)?.discountPercent ?? 0,100),
+    discountRub:num(Number(cfg?.periods?.find(x=>x.months===months)?.discountMinor ?? 0)/100)
   };
-  return {name:t.name,free:t.key==='tariff.start',price:amount,was:amount,periods,published:t.isSaleable===true,
-    publishFrom:'',publishUntil:'',toolOverrides:{}, campaign:{enabled:false,from:'',until:'',repeat:0,length:7,months:6,kind:'percent',discount:50,giftDays:0}};
+  const campaign = cfg?.campaign || {};
+  return {name:t.name,revision:cfg?.revision ?? 0,
+    free:cfg?.free ?? t.isFree ?? t.key==='tariff.start',
+    price:amount,was:num(Number(cfg?.referencePriceMinor ?? cfg?.priceMinor ?? t.priceMinor)/100),
+    periods,published:t.isSaleable===true,
+    toolOverrides:{},campaign:{
+      enabled:campaign.enabled ?? false,from:campaign.startsOn ?? '',
+      until:campaign.endsOn ?? '',repeat:campaign.repeatEveryMonths ?? 0,
+      length:campaign.durationDays ?? 7,months:campaign.periodMonths ?? 6,
+      kind:campaign.discountType ?? 'percent',
+      discount:campaign.discountType==='rub'?Number(campaign.discountValue||0)/100:(campaign.discountValue??50),
+      giftDays:campaign.giftDays??0,
+    }};
 }
 function value(t){if(!drafts.has(t.key))drafts.set(t.key,initial(t));return drafts.get(t.key);}
 function monthDate(s,n){
@@ -49,10 +62,31 @@ function offer(d,m,date) {
   const amount=Math.max(0,ordinary-cut), gift=Math.round(num(p.giftDays,3650)+(on?num(d.campaign.giftDays,3650):0));
   return {amount,was,days:30*m+gift,gift,discount:was>0?Math.round((1-amount/was)*100):0,on};
 }
+
+function draftPayload(d) {
+  return {
+    free:d.free,priceMinor:Math.round(d.price*100),
+    referencePriceMinor:Math.round(d.was*100),
+    periods:[1,6,12].map(months=>({
+      months,giftDays:Math.round(d.periods[months].giftDays),
+      discountPercent:Math.round(d.periods[months].discount),
+      discountMinor:Math.round(d.periods[months].discountRub*100),
+    })),
+    campaign:{
+      enabled:d.campaign.enabled,periodMonths:Number(d.campaign.months),
+      discountType:d.campaign.kind,
+      discountValue:Math.round(d.campaign.discount*(d.campaign.kind==='rub'?100:1)),
+      giftDays:Math.round(d.campaign.giftDays),
+      startsOn:d.campaign.from,endsOn:d.campaign.until,
+      repeatEveryMonths:Math.round(d.campaign.repeat),
+      durationDays:Math.round(d.campaign.length),
+    },
+  };
+}
 const field=(name,scope,key,val,type='number',more='')=>'<label class="tw-field"><span>'+esc(name)+'</span><input type="'+type+'" data-tw-'+scope+'="'+key+'" value="'+esc(val)+'" '+more+'></label>';
 const pick=(name,scope,key,val,opts)=>'<label class="tw-field"><span>'+esc(name)+'</span><select data-tw-'+scope+'="'+key+'">'+opts.map(o=>'<option value="'+esc(o[0])+'" '+(String(val)===String(o[0])?'selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></label>';
 const duration=d=>d%30===0?(d/30)+' мес.':d+' дн.';
-export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools}){
+export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools,onSave}){
   const selected=tiers.find(t=>t.key===selectedKey), d=selected&&value(selected);
   const cards=tiers.map(t=>{
     const v=value(t),h=previewReadiness(t,readinessFor),one=offer(v,1,previewDate),six=offer(v,6,previewDate);
@@ -75,12 +109,12 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
         '<div class="tw-head-actions"><button type="button" class="admin-overview-inline-link tw-reset" data-tw-reset>Сбросить изменения '+esc(d.name)+'</button></div></div>'+
       '<section class="tw-panel tw-price-panel"><div class="tw-price-panel-head"><h4>Цена тарифа</h4>'+
         '<div class="tw-publication-action"><span>Публикация тарифа</span>'+
-        '<button type="button" class="tw-publish-action" data-tw-publish title="Только предпросмотр, без сохранения">'+(d.published?'Снять с публикации':'Опубликовать')+'</button></div></div>'+
+        '<button type="button" class="tw-publish-action" data-tw-publish disabled title="Публикация станет доступна после подключения продажи тарифов">'+(d.published?'Опубликован':'Опубликовать')+'</button></div></div>'+
         '<div class="tw-fields tw-fields--pricing">'+
         pick('Тип тарифа','base','free',d.free?'yes':'no',[['yes','Бесплатный'],['no','Платный']])+
         field('Цена продажи за 30 дней, ₽','base','price',d.price,'number','min="0" step="1" '+(d.free?'disabled':''))+
         field('Цена до скидки, ₽','base','was',d.was,'number','min="0" step="1" '+(d.free?'disabled':''))+
-      '</div></section>'+
+      '</div><div class="tw-save-row"><button type="button" class="tw-publish-action" data-tw-save>Сохранить условия</button><span data-tw-save-message aria-live="polite">'+(typeof location!=='undefined'&&/amvera\\.tech$/.test(location.hostname)?'Сохранение доступно после выпуска в основную версию':'')+'</span></div></section>'+ 
       '<div class="tw-subhead"><strong>Условия по срокам <span>/ 30 дней = 1 месяц; скидка и подарочное время независимы</span></strong></div>'+
       '<div class="tw-period-grid">'+[1,6,12].map(m=>{
         const p=d.periods[m],o=offer(d,m,previewDate);
@@ -127,9 +161,29 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   content.innerHTML='<div class="admin-overview admin-tariff-section tw"><div class="admin-heading"><h2>Тарифы</h2></div>'+
     '<div class="admin-overview-tariffs-heading"><strong>Кабинет <span>/ Professional</span></strong></div>'+
     '<div class="admin-overview-metrics admin-overview-tariff-metrics">'+cards+'</div>'+editor+'</div>';
-  function rerender(){renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools});}
+  function rerender(){renderTariffWorkbench({content,tiers,selectedKey,readinessFor,onSelect,onPublish,onTools,onSave});}
   content.querySelectorAll('[data-tw-open]').forEach(el=>el.addEventListener('click',()=>onSelect(el.dataset.twOpen)));
-  content.querySelector('[data-tw-publish]')?.addEventListener('click',()=>{d.published=!d.published;rerender();});
+  content.querySelector('[data-tw-save]')?.addEventListener('click',async (event)=>{
+    const button=event.currentTarget;
+    const status=content.querySelector('[data-tw-save-message]');
+    if(typeof location!=='undefined' && /amvera\\.tech$/.test(location.hostname)) {
+      if(status)status.textContent='В staging-превью сохранение заблокировано';
+      return;
+    }
+    if(!onSave)return;
+    button.disabled=true;
+    if(status)status.textContent='Сохранение…';
+    try{
+      const result=await onSave(selectedKey,d.revision,draftPayload(d));
+      const saved=result?.tiers?.find(t=>t.key===selectedKey);
+      if(saved){
+        drafts.set(selectedKey,initial(saved));
+        if(status)status.textContent='Сохранено';
+      }
+    }catch(error){
+      if(status)status.textContent=error instanceof Error?error.message:'Ошибка сохранения';
+    }finally{button.disabled=false;}
+  });
   content.querySelector('[data-tw-tools-nav]')?.addEventListener('click',onTools);
   content.querySelector('[data-tw-reset]')?.addEventListener('click',()=>{drafts.delete(selectedKey);rerender();});
   const bind=(selector,fn)=>content.querySelectorAll(selector).forEach(el=>el.addEventListener('change',()=>{fn(el);rerender();}));
