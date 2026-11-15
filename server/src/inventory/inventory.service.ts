@@ -135,7 +135,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
 }
 
 function optionalUsageUnit(value: unknown): string | null {
-  if (value === null || value === '') return null;
+  if (value == null || value === '') return null;
   const unit = canonicalInventoryUnit(value);
   if (!unit) throw new BadRequestException('Единица списания: г, мл или шт.');
   return unit;
