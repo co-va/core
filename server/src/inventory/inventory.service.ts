@@ -962,6 +962,119 @@ export class InventoryService {
     return this.snapshot(tenantId);
   }
 
+  // This is called INSIDE the Record owner's transaction. A stock sale is a
+  // movement fact owned by Inventory; Service stores no duplicate product row.
+  // Always compare the desired totals with previous SALE/RETURN movements.
+  // Retried record writes become no-ops; quantity edits create only the delta.
+  async syncRecordSalesInTx(
+    tx: Tx, tenantId: string, recordId: string, products: AnyRecord[],
+    context: { personKey?: string; workplaceKey?: string } = {},
+  ) {
+    const sourceType = 'record-sale';
+    const requested = (Array.isArray(products) ? products : []).filter(row => text(row?.inventoryItemId));
+    const movementsBefore = await tx.inventoryMovement.findMany({
+      where: { tenantId, sourceType, sourceId: recordId },
+      include: { lines: { include: { item: true } } },
+    });
+    const affected = new Set<string>(requested.map(row => text(row.inventoryItemId)));
+    for (const movement of movementsBefore as AnyRecord[]) {
+      for (const line of movement.lines as AnyRecord[]) affected.add(text(line.item?.itemId));
+    }
+    if (!affected.size) return;
+    const ids = [...affected].filter(Boolean).sort();
+    const catalog = await tx.inventoryItem.findMany({
+      where: { tenantId, itemId: { in: ids } },
+      orderBy: { itemId: 'asc' },
+    });
+    if (catalog.length !== ids.length) throw new BadRequestException('Складская позиция продажи не найдена');
+    // Serialize movement and stock reads for the same product, including
+    // concurrent retries of a single record's sale.
+    for (const item of catalog as AnyRecord[]) {
+      await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+    }
+    const byId = new Map((catalog as AnyRecord[]).map(row => [text(row.itemId), row]));
+    const movements = await tx.inventoryMovement.findMany({
+      where: { tenantId, sourceType, sourceId: recordId },
+      include: { lines: { include: { item: true } } },
+    });
+    const previous = new Map<string, number>();
+    for (const movement of movements as AnyRecord[]) {
+      for (const line of movement.lines as AnyRecord[]) {
+        const id = text(line.item?.itemId);
+        if (!id) continue;
+        const direction = line.direction === 'OUT' ? 1 : -1;
+        previous.set(id, (previous.get(id) || 0) + direction * decimalNumber(line.quantity));
+      }
+    }
+    const desired = new Map<string, number>();
+    for (const sale of requested) {
+      const id = text(sale.inventoryItemId);
+      const item = byId.get(id) as AnyRecord | undefined;
+      if (!item || item.archivedAt || item.canSell !== true)
+        throw new BadRequestException('Товар недоступен для продажи: ' + id);
+      const amount = Number(sale.quantity);
+      if (!Number.isFinite(amount) || amount <= 0)
+        throw new BadRequestException('Укажите количество продажи: ' + item.name);
+      const requestedUnit = text(sale.unit) || text(item.saleUnit) || text(item.unit);
+      if (item.saleUnit && requestedUnit !== text(item.saleUnit))
+        throw new BadRequestException('Единица продажи изменилась. Откройте товар повторно.');
+      let stockAmount: number;
+      try {
+        stockAmount = stockQuantityForUnit({
+          unit: item.unit,
+          packageQuantity: item.packageQuantity,
+          netPackageWeight: item.grossWeight != null && item.tareWeight != null
+            ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+        }, amount, requestedUnit);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Неверная единица продажи');
+      }
+      desired.set(id, (desired.get(id) || 0) + stockAmount);
+    }
+    const saleLines: AnyRecord[] = [];
+    const returnLines: AnyRecord[] = [];
+    for (const id of ids) {
+      const diff = Math.round(((desired.get(id) || 0) - (previous.get(id) || 0)) * 1000) / 1000;
+      if (diff > EPSILON) saleLines.push({ itemId: id, quantity: diff });
+      if (diff < -EPSILON) returnLines.push({ itemId: id, quantity: -diff });
+    }
+    if (!saleLines.length && !returnLines.length) return;
+    // Reject negative stock before creating an outbound sale. Existing
+    // manual movements retain their existing semantics.
+    if (saleLines.length) {
+      const internalIds = saleLines.map(line => (byId.get(line.itemId) as AnyRecord).id);
+      const stockLines = await tx.inventoryMovementLine.findMany({
+        where: { tenantId, inventoryItemId: { in: internalIds } },
+      });
+      const balances = new Map<string, number>();
+      for (const line of stockLines as AnyRecord[]) {
+        balances.set(line.inventoryItemId, (balances.get(line.inventoryItemId) || 0)
+          + (line.direction === 'OUT' ? -1 : 1) * decimalNumber(line.quantity));
+      }
+      for (const line of saleLines) {
+        const key = (byId.get(line.itemId) as AnyRecord).id;
+        const amount = balances.get(key) || 0;
+        const credit = returnLines.find(row => row.itemId === line.itemId)?.quantity || 0;
+        if (amount + credit + EPSILON < line.quantity)
+          throw new BadRequestException('Недостаточный остаток: ' + (byId.get(line.itemId) as AnyRecord).name);
+      }
+    }
+    const metadata = {
+      sourceType, sourceId: recordId, recordId, personKey: text(context.personKey),
+      workplaceKey: text(context.workplaceKey),
+    };
+    // Restore before the additional sale so that corrections can be
+    // applied without transient negative stock within one transaction.
+    if (returnLines.length) await this.createMovementInTx(tx, tenantId, {
+      ...metadata, kind: 'RETURN', lines: returnLines,
+      note: 'Корректировка продажи по записи',
+    }, { allowRecordSale: true });
+    if (saleLines.length) await this.createMovementInTx(tx, tenantId, {
+      ...metadata, kind: 'SALE', lines: saleLines,
+      note: 'Продажа по записи',
+    }, { allowRecordSale: true });
+  }
+
   async createMovement(tenantId: string, body: unknown) {
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.createMovementInTx(tx, tenantId, objectValue(body));
@@ -1282,11 +1395,14 @@ export class InventoryService {
   }
 
   private async createMovementInTx(tx: Tx, tenantId: string, raw: AnyRecord,
-    options: { allowPurchaseOrderReceipt?: boolean } = {}) {
+    options: { allowPurchaseOrderReceipt?: boolean; allowRecordSale?: boolean } = {}) {
     // The generic movement endpoint cannot impersonate a purchase receipt.
     // The Purchase Order owner alone authorizes this source in its transaction.
     if (text(raw.sourceType) === 'inventory-purchase-order' && !options.allowPurchaseOrderReceipt) {
       throw new BadRequestException('Приход по заказу создаётся только при получении заказа');
+    }
+    if (text(raw.sourceType) === 'record-sale' && !options.allowRecordSale) {
+      throw new BadRequestException('Продажа из записи создаётся только при сохранении записи');
     }
     const kind = text(raw.kind).toUpperCase();
     if (!MOVEMENT_KINDS.has(kind)) throw new BadRequestException('Неизвестный тип складского движения');

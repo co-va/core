@@ -303,6 +303,8 @@ export class BusinessStateService {
       // within this transaction instead of writing a second history system.
       await tx.$queryRaw`SELECT set_config('co_va.history_actor_id', ${text(actor.platformAccountId)}, true)`;
       await tx.$queryRaw`SELECT set_config('co_va.history_actor_role', ${text(actor.role)}, true)`;
+      // Restore only inventory movements from this record, atomically with deletion.
+      await this.records.releaseRecordSalesInTx(tx, tenantId, id);
       const financeOperations = await tx.financeOperation.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const settlements = await tx.financeSettlement.deleteMany({ where: { tenantId, sourceType: 'record', sourceId: id } });
       const events = await tx.recordEvent.deleteMany({ where: { tenantId, recordId: id } });
