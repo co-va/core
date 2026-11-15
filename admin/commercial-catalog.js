@@ -692,6 +692,19 @@ export async function updateTariffPublication(tariffKey, published) {
   return loadTariffs(true);
 }
 
+export async function saveTariffDraft(tariffKey, expectedRevision, configuration) {
+  if (!['tariff.start', 'tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
+      !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+    throw new Error('Некорректная версия тарифа');
+  }
+  const result = await commercialRequest('/tariffs/draft', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tariffKey, expectedRevision, configuration }),
+  });
+  tariffsCache = result;
+  return result;
+}
+
 export async function updateTariffSettings(tariffKey, priceMinor, bonus6, bonus12) {
   if (!['tariff.start-plus', 'tariff.pro'].includes(tariffKey) ||
       !Number.isSafeInteger(priceMinor) || priceMinor < 0 ||
