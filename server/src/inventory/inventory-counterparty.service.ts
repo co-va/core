@@ -285,6 +285,22 @@ export class InventoryCounterpartyService {
     return { filename: list.filename, mime: list.format === 'pdf' ? 'application/pdf' : XLSX_MIME,
       buffer: Buffer.from(list.sourceFile) };
   }
+  async linkCompany(tenantId: string, id: string, itemId: string) {
+    await this.requireAccess(tenantId);
+    const company = await this.company(tenantId, id);
+    const item = await this.prisma.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
+    if (!item) throw new NotFoundException('Рабочая карточка не найдена');
+    const existing = await this.prisma.inventorySupplierOffer.findFirst({
+      where: { tenantId, inventoryItemId: item.id, counterpartyId: id, catalogItemId: null, isActive: true },
+    });
+    if (existing) return { offerId: existing.offerId, itemId };
+    const offerId = randomUUID();
+    await this.prisma.inventorySupplierOffer.create({
+      data: { tenantId, inventoryItemId: item.id, offerId, supplier: company.name,
+        counterpartyId: id, unitsPerOffer: item.packageQuantity || 1, isActive: true },
+    });
+    return { offerId, itemId };
+  }
   async link(tenantId: string, id: string, rowId: string, itemId: string) {
     await this.requireAccess(tenantId);
     const company = await this.company(tenantId, id);
