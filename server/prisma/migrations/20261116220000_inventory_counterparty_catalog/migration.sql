@@ -10,7 +10,7 @@ ALTER TABLE "InventoryCounterparty" ADD CONSTRAINT "InventoryCounterparty_tenant
 
 CREATE TABLE "InventoryCounterpartyPriceList" ("id" TEXT NOT NULL PRIMARY KEY, "tenantId" TEXT NOT NULL,
   "counterpartyId" TEXT NOT NULL, "revision" INTEGER NOT NULL, "filename" TEXT NOT NULL,
-  "format" TEXT NOT NULL, "sha256" TEXT NOT NULL, "sourceFile" BYTEA NOT NULL,
+  "format" TEXT NOT NULL, "sha256" TEXT NOT NULL, "parserStatus" TEXT NOT NULL DEFAULT 'READY', "sourceFile" BYTEA NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE UNIQUE INDEX "InventoryCounterpartyPriceList_tenantId_counterpartyId_revision_key" ON "InventoryCounterpartyPriceList"("tenantId","counterpartyId","revision");
 CREATE INDEX "InventoryCounterpartyPriceList_tenantId_counterpartyId_createdAt_idx" ON "InventoryCounterpartyPriceList"("tenantId","counterpartyId","createdAt");

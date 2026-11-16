@@ -1105,6 +1105,7 @@ model InventoryCounterpartyPriceList {
   filename String
   format String
   sha256 String
+  parserStatus String @default("READY")
   sourceFile Bytes @db.ByteA
   createdAt DateTime @default(now())
   counterparty InventoryCounterparty @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
