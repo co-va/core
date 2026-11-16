@@ -101,16 +101,16 @@ jobs:
           # Verify actual browser geometry for the tariff editor at desktop and mobile widths.
           # The save action must sit on the right and remain distinct from publication.
           for width in 390 1440; do
-            timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \\
-              --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \\
-              --window-size="${width},850" --virtual-time-budget=12000 \\
-              --dump-dom http://127.0.0.1:4173/tests/admin-tariff-save-layout-smoke.html \\
+            timeout --signal=TERM --kill-after=5s 65s "$chrome_bin" \
+              --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+              --window-size="${width},850" --virtual-time-budget=12000 \
+              --dump-dom http://127.0.0.1:4173/tests/admin-tariff-save-layout-smoke.html \
               >"/tmp/tariff-save-${width}.html" 2>"/tmp/tariff-save-${width}.log" || {
                 tail -n 20 "/tmp/tariff-save-${width}.log"
                 exit 1
               }
             if ! grep -q 'data-tariff-save-layout="pass"' "/tmp/tariff-save-${width}.html"; then
-              grep -o 'data-tariff-save-layout="[^"]*"\\|data-tariff-save-details="[^"]*"' "/tmp/tariff-save-${width}.html" | head -n 4 || true
+              grep -o 'data-tariff-save-layout="[^"]*"\|data-tariff-save-details="[^"]*"' "/tmp/tariff-save-${width}.html" | head -n 4 || true
               echo "Tariff save layout failed at viewport ${width}"
               exit 1
             fi
