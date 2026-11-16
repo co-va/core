@@ -95,7 +95,12 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
         header = n; mapping = candidate; break;
       }
     }
-    if (!header) continue;
+    if (!header) {
+      // Do not silently import only the first tab of a multi-sheet supplier workbook.
+      // Explanatory sheets of one or two rows are ignored.
+      if (sheet.rowCount > 2) errors.push('Лист «' + sheet.name + '»: не удалось определить таблицу. Используйте шаблон Excel.');
+      continue;
+    }
     found = true;
     for (let n = header + 1; n <= sheet.rowCount; n++) {
       const source = sheet.getRow(n);
@@ -103,10 +108,9 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
       if (COLUMNS.every((key) => !plain(values[key]))) continue;
       if (!plain(values.name) && !plain(values.supplierSku) && !plain(values.listPrice) && !plain(values.actualPrice)) continue;
       const row = mapRow(values, n, errors);
-      if (row) rows.push(row);
+      if (row) rows.push({ ...row, position: rows.length + 1 });
       if (rows.length > MAX_ROWS) throw new BadRequestException('Слишком большой прайс: максимум 10 000 строк');
     }
-    break; // The price sheet may include explanatory worksheets; do not mix them.
   }
   if (!found) errors.push('Не найдены колонки наименования и цены/артикула. Перенесите данные в шаблон Excel.');
   if (!rows.length && found) errors.push('В файле нет строк товаров.');
@@ -313,12 +317,15 @@ export class InventoryCounterpartyService {
     if (!row) throw new NotFoundException('Позиция прайса не найдена');
     if (!item) throw new NotFoundException('Рабочая карточка не найдена');
     const existing = await this.prisma.inventorySupplierOffer.findFirst({
-      where: { tenantId, inventoryItemId: item.id, counterpartyId: id, supplierSku: row.supplierSku, isActive: true },
+      where: { tenantId, inventoryItemId: item.id, counterpartyId: id, isActive: true,
+        ...(row.supplierSku ? { supplierSku: row.supplierSku } : { catalogItemId: row.id }) },
     });
+    const validSize = row.packageQuantity && row.unit && row.unit.toLowerCase() === item.unit.toLowerCase();
+    const size = validSize ? row.packageQuantity : item.packageQuantity || 1;
     const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
       listPrice: row.listPrice, actualPrice: row.actualPrice,
       discountPercent: row.discountPercent, supplierSku: row.supplierSku,
-      unitsPerOffer: row.packageQuantity || item.packageQuantity || 1 };
+      unitsPerOffer: size };
     if (existing) {
       await this.prisma.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
       return { offerId: existing.offerId, itemId };
