@@ -979,6 +979,19 @@ model InventoryItem {
   tenantId          String
   itemId            String
   name              String
+  catalogName       String   @default("")
+  nominalQuantity   Decimal? @db.Decimal(14, 3)
+  nominalUnit       String?
+  receiptUnit       String?
+  containerMode     String?
+  thresholdUnit     String?
+  conversionRules   Json?
+  resourceLimit     Decimal? @db.Decimal(14, 3)
+  resourceUnit      String?
+  resourceStockQuantity Decimal? @db.Decimal(14, 3)
+  resourceExhaustionAction String?
+  serviceStartAt    DateTime?
+  serviceEndAt      DateTime?
   manufacturer      String   @default("")
   productType       String   @default("")
   unit              String   @default("шт.")
@@ -1015,11 +1028,57 @@ model InventoryItem {
   lots           InventoryLot[]
   movementLines  InventoryMovementLine[]
   supplierOffers InventorySupplierOffer[]
+  resourceProgress InventoryResourceProgress[]
+  resourceEvents InventoryResourceEvent[]
 
   @@unique([tenantId, itemId])
   @@index([tenantId, archivedAt, position])
   @@index([tenantId, manufacturer, name])
   @@index([tenantId, name])
+}
+
+// Named storage locations; 'primary' is the virtual legacy/default location.
+model InventoryStorageLocation {
+  id String @id @default(cuid())
+  tenantId String
+  locationId String
+  name String
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, locationId], map: "InventoryStorageLocation_tenant_location_key")
+  @@index([tenantId, archivedAt, name], map: "InventoryStorageLocation_tenant_archive_idx")
+}
+
+// Unfinished use of a reusable item, scoped to one storage location.
+model InventoryResourceProgress {
+  id String @id @default(cuid())
+  tenantId String
+  inventoryItemId String
+  storageLocationId String @default("primary")
+  progress Decimal @default(0) @db.Decimal(14, 3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  item InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, inventoryItemId, storageLocationId], map: "InventoryResourceProgress_tenant_item_storage_key")
+}
+
+// Append-only history of resource use, separate from inventory stock movements.
+model InventoryResourceEvent {
+  id String @id @default(cuid())
+  tenantId String
+  eventId String
+  inventoryItemId String
+  storageLocationId String @default("primary")
+  quantity Decimal @db.Decimal(14, 3)
+  resourceUnit String
+  writeOffMovementId String?
+  note String @default("")
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+  item InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, eventId], map: "InventoryResourceEvent_tenant_event_key")
+  @@index([tenantId, inventoryItemId, occurredAt], map: "InventoryResourceEvent_tenant_item_occurred_idx")
 }
 
 model InventorySupplierOffer {
@@ -1103,6 +1162,7 @@ model InventoryMovementLine {
   tenantId            String
   inventoryMovementId String
   inventoryItemId     String
+  storageLocationId   String @default("primary")
   lineId              String
   position            Int      @default(0)
   direction           String
@@ -1125,6 +1185,7 @@ model InventoryMovementLine {
   @@unique([tenantId, lineId])
   @@index([tenantId, inventoryMovementId, position])
   @@index([tenantId, inventoryItemId])
+  @@index([tenantId, inventoryItemId, storageLocationId], map: "InventoryMovementLine_tenant_item_storage_idx")
 }
 
 model InventoryMovementAllocation {

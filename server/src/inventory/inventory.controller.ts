@@ -19,6 +19,26 @@ export class InventoryController {
     return this.inventory.snapshot(request.auth!.tenantId);
   }
 
+  @Post('storage-locations')
+  createStorageLocation(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.createStorageLocation(request.auth!.tenantId, body);
+  }
+
+  @Put('storage-locations/:locationId')
+  updateStorageLocation(@Req() request: AuthenticatedRequest, @Param('locationId') locationId: string, @Body() body: unknown) {
+    return this.inventory.updateStorageLocation(request.auth!.tenantId, locationId, body);
+  }
+
+  @Post('transfers')
+  transferStock(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.transferStock(request.auth!.tenantId, body);
+  }
+
+  @Post('resource-uses')
+  recordResourceUse(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.recordResourceUse(request.auth!.tenantId, body);
+  }
+
   @Post('items')
   createItem(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.createItem(request.auth!.tenantId, body);
