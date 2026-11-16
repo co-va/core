@@ -236,7 +236,12 @@ export class InventoryCounterpartyService {
     });
     if (previous) return { ...previous, duplicate: true };
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`; 
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`;
+      const duplicate = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, sha256: hash },
+        select: { id: true, revision: true, parserStatus: true },
+      });
+      if (duplicate) return { ...duplicate, duplicate: true };
       const last = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id }, orderBy: { revision: 'desc' }, select: { revision: true },
       });
@@ -250,6 +255,39 @@ export class InventoryCounterpartyService {
           data: parsed.rows.slice(i, i + 500).map((row) => ({ ...row,
             tenantId, priceListId: list.id })),
         });
+      }
+      // Refresh only explicitly connected offers with unique supplier SKU.
+      // Price-list updates must never alter historical receipts, lots or purchase documents.
+      if (parsed.status === 'READY') {
+        const skuCounts = new Map<string, number>();
+        for (const row of parsed.rows) {
+          if (row.supplierSku) skuCounts.set(row.supplierSku, (skuCounts.get(row.supplierSku) || 0) + 1);
+        }
+        const uniqueSkus = [...skuCounts].filter(([, count]) => count === 1).map(([sku]) => sku);
+        if (uniqueSkus.length) {
+          const [catalogRows, linkedOffers] = await Promise.all([
+            tx.inventoryCounterpartyCatalogItem.findMany({
+              where: { tenantId, priceListId: list.id, supplierSku: { in: uniqueSkus } },
+              select: { id: true, supplierSku: true, listPrice: true, actualPrice: true, discountPercent: true },
+            }),
+            tx.inventorySupplierOffer.findMany({
+              where: { tenantId, counterpartyId: id, isActive: true,
+                catalogItemId: { not: null }, supplierSku: { in: uniqueSkus } },
+              select: { id: true, supplierSku: true },
+            }),
+          ]);
+          const current = new Map(catalogRows.map((row) => [row.supplierSku, row]));
+          for (const offer of linkedOffers) {
+            const row = current.get(offer.supplierSku);
+            if (!row) continue;
+            await tx.inventorySupplierOffer.update({
+              where: { id: offer.id }, data: {
+                catalogItemId: row.id, listPrice: row.listPrice,
+                actualPrice: row.actualPrice, discountPercent: row.discountPercent,
+              },
+            });
+          }
+        }
       }
       return { id: list.id, revision: list.revision, parserStatus: list.parserStatus,
         count: parsed.rows.length, errors: parsed.errors };
