@@ -162,7 +162,7 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
       const price = plain(values.listPrice) || plain(values.retailPrice) || plain(values.actualPrice);
       const barcode = plain(values.barcode);
       if (!name && !sku && !price && !barcode) continue;
-      if (!barcode && !price && /^\\d{1,3}[.)]\\s*/.test(name)) {
+      if (!barcode && !price && /^\d{1,3}[.)]\s*/.test(name)) {
         // Brand and numbered collection headings are not catalog items.
         if (sku) brand = sku.slice(0, 160);
         category = name.slice(0, 200);
