@@ -114,10 +114,15 @@ assert.equal(offer.itemId, stock.itemId);
 assert.equal(offers.length, 1);
 assert.equal(offers[0].unitsPerOffer, 70, 'No fake conversion from supplier pieces to working stock grams');
 assert.equal(savedHistory[0].price, 150);
+// The price on a real invoice and the personal discount are entered separately.
+offers[0].actualPrice = 278;
+offers[0].discountPercent = 7;
 const second = await service.import('tenant', company.id, await excelFile(390));
 assert.equal(second.revision, 2);
 assert.equal(lists.length, 2);
 assert.equal(offers[0].listPrice, 390, 'Linked offers follow new supplier price');
+assert.equal(offers[0].actualPrice, 278, 'Supplier price revisions cannot overwrite invoice purchase price');
+assert.equal(offers[0].discountPercent, 7, 'Supplier price revisions cannot invent a different personal discount');
 assert.equal(savedHistory[0].price, 150, 'Previous receipts must retain their price');
 assert.equal(stock.name, 'Working Dye', 'Worker-owned item attributes must not be overwritten');
 
