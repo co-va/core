@@ -1373,6 +1373,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .tw-publication-action>span{font-size:12px;color:var(--text-secondary)}
 .tw-publish-action{padding:7px 12px;min-height:32px;border:1px solid var(--border);border-radius:8px;background:var(--surface-dark);color:var(--white);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
 .tw-publish-action:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.tw-save-row{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:16px}
+.tw-save-row [data-tw-save-message]{flex:1 1 180px;min-width:0;font-size:12px;line-height:1.35;color:var(--text-secondary)}
+.tw-save-row [data-tw-save]{flex:0 0 auto;margin-left:auto}
 .tw-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
 .tw-fields--pricing{grid-template-columns:repeat(3,minmax(0,1fr))}
 .tw-fields--campaign{grid-template-columns:repeat(4,minmax(0,1fr))}
