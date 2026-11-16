@@ -10,7 +10,8 @@ ALTER TABLE "InventoryCounterparty" ADD CONSTRAINT "InventoryCounterparty_tenant
 
 CREATE TABLE "InventoryCounterpartyPriceList" ("id" TEXT NOT NULL PRIMARY KEY, "tenantId" TEXT NOT NULL,
   "counterpartyId" TEXT NOT NULL, "revision" INTEGER NOT NULL, "filename" TEXT NOT NULL,
-  "format" TEXT NOT NULL, "sha256" TEXT NOT NULL, "parserStatus" TEXT NOT NULL DEFAULT 'READY', "sourceFile" BYTEA NOT NULL,
+  "format" TEXT NOT NULL, "sha256" TEXT NOT NULL, "parserStatus" TEXT NOT NULL DEFAULT 'READY',
+  "terms" TEXT NOT NULL DEFAULT '', "sourceFile" BYTEA NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE UNIQUE INDEX "InventoryCounterpartyPriceList_tenantId_counterpartyId_revision_key" ON "InventoryCounterpartyPriceList"("tenantId","counterpartyId","revision");
 CREATE INDEX "InventoryCounterpartyPriceList_tenantId_counterpartyId_createdAt_idx" ON "InventoryCounterpartyPriceList"("tenantId","counterpartyId","createdAt");
@@ -20,8 +21,11 @@ ALTER TABLE "InventoryCounterpartyPriceList" ADD CONSTRAINT "InventoryCounterpar
 CREATE TABLE "InventoryCounterpartyCatalogItem" ("id" TEXT NOT NULL PRIMARY KEY, "tenantId" TEXT NOT NULL,
   "priceListId" TEXT NOT NULL, "position" INTEGER NOT NULL,
   "supplierSku" TEXT NOT NULL DEFAULT '', "name" TEXT NOT NULL, "manufacturer" TEXT NOT NULL DEFAULT '',
+  "brand" TEXT NOT NULL DEFAULT '', "category" TEXT NOT NULL DEFAULT '', "supplierNote" TEXT NOT NULL DEFAULT '',
+  "sourceSheet" TEXT NOT NULL DEFAULT '', "sourceRow" INTEGER, "supplierAvailable" BOOLEAN,
   "barcode" TEXT NOT NULL DEFAULT '', "unit" TEXT NOT NULL DEFAULT '',
   "packageQuantity" DECIMAL(14,3), "listPrice" DECIMAL(14,4),
+  "retailPrice" DECIMAL(14,4), "suggestedOrderQuantity" DECIMAL(14,3),
   "actualPrice" DECIMAL(14,4), "discountPercent" DECIMAL(7,4),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE INDEX "InventoryCounterpartyCatalogItem_tenantId_priceListId_position_idx" ON "InventoryCounterpartyCatalogItem"("tenantId","priceListId","position");

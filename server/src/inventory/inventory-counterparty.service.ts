@@ -7,25 +7,37 @@ import { SaasAccessService } from '../saas-access/saas-access.service';
 export type SupplierFile = { originalname: string; buffer: Buffer; size: number };
 type Row = {
   position: number; supplierSku: string; name: string; manufacturer: string;
-  barcode: string; unit: string; packageQuantity: number | null;
-  listPrice: number | null; actualPrice: number | null; discountPercent: number | null;
+  brand: string; category: string; supplierNote: string; sourceSheet: string; sourceRow: number | null;
+  supplierAvailable: boolean | null; barcode: string; unit: string; packageQuantity: number | null;
+  listPrice: number | null; retailPrice: number | null; suggestedOrderQuantity: number | null;
+  actualPrice: number | null; discountPercent: number | null;
 };
-type Parsed = { format: 'xlsx' | 'pdf'; status: 'READY' | 'NEEDS_TEMPLATE'; rows: Row[]; errors: string[] };
+type Parsed = { format: 'xlsx' | 'pdf'; status: 'READY' | 'NEEDS_TEMPLATE'; rows: Row[]; errors: string[]; terms?: string };
 
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_ROWS = 10000;
-const COLUMNS = ['supplierSku','name','manufacturer','listPrice','actualPrice','discountPercent','unit','packageQuantity','barcode'] as const;
+const COLUMNS = [
+  'supplierSku','name','manufacturer','brand','category','supplierNote',
+  'supplierAvailable','listPrice','retailPrice','actualPrice','discountPercent',
+  'unit','packageQuantity','barcode','suggestedOrderQuantity',
+] as const;
 type Column = typeof COLUMNS[number];
 const HEADERS: Record<Column, string[]> = {
-  supplierSku: ['артикул','код товара','код продукта','артикул поставщика','sku','article','item code'],
-  name: ['наименование','наименование товара','название','название товара','товар','продукт','product','description','name'],
-  manufacturer: ['производитель','бренд','марка','brand','manufacturer'],
-  listPrice: ['цена','прайс','прайсовая цена','цена прайс','цена руб','ррц','розничная цена','оптовая цена','price','list price'],
+  supplierSku: ['артикул','артикул поставщика','код товара','код продукта','sku','article','item code'],
+  name: ['наименование','наименование товара','название','название товара','номенклатура','товар','продукт','product','description','name'],
+  manufacturer: ['производитель','manufacturer'],
+  brand: ['бренд','марка','brand'],
+  category: ['категория','группа','раздел','category'],
+  supplierNote: ['комментарии','комментарий','примечание','описание','новинка','note'],
+  supplierAvailable: ['есть нет на складе','наличие у поставщика','наличие','доступность','есть нет','availability','in stock'],
+  listPrice: ['цена','прайс','прайсовая цена','цена прайс','цена руб','цена бцо','бцо','оптовая цена','base price','wholesale','price','list price'],
+  retailPrice: ['ррц','цена ррц','розничная цена','рекомендованная розничная цена','retail price','msrp'],
   actualPrice: ['цена закупки','цена со скидкой','фактическая цена','закупочная цена','purchase price'],
   discountPercent: ['скидка','скидка %','discount','discount %'],
   unit: ['единица','ед изм','единица измерения','ед','unit'],
   packageQuantity: ['в упаковке','количество в упаковке','номинал','фасовка','упаковка','package quantity'],
   barcode: ['штрихкод','штрих код','ean','barcode'],
+  suggestedOrderQuantity: ['кол во штук','количество заказа','количество штук','количество','qty','order quantity'],
 };
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -54,7 +66,15 @@ function amount(value: unknown, field: string, row: number, errors: string[], ma
   }
   return n;
 }
-function mapRow(values: Record<Column, unknown>, position: number, errors: string[]): Row | null {
+function supplierAvailability(value: unknown): boolean | null {
+  const raw = normal(value);
+  if (['да','есть','в наличии','доступен','доступно','1','yes','true'].includes(raw)) return true;
+  if (['нет','отсутствует','нет в наличии','нет на складе','0','no','false'].includes(raw)) return false;
+  return null;
+}
+
+function mapRow(values: Record<Column, unknown>, position: number, errors: string[],
+  meta: { brand?: string; category?: string; sourceSheet?: string; sourceRow?: number } = {}): Row | null {
   const name = plain(values.name).slice(0, 300);
   if (!name) { errors.push('Строка ' + position + ': нет наименования'); return null; }
   const size = amount(values.packageQuantity, 'В упаковке', position, errors);
@@ -63,58 +83,96 @@ function mapRow(values: Record<Column, unknown>, position: number, errors: strin
     position, name,
     supplierSku: plain(values.supplierSku).slice(0, 160),
     manufacturer: plain(values.manufacturer).slice(0, 160),
+    brand: (plain(values.brand) || meta.brand || '').slice(0, 160),
+    category: (plain(values.category) || meta.category || '').slice(0, 200),
+    supplierNote: plain(values.supplierNote).slice(0, 2000),
+    sourceSheet: (meta.sourceSheet || '').slice(0, 160),
+    sourceRow: meta.sourceRow ?? null,
+    supplierAvailable: supplierAvailability(values.supplierAvailable),
     barcode: plain(values.barcode).slice(0, 160),
     unit: plain(values.unit).slice(0, 24),
     packageQuantity: size && size > 0 ? size : null,
-    listPrice: amount(values.listPrice, 'Цена', position, errors),
-    actualPrice: amount(values.actualPrice, 'Цена закупки', position, errors),
+    listPrice: amount(values.listPrice, 'Цена БЦО/прайса', position, errors),
+    retailPrice: amount(values.retailPrice, 'РРЦ', position, errors),
+    suggestedOrderQuantity: amount(values.suggestedOrderQuantity, 'Количество для заказа', position, errors),
+    actualPrice: amount(values.actualPrice, 'Моя закупочная цена', position, errors),
     discountPercent: amount(values.discountPercent, 'Скидка', position, errors, 100),
   };
 }
+
+function detectColumn(label: string): Column | null {
+  if (/\\bбцо\\b|базов.*цен/i.test(label)) return 'listPrice';
+  if (/\\bррц\\b|рекомендованн.*рознич/i.test(label)) return 'retailPrice';
+  for (const key of COLUMNS) if (HEADERS[key].some((name) => normal(name) === label)) return key;
+  return null;
+}
+
 async function parseExcel(data: Buffer): Promise<Parsed> {
   const workbook = new ExcelJS.Workbook();
   try { await workbook.xlsx.load(data as any); }
   catch { return { format: 'xlsx', status: 'NEEDS_TEMPLATE', rows: [], errors: ['Не удалось прочитать Excel. Используйте шаблон .xlsx.'] }; }
-  const rows: Row[] = [], errors: string[] = [];
-  let found = false;
-  for (const sheet of workbook.worksheets) {
+  const rows: Row[] = [], errors: string[] = [], terms: string[] = [];
+  // An order form can have hidden lookup/helper sheets. Choose the actual priced
+  // supplier sheets, never import auxiliary SKU lists as additional products.
+  const definitions = workbook.worksheets.map((sheet) => {
     let header = 0;
     let mapping: Partial<Record<Column, number>> = {};
     for (let n = 1; n <= Math.min(30, sheet.rowCount); n++) {
       const candidate: Partial<Record<Column, number>> = {};
       sheet.getRow(n).eachCell({ includeEmpty: false }, (cell, index) => {
-        const label = normal(cell.value);
-        for (const key of COLUMNS) {
-          if (candidate[key] == null && HEADERS[key].some((name) => normal(name) === label)) {
-            candidate[key] = index;
-            break;
-          }
-        }
+        const key = detectColumn(normal(cell.value));
+        if (key && candidate[key] == null) candidate[key] = index;
       });
-      if (candidate.name && (candidate.listPrice || candidate.actualPrice || candidate.supplierSku)) {
+      if (candidate.name && (candidate.listPrice || candidate.retailPrice || candidate.actualPrice || candidate.supplierSku)) {
         header = n; mapping = candidate; break;
       }
     }
-    if (!header) {
-      // Do not silently import only the first tab of a multi-sheet supplier workbook.
-      // Explanatory sheets of one or two rows are ignored.
-      if (sheet.rowCount > 2) errors.push('Лист «' + sheet.name + '»: не удалось определить таблицу. Используйте шаблон Excel.');
-      continue;
+    return { sheet, header, mapping, priced: Boolean(mapping.listPrice || mapping.retailPrice || mapping.actualPrice) };
+  });
+  const priced = definitions.some(d => d.header && d.priced);
+  const eligible = definitions.filter(d => d.header && (!priced || d.priced));
+  if (!eligible.length) {
+    return { format: 'xlsx', status: 'NEEDS_TEMPLATE', rows: [], errors: [
+      'Не найдены колонки наименования и цены/артикула. Перенесите данные в шаблон Excel.',
+    ] };
+  }
+  for (const { sheet, header, mapping } of eligible) {
+    let brand = '', category = '';
+    for (let n = 1; n < header; n++) {
+      sheet.getRow(n).eachCell({ includeEmpty: false }, (cell) => {
+        const phrase = plain(cell.value);
+        if (/минимальн.*сумм.*заказ/i.test(phrase)) terms.push(sheet.name + ': ' + phrase.slice(0, 500));
+      });
     }
-    found = true;
     for (let n = header + 1; n <= sheet.rowCount; n++) {
       const source = sheet.getRow(n);
-      const values = Object.fromEntries(COLUMNS.map((key) => [key, mapping[key] ? source.getCell(mapping[key]!).value : ''])) as Record<Column, unknown>;
-      if (COLUMNS.every((key) => !plain(values[key]))) continue;
-      if (!plain(values.name) && !plain(values.supplierSku) && !plain(values.listPrice) && !plain(values.actualPrice)) continue;
-      const row = mapRow(values, n, errors);
-      if (row) rows.push({ ...row, position: rows.length + 1 });
+      const values = Object.fromEntries(COLUMNS.map((key) =>
+        [key, mapping[key] ? source.getCell(mapping[key]!).value : ''])) as Record<Column, unknown>;
+      const name = plain(values.name);
+      const sku = plain(values.supplierSku);
+      const price = plain(values.listPrice) || plain(values.retailPrice) || plain(values.actualPrice);
+      const barcode = plain(values.barcode);
+      if (!name && !sku && !price && !barcode) continue;
+      if (!sku && !barcode && !price) {
+        // The Farouk workbook uses brand/collection headings between item rows.
+        const headingBrand = mapping.supplierSku ? plain(source.getCell(mapping.supplierSku).value) : '';
+        if (headingBrand) brand = headingBrand.slice(0, 160);
+        if (name) category = name.slice(0, 200);
+        continue;
+      }
+      if (!name) {
+        errors.push('Лист «' + sheet.name + '», строка ' + n + ': отсутствует наименование');
+        continue;
+      }
+      if (!sku && !barcode && !price) continue;
+      const row = mapRow(values, rows.length + 1, errors, { brand, category, sourceSheet: sheet.name, sourceRow: n });
+      if (row) rows.push(row);
       if (rows.length > MAX_ROWS) throw new BadRequestException('Слишком большой прайс: максимум 10 000 строк');
     }
   }
-  if (!found) errors.push('Не найдены колонки наименования и цены/артикула. Перенесите данные в шаблон Excel.');
-  if (!rows.length && found) errors.push('В файле нет строк товаров.');
-  return { format: 'xlsx', status: !errors.length && rows.length ? 'READY' : 'NEEDS_TEMPLATE', rows: errors.length ? [] : rows, errors };
+  if (!rows.length) errors.push('В файле нет строк товаров.');
+  return { format: 'xlsx', status: errors.length ? 'NEEDS_TEMPLATE' : 'READY',
+    rows: errors.length ? [] : rows, errors, terms: terms.join(' | ').slice(0, 3000) };
 }
 async function parsePdf(data: Buffer): Promise<Parsed> {
   const parse: (data: Buffer, options?: Record<string, unknown>) => Promise<{ text: string; numpages: number }> = require('pdf-parse');
