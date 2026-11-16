@@ -32,6 +32,7 @@ export const CABINET_READINESS_CAPABILITIES: Readonly<Record<string, readonly st
   'cabinet.inventory.movements': ['inventory.movements.access'],
   'cabinet.inventory.order': ['inventory.order.access'],
   'cabinet.inventory.stocktake': ['inventory.stocktake.access'],
+  'cabinet.inventory.counterparties': ['inventory.counterparties.access'],
   'cabinet.settings.data-transfer': ['data_transfer.access'],
   'cabinet.settings.online-booking': ['online_booking.access'],
   'cabinet.settings.notifications': ['notifications.access'],

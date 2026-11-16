@@ -90,6 +90,7 @@ const APP_CATALOG: CatalogManifestItem[] = [
   { key: 'folder.finance', name: 'Финансы', description: 'Папка финансовых инструментов', type: 'FOLDER', position: 390, isSaleable: true, isFree: false, priceMinor: 99900, capabilityKeys: [], includedKeys: ['tool.finance.cash', 'tool.finance.dds', 'tool.finance.investment', 'tool.finance.z-report'] },
 
   { key: 'tool.inventory', name: 'Склад', description: 'Позиции, остатки, партии, поставщики и движения склада', type: 'TOOL', position: 400, isSaleable: true, isFree: false, priceMinor: 99900, capabilityKeys: [] },
+  { key: 'tool.inventory.counterparties', name: 'Контрагенты', description: 'Компании, прайс-листы и каталоги поставщиков', type: 'TOOL', position: 405, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: ['inventory.counterparties.access'] },
 
   { key: 'package.full', name: 'Полный пакет', description: 'Единый пакет доступных платных наборов и инструментов', type: 'PACKAGE', position: 900, isSaleable: true, isFree: false, priceMinor: 199900, capabilityKeys: [], includedKeys: ['folder.finance', 'tool.inventory'] },
 

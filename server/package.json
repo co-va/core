@@ -21,6 +21,7 @@
     "@prisma/client": "^6.15.0",
     "bcryptjs": "^3.0.2",
     "exceljs": "^4.4.0",
+    "pdf-parse": "1.1.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "web-push": "^3.6.7",

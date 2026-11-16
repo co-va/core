@@ -1081,12 +1081,64 @@ model InventoryResourceEvent {
   @@index([tenantId, inventoryItemId, occurredAt], map: "InventoryResourceEvent_tenant_item_occurred_idx")
 }
 
+model InventoryCounterparty {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  kind String @default("SUPPLIER")
+  contactName String @default("")
+  phone String @default("")
+  email String @default("")
+  website String @default("")
+  note String @default("")
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  priceLists InventoryCounterpartyPriceList[]
+  @@index([tenantId, archivedAt, name])
+}
+model InventoryCounterpartyPriceList {
+  id String @id @default(cuid())
+  tenantId String
+  counterpartyId String
+  revision Int
+  filename String
+  format String
+  sha256 String
+  sourceFile Bytes @db.ByteA
+  createdAt DateTime @default(now())
+  counterparty InventoryCounterparty @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
+  rows InventoryCounterpartyCatalogItem[]
+  @@unique([tenantId, counterpartyId, revision])
+  @@index([tenantId, counterpartyId, createdAt])
+}
+model InventoryCounterpartyCatalogItem {
+  id String @id @default(cuid())
+  tenantId String
+  priceListId String
+  position Int
+  supplierSku String @default("")
+  name String
+  manufacturer String @default("")
+  barcode String @default("")
+  unit String @default("")
+  packageQuantity Decimal? @db.Decimal(14,3)
+  listPrice Decimal? @db.Decimal(14,4)
+  actualPrice Decimal? @db.Decimal(14,4)
+  discountPercent Decimal? @db.Decimal(7,4)
+  createdAt DateTime @default(now())
+  priceList InventoryCounterpartyPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  @@index([tenantId, priceListId, position])
+  @@index([tenantId, supplierSku])
+}
 model InventorySupplierOffer {
   id                String   @id @default(cuid())
   tenantId          String
   offerId           String
   inventoryItemId   String
   supplier          String
+  counterpartyId    String?
+  catalogItemId     String?
   listPrice         Decimal? @db.Decimal(14, 4)
   discountPercent   Decimal? @db.Decimal(7, 4)
   actualPrice       Decimal? @db.Decimal(14, 4)

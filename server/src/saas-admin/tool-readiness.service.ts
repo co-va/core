@@ -32,6 +32,7 @@ export const READINESS_KEYS = [
   'cabinet.inventory.movements',
   'cabinet.inventory.order',
   'cabinet.inventory.stocktake',
+  'cabinet.inventory.counterparties',
   'cabinet.settings.data-transfer',
   'cabinet.settings.online-booking',
   'cabinet.settings.notifications',
