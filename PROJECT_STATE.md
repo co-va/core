@@ -295,3 +295,10 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - `staging` выровнен по коду с `main` и сохраняет особый собранный `admin/index.html` для read-only предпросмотра и дополнительные проверки макета тарифов.
 - Предыдущая история `staging` до очистки сохранена в `backup/staging-before-tariff-repair-20261116` (исходный SHA `f3a85bc1`). Старую ветку не сливать поверх актуального `main`.
 - Разработку вести из актуального `main` в `staging`; проверенные исправления выпускать выборочно. Разницу в истории не трактовать как отсутствующие функции без сравнения фактических файлов.
+
+## Admin last visit: historical login fallback — 2026-11-16
+
+- Scope: Core `server/src/saas-admin/saas-admin.service.ts`, `admin/admin.js` and `admin/admin.css` only; User/Professional frontends, schema and main are unchanged.
+- `GET /saas-admin/tenants` now exposes `presence.lastVisitAt` and `presence.lastVisitSource` (`presence` or `login`) in addition to the existing `online`, `lastSeenAt` and `totalOnlineMs`. For each displayed tenant account, `lastVisitAt` is the later of a verified membership heartbeat and that same tenant/account's recorded successful authentication (`AUTH_LOGIN_SUCCEEDED`). A successful login is real evidence of **entry**, but not of continued activity; the Admin labels fallback dates `вход`.
+- `online` and credited `totalOnlineMs` continue to derive **only** from `TenantAccountPresence` heartbeats with the established 120-second TTL. Authentication audit is never used to mark a session online, calculate duration, or manufacture an unobserved heartbeat. When both sources are absent, the date remains blank. Historical login timestamps exist only for events actually recorded after audit introduction.
+- Keep the approved six-column Users table and 30-second network-cell refresh; no second timer, account column, new UI primitive or migration. The timestamp line under `В сети` has improved 13px legibility. `admin/index.html` is automatically compiled by the existing Admin Preview Single Request staging workflow; production still requires a separately authorized Core release.
