@@ -166,7 +166,7 @@ export class SaasAdminService {
       const lastLoginAt = membership
         ? lastLoginByMembership.get(JSON.stringify([row.tenantId, membership.platformAccountId])) || null
         : null;
-      const lastVisitSource = lastSeenAt && (!lastLoginAt || lastSeenAt >= lastLoginAt)
+      const lastVisitSource = lastSeenAt && (!lastLoginAt || lastSeenAt.getTime() >= lastLoginAt.getTime())
         ? 'presence' : lastLoginAt ? 'login' : null;
       const lastVisitAt = lastVisitSource === 'presence' ? lastSeenAt : lastLoginAt;
       const profile = membership
