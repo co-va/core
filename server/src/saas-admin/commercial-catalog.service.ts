@@ -178,8 +178,32 @@ export class CommercialCatalogService {
     }
   }
 
+  // A normal GET must not re-upsert every commercial product and delete/reinsert
+  // its capabilities. Bootstrap missing manifest rows once per server process;
+  // the existing explicit catalog mutations continue to synchronize as before.
+  private catalogManifestReady = false;
+  private catalogManifestPending: Promise<void> | null = null;
+
+  private async ensureCatalogManifestForRead() {
+    if (this.catalogManifestReady) return;
+    if (!this.catalogManifestPending) {
+      this.catalogManifestPending = (async () => {
+        const [result] = await this.prisma.$queryRawUnsafe<Array<{ present: bigint }>>(
+          `SELECT COUNT(*)::bigint AS "present" FROM "CommercialProduct"
+           WHERE "key" = ANY($1::text[])`,
+          APP_CATALOG.map((item) => item.key),
+        );
+        if (Number(result?.present ?? 0n) !== APP_CATALOG.length) {
+          await this.syncAppCatalog();
+        }
+        this.catalogManifestReady = true;
+      })().finally(() => { this.catalogManifestPending = null; });
+    }
+    await this.catalogManifestPending;
+  }
+
   async catalog() {
-    await this.syncAppCatalog();
+    await this.ensureCatalogManifestForRead();
     const products = await this.prisma.$queryRawUnsafe<ProductRow[]>(
       `SELECT * FROM "CommercialProduct" ORDER BY "position" ASC, "name" ASC`,
     );

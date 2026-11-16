@@ -141,8 +141,34 @@ export class SaasAdminService {
       orderBy: [{ isOwnerBook: 'desc' }, { createdAt: 'asc' }],
     });
 
+    // A successful authenticated login is evidence of a visit, not of an open session.
+    // Only the existing heartbeat may establish online status and credited duration.
+    const ownerMemberships = rows.flatMap((row) => row.tenant.memberships.slice(0, 1));
+    const successfulLogins = ownerMemberships.length
+      ? await this.prisma.platformActivityEvent.groupBy({
+        by: ['tenantId', 'platformAccountId'],
+        where: {
+          eventType: 'AUTH_LOGIN_SUCCEEDED',
+          tenantId: { in: rows.map((row) => row.tenantId) },
+          platformAccountId: { in: ownerMemberships.map((membership) => membership.platformAccountId) },
+        },
+        _max: { occurredAt: true },
+      })
+      : [];
+    const lastLoginByMembership = new Map(successfulLogins.map((event) => [
+      JSON.stringify([event.tenantId, event.platformAccountId]),
+      event._max.occurredAt,
+    ]));
+
     return Promise.all(rows.map(async (row) => {
       const membership = row.tenant.memberships[0] || null;
+      const lastSeenAt = membership?.presence?.lastSeenAt || null;
+      const lastLoginAt = membership
+        ? lastLoginByMembership.get(JSON.stringify([row.tenantId, membership.platformAccountId])) || null
+        : null;
+      const lastVisitSource = lastSeenAt && (!lastLoginAt || lastSeenAt.getTime() >= lastLoginAt.getTime())
+        ? 'presence' : lastLoginAt ? 'login' : null;
+      const lastVisitAt = lastVisitSource === 'presence' ? lastSeenAt : lastLoginAt;
       const profile = membership
         ? row.tenant.profiles.find((item) => item.platformAccountId === membership.platformAccountId) || null
         : null;
@@ -158,6 +184,8 @@ export class SaasAdminService {
         presence: membership ? {
           online: isAccountOnline(membership.presence?.lastSeenAt),
           lastSeenAt: membership.presence?.lastSeenAt?.toISOString() || null,
+          lastVisitAt: lastVisitAt?.toISOString() || null,
+          lastVisitSource,
           totalOnlineMs: Number(membership.presence?.totalOnlineMs || 0n),
         } : null,
         ownerProfile: membership ? {
