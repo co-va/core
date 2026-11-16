@@ -69,6 +69,7 @@ export const TOOL_MAP = Object.freeze({
         ] },
         { label: 'Движения', kind: 'e', readinessKey: 'cabinet.inventory.movements' },
         { label: 'Заказ', kind: 'e', readinessKey: 'cabinet.inventory.order' },
+        { label: 'Контрагенты', kind: 'e', readinessKey: 'cabinet.inventory.counterparties' },
       ],
     },
     {
@@ -117,6 +118,7 @@ export const TOOL_COMMERCIAL_BINDINGS = Object.freeze({
   'cabinet.finance.cash.investments': 'tool.finance.investment',
   'cabinet.finance.z-report': 'tool.finance.z-report',
   'cabinet.inventory': 'tool.inventory',
+  'cabinet.inventory.counterparties': 'tool.inventory.counterparties',
 });
 
 // Binding to the existing capability model. Catalog hierarchy and labels stay owned by TOOL_MAP.
@@ -138,6 +140,7 @@ export const TOOL_CAPABILITY_BINDINGS = Object.freeze({
   'cabinet.inventory.movements': ['inventory.movements.access'],
   'cabinet.inventory.order': ['inventory.order.access'],
   'cabinet.inventory.stocktake': ['inventory.stocktake.access'],
+  'cabinet.inventory.counterparties': ['inventory.counterparties.access'],
   'cabinet.settings.data-transfer': ['data_transfer.access'],
   'cabinet.service': ['services.access'],
   'cabinet.chat': ['chat.access'],
@@ -468,6 +471,7 @@ const INLINE_COMMERCIAL_KEYS = Object.freeze({
   'cabinet.finance.cash.investments': 'tool.finance.investment',
   'cabinet.finance.z-report': 'tool.finance.z-report',
   'cabinet.inventory': 'tool.inventory',
+  'cabinet.inventory.counterparties': 'tool.inventory.counterparties',
   'cabinet.settings.online-booking': 'tool.online-booking',
   'cabinet.settings.documents': 'tool.documents',
   'cabinet.settings.tags': 'tool.tags',

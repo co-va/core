@@ -348,6 +348,8 @@ export class InventoryService {
       rows.push({
         offerId: offer.offerId,
         supplier: offer.supplier,
+        counterpartyId: offer.counterpartyId || null,
+        catalogItemId: offer.catalogItemId || null,
         listPrice: offer.listPrice == null ? null : decimalNumber(offer.listPrice),
         discountPercent: offer.discountPercent == null ? null : decimalNumber(offer.discountPercent),
         actualPrice: offer.actualPrice == null ? null : decimalNumber(offer.actualPrice),

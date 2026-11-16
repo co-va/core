@@ -40,6 +40,7 @@ type CatalogManifestItem = {
   priceMinor: number;
   capabilityKeys: string[];
   includedKeys?: string[];
+  tariffExcluded?: boolean;
 };
 
 type ProductRow = {
@@ -90,6 +91,7 @@ const APP_CATALOG: CatalogManifestItem[] = [
   { key: 'folder.finance', name: 'Финансы', description: 'Папка финансовых инструментов', type: 'FOLDER', position: 390, isSaleable: true, isFree: false, priceMinor: 99900, capabilityKeys: [], includedKeys: ['tool.finance.cash', 'tool.finance.dds', 'tool.finance.investment', 'tool.finance.z-report'] },
 
   { key: 'tool.inventory', name: 'Склад', description: 'Позиции, остатки, партии, поставщики и движения склада', type: 'TOOL', position: 400, isSaleable: true, isFree: false, priceMinor: 99900, capabilityKeys: [] },
+  { key: 'tool.inventory.counterparties', name: 'Контрагенты', description: 'Компании, прайс-листы и каталоги поставщиков', type: 'TOOL', position: 405, isSaleable: false, isFree: false, priceMinor: 0, capabilityKeys: ['inventory.counterparties.access'], tariffExcluded: true },
 
   { key: 'package.full', name: 'Полный пакет', description: 'Единый пакет доступных платных наборов и инструментов', type: 'PACKAGE', position: 900, isSaleable: true, isFree: false, priceMinor: 199900, capabilityKeys: [], includedKeys: ['folder.finance', 'tool.inventory'] },
 
@@ -140,10 +142,10 @@ export class CommercialCatalogService {
   async syncAppCatalog() {
     for (const item of APP_CATALOG) {
       await this.prisma.$executeRawUnsafe(
-        `INSERT INTO "CommercialProduct" ("id","key","name","description","type","position","isActive","isSaleable","isFree","priceMinor","currency","source","createdAt","updatedAt")
-         VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,'RUB','APP',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        `INSERT INTO "CommercialProduct" ("id","key","name","description","type","position","isActive","isSaleable","isFree","priceMinor","tariffExcluded","currency","source","createdAt","updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,$10,'RUB','APP',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
          ON CONFLICT ("key") DO UPDATE SET "name"=EXCLUDED."name", "description"=EXCLUDED."description", "type"=EXCLUDED."type", "position"=EXCLUDED."position", "updatedAt"=CURRENT_TIMESTAMP`,
-        randomUUID(), item.key, item.name, item.description, item.type, item.position, item.isSaleable, item.isFree, item.priceMinor,
+        randomUUID(), item.key, item.name, item.description, item.type, item.position, item.isSaleable, item.isFree, item.priceMinor, item.tariffExcluded === true,
       );
       const [product] = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT "id" FROM "CommercialProduct" WHERE "key"=$1`, item.key,

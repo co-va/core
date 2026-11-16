@@ -55,6 +55,7 @@ export const TOOL_CAPABILITY_KEYS = [
   'inventory.movements.access',
   'inventory.order.access',
   'inventory.stocktake.access',
+  'inventory.counterparties.access',
   'data_transfer.access',
 ] as const;
 const TOOL_CAPABILITY_SET = new Set<string>(TOOL_CAPABILITY_KEYS);
@@ -105,6 +106,7 @@ const CAPABILITY_CATALOG: Array<{
   { key: 'inventory.movements.access', groupKey: 'inventory', name: 'Склад · Движения', valueType: CapabilityValueType.BOOLEAN, position: 202, starterEnabled: false },
   { key: 'inventory.order.access', groupKey: 'inventory', name: 'Склад · Заказ', valueType: CapabilityValueType.BOOLEAN, position: 203, starterEnabled: false },
   { key: 'inventory.stocktake.access', groupKey: 'inventory', name: 'Склад · Инвентаризация', valueType: CapabilityValueType.BOOLEAN, position: 204, starterEnabled: false },
+  { key: 'inventory.counterparties.access', groupKey: 'inventory', name: 'Склад · Контрагенты', valueType: CapabilityValueType.BOOLEAN, position: 205, starterEnabled: false },
   { key: 'data_transfer.access', groupKey: 'settings', name: 'Настройки · Перенос данных', valueType: CapabilityValueType.BOOLEAN, position: 210, starterEnabled: false },
 
   { key: 'journal.access', groupKey: 'system', name: 'Журнал', valueType: CapabilityValueType.BOOLEAN, position: 900, starterEnabled: false },
