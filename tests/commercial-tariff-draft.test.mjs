@@ -49,6 +49,13 @@ assert.doesNotMatch(professionalOffers,/\.\.\.tier/,'public Professional offers 
 assert.match(publicOffers,/key: tier\.key, name: tier\.name/,'public offer explicitly enumerates safe fields');
 assert.match(source,/TARIFF_DRAFT_SAVED/,'draft saving is audited');
 assert.match(source,/TARIFF_DRAFT_PUBLICATION/,'activation is audited');
+const catalogRead = source.slice(source.indexOf('  async catalog() {'), source.indexOf('  // The three tariff cards use', source.indexOf('  async catalog() {')));
+assert.match(catalogRead, /await this\.ensureCatalogManifestForRead\(\)/, 'Tariff reads use lightweight manifest bootstrap');
+assert.doesNotMatch(catalogRead, /await this\.syncAppCatalog\(\)/, 'Ordinary GET must not rewrite all catalog rows');
+const manifestGuard = source.slice(source.indexOf('  private async ensureCatalogManifestForRead()'), source.indexOf('  async catalog() {'));
+assert.match(manifestGuard, /APP_CATALOG\.length/, 'Missing manifest rows still get bootstrapped');
+assert.match(manifestGuard, /this\.catalogManifestPending/, 'Concurrent GETs share a single bootstrap');
+assert.match(manifestGuard, /await this\.syncAppCatalog\(\)/, 'Initial seed remains available');
 assert.match(order,/const totalMinor = 'totalMinor' in period/,'orders use the final published quote');
 assert.match(order,/discountMinor, totalMinor,/,'discounted totals are snapshotted');
 console.log('Tariff draft validation, date-window offers, discounts and order snapshot: PASS');

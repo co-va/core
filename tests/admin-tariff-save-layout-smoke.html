@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../admin/admin.css">
+  <title>Tariff action alignment browser regression</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #2f3338; }
+    .admin-content { min-width: 0; max-width: 1300px; margin: 0 auto; }
+    @media (max-width: 760px) { body { padding: 12px; } }
+  </style>
+</head>
+<body>
+  <main class="admin-content" data-content></main>
+  <script type="module">
+    import { renderTariffWorkbench } from '../admin/tariff-workbench.js';
+    const tiers = [
+      { key: 'tariff.start', name: 'Start', isSaleable: true, isFree: true,
+        priceMinor: 0, periods: [], draft: { revision: 1 } },
+      { key: 'tariff.start-plus', name: 'Start+', isSaleable: false, isFree: false,
+        priceMinor: 120000, periods: [], draft: { revision: 1 } },
+      { key: 'tariff.pro', name: 'Pro', isSaleable: false, isFree: false,
+        priceMinor: 250000, periods: [], draft: { revision: 1 } },
+    ];
+    const content = document.querySelector('[data-content]');
+    try {
+      renderTariffWorkbench({
+        content, tiers, selectedKey: 'tariff.start-plus',
+        readinessFor: () => ({ rows: [] }),
+        onSelect() {}, onPublish() {}, onTools() {}, onSave() {},
+      });
+      requestAnimationFrame(() => {
+        const save = content.querySelector('[data-tw-save]');
+        const publish = content.querySelector('[data-tw-publish]');
+        const message = content.querySelector('[data-tw-save-message]');
+        const saveRow = content.querySelector('.tw-save-row');
+        const panel = content.querySelector('.tw-price-panel');
+        const rect = save?.getBoundingClientRect();
+        const pubRect = publish?.getBoundingClientRect();
+        const panelRect = panel?.getBoundingClientRect();
+        const padding = parseFloat(getComputedStyle(panel).paddingRight) || 0;
+        const rightAligned = Math.abs(rect.right - (panelRect.right - padding)) <= 3;
+        const separateRows = rect.top > pubRect.bottom + 40;
+        const secondaryVisual = getComputedStyle(save).backgroundColor !== getComputedStyle(publish).backgroundColor;
+        const buttonLast = saveRow.lastElementChild === save;
+        const messageBefore = message?.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING;
+        const all = rightAligned && separateRows && secondaryVisual && buttonLast && messageBefore;
+        document.body.dataset.tariffSaveLayout = all ? 'pass' : 'fail';
+        document.body.dataset.tariffSaveDetails = JSON.stringify({
+          width: innerWidth, rightAligned, separateRows, secondaryVisual, buttonLast,
+          saveRight: rect.right, expectedRight: panelRect.right - padding,
+        });
+      });
+    } catch (error) {
+      document.body.dataset.tariffSaveLayout = 'error';
+      document.body.dataset.tariffSaveDetails = String(error);
+    }
+  </script>
+</body>
+</html>

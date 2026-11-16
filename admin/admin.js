@@ -1511,7 +1511,11 @@ function tenantRow(item) {
   let network = '—';
   if (item.ownerProfile && typeof item.presence?.online === 'boolean') {
     const connected = item.presence.online;
-    const rawLastVisit = item.presence.lastSeenAt ? new Date(item.presence.lastSeenAt) : null;
+    // The server selects the latest proven heartbeat or successful login.
+    // Login-only evidence is explicitly marked; it never implies "В сети".
+    const visitTime = item.presence.lastVisitAt || item.presence.lastSeenAt;
+    const rawLastVisit = visitTime ? new Date(visitTime) : null;
+    const visitKind = item.presence.lastVisitSource === 'login' ? 'Последний вход' : 'Последняя активность';
     const lastVisit = rawLastVisit && Number.isFinite(rawLastVisit.getTime())
       ? rawLastVisit.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
       : '';
@@ -1527,7 +1531,7 @@ function tenantRow(item) {
     // lastSeenAt is a verified activity timestamp, not necessarily login time.
     const detail = mobile ? [lastVisit, duration].filter(Boolean).join(' — ') : lastVisit;
     network = `<span class="admin-account-presence ${connected ? 'is-online' : 'is-offline'}">${connected ? 'В сети' : 'Не в сети'}</span>
-      ${detail ? `<small class="admin-network-detail"${mobile ? '' : ' title="Последняя активность"'}>${escapeHtml(detail)}</small>` : ''}`;
+      ${detail ? `<small class="admin-network-detail"${mobile ? '' : ` title="${visitKind}"`}>${escapeHtml(detail)}${visitKind === 'Последний вход' ? ' · вход' : ''}</small>` : ''}`;
   }
   return `<tr data-tenant="${escapeHtml(item.tenantId)}" tabindex="0" role="button" aria-label="Открыть аккаунт ${escapeHtml(name)}">
     <td data-label="Пользователь"><strong>${escapeHtml(name)}</strong>${displayedEmail ? `<small class="admin-account-email">${escapeHtml(displayedEmail)}</small>` : ''}</td>
