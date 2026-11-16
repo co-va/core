@@ -320,8 +320,11 @@ export class InventoryCounterpartyService {
       where: { tenantId, inventoryItemId: item.id, counterpartyId: id, isActive: true,
         ...(row.supplierSku ? { supplierSku: row.supplierSku } : { catalogItemId: row.id }) },
     });
-    const validSize = row.packageQuantity && row.unit && row.unit.toLowerCase() === item.unit.toLowerCase();
-    const size = validSize ? row.packageQuantity : item.packageQuantity || 1;
+    const sameUnit = Boolean(row.unit) && row.unit.trim().toLowerCase() === item.unit.trim().toLowerCase();
+    const size = sameUnit && row.packageQuantity != null && Number(row.packageQuantity) > 0
+      ? Number(row.packageQuantity)
+      : item.packageQuantity != null && Number(item.packageQuantity) > 0
+        ? Number(item.packageQuantity) : 1;
     const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
       listPrice: row.listPrice, actualPrice: row.actualPrice,
       discountPercent: row.discountPercent, supplierSku: row.supplierSku,
