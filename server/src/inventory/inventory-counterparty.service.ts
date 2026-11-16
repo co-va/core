@@ -53,7 +53,7 @@ function plain(value: unknown): string {
   return String(value).trim();
 }
 function normal(value: unknown) {
-  return plain(value).toLocaleLowerCase('ru-RU').replace(/[.,:;()№*]/g, ' ').replace(/\s+/g, ' ').trim();
+  return plain(value).toLocaleLowerCase('ru-RU').replace(/[.,:;()№*/\\]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 function amount(value: unknown, field: string, row: number, errors: string[], max = 1e12): number | null {
   const raw = plain(value).replace(/[\s\u00a0\u202f₽]/g, '').replace(/руб(?:лей|ля|\.)?/gi, '');
@@ -101,8 +101,8 @@ function mapRow(values: Record<Column, unknown>, position: number, errors: strin
 }
 
 function detectColumn(label: string): Column | null {
-  if (/\\bбцо\\b|базов.*цен/i.test(label)) return 'listPrice';
-  if (/\\bррц\\b|рекомендованн.*рознич/i.test(label)) return 'retailPrice';
+  if (/(?:^| )бцо(?: |$)|базов.*цен/i.test(label)) return 'listPrice';
+  if (/(?:^| )ррц(?: |$)|рекомендованн.*рознич/i.test(label)) return 'retailPrice';
   for (const key of COLUMNS) if (HEADERS[key].some((name) => normal(name) === label)) return key;
   return null;
 }
@@ -148,6 +148,14 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
       const source = sheet.getRow(n);
       const values = Object.fromEntries(COLUMNS.map((key) =>
         [key, mapping[key] ? source.getCell(mapping[key]!).value : ''])) as Record<Column, unknown>;
+      // Supplier's unlabeled helper column may mark a product as new.
+      if (!values.supplierNote) {
+        let newArrival = false;
+        source.eachCell({ includeEmpty: false }, (cell) => {
+          if (normal(cell.value) === 'новинка') newArrival = true;
+        });
+        if (newArrival) values.supplierNote = 'Новинка';
+      }
       const name = plain(values.name);
       const sku = plain(values.supplierSku);
       const price = plain(values.listPrice) || plain(values.retailPrice) || plain(values.actualPrice);
@@ -193,7 +201,9 @@ async function parsePdf(data: Buffer): Promise<Parsed> {
     const match = lines[n].match(/^(?:(\S+)\s{2,})?(.{3,}?)\s{2,}(\d[\d\s.,]*)\s*(?:₽|руб\.?)?$/i);
     if (!match) continue;
     const row = mapRow({ supplierSku: match[1] || '', name: match[2], listPrice: match[3],
-      manufacturer: '', barcode: '', unit: '', packageQuantity: '', actualPrice: '', discountPercent: '' }, n + 1, errors);
+      manufacturer: '', brand: '', category: '', supplierNote: '', supplierAvailable: '',
+      barcode: '', unit: '', packageQuantity: '', retailPrice: '', suggestedOrderQuantity: '',
+      actualPrice: '', discountPercent: '' }, n + 1, errors);
     if (row) rows.push(row);
     if (rows.length > MAX_ROWS) throw new BadRequestException('Слишком большой прайс: максимум 10 000 строк');
   }
