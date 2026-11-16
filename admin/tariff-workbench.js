@@ -92,7 +92,9 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
   const canActivate=!!d && !previewOnly && !d.dirty && d.revision>0;
   const updatedTerms=!!d && selected.publishedDraftRevision!==d.revision;
   const publishTarget=!!d && (!d.published || updatedTerms);
-  const publishLabel=updatedTerms&&d.published?'Опубликовать изменения':d.published?'Снять с публикации':'Опубликовать';
+  const publishLabel=d?.published
+    ? (updatedTerms ? 'Опубликовать изменения' : 'Снять с публикации')
+    : 'Опубликовать';
   const cards=tiers.map(t=>{
     const v=value(t),h=previewReadiness(t,readinessFor),one=offer(v,1,previewDate),six=offer(v,6,previewDate);
     return '<article class="admin-overview-metric tw-card '+(selectedKey===t.key?'is-selected':'')+'">'+
