@@ -232,14 +232,14 @@ export class InventoryCounterpartyService {
     });
     if (previous) return { ...previous, duplicate: true };
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`; 
       const last = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id }, orderBy: { revision: 'desc' }, select: { revision: true },
       });
       const list = await tx.inventoryCounterpartyPriceList.create({
         data: { tenantId, counterpartyId: id, revision: (last?.revision || 0) + 1,
           filename: file.originalname.slice(0, 250), format: parsed.format, sha256: hash,
-          parserStatus: parsed.status, sourceFile: file.buffer },
+          parserStatus: parsed.status, sourceFile: Uint8Array.from(file.buffer) },
       });
       for (let i = 0; i < parsed.rows.length; i += 500) {
         await tx.inventoryCounterpartyCatalogItem.createMany({
