@@ -121,7 +121,7 @@ export function renderTariffWorkbench({content,tiers,selectedKey,readinessFor,on
         pick('Тип тарифа','base','free',d.free?'yes':'no',[['yes','Бесплатный'],['no','Платный']])+
         field('Цена продажи за 30 дней, ₽','base','price',d.price,'number','min="0" step="1" '+(d.free?'disabled':''))+
         field('Цена до скидки, ₽','base','was',d.was,'number','min="0" step="1" '+(d.free?'disabled':''))+
-      '</div><div class="tw-save-row"><button type="button" class="tw-publish-action" data-tw-save '+(previewOnly?'disabled ':'')+'>Сохранить условия</button><span data-tw-save-message aria-live="polite">'+(previewOnly?'Сохранение в staging-превью заблокировано':d.dirty?'Есть несохранённые изменения':'')+'</span></div></section>'+ 
+      '</div><div class="tw-save-row"><span data-tw-save-message aria-live="polite">'+(previewOnly?'Сохранение в staging-превью заблокировано':d.dirty?'Есть несохранённые изменения':'')+'</span><button type="button" class="tw-publish-action admin-button secondary" data-tw-save '+(previewOnly?'disabled ':'')+'>Сохранить условия</button></div></section>'+ 
       '<div class="tw-subhead"><strong>Условия по срокам <span>/ 30 дней = 1 месяц; скидка и подарочное время независимы</span></strong></div>'+
       '<div class="tw-period-grid">'+[1,6,12].map(m=>{
         const p=d.periods[m],o=offer(d,m,previewDate);
