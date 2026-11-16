@@ -65,6 +65,33 @@ const excelFile = async price => {
   return { originalname: 'supply.xlsx', buffer: buf, size: buf.length };
 };
 
+// Matches the supplier's multi-sheet order form without storing its proprietary file in the repository.
+const faroukFixture = new ExcelJS.Workbook();
+const farouk = faroukFixture.addWorksheet('Farouk');
+farouk.addRow(['', '', '', '', 'Минимальная сумма заказа - 20 000 руб.']);
+farouk.addRow([]);
+farouk.addRow(['Есть/нет на складе ', 'Штрих код', 'Артикул', 'Номенклатура', '', 'Кол-во штук ', 'FAROUK БЦО (вкл НДС)', 'FAROUK РРЦ (вкл НДС)']);
+farouk.addRow(['', '', 'CHI', '01. COLOR GENERATOR']);
+farouk.addRow(['да', '633911000111', 'CHI01', 'Оксид CHI 10 Vol', 'Новинка', '', 960, 'Не для продажи']);
+farouk.addRow(['нет', '633911000222', 'CHI02', 'Оксид CHI 20 Vol', '', '', 1890, 3200]);
+const helper = faroukFixture.addWorksheet('Лист5');
+helper.addRow(['Артикул','Номенклатура']);
+helper.addRow(['CHI01','Оксид CHI 10 Vol']);
+const faroukData = Buffer.from(await faroukFixture.xlsx.writeBuffer());
+const faroukPreview = await service.preview('tenant', company.id,
+  { originalname: 'supplier-form.xlsx', buffer: faroukData, size: faroukData.length });
+assert.equal(faroukPreview.status, 'READY', JSON.stringify(faroukPreview.errors));
+assert.equal(faroukPreview.count, 2, 'Brand headings and lookup sheets are not inventory products');
+assert.equal(faroukPreview.sample[0].supplierAvailable, true);
+assert.equal(faroukPreview.sample[1].supplierAvailable, false);
+assert.equal(faroukPreview.sample[0].listPrice, 960, 'BCO is the supplier base price');
+assert.equal(faroukPreview.sample[0].retailPrice, null, 'Not for sale is not a numeric price or column');
+assert.equal(faroukPreview.sample[1].retailPrice, 3200, 'RRP remains separate');
+assert.equal(faroukPreview.sample[0].supplierNote, 'Новинка');
+assert.equal(faroukPreview.sample[0].brand, 'CHI');
+assert.equal(faroukPreview.sample[0].category, '01. COLOR GENERATOR');
+assert.equal(faroukPreview.sample[0].actualPrice, null, 'Never invent a personal discount');
+
 const file = await excelFile(320);
 const preview = await service.preview('tenant', company.id, file);
 assert.equal(preview.status, 'READY');
@@ -87,10 +114,15 @@ assert.equal(offer.itemId, stock.itemId);
 assert.equal(offers.length, 1);
 assert.equal(offers[0].unitsPerOffer, 70, 'No fake conversion from supplier pieces to working stock grams');
 assert.equal(savedHistory[0].price, 150);
+// The price on a real invoice and the personal discount are entered separately.
+offers[0].actualPrice = 278;
+offers[0].discountPercent = 7;
 const second = await service.import('tenant', company.id, await excelFile(390));
 assert.equal(second.revision, 2);
 assert.equal(lists.length, 2);
 assert.equal(offers[0].listPrice, 390, 'Linked offers follow new supplier price');
+assert.equal(offers[0].actualPrice, 278, 'Supplier price revisions cannot overwrite invoice purchase price');
+assert.equal(offers[0].discountPercent, 7, 'Supplier price revisions cannot invent a different personal discount');
 assert.equal(savedHistory[0].price, 150, 'Previous receipts must retain their price');
 assert.equal(stock.name, 'Working Dye', 'Worker-owned item attributes must not be overwritten');
 

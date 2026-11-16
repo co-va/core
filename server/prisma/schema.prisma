@@ -1106,6 +1106,7 @@ model InventoryCounterpartyPriceList {
   format String
   sha256 String
   parserStatus String @default("READY")
+  terms String @default("")
   sourceFile Bytes @db.ByteA
   createdAt DateTime @default(now())
   counterparty InventoryCounterparty @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
@@ -1121,10 +1122,18 @@ model InventoryCounterpartyCatalogItem {
   supplierSku String @default("")
   name String
   manufacturer String @default("")
+  brand String @default("")
+  category String @default("")
+  supplierNote String @default("")
+  sourceSheet String @default("")
+  sourceRow Int?
+  supplierAvailable Boolean?
   barcode String @default("")
   unit String @default("")
   packageQuantity Decimal? @db.Decimal(14,3)
   listPrice Decimal? @db.Decimal(14,4)
+  retailPrice Decimal? @db.Decimal(14,4)
+  suggestedOrderQuantity Decimal? @db.Decimal(14,3)
   actualPrice Decimal? @db.Decimal(14,4)
   discountPercent Decimal? @db.Decimal(7,4)
   createdAt DateTime @default(now())
