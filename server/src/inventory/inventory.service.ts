@@ -9,10 +9,13 @@ import { canonicalInventoryUnit, stockQuantityForUnit } from './inventory-usage'
 
 type AnyRecord = Record<string, any>;
 type Tx = AnyRecord;
+const PRIMARY_STORAGE = 'primary';
+const RESOURCE_UNITS = new Set(['проц.', 'примен.', 'цикл', 'ч', 'дн.', 'км']);
 
 type PreparedLine = {
   itemId: string;
   quantity: number;
+  storageLocationId: string;
   // Only when explicitly supplied; legacy movements already use stock units.
   quantityUnit: string;
   direction: 'IN' | 'OUT';
@@ -115,6 +118,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
     return {
       itemId: text(row.itemId),
       quantity: Math.abs(signed),
+      storageLocationId: text(row.storageLocationId) || PRIMARY_STORAGE,
       quantityUnit: text(row.quantityUnit),
       direction,
       unitCost: nullableNonNegative(row.unitCost ?? row.actualPrice),
@@ -137,7 +141,7 @@ function normalizedMovementLines(kind: string, value: unknown): PreparedLine[] {
 function optionalUsageUnit(value: unknown): string | null {
   if (value == null || value === '') return null;
   const unit = canonicalInventoryUnit(value);
-  if (!unit) throw new BadRequestException('Единица списания: г, мл или шт.');
+  if (!unit) throw new BadRequestException('Неизвестная единица списания.');
   return unit;
 }
 
@@ -145,6 +149,79 @@ function optionalUsageQuantity(value: unknown): number | null {
   return optionalOfferAmount(value, 'Количество списания', 100000000);
 }
 
+function optionalUnit(value: unknown, title: string): string | null {
+  if (value == null || value === '') return null;
+  const unit = canonicalInventoryUnit(value);
+  if (!unit) throw new BadRequestException(title + ': неизвестная единица.');
+  return unit;
+}
+function optionalDate(value: unknown, title: string): Date | null {
+  if (value == null || value === '') return null;
+  const result = new Date(String(value));
+  if (Number.isNaN(result.getTime())) throw new BadRequestException(title + ': неверная дата.');
+  return result;
+}
+function optionalPositive(value: unknown, title: string): number | null {
+  if (value == null || value === '') return null;
+  const parsed = Number(String(value).replace(',', '.'));
+  if (!(parsed > 0) || !Number.isFinite(parsed)) throw new BadRequestException(title + ': укажите положительное число.');
+  return parsed;
+}
+function optionalRules(value: unknown): AnyRecord[] | null {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 30) throw new BadRequestException('Неверные правила пересчёта.');
+  const values = value.map((raw) => {
+    const item = objectValue(raw);
+    const unit = optionalUnit(item.unit, 'Единица пересчёта');
+    const stockPerUnit = optionalPositive(item.stockPerUnit, 'Коэффициент пересчёта');
+    if (!unit || stockPerUnit == null) throw new BadRequestException('Укажите единицу и коэффициент.');
+    return { unit, stockPerUnit };
+  });
+  if (new Set(values.map((row) => row.unit)).size !== values.length)
+    throw new BadRequestException('Повтор единицы пересчёта.');
+  return values;
+}
+function inventoryCardChanges(source: AnyRecord): AnyRecord {
+  const result: AnyRecord = {};
+  if ('catalogName' in source) result.catalogName = optionalText(source.catalogName);
+  if ('nominalQuantity' in source) result.nominalQuantity = optionalPositive(source.nominalQuantity, 'Номинал');
+  if ('nominalUnit' in source) result.nominalUnit = optionalUnit(source.nominalUnit, 'Единица номинала');
+  if ('receiptUnit' in source) result.receiptUnit = optionalUnit(source.receiptUnit, 'Ед. прихода');
+  if ('thresholdUnit' in source) result.thresholdUnit = optionalUnit(source.thresholdUnit, 'Ед. остатка');
+  if ('containerMode' in source) {
+    const mode = text(source.containerMode);
+    if (mode && !['WITH', 'NONE'].includes(mode)) throw new BadRequestException('Тара: WITH или NONE.');
+    result.containerMode = mode || null;
+  }
+  if ('conversionRules' in source) result.conversionRules = optionalRules(source.conversionRules);
+  if ('resourceLimit' in source) result.resourceLimit = optionalPositive(source.resourceLimit, 'Ресурс');
+  if ('resourceStockQuantity' in source) result.resourceStockQuantity = optionalPositive(source.resourceStockQuantity, 'Размер списываемой единицы');
+  if ('resourceUnit' in source) {
+    const unit = text(source.resourceUnit);
+    if (unit && !RESOURCE_UNITS.has(unit)) throw new BadRequestException('Неверная единица ресурса.');
+    result.resourceUnit = unit || null;
+  }
+  if ('resourceExhaustionAction' in source) {
+    const action = text(source.resourceExhaustionAction);
+    if (action && !['WRITE_OFF', 'REVIEW'].includes(action)) throw new BadRequestException('Неверное действие после выработки ресурса.');
+    result.resourceExhaustionAction = action || null;
+  }
+  if ('serviceStartAt' in source) result.serviceStartAt = optionalDate(source.serviceStartAt, 'Начало эксплуатации');
+  if ('serviceEndAt' in source) result.serviceEndAt = optionalDate(source.serviceEndAt, 'Окончание эксплуатации');
+  return result;
+}
+function validateInventoryCard(value: AnyRecord) {
+  if ((value.nominalQuantity != null) !== (value.nominalUnit != null))
+    throw new BadRequestException('Номинал: укажите и число, и единицу.');
+  if ((value.resourceLimit != null) !== (value.resourceUnit != null))
+    throw new BadRequestException('Ресурс: укажите количество и единицу.');
+  if (value.serviceStartAt != null && value.serviceEndAt != null
+    && new Date(value.serviceEndAt).getTime() < new Date(value.serviceStartAt).getTime())
+    throw new BadRequestException('Окончание эксплуатации раньше начала.');
+  if (value.resourceExhaustionAction === 'WRITE_OFF' && value.resourceLimit != null
+    && !(Number(value.resourceStockQuantity ?? 1) > 0))
+    throw new BadRequestException('Укажите количество списания при исчерпании ресурса.');
+}
 function applyMovementQuantityUnits(lines: PreparedLine[], items: AnyRecord[]) {
   const byId = new Map(items.map(item => [item.itemId, item]));
   for (const line of lines) {
@@ -158,6 +235,8 @@ function applyMovementQuantityUnits(lines: PreparedLine[], items: AnyRecord[]) {
         packageQuantity: item.packageQuantity,
         netPackageWeight: item.grossWeight != null && item.tareWeight != null
           ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+        nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
+        conversionRules: item.conversionRules,
       }, line.quantity, line.quantityUnit);
       if (unit === 'шт.' && canonicalInventoryUnit(item.unit) === 'шт.' && !Number.isSafeInteger(line.quantity))
         throw new Error('Количество штук должно быть целым');
@@ -184,7 +263,7 @@ export class InventoryService {
   constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
 
   async snapshot(tenantId: string) {
-    const [items, lots, movements, lines, supplierOffers, orders] = await Promise.all([
+    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -211,13 +290,47 @@ export class InventoryService {
         include: { lines: { orderBy: { position: 'asc' } } },
         orderBy: [{ createdAt: 'desc' }, { orderId: 'asc' }],
       }),
+      this.prisma.inventoryStorageLocation.findMany({ where: { tenantId }, orderBy: { name: 'asc' } }),
+      this.prisma.inventoryResourceProgress.findMany({ where: { tenantId } }),
+      this.prisma.inventoryResourceEvent.findMany({ where: { tenantId }, orderBy: { occurredAt: 'desc' }, take: 200 }),
     ]);
 
     const balances = new Map<string, number>();
+    const byStorage = new Map<string, Map<string, number>>();
     lines.forEach((line: AnyRecord) => {
       const signed = line.direction === 'OUT' ? -decimalNumber(line.quantity) : decimalNumber(line.quantity);
       balances.set(line.inventoryItemId, (balances.get(line.inventoryItemId) || 0) + signed);
+      const site = line.storageLocationId || PRIMARY_STORAGE;
+      const perItem = byStorage.get(line.inventoryItemId) || new Map<string, number>();
+      perItem.set(site, (perItem.get(site) || 0) + signed);
+      byStorage.set(line.inventoryItemId, perItem);
     });
+    // A threshold is a whole receipt unit; compare it to the physical stock
+    // unit only through an explicit, grounded quantity per unit.
+    const thresholdBalances = new Map<string, number | null>();
+    for (const item of items as AnyRecord[]) {
+      const storageBalance = balances.get(item.id) || 0;
+      const thresholdUnit = item.thresholdUnit || item.unit;
+      if (canonicalInventoryUnit(thresholdUnit) === canonicalInventoryUnit(item.unit)) {
+        thresholdBalances.set(item.id, storageBalance);
+      } else {
+        try {
+          const one = stockQuantityForUnit({ unit: item.unit, packageQuantity: item.packageQuantity,
+            nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
+            conversionRules: item.conversionRules,
+            netPackageWeight: item.grossWeight != null && item.tareWeight != null
+              ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+          }, 1, thresholdUnit);
+          thresholdBalances.set(item.id, one > 0 ? Math.round(storageBalance / one * 1000) / 1000 : null);
+        } catch { thresholdBalances.set(item.id, null); }
+      }
+    }
+    const resourceByItem = new Map<string, AnyRecord[]>();
+    for (const progress of resourceProgress as AnyRecord[]) {
+      const list = resourceByItem.get(progress.inventoryItemId) || [];
+      list.push({ storageLocationId: progress.storageLocationId, progress: decimalNumber(progress.progress) });
+      resourceByItem.set(progress.inventoryItemId, list);
+    }
 
     const itemByInternal = new Map(items.map((item: AnyRecord) => [item.id, item]));
     const offersByItem = new Map<string, AnyRecord[]>();
@@ -255,6 +368,7 @@ export class InventoryService {
         expectedQuantity: line.expectedQuantity == null ? null : decimalNumber(line.expectedQuantity),
         actualQuantity: line.actualQuantity == null ? null : decimalNumber(line.actualQuantity),
         containerDelta: line.containerDelta == null ? null : Number(line.containerDelta),
+        storageLocationId: line.storageLocationId || PRIMARY_STORAGE,
         expectedContainerCount: line.expectedContainerCount == null ? null : Number(line.expectedContainerCount),
         actualContainerCount: line.actualContainerCount == null ? null : Number(line.actualContainerCount),
         note: line.note,
@@ -283,6 +397,22 @@ export class InventoryService {
           itemId: item.itemId,
           position: item.position,
           name: item.name,
+          catalogName: item.catalogName || '',
+          nominalQuantity: item.nominalQuantity == null ? null : decimalNumber(item.nominalQuantity),
+          nominalUnit: item.nominalUnit,
+          receiptUnit: item.receiptUnit,
+          containerMode: item.containerMode,
+          thresholdUnit: item.thresholdUnit,
+          balanceInThresholdUnit: thresholdBalances.get(item.id) ?? null,
+          conversionRules: item.conversionRules || [],
+          resourceLimit: item.resourceLimit == null ? null : decimalNumber(item.resourceLimit),
+          resourceUnit: item.resourceUnit,
+          resourceStockQuantity: item.resourceStockQuantity == null ? null : decimalNumber(item.resourceStockQuantity),
+          resourceExhaustionAction: item.resourceExhaustionAction,
+          serviceStartAt: item.serviceStartAt,
+          serviceEndAt: item.serviceEndAt,
+          resourceProgress: resourceByItem.get(item.id) || [],
+          locationBalances: [...(byStorage.get(item.id) || new Map([[PRIMARY_STORAGE, 0]])).entries()].map(([locationId, balance]) => ({ locationId, balance: Math.round(balance * 1000) / 1000 })),
           manufacturer: item.manufacturer,
           productType: item.productType,
           unit: item.unit,
@@ -318,6 +448,16 @@ export class InventoryService {
           updatedAt: item.updatedAt,
         };
       }),
+      storageLocations: [
+        { locationId: PRIMARY_STORAGE, name: 'Основное', archivedAt: null, isPrimary: true },
+        ...(storageLocations as AnyRecord[]).map((row) => ({ locationId: row.locationId, name: row.name, archivedAt: row.archivedAt, isPrimary: false })),
+      ],
+      resourceEvents: (resourceEvents as AnyRecord[]).map((row) => ({
+        eventId: row.eventId, itemId: itemByInternal.get(row.inventoryItemId)?.itemId || '',
+        storageLocationId: row.storageLocationId, quantity: decimalNumber(row.quantity),
+        resourceUnit: row.resourceUnit, writeOffMovementId: row.writeOffMovementId,
+        occurredAt: row.occurredAt, note: row.note,
+      })),
       orders: orders.map((order: AnyRecord) => ({
         orderId: order.orderId,
         status: order.status,
@@ -727,6 +867,9 @@ export class InventoryService {
       throw new BadRequestException('Масса тары не может быть больше массы брутто');
     }
 
+    const card = inventoryCardChanges(source);
+    if (card.receiptUnit && !('thresholdUnit' in card)) card.thresholdUnit = card.receiptUnit;
+    validateInventoryCard(card);
     const work = async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
       if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
@@ -735,6 +878,7 @@ export class InventoryService {
           tenantId,
           itemId,
           name,
+          ...card,
           manufacturer: optionalText(source.manufacturer),
           productType: optionalText(source.productType),
           unit,
@@ -843,6 +987,8 @@ export class InventoryService {
     if (grossWeight != null && tareWeight != null && tareWeight > grossWeight) {
       throw new BadRequestException('Масса тары не может быть больше массы брутто');
     }
+    Object.assign(data, inventoryCardChanges(source));
+    validateInventoryCard({ ...current, ...data });
     if ('trackLots' in source) data.trackLots = source.trackLots !== false;
     if ('canConsume' in source) data.canConsume = source.canConsume !== false;
     if ('canSell' in source) data.canSell = source.canSell === true;
@@ -1028,6 +1174,8 @@ export class InventoryService {
           packageQuantity: item.packageQuantity,
           netPackageWeight: item.grossWeight != null && item.tareWeight != null
             ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+          nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
+          conversionRules: item.conversionRules,
         }, amount, requestedUnit);
       } catch (error) {
         throw new BadRequestException(error instanceof Error ? error.message : 'Неверная единица продажи');
@@ -1090,6 +1238,182 @@ export class InventoryService {
     }, { allowRecordSale: true });
   }
 
+  private async assertStorageLocations(tx: Tx, tenantId: string, locations: string[]) {
+    const selected = [...new Set(locations.filter((id) => id && id !== PRIMARY_STORAGE))];
+    if (!selected.length) return;
+    const rows = await tx.inventoryStorageLocation.findMany({
+      where: { tenantId, locationId: { in: selected }, archivedAt: null },
+      select: { locationId: true },
+    });
+    if (rows.length !== selected.length) throw new BadRequestException('Место хранения не найдено или закрыто.');
+  }
+
+  private async storageBalanceInTx(tx: Tx, tenantId: string, inventoryItemId: string, locationId: string) {
+    const rows = await tx.inventoryMovementLine.findMany({
+      where: { tenantId, inventoryItemId, storageLocationId: locationId },
+      select: { direction: true, quantity: true },
+    });
+    return rows.reduce((sum: number, row: AnyRecord) =>
+      sum + (row.direction === 'OUT' ? -1 : 1) * decimalNumber(row.quantity), 0);
+  }
+
+  async createStorageLocation(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const name = text(source.name);
+    if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
+    const locations = await this.prisma.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
+    if (name.toLocaleLowerCase('ru-RU') === 'основное'
+      || locations.some((location: AnyRecord) => location.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
+      throw new BadRequestException('Такое место хранения уже существует.');
+    await this.prisma.inventoryStorageLocation.create({
+      data: { tenantId, locationId: randomUUID(), name },
+    });
+    return this.snapshot(tenantId);
+  }
+
+  async updateStorageLocation(tenantId: string, locationId: string, body: unknown) {
+    if (!locationId || locationId === PRIMARY_STORAGE) throw new BadRequestException('Основное место нельзя изменять.');
+    const source = objectValue(body);
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const location = await tx.inventoryStorageLocation.findFirst({ where: { tenantId, locationId } });
+      if (!location) throw new NotFoundException('Место хранения не найдено.');
+      if (source.archived === true) {
+        const rows = await tx.inventoryMovementLine.findMany({ where: { tenantId, storageLocationId: locationId }, select: { inventoryItemId: true, direction: true, quantity: true } });
+        const totals = new Map<string, number>();
+        for (const row of rows as AnyRecord[]) totals.set(row.inventoryItemId, (totals.get(row.inventoryItemId) || 0)
+          + (row.direction === 'OUT' ? -1 : 1) * decimalNumber(row.quantity));
+        if ([...totals.values()].some((n) => Math.abs(n) > EPSILON))
+          throw new BadRequestException('Нельзя закрыть место хранения с остатками.');
+        const unfinished = await tx.inventoryResourceProgress.findFirst({ where: { tenantId, storageLocationId: locationId, progress: { gt: 0 } } });
+        if (unfinished) throw new BadRequestException('Здесь есть незавершённый ресурс использования.');
+        await tx.inventoryStorageLocation.update({ where: { id: location.id }, data: { archivedAt: new Date() } });
+      } else if ('name' in source) {
+        const name = text(source.name);
+        if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
+        await tx.inventoryStorageLocation.update({ where: { id: location.id }, data: { name } });
+      }
+    });
+    return this.snapshot(tenantId);
+  }
+
+  // One atomic move; paired storage lines cancel globally and do not touch FIFO lots.
+  async transferStock(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const from = text(source.fromLocationId) || PRIMARY_STORAGE;
+    const to = text(source.toLocationId) || PRIMARY_STORAGE;
+    if (from === to) throw new BadRequestException('Выберите другое место хранения.');
+    const requested = Array.isArray(source.lines) ? source.lines.map(objectValue) : [];
+    if (!requested.length || requested.length > 100) throw new BadRequestException('Добавьте позиции переноса (не более 100).');
+    const movementId = text(source.transferId) || randomUUID();
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const existing = await tx.inventoryMovement.findFirst({ where: { tenantId, movementId } });
+      if (existing) {
+        if (existing.kind === 'TRANSFER') return;
+        throw new BadRequestException('Идентификатор движения уже используется.');
+      }
+      await this.assertStorageLocations(tx, tenantId, [from, to]);
+      const ids = [...new Set(requested.map((row: AnyRecord) => text(row.itemId)))].sort();
+      const items = await tx.inventoryItem.findMany({ where: { tenantId, itemId: { in: ids }, archivedAt: null } });
+      if (items.length !== ids.length) throw new BadRequestException('Одна из позиций переноса не найдена.');
+      const byId = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
+      const quantities = new Map<string, number>();
+      for (const item of (items as AnyRecord[]).sort((a, b) => String(a.id).localeCompare(String(b.id))))
+        await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+      for (const row of requested) {
+        const itemId = text(row.itemId);
+        const item = byId.get(itemId) as AnyRecord;
+        const quantity = Number(String(row.quantity ?? '').replace(',', '.'));
+        if (!Number.isFinite(quantity) || quantity <= 0) throw new BadRequestException('Количество переноса должно быть положительным.');
+        let stock: number;
+        try {
+          stock = stockQuantityForUnit({ unit: item.unit, packageQuantity: item.packageQuantity,
+            netPackageWeight: item.grossWeight != null && item.tareWeight != null
+              ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+            nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
+            conversionRules: item.conversionRules }, quantity, row.unit || item.unit);
+        } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Единица переноса'); }
+        quantities.set(itemId, (quantities.get(itemId) || 0) + stock);
+      }
+      for (const [itemId, quantity] of quantities) {
+        const item = byId.get(itemId) as AnyRecord;
+        const available = await this.storageBalanceInTx(tx, tenantId, item.id, from);
+        if (quantity > available + EPSILON) throw new BadRequestException('Недостаточный остаток для переноса: ' + item.name);
+      }
+      const movement = await tx.inventoryMovement.create({ data: {
+        tenantId, movementId, kind: 'TRANSFER', status: 'completed',
+        sourceType: 'inventory-storage-transfer', sourceId: movementId,
+        note: optionalText(source.note), occurredAt: optionalDate(source.occurredAt, 'Дата переноса') || new Date(),
+      } });
+      let position = 0;
+      for (const [itemId, quantity] of quantities) {
+        const item = byId.get(itemId) as AnyRecord;
+        for (const [direction, locationId] of [['OUT', from], ['IN', to]] as const) {
+          await tx.inventoryMovementLine.create({ data: {
+            tenantId, inventoryMovementId: movement.id, inventoryItemId: item.id,
+            lineId: randomUUID(), position: position++, direction, storageLocationId: locationId,
+            quantity: Math.round(quantity * 1000) / 1000, costKnown: false, unitCost: 0, amount: 0,
+            note: '',
+          } });
+        }
+      }
+    });
+    return this.snapshot(tenantId);
+  }
+
+  // Use can be counted in procedures, cycles, hours or distance. A disposable
+  // unit is removed only on resource exhaustion; equipment can request review.
+  async recordResourceUse(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const itemId = text(source.itemId);
+    const locationId = text(source.storageLocationId) || PRIMARY_STORAGE;
+    const eventId = text(source.eventId) || randomUUID();
+    const amount = optionalPositive(source.quantity, 'Количество использования');
+    if (!itemId || amount == null) throw new BadRequestException('Укажите позицию и количество использования.');
+    await this.prisma.$transaction(async (tx: Tx) => {
+      const old = await tx.inventoryResourceEvent.findFirst({ where: { tenantId, eventId } });
+      if (old) return;
+      await this.assertStorageLocations(tx, tenantId, [locationId]);
+      const item = await tx.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
+      if (!item) throw new NotFoundException('Позиция склада не найдена.');
+      await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+      const limit = Number(item.resourceLimit);
+      if (!(limit > 0) || !item.resourceUnit) throw new BadRequestException('Сначала настройте ресурс в карточке товара.');
+      const progress = await tx.inventoryResourceProgress.findUnique({
+        where: { tenantId_inventoryItemId_storageLocationId: { tenantId, inventoryItemId: item.id, storageLocationId: locationId } },
+      });
+      const before = progress ? decimalNumber(progress.progress) : 0;
+      const next = before + amount;
+      const action = item.resourceExhaustionAction || 'REVIEW';
+      const units = action === 'WRITE_OFF' ? Math.floor((next + EPSILON) / limit) : 0;
+      const remaining = action === 'WRITE_OFF' ? Math.max(0, next - units * limit) : next;
+      const stockAmount = Number(item.resourceStockQuantity ?? 1);
+      const available = await this.storageBalanceInTx(tx, tenantId, item.id, locationId);
+      if (available + EPSILON < Math.max(units * stockAmount, stockAmount))
+        throw new BadRequestException('Недостаточно товара для использования в выбранном месте хранения.');
+      let writeOffMovementId: string | null = null;
+      if (units) {
+        const movement = await this.createMovementInTx(tx, tenantId, {
+          kind: 'WRITE_OFF', sourceType: 'inventory-resource-usage', sourceId: eventId,
+          occurredAt: source.occurredAt,
+          note: 'Списание по исчерпанию ресурса',
+          lines: [{ itemId, quantity: Math.round(units * stockAmount * 1000) / 1000,
+            storageLocationId: locationId, note: 'Использование: ' + String(amount) + ' ' + item.resourceUnit }],
+        });
+        writeOffMovementId = movement.movementId;
+      }
+      await tx.inventoryResourceProgress.upsert({
+        where: { tenantId_inventoryItemId_storageLocationId: { tenantId, inventoryItemId: item.id, storageLocationId: locationId } },
+        create: { tenantId, inventoryItemId: item.id, storageLocationId: locationId, progress: Math.round(remaining * 1000) / 1000 },
+        update: { progress: Math.round(remaining * 1000) / 1000 },
+      });
+      await tx.inventoryResourceEvent.create({ data: {
+        tenantId, eventId, inventoryItemId: item.id, storageLocationId: locationId,
+        quantity: amount, resourceUnit: item.resourceUnit, writeOffMovementId,
+        note: optionalText(source.note), occurredAt: optionalDate(source.occurredAt, 'Дата использования') || new Date(),
+      } });
+    });
+    return this.snapshot(tenantId);
+  }
   async createMovement(tenantId: string, body: unknown) {
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.createMovementInTx(tx, tenantId, objectValue(body));
@@ -1115,6 +1439,9 @@ export class InventoryService {
     if (!original) throw new NotFoundException('Движение не найдено');
     // A received purchase is a finalized order fact. A generic correction
     // must not silently desynchronize its saved quantities from its receipt.
+    if (original.kind === 'TRANSFER') throw new BadRequestException('Перенос между местами нельзя корректировать обычной корректировкой.');
+    if (original.lines.some((line: AnyRecord) => (line.storageLocationId || PRIMARY_STORAGE) !== PRIMARY_STORAGE))
+      throw new BadRequestException('Движение по месту хранения исправляется отдельным компенсирующим движением.');
     if (original.sourceType === 'inventory-purchase-order') {
       throw new BadRequestException('Приход полученного заказа нельзя исправлять отдельно от заказа');
     }
@@ -1283,7 +1610,7 @@ export class InventoryService {
     if (!item) return;
 
     const lines = await tx.inventoryMovementLine.findMany({
-      where: { tenantId, inventoryItemId },
+      where: { tenantId, inventoryItemId, movement: { kind: { not: 'TRANSFER' } } },
     });
     if (!lines.length) return;
 
@@ -1433,6 +1760,23 @@ export class InventoryService {
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
     applyMovementQuantityUnits(lines, items as AnyRecord[]);
+    await this.assertStorageLocations(tx, tenantId, lines.map((row) => row.storageLocationId));
+    await this.assertStorageLocations(tx, tenantId, lines.map((line) => line.storageLocationId));
+    // Protect named locations against negative stock, including multiple lines
+    // for the same item in one movement. Legacy primary behaviour is unchanged.
+    const outByLocation = new Map<string, number>();
+    for (const line of lines) if (line.direction === 'OUT' && line.storageLocationId !== PRIMARY_STORAGE) {
+      const item = itemById.get(line.itemId) as AnyRecord;
+      const key = item.id + ':' + line.storageLocationId;
+      outByLocation.set(key, (outByLocation.get(key) || 0) + line.quantity);
+    }
+    for (const [key, outgoing] of outByLocation) {
+      const index = key.indexOf(':');
+      const itemId = key.slice(0, index);
+      const locationId = key.slice(index + 1);
+      const available = await this.storageBalanceInTx(tx, tenantId, itemId, locationId);
+      if (outgoing > available + EPSILON) throw new BadRequestException('Недостаточный остаток в месте хранения.');
+    }
 
     const selectedOfferIds = [...new Set(lines
       .filter((line) => line.direction === 'IN' && line.offerId && !raw.historicalTransfer)
@@ -1523,6 +1867,7 @@ export class InventoryService {
           lineId: randomUUID(), position, direction: line.direction,
           quantity: 0, costKnown: false, unitCost: 0, amount: 0,
           expectedQuantity: line.expectedQuantity, actualQuantity: line.actualQuantity,
+          storageLocationId: line.storageLocationId,
           ...physical, note: line.note,
         } });
         continue;
@@ -1551,6 +1896,7 @@ export class InventoryService {
             lineId: randomUUID(),
             position,
             direction: 'IN',
+            storageLocationId: line.storageLocationId,
             costKnown: !raw.historicalTransfer || line.unitCost != null,
             quantity: line.quantity,
             unitCost,
@@ -1600,6 +1946,7 @@ export class InventoryService {
           lineId: randomUUID(),
           position,
           direction: 'OUT',
+          storageLocationId: line.storageLocationId,
           quantity: line.quantity,
           costKnown: !raw.historicalTransfer || line.unitCost != null,
           unitCost: raw.historicalTransfer ? line.unitCost ?? 0 : 0,
