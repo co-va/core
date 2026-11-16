@@ -120,7 +120,13 @@ async function parsePdf(data: Buffer): Promise<Parsed> {
   const parse: (data: Buffer, options?: Record<string, unknown>) => Promise<{ text: string; numpages: number }> = require('pdf-parse');
   let result: { text: string; numpages: number };
   try { result = await parse(data, { max: 100 }); }
-  catch { throw new BadRequestException('PDF повреждён или не может быть прочитан'); }
+  catch {
+    // A scanned, unusual or extractor-incompatible PDF is still a valid
+    // supplier original. Preserve it and request a structured Excel template;
+    // never invent or silently drop catalog rows from a failed extraction.
+    return { format: 'pdf', status: 'NEEDS_TEMPLATE', rows: [],
+      errors: ['Не удалось извлечь таблицу из PDF. Оригинал будет сохранён; для каталога используйте шаблон Excel.'] };
+  }
   if (result.numpages > 100) throw new BadRequestException('PDF: максимум 100 страниц');
   const errors: string[] = [], rows: Row[] = [];
   // PDF is not a table format. Parse only lines with a clearly separated final price.
