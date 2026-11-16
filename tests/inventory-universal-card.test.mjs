@@ -32,4 +32,11 @@ assert.equal(stockQuantityForUnit({unit:'шт.',packageQuantity:100},1,'уп.'),
 assert.equal(stockQuantityForUnit({unit:'г'},2,'кг'),2000);
 assert.equal(stockQuantityForUnit({unit:'шт.',conversionRules:[{unit:'пара',stockPerUnit:2}]},1,'пара'),2);
 assert.throws(()=>stockQuantityForUnit({unit:'г',nominalUnit:'мл',nominalQuantity:100},100,'мл'),/Нельзя пересчитать/);
+// 1.05 whole packages must be compared to 0.2 packages, not 20 pieces.
+const thresholdFactor = stockQuantityForUnit({unit:'шт.',packageQuantity:100},1,'уп.');
+assert.equal(thresholdFactor,100);
+assert.equal(20/thresholdFactor,0.2);
+assert.ok(20/thresholdFactor < 1.05);
+assert.match(service,/thresholdStockFactor: thresholdFactors\.get\(item\.id\)/);
+assert.match(service,/canonicalInventoryUnit\(item\.unit\) === 'г' \? 'шт\.'/);
 console.log('PASS: universal inventory item, measured conversions, locations, resource ledger, transfer API');

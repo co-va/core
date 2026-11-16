@@ -307,23 +307,32 @@ export class InventoryService {
     });
     // A threshold is a whole receipt unit; compare it to the physical stock
     // unit only through an explicit, grounded quantity per unit.
+    // Thresholds are defined in whole receipt units, not stock grams/pieces.
+    // Legacy weighed items used tube equivalents; keep them identical.
     const thresholdBalances = new Map<string, number | null>();
+    const thresholdFactors = new Map<string, number | null>();
     for (const item of items as AnyRecord[]) {
-      const storageBalance = balances.get(item.id) || 0;
-      const thresholdUnit = item.thresholdUnit || item.unit;
+      const stockBalance = balances.get(item.id) || 0;
+      const thresholdUnit = item.thresholdUnit || item.receiptUnit
+        || (canonicalInventoryUnit(item.unit) === 'г' ? 'шт.' : item.unit);
+      let stockPerThreshold: number | null = null;
       if (canonicalInventoryUnit(thresholdUnit) === canonicalInventoryUnit(item.unit)) {
-        thresholdBalances.set(item.id, storageBalance);
+        stockPerThreshold = 1;
       } else {
         try {
-          const one = stockQuantityForUnit({ unit: item.unit, packageQuantity: item.packageQuantity,
+          stockPerThreshold = stockQuantityForUnit({
+            unit: item.unit, packageQuantity: item.packageQuantity,
             nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
             conversionRules: item.conversionRules,
             netPackageWeight: item.grossWeight != null && item.tareWeight != null
               ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
           }, 1, thresholdUnit);
-          thresholdBalances.set(item.id, one > 0 ? Math.round(storageBalance / one * 1000) / 1000 : null);
-        } catch { thresholdBalances.set(item.id, null); }
+        } catch { stockPerThreshold = null; }
       }
+      thresholdFactors.set(item.id, stockPerThreshold);
+      thresholdBalances.set(item.id, stockPerThreshold && stockPerThreshold > 0
+        ? Math.round(stockBalance / stockPerThreshold * 1000) / 1000
+        : stockBalance === 0 ? 0 : null);
     }
     const resourceByItem = new Map<string, AnyRecord[]>();
     for (const progress of resourceProgress as AnyRecord[]) {
@@ -404,6 +413,7 @@ export class InventoryService {
           containerMode: item.containerMode,
           thresholdUnit: item.thresholdUnit,
           balanceInThresholdUnit: thresholdBalances.get(item.id) ?? null,
+          thresholdStockFactor: thresholdFactors.get(item.id) ?? null,
           conversionRules: item.conversionRules || [],
           resourceLimit: item.resourceLimit == null ? null : decimalNumber(item.resourceLimit),
           resourceUnit: item.resourceUnit,
