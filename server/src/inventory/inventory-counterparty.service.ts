@@ -53,7 +53,7 @@ function plain(value: unknown): string {
   return String(value).trim();
 }
 function normal(value: unknown) {
-  return plain(value).toLocaleLowerCase('ru-RU').replace(/[.,:;()№*/\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  return plain(value).toLocaleLowerCase('ru-RU').replace(/[.,:;()№*/\\-]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 function amount(value: unknown, field: string, row: number, errors: string[], max = 1e12): number | null {
   const raw = plain(value).replace(/[\s\u00a0\u202f₽]/g, '').replace(/руб(?:лей|ля|\.)?/gi, '');
@@ -93,7 +93,8 @@ function mapRow(values: Record<Column, unknown>, position: number, errors: strin
     unit: plain(values.unit).slice(0, 24),
     packageQuantity: size && size > 0 ? size : null,
     listPrice: amount(values.listPrice, 'Цена БЦО/прайса', position, errors),
-    retailPrice: amount(values.retailPrice, 'РРЦ', position, errors),
+    retailPrice: normal(values.retailPrice) === 'не для продажи'
+      ? null : amount(values.retailPrice, 'РРЦ', position, errors),
     suggestedOrderQuantity: amount(values.suggestedOrderQuantity, 'Количество для заказа', position, errors),
     actualPrice: amount(values.actualPrice, 'Моя закупочная цена', position, errors),
     discountPercent: amount(values.discountPercent, 'Скидка', position, errors, 100),
@@ -161,10 +162,14 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
       const price = plain(values.listPrice) || plain(values.retailPrice) || plain(values.actualPrice);
       const barcode = plain(values.barcode);
       if (!name && !sku && !price && !barcode) continue;
+      if (!barcode && !price && /^\\d{1,3}[.)]\\s*/.test(name)) {
+        // Brand and numbered collection headings are not catalog items.
+        if (sku) brand = sku.slice(0, 160);
+        category = name.slice(0, 200);
+        continue;
+      }
       if (!sku && !barcode && !price) {
-        // The Farouk workbook uses brand/collection headings between item rows.
-        const headingBrand = mapping.supplierSku ? plain(source.getCell(mapping.supplierSku).value) : '';
-        if (headingBrand) brand = headingBrand.slice(0, 160);
+        // Text-only section heading, never an orderable product.
         if (name) category = name.slice(0, 200);
         continue;
       }
@@ -279,11 +284,12 @@ export class InventoryCounterpartyService {
     await this.requireAccess(tenantId);
     const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet('Прайс');
-    sheet.addRow(['Артикул','Наименование','Производитель','Цена','Цена закупки','Скидка %','Единица','В упаковке','Штрихкод']);
+    sheet.addRow(['Артикул','Наименование','Производитель','Бренд','Категория','Есть/нет на складе','БЦО','РРЦ',
+      'Цена закупки','Скидка %','Единица','В упаковке','Штрихкод','Новинка','Кол-во штук']);
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).height = 28;
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    for (let n = 1; n <= 9; n++) sheet.getColumn(n).width = [23,48,28,18,20,16,16,18,25][n-1];
+    for (let n = 1; n <= 15; n++) sheet.getColumn(n).width = [23,48,28,22,24,20,18,18,20,16,16,18,25,16,18][n-1];
     return Buffer.from(await book.xlsx.writeBuffer());
   }
   private async parsed(file: SupplierFile): Promise<Parsed> {
@@ -322,7 +328,7 @@ export class InventoryCounterpartyService {
       const list = await tx.inventoryCounterpartyPriceList.create({
         data: { tenantId, counterpartyId: id, revision: (last?.revision || 0) + 1,
           filename: file.originalname.slice(0, 250), format: parsed.format, sha256: hash,
-          parserStatus: parsed.status, sourceFile: Uint8Array.from(file.buffer) },
+          parserStatus: parsed.status, terms: parsed.terms || '', sourceFile: Uint8Array.from(file.buffer) },
       });
       for (let i = 0; i < parsed.rows.length; i += 500) {
         await tx.inventoryCounterpartyCatalogItem.createMany({
