@@ -363,7 +363,8 @@ export class InventoryCounterpartyService {
             await tx.inventorySupplierOffer.update({
               where: { id: offer.id }, data: {
                 catalogItemId: row.id, listPrice: row.listPrice,
-                actualPrice: row.actualPrice, discountPercent: row.discountPercent,
+                // Never replace a manually entered invoice price or personal discount.
+                // The supplier price list updates only the advertised base price, not procurement history.
               },
             });
           }
@@ -444,8 +445,7 @@ export class InventoryCounterpartyService {
       : item.packageQuantity != null && Number(item.packageQuantity) > 0
         ? Number(item.packageQuantity) : 1;
     const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
-      listPrice: row.listPrice, actualPrice: row.actualPrice,
-      discountPercent: row.discountPercent, supplierSku: row.supplierSku,
+      listPrice: row.listPrice, supplierSku: row.supplierSku,
       unitsPerOffer: size };
     if (existing) {
       await this.prisma.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
@@ -453,7 +453,8 @@ export class InventoryCounterpartyService {
     }
     const offerId = randomUUID();
     await this.prisma.inventorySupplierOffer.create({
-      data: { tenantId, inventoryItemId: item.id, offerId, ...fields },
+      data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
+        actualPrice: row.actualPrice, discountPercent: row.discountPercent },
     });
     return { offerId, itemId };
   }
