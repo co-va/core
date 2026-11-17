@@ -1,0 +1,29 @@
+name: Diagnose Core main full Docker build
+
+on:
+  push:
+    branches:
+      - diagnostics/core-main-docker-20261117
+
+permissions:
+  contents: read
+
+jobs:
+  full-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact main source and Docker configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code d8dee4b0972819b8950574c6d3cfe05666fc736c -- Dockerfile amvera.yml scripts/build-pages.mjs server server/package.json admin core ui
+          echo "MAIN_SOURCE_MATCHES=d8dee4b0972819b8950574c6d3cfe05666fc736c"
+      - name: Build production Docker image exactly as Amvera Dockerfile
+        shell: bash
+        run: |
+          set -o pipefail
+          docker version
+          docker build --pull=false --progress=plain --tag co-va-core-main-diagnostic:latest -f Dockerfile . 2>&1 | tee /tmp/core-docker-build.log
+          echo "FULL_DOCKER_IMAGE_OK"
