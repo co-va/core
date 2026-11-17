@@ -21,6 +21,9 @@ jobs:
           chrome_bin=$(command -v google-chrome || command -v chromium || true)
           if [ -z "$chrome_bin" ]; then echo 'No browser'; exit 1; fi
           timeout 80s "$chrome_bin" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1440,900 --virtual-time-budget=13000 --dump-dom "$url" >/tmp/tariff-dom.html 2>/tmp/tariff-chrome.log || { tail -60 /tmp/tariff-chrome.log; exit 1; }
+          echo 'Preview HTML title:'; grep -o '<title>[^<]*</title>' /tmp/tariff-dom.html | head -2 || true
+          echo 'DOM bytes:'; wc -c /tmp/tariff-dom.html
+          echo 'First 700 bytes:'; head -c 700 /tmp/tariff-dom.html; echo
           if grep -q 'data-tariff-save-layout="pass"' /tmp/tariff-dom.html; then
             echo 'TARIFF_PREVIEW_BROWSER_PASS'
           else
