@@ -1,0 +1,19 @@
+name: Check public pull of fallback Core image
+on:
+  push:
+    branches: [diagnostics/core-main-docker-20261117]
+    paths: [.github/workflows/check-fallback-pull.yml]
+permissions:
+  contents: read
+jobs:
+  anonymous-pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pull prebuilt Core image without GitHub login
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull ghcr.io/co-va/core:release-d8dee4b0
+          docker image inspect ghcr.io/co-va/core:release-d8dee4b0 --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+          echo 'ANONYMOUS_IMAGE_PULL_PASS'
