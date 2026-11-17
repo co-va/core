@@ -1,0 +1,31 @@
+name: Check public tariff preview
+on:
+  push:
+    branches: [diagnostics/core-main-docker-20261117]
+    paths: [.github/workflows/check-public-tariff-preview.yml]
+permissions:
+  contents: read
+jobs:
+  browser-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify external URL and browser-rendered tariff editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://raw.githack.com/co-va/core/staging/tests/admin-tariff-save-layout-smoke.html'
+          curl -fsSL --connect-timeout 10 --max-time 30 -D /tmp/headers "$url" -o /tmp/tariff.html
+          grep -i '^content-type:' /tmp/headers | tail -1
+          grep -q 'renderTariffWorkbench' /tmp/tariff.html
+          chrome_bin=$(command -v google-chrome || command -v chromium || true)
+          if [ -z "$chrome_bin" ]; then echo 'No browser'; exit 1; fi
+          timeout 80s "$chrome_bin" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --window-size=1440,900 --virtual-time-budget=13000 --dump-dom "$url" >/tmp/tariff-dom.html 2>/tmp/tariff-chrome.log || { tail -60 /tmp/tariff-chrome.log; exit 1; }
+          if grep -q 'data-tariff-save-layout="pass"' /tmp/tariff-dom.html; then
+            echo 'TARIFF_PREVIEW_BROWSER_PASS'
+          else
+            grep -o 'data-tariff-save-layout="[^"]*"\|data-tariff-save-details="[^"]*"' /tmp/tariff-dom.html | head -5 || true
+            echo 'TARIFF_PREVIEW_BROWSER_FAIL'
+            tail -35 /tmp/tariff-chrome.log || true
+            exit 1
+          fi
