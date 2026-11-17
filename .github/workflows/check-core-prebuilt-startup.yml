@@ -33,6 +33,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull immutable production Core build
         run: docker pull ghcr.io/co-va/core@sha256:ea78ca87c87cf8a56af28c69aace381925059616dcc4d3d62c0310f84c7f8ea5
+      - name: Initialize isolated database schema (same as existing production DB)
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network host \
+            -e DATABASE_URL='postgresql://core_diag:core_diag_only@127.0.0.1:5432/core_diagnostic?schema=public' \
+            --entrypoint sh \
+            ghcr.io/co-va/core@sha256:ea78ca87c87cf8a56af28c69aace381925059616dcc4d3d62c0310f84c7f8ea5 \
+            -c 'npx prisma migrate deploy'
       - name: Start exact production container against isolated PostgreSQL
         shell: bash
         run: |
