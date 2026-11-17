@@ -1,0 +1,69 @@
+name: Check Core prebuilt image startup
+on:
+  push:
+    branches: [diagnostics/core-main-docker-20261117]
+    paths: [.github/workflows/check-core-prebuilt-startup.yml]
+permissions:
+  contents: read
+  packages: read
+jobs:
+  core-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: core_diagnostic
+          POSTGRES_USER: core_diag
+          POSTGRES_PASSWORD: core_diag_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U core_diag -d core_diagnostic"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Authenticate to image registry without exposing it publicly
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull immutable production Core build
+        run: docker pull ghcr.io/co-va/core@sha256:ea78ca87c87cf8a56af28c69aace381925059616dcc4d3d62c0310f84c7f8ea5
+      - name: Start exact production container against isolated PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name core-diagnostic --network host \
+            -e DATABASE_URL='postgresql://core_diag:core_diag_only@127.0.0.1:5432/core_diagnostic?schema=public' \
+            -e JWT_SECRET='temporary-isolated-diagnostic-jwt-secret-not-production' \
+            -e OWNER_EMAIL='diagnostic@example.invalid' \
+            -e OWNER_PASSWORD='Diagnostic-2026-Temporary-Only' \
+            -e OWNER_TENANT_NAME='Isolated Core Diagnostic' \
+            -e FRONTEND_ORIGIN='http://127.0.0.1:3000' \
+            -e PUBLIC_API_URL='http://127.0.0.1:3000' \
+            -e ACCOUNT_APP_URL='http://127.0.0.1:3000' \
+            -e PORT=3000 \
+            -e DATABASE_WAIT_ATTEMPTS=8 \
+            ghcr.io/co-va/core@sha256:ea78ca87c87cf8a56af28c69aace381925059616dcc4d3d62c0310f84c7f8ea5
+          for attempt in $(seq 1 90); do
+            if curl -fsS --connect-timeout 2 --max-time 4 http://127.0.0.1:3000/health -o /tmp/health.json; then
+              cat /tmp/health.json
+              docker logs --tail 30 core-diagnostic
+              echo CORE_PREBUILT_IMAGE_STARTS_WITH_POSTGRESQL_PASS
+              exit 0
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' core-diagnostic)" != 'true' ]; then
+              echo 'Container exited before health became available'
+              docker logs --tail 110 core-diagnostic
+              docker inspect --format '{{.State.ExitCode}}' core-diagnostic
+              exit 1
+            fi
+            sleep 3
+          done
+          echo 'Timeout waiting for Core health'
+          docker logs --tail 110 core-diagnostic
+          exit 1
