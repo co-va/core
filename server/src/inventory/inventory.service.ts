@@ -569,6 +569,7 @@ export class InventoryService {
           itemId: item.itemId,
           position: item.position,
           classificationGroupId: item.classificationGroupId || null,
+          criteriaValues: item.criteriaValues || {},
           classificationPath: pathFor(item.classificationGroupId || ''),
 
           name: item.name,
@@ -1052,12 +1053,16 @@ export class InventoryService {
       await this.lockInventoryOrder(tx, tenantId);
       if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
       const classificationGroupId = await this.resolveItemGroup(tx, tenantId, source);
+      const criteriaValues = 'criteriaValues' in source
+        ? await this.criteria.validateSelections(tx, tenantId, source.criteriaValues)
+        : undefined;
       await tx.inventoryItem.create({
         data: {
           tenantId,
           itemId,
           name,
           classificationGroupId,
+          ...(criteriaValues === undefined ? {} : { criteriaValues }),
           ...card,
           manufacturer: optionalText(source.manufacturer),
           productType: optionalText(source.productType),
@@ -1122,6 +1127,7 @@ export class InventoryService {
     // A number edit or company transfer is atomic with its order adjustment.
     if (!db && ('position' in source || 'manufacturer' in source || 'category' in source
         || 'productType' in source || 'classificationGroupId' in source
+        || 'criteriaValues' in source
         || 'targetStock' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
@@ -1144,6 +1150,8 @@ export class InventoryService {
       ? await this.resolveItemGroup(db, tenantId, source, current)
       : undefined;
     if (classificationGroupId !== undefined) data.classificationGroupId = classificationGroupId;
+    if ('criteriaValues' in source) data.criteriaValues = await this.criteria.validateSelections(
+      owner as Tx, tenantId, source.criteriaValues, current.criteriaValues);
     if ('name' in source) {
       const name = text(source.name);
       if (!name) throw new BadRequestException('Укажите наименование позиции');
