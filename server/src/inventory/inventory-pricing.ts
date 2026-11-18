@@ -7,6 +7,7 @@ type OfferPrice = {
   listPrice?: PriceValue;
   discountPercent?: PriceValue;
   actualPrice?: PriceValue;
+  agreementPriced?: boolean;
   unitsPerOffer?: PriceValue;
   isActive?: boolean;
 };
@@ -31,11 +32,17 @@ function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
-// An explicitly supplied actual price overrides the catalog list price and discount.
+// A linked, agreement-priced offer follows the supplier's current price and discount.
+// Legacy manual offers continue using their explicit price until the agreement is configured.
+// Invoice/receipt prices remain independent snapshots of the actual purchase.
 export function effectiveSupplierOfferPrice(offer: OfferPrice): number | null {
+  const list = validNumber(offer.listPrice);
+  if (offer.agreementPriced && list !== null) {
+    const discount = validNumber(offer.discountPercent) ?? 0;
+    return money(list * (1 - Math.min(discount, 100) / 100));
+  }
   const actual = validNumber(offer.actualPrice);
   if (actual !== null) return money(actual);
-  const list = validNumber(offer.listPrice);
   if (list === null) return null;
   const discount = validNumber(offer.discountPercent) ?? 0;
   return money(list * (1 - Math.min(discount, 100) / 100));
