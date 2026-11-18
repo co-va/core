@@ -8,7 +8,8 @@ const PDFDocument = require('../server/node_modules/pdfkit');
 const { InventoryCounterpartyService } = require('../server/dist/inventory/inventory-counterparty.service.js');
 
 let counter = 0;
-const company = { id: 'company', tenantId: 'tenant', name: 'Supply Store', kind: 'SUPPLIER' };
+const company = { id: 'company', tenantId: 'tenant', name: 'Supply Store',
+  kind: 'SUPPLIER', discountPercent: null };
 const stock = { id: 'stock-db-1', itemId: 'stock-1', tenantId: 'tenant', name: 'Working Dye',
   sku: '001', barcode: '', unit: 'г', packageQuantity: 70 };
 const lists = [], rows = [], offers = [];
@@ -33,8 +34,11 @@ const matchingCatalogRows = (where = {}) => rows.filter(row =>
   && (where.excludedAt === null ? !row.excludedAt
     : where.excludedAt?.not === null ? Boolean(row.excludedAt) : true));
 const db = {
-  inventoryCounterparty: { findFirst: async ({ where }) =>
-    where.tenantId === 'tenant' && where.id === company.id ? company : null },
+  inventoryCounterparty: {
+    findFirst: async ({ where }) =>
+      where.tenantId === 'tenant' && where.id === company.id ? company : null,
+    updateMany: async ({ data }) => { Object.assign(company, data); return { count: 1 }; },
+  },
   inventoryItem: {
     findFirst: async () => stock,
     findMany: async () => [stock],
@@ -58,12 +62,22 @@ const db = {
   $transaction: async callback => callback({
     $queryRaw: async () => [{ locked: 1 }],
     inventoryCounterpartyPriceList: priceListRepository,
+    inventoryCounterparty: {
+      findFirst: async () => company,
+      updateMany: async ({ data }) => { Object.assign(company, data); return { count: 1 }; },
+    },
     inventoryItem: { findFirst: async ({ where }) => where.itemId === stock.itemId ? stock : null },
     inventoryCounterpartyCatalogItem: {
       findFirst: async ({ where }) => matchingCatalogRows(where).find(row => row.id === where.id) || null,
       createMany: async ({ data }) => { rows.push(...data.map(row => ({ id: 'row-' + ++counter, ...row }))); },
       findMany: async ({ where }) => matchingCatalogRows(where),
       count: async ({ where }) => matchingCatalogRows(where).length,
+      update: async ({ where, data }) => {
+        const item = rows.find(row => row.id === where.id);
+        assert.ok(item, 'Supplier row must exist');
+        Object.assign(item, data);
+        return item;
+      },
       updateMany: async ({ where, data }) => {
         const found = matchingCatalogRows(where);
         found.forEach(row => Object.assign(row, data));
@@ -76,6 +90,14 @@ const db = {
       findMany: async ({ where }) => offers.filter(offer => offer.counterpartyId === where.counterpartyId
         && offer.isActive !== false && offer.catalogItemId && where.supplierSku.in.includes(offer.supplierSku)),
       update: async ({ where, data }) => Object.assign(offers.find(offer => offer.id === where.id), data),
+      updateMany: async ({ where, data }) => {
+        const selected = offers.filter(offer => offer.counterpartyId === where.counterpartyId
+          && (!where.catalogItemId || where.catalogItemId === offer.catalogItemId
+            || where.catalogItemId.in?.includes(offer.catalogItemId))
+          && offer.isActive !== false);
+        selected.forEach(offer => Object.assign(offer, data));
+        return { count: selected.length };
+      },
     },
   }),
 };
@@ -177,9 +199,42 @@ assert.equal((await service.catalog('tenant', company.id)).count, 2,
   'Restoring affects the latest version without touching stock or source file');
 assert.equal(offers[0].listPrice, 390, 'Linked offers follow new supplier price');
 assert.equal(offers[0].actualPrice, 278, 'Supplier price revisions cannot overwrite invoice purchase price');
-assert.equal(offers[0].discountPercent, 7, 'Supplier price revisions cannot invent a different personal discount');
+assert.equal(offers[0].discountPercent, 0,
+  'Agreement-priced offers use the current contract (no discount when unset)');
 assert.equal(savedHistory[0].price, 150, 'Previous receipts must retain their price');
 assert.equal(stock.name, 'Working Dye', 'Worker-owned item attributes must not be overwritten');
+
+// Supplier agreement and catalog prices are independent of Stock and historical receipts.
+const immutableOriginal = Buffer.from(lists[1].sourceFile);
+await service.update('tenant', company.id, { discountPercent: 10 });
+assert.equal(company.discountPercent, 10);
+assert.equal(offers[0].discountPercent, 10, 'Linked offer follows supplier agreement');
+assert.equal(offers[0].agreementPriced, true);
+assert.equal((await service.catalog('tenant', company.id)).items[0].effectivePrice, 351,
+  '390 base less 10 percent = 351 purchase proposal');
+await assert.rejects(() => service.update('tenant', company.id, { discountPercent: 120 }), /0 до 100/);
+const beforeBatch = rows.filter(row => row.priceListId === lists[1].id);
+await service.changeCatalogPrices('tenant', company.id, {
+  rowIds: beforeBatch.map(row => row.id), mode: 'percent', value: 10,
+});
+assert.equal(offers[0].listPrice, 429, 'Bulk +10% synchronizes linked offer base');
+assert.equal((await service.catalog('tenant', company.id)).items[0].effectivePrice, 386.1);
+await assert.rejects(() => service.changeCatalogPrices('tenant', company.id, {
+  rowIds: ['not-existing'], mode: 'amount', value: 100,
+}), /устарел/);
+const edited = await service.editCatalogRow('tenant', company.id, beforeBatch[0].id, {
+  name: 'Correct supplier long name', category: 'Supplier own group',
+  listPrice: 500, discountPercent: 0,
+});
+assert.equal(edited.effectivePrice, 500, 'Item-specific 0% overrides the 10% agreement');
+assert.equal(edited.discountSource, 'product');
+assert.equal(offers[0].discountPercent, 0);
+assert.equal(offers[0].listPrice, 500);
+assert.equal(stock.name, 'Working Dye', 'Supplier edits never overwrite Stock short name');
+assert.equal(stock.packageQuantity, 70, 'Supplier edits never touch Stock packaging');
+assert.equal(savedHistory[0].price, 150, 'Historical costs remain immutable');
+assert.deepEqual(Buffer.from(lists[1].sourceFile), immutableOriginal,
+  'Correcting current catalog must not modify uploaded original Excel');
 
 const template = new ExcelJS.Workbook();
 await template.xlsx.load(await service.template('tenant'));
