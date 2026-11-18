@@ -74,6 +74,10 @@ export class InventoryCriteriaService {
         changed = true;
       }
     }
+    // Brand and legacy values have an alphabetical initial order; later
+    // reorder operations preserve their saved array positions.
+    if (!stored) groups.forEach(group=>group.values.sort((a,b)=>
+      a.name.localeCompare(b.name,'ru',{numeric:true,sensitivity:'base'})));
     if (changed) await tx.inventoryCriteriaCatalog.upsert({
       where: { tenantId },
       create: { tenantId, data: toJson({ groups }) },
@@ -89,7 +93,6 @@ export class InventoryCriteriaService {
         id: group.id, name: group.name, legacyField: group.legacyField,
         position: group.position,
         values: group.values.filter(value => !value.archived)
-          .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
           .map(value => ({ id: value.id, name: value.name })),
       }));
   }
@@ -152,6 +155,26 @@ export class InventoryCriteriaService {
       if (existing && !existing.archived) throw new BadRequestException('Такое значение уже существует.');
       if (existing) existing.archived = false;
       else group.values.push({ id: randomUUID(), name, archived: false });
+      return this.save(tx, tenantId, groups);
+    });
+  }
+
+
+  async reorderValues(tenantId: string, id: string, body: unknown) {
+    const ids = asObject(body).valueIds;
+    if (!Array.isArray(ids) || ids.some(value => !text(value))
+      || new Set(ids.map(text)).size !== ids.length)
+      throw new BadRequestException('Некорректный порядок значений.');
+    return this.prisma.$transaction(async tx => {
+      const groups = await this.state(tx, tenantId);
+      const group = this.required(groups, id);
+      const values = new Map(group.values.filter(value => !value.archived)
+        .map(value => [value.id, value]));
+      if (ids.some(value => !values.has(text(value))))
+        throw new BadRequestException('Значение больше не существует. Обновите список.');
+      const byId = new Map(group.values.map(value => [value.id, value]));
+      const ordered = ids.map(value => byId.get(text(value))!);
+      group.values = [...ordered, ...group.values.filter(value => !ids.includes(value.id))];
       return this.save(tx, tenantId, groups);
     });
   }
