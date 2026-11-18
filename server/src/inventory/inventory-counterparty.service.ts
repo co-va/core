@@ -371,7 +371,7 @@ export class InventoryCounterpartyService {
     });
     if (previous) return { ...previous, duplicate: true };
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard) AS guard`;
       const duplicate = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id, sha256: hash },
         select: { id: true, revision: true, parserStatus: true },
@@ -558,7 +558,7 @@ export class InventoryCounterpartyService {
     const company = await this.company(tenantId, id);
     return this.prisma.$transaction(async tx => {
       // Serialise supplier-specific links to avoid duplicate offers from concurrent taps.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`;
       const latest = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
         orderBy: { revision: 'desc' }, select: { id: true },
