@@ -17,6 +17,20 @@ let items=[
     category:'Уход',productType:'КРЕМ',name:'Other user',balance:250},
 ];
 const initial=structuredClone(items);
+let catalog={groups:[
+  {id:'category',legacyField:'category',values:[
+    {id:'v48',name:'48',archived:false},
+    {id:'vcare',name:'Уход',archived:false},
+    {id:'vcolor',name:'Краситель',archived:false},
+  ]},
+  {id:'productType',legacyField:'productType',values:[
+    {id:'vtcare',name:'Уход',archived:false},
+    {id:'vtgel',name:'ГЕЛЬ',archived:false},
+    {id:'vtcream',name:'КРЕМ',archived:false},
+  ]},
+]};
+const initialCatalog=structuredClone(catalog);
+
 const matches=(item,where)=>Object.entries(where).every(([k,v])=>{
   if(k==='itemId'&&v&&typeof v==='object')return v.in.includes(item.itemId);
   return item[k]===v;
@@ -26,8 +40,13 @@ const prisma={
     .map(x=>Object.fromEntries(Object.keys(select).map(k=>[k,x[k]])))},
   $transaction:async work=>{
     const before=structuredClone(items);
+    const beforeCatalog=structuredClone(catalog);
     const tx={
       $queryRawUnsafe:async()=>[{locked:1}],
+      inventoryCriteriaCatalog:{
+        findUnique:async()=>({data:structuredClone(catalog)}),
+        update:async({data})=>{catalog=structuredClone(data.data);},
+      },
       inventoryItem:{
         findMany:async({where,select})=>items.filter(x=>matches(x,where))
           .map(x=>Object.fromEntries(Object.keys(select).map(k=>[k,x[k]]))),
@@ -39,7 +58,7 @@ const prisma={
       },
     };
     try{return await work(tx);}
-    catch(e){items=before;throw e;}
+    catch(e){items=before;catalog=beforeCatalog;throw e;}
   },
 };
 const service=new InventoryCriteriaRecoveryService(prisma);
@@ -62,9 +81,18 @@ assert.deepEqual(items,initial,'Read-only preview must not write to InventoryIte
 await assert.rejects(service.preview(tenantId,{rows:[source[0],source[0]]}),/повторяется артикул/i);
 await assert.rejects(service.apply(tenantId,{changes:[{...preview.changes[0],beforeCategory:'wrong'}]}),/изменился/i);
 assert.deepEqual(items,initial,'Stale edit must not partially change stock');
+assert.deepEqual(catalog,initialCatalog,'Stale edit must not change criterion catalogs');
 
 const restored=await service.apply(tenantId,{changes:preview.changes});
 assert.equal(restored.updatedCount,2);
+assert.equal(restored.hiddenValuesCount,3);
+assert.equal(catalog.groups[0].values.find(v=>v.name==='48').archived,true);
+assert.equal(catalog.groups[0].values.find(v=>v.name==='Уход').archived,false,
+  'A value still used by another product must remain');
+assert.equal(catalog.groups[1].values.find(v=>v.name==='ГЕЛЬ').archived,true);
+assert.equal(catalog.groups[1].values.find(v=>v.name==='Уход').archived,true);
+assert.equal(catalog.groups[1].values.find(v=>v.name==='КРЕМ').archived,false);
+
 assert.deepEqual(items.slice(0,3).map(x=>[x.category,x.productType]),[
   ['Краситель','КРЕМ'],['Краситель','КРЕМ'],['Стайлинг','STYLING']]);
 assert.deepEqual(items.map(x=>x.balance),initial.map(x=>x.balance));
@@ -72,4 +100,4 @@ assert.deepEqual(items.map(x=>x.price),initial.map(x=>x.price));
 assert.equal(items[5].category,'Уход','Other tenant is not modified');
 await assert.rejects(service.apply(tenantId,{changes:preview.changes}),/изменился/i);
 
-console.log('PASS: classification preview, partial source, SKU duplicates, stale guard, atomic restore and unchanged stock');
+console.log('PASS: classification preview, stale guard, atomic restore, unused legacy values retired, and stock untouched');
