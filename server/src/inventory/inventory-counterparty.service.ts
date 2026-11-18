@@ -544,17 +544,25 @@ export class InventoryCounterpartyService {
   async previewGlobal(tenantId: string, file: SupplierFile) {
     await this.requireAccess(tenantId);
     const parsed = await this.parsed(file);
-    const matches = parsed.supplierName
-      ? await this.prisma.inventoryCounterparty.findMany({
-        where: { tenantId, archivedAt: null,
-          name: { equals: parsed.supplierName, mode: 'insensitive' } },
+    const filename = file.originalname.replace(/\.(xlsx|pdf)$/i, '').trim().slice(0, 160);
+    const hintNames = parsed.supplierName ? [parsed.supplierName]
+      : [filename, ...new Set(parsed.rows.map(row => row.sourceSheet))].filter(value =>
+        value && !/^(?:лист\s*\d+|sheet\s*\d+|прайс|catalog|каталог|supplier)$/i.test(value));
+    const matches = new Map<string, { id: string; name: string }>();
+    for (const hint of [...new Set(hintNames)].slice(0, 8)) {
+      const found = await this.prisma.inventoryCounterparty.findMany({
+        where: { tenantId, archivedAt: null, name: { equals: hint, mode: 'insensitive' } },
         select: { id: true, name: true },
-      }) : [];
+      });
+      found.forEach(company => matches.set(company.id, company));
+    }
+    const exact = [...matches.values()];
+    const matched = exact.length === 1 ? exact[0] : null;
     return { format: parsed.format, status: parsed.status, count: parsed.rows.length,
       sample: parsed.rows.slice(0, 30), errors: parsed.errors.slice(0, 30),
-      supplierName: parsed.supplierName || '',
-      matchedCounterpartyId: matches.length === 1 ? matches[0].id : null,
-      ambiguousMatch: matches.length > 1 };
+      supplierName: parsed.supplierName || matched?.name || '',
+      matchedCounterpartyId: matched?.id || null,
+      ambiguousMatch: exact.length > 1 };
   }
 
   async importGlobal(tenantId: string, file: SupplierFile,
@@ -595,6 +603,9 @@ export class InventoryCounterpartyService {
           createdCompany = true;
         }
       }
+      if (parsed.supplierName && normal(company.name) !== normal(parsed.supplierName))
+        throw new BadRequestException('В файле указан другой поставщик: ' + parsed.supplierName +
+          '. Выберите его или исправьте файл.');
       const imported = await this.saveParsedInTx(tx, tenantId, company.id, file, parsed, company);
       return { ...imported, counterpartyId: company.id, counterpartyName: company.name, createdCompany };
     }, { timeout: 60000 });
