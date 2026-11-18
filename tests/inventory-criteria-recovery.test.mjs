@@ -21,7 +21,7 @@ let catalog={groups:[
   {id:'category',legacyField:'category',values:[
     {id:'v48',name:'48',archived:false},
     {id:'vcare',name:'Уход',archived:false},
-    {id:'vcolor',name:'Краситель',archived:false},
+    // 'Краситель' is intentionally absent: restore must create this choice.
   ]},
   {id:'productType',legacyField:'productType',values:[
     {id:'vtcare',name:'Уход',archived:false},
@@ -87,6 +87,8 @@ const restored=await service.apply(tenantId,{changes:preview.changes});
 assert.equal(restored.updatedCount,2);
 assert.equal(restored.hiddenValuesCount,3);
 assert.equal(catalog.groups[0].values.find(v=>v.name==='48').archived,true);
+assert.equal(catalog.groups[0].values.find(v=>v.name==='Краситель').archived,false,
+  'Recovered new category must become selectable');
 assert.equal(catalog.groups[0].values.find(v=>v.name==='Уход').archived,false,
   'A value still used by another product must remain');
 assert.equal(catalog.groups[1].values.find(v=>v.name==='ГЕЛЬ').archived,true);
