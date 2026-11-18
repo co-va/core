@@ -1173,6 +1173,7 @@ model InventorySupplierOffer {
   listPrice         Decimal? @db.Decimal(14, 4)
   discountPercent   Decimal? @db.Decimal(7, 4)
   actualPrice       Decimal? @db.Decimal(14, 4)
+  agreementPriced   Boolean  @default(false)
   unitsPerOffer     Decimal  @default(1) @db.Decimal(14, 3)
   supplierSku       String   @default("")
   note              String   @default("")
