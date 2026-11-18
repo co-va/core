@@ -312,3 +312,11 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Контрагент/ассортимент: исключение/восстановление в Core, исходный файл и складская история сохраняются. `GET /inventory/counterparties/:id/catalog/link-status` различает persisted linked, уникальное match по артикулу/штрихкоду, unlinked и conflict; совпадение не создаёт связь автоматически. `POST .../catalog/:rowId/link` атомарный и не позволяет одной позиции быть подключённой к разным карточкам; несовместимые единицы требуют явный `unitsPerOffer`, а не молчаливый пересчёт.
 - Для мест хранения прежние Core endpoints (`POST/PUT /inventory/storage-locations`, `POST /inventory/transfers`, snapshot `locationBalances`) сохранены. Добавлена транзакционная защита от одновременного создания/переименования в дублирующее имя.
 - Только Core, исходники Professional/User не изменялись в этом этапе; API и миграции проверяются через Check Core, staging-smoke и Onboarding Smoke перед выпуском. GitHub CI не является доказательством обновления Amvera/производственной БД.
+
+## 2026-11-18 — Контрагенты: серверный контракт общего Excel и скидки
+
+- Core владеет хранением скидки по договору, каталогом и привязкой прайса к контрагенту. POST/PUT /inventory/counterparties сохраняют все восемь полей, в том числе проверенный discountPercent 0–100%.
+- GET /inventory/counterparties включает discountPercent для конструктора карты и Z2 Professional. Текущие договорные цены применяются к актуальным предложениям, но не переписывают исторические закупки.
+- GET /inventory/counterparties/template/xlsx отдаёт шаблон с колонкой «Контрагент». POST /inventory/counterparties/import/preview определяет поставщика из Excel или по точному совпадению уже существующего по имени файла/листа. POST /inventory/counterparties/import атомарно создаёт поставщика с прайсом или обновляет прайс существующего; неверная принадлежность и неоднозначные файлы не принимаются.
+- Предыдущие маршруты /inventory/counterparties/:id/pricelists остаются совместимыми, но пользовательский Excel-интерфейс находится только на общем уровне Professional.
+- Выпуск в Core/main должен идти только через выделенный PR с миграцией 20261118183000_counterparty_agreement_discount. Независимые изменения складских целевых остатков и их миграции не входят в этот выпуск. CI PR требуется; Amvera и production БД отдельно.
