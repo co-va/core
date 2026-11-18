@@ -331,6 +331,13 @@ assert.equal(companies.filter(x => x.name === 'Вася Пупкин').length, 1
 // supplier or supply a name; it must not create an unnamed or guessed company.
 await assert.rejects(() => service.importGlobal('tenant', await excelFile(555)),
   /Укажите поставщика/);
+const inferredKnown = await service.previewGlobal('tenant',
+  { ...await excelFile(555), originalname: 'Supply Store.xlsx' });
+assert.equal(inferredKnown.matchedCounterpartyId, company.id,
+  'An unchanged supplier Excel can identify its existing company by exact filename');
+await assert.rejects(() => service.importGlobal('tenant', globalFile,
+  { counterpartyId: company.id }), /другой поставщик/,
+  'File identity must not be silently assigned to a different supplier');
 const manualExisting = await service.importGlobal('tenant', await excelFile(555),
   { counterpartyId: globalFirst.counterpartyId });
 assert.equal(manualExisting.counterpartyId, globalFirst.counterpartyId);
