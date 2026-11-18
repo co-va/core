@@ -441,7 +441,7 @@ export class InventoryCounterpartyService {
 
   async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
     await this.requireAccess(tenantId);
-    await this.company(tenantId, id);
+    const company = await this.company(tenantId, id);
     const parsed = await this.parsed(file);
     if (parsed.format === 'pdf' && parsed.status === 'READY' && !confirmedPdf) {
       throw new BadRequestException('Перед импортом PDF проверьте распознанные строки в предпросмотре');
@@ -510,9 +510,7 @@ export class InventoryCounterpartyService {
               where: { id: offer.id }, data: {
                 catalogItemId: row.id, listPrice: row.listPrice,
                 ...(offer.agreementPriced
-                  ? { discountPercent: this.appliedDiscount(row, (await tx.inventoryCounterparty.findFirst({
-                      where: { tenantId, id }, select: { discountPercent: true },
-                    }))?.discountPercent) }
+                  ? { discountPercent: this.appliedDiscount(row, company.discountPercent) }
                   : {}),
                 // Keep legacy manual prices unchanged until the agreement is configured.
                 // Invoice / movement history is never re-priced.
