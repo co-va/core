@@ -1779,7 +1779,7 @@ export class InventoryService {
     const to = text(source.toLocationId) || PRIMARY_STORAGE;
     if (from === to) throw new BadRequestException('Выберите другое место хранения.');
     const requested = Array.isArray(source.lines) ? source.lines.map(objectValue) : [];
-    if (!requested.length || requested.length > 100) throw new BadRequestException('Добавьте позиции переноса (не более 100).');
+    if (!requested.length || requested.length > 500) throw new BadRequestException('Добавьте позиции переноса (не более 500).');
     const movementId = text(source.transferId) || randomUUID();
     await this.prisma.$transaction(async (tx: Tx) => {
       const existing = await tx.inventoryMovement.findFirst({ where: { tenantId, movementId } });
@@ -1874,7 +1874,7 @@ export class InventoryService {
           } });
         }
       }
-    });
+    }, { maxWait: 10000, timeout: 120000 });
     return this.snapshot(tenantId);
   }
 
