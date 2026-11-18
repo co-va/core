@@ -33,7 +33,7 @@ type PreparedLine = {
   note: string;
 };
 
-const OUT_KINDS = new Set(['CONSUMPTION', 'SALE', 'WRITE_OFF']);
+const OUT_KINDS = new Set(['CONSUMPTION', 'SALE', 'WRITE_OFF', 'SUPPLIER_RETURN']);
 const IN_KINDS = new Set(['RECEIPT', 'RETURN']);
 const MOVEMENT_KINDS = new Set([...OUT_KINDS, ...IN_KINDS, 'ADJUSTMENT', 'CORRECTION']);
 const EPSILON = 0.000001;
@@ -977,6 +977,141 @@ export class InventoryService {
       }
       await tx.inventoryPurchaseOrder.update({
         where: { id: order.id }, data: { receiptMovementId: plannedReceipts.length ? movementId : '' },
+      });
+    }, { timeout: 60000, maxWait: 10000 });
+    return this.snapshot(tenantId);
+  }
+
+
+  // An accepted purchase can be returned to its supplier. This is a separate
+  // OUT movement, never an ordinary RETURN (which means goods coming IN).
+  async returnPurchaseOrderToSupplier(tenantId: string, orderId: string, body: unknown) {
+    const source = objectValue(body);
+    const locationId = text(source.storageLocationId);
+    const returnId = text(source.returnId);
+    if (!returnId || returnId.length > 128) throw new BadRequestException('Не указан идентификатор возврата.');
+    if (!locationId) throw new BadRequestException('Выберите склад возврата.');
+    const requested = Array.isArray(source.lines) ? source.lines.map(objectValue) : [];
+    if (!requested.length || requested.length > 100) throw new BadRequestException('Выберите возвращаемые товары.');
+    const occurredAt = optionalDate(source.occurredAt, 'Дата возврата') || new Date();
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${orderId})) ) AS guard`;
+      const movementId = 'inventory-supplier-return-' + returnId;
+      const previous = await tx.inventoryMovement.findFirst({ where: { tenantId, movementId } });
+      if (previous) {
+        if (previous.kind === 'SUPPLIER_RETURN' && previous.sourceId === orderId) return;
+        throw new BadRequestException('Идентификатор возврата уже занят.');
+      }
+      const order = await tx.inventoryPurchaseOrder.findFirst({
+        where: { tenantId, orderId, status: 'received' },
+        include: { lines: true },
+      });
+      if (!order) throw new BadRequestException('Возврат возможен только после получения заказа.');
+      await this.assertStorageLocations(tx, tenantId, [locationId]);
+      const byItem = new Map((order.lines as AnyRecord[]).map(row => [row.itemId, row]));
+      const ids = [...new Set(requested.map(row => text(row.itemId)))];
+      if (ids.length !== requested.length || ids.some(itemId => !byItem.has(itemId)))
+        throw new BadRequestException('Повторяющиеся или отсутствующие позиции заказа.');
+      const actual = await tx.inventoryItem.findMany({
+        where: { tenantId, itemId: { in: ids }, archivedAt: null },
+      });
+      if (actual.length !== ids.length) throw new BadRequestException('Складская единица больше не доступна.');
+      const actualById = new Map((actual as AnyRecord[]).map(item => [item.itemId, item]));
+      const claims = await tx.inventorySupplierClaim.findMany({ where: { tenantId, orderId } });
+      const stockLines: AnyRecord[] = [];
+      const claimParts: AnyRecord[] = [];
+      for (const part of requested) {
+        const itemId = text(part.itemId), packages = Number(part.packages);
+        const reason = text(part.reason);
+        if (!Number.isSafeInteger(packages) || packages <= 0 || !reason)
+          throw new BadRequestException('Укажите целые упаковки и причину возврата.');
+        const line = byItem.get(itemId) as AnyRecord;
+        const item = actualById.get(itemId) as AnyRecord;
+        const alreadyClaimed = (claims as AnyRecord[])
+          .filter(row => row.itemId === itemId)
+          .reduce((sum: number, row: AnyRecord) => sum + row.packages, 0);
+        if (packages + alreadyClaimed > line.packages)
+          throw new BadRequestException('Возврат превышает количество оплаченных и полученных товаров.');
+        const unit = canonicalInventoryUnit(item.unit);
+        const weighted = unit === 'г' || unit === 'мл';
+        const gross = item.grossWeight == null ? 0 : decimalNumber(item.grossWeight);
+        const tare = item.tareWeight == null ? null : decimalNumber(item.tareWeight);
+        if (gross > 0 && tare !== null && tare > gross)
+          throw new BadRequestException('Масса тары превышает брутто.');
+        const size = unit === 'г' && gross > 0
+          ? gross - (tare === null ? 0 : tare)
+          : decimalNumber(item.packageQuantity) > 0
+            ? decimalNumber(item.packageQuantity) : decimalNumber(line.packageSize);
+        if (!weighted && size <= 0) throw new BadRequestException('Не указан размер упаковки.');
+        if (weighted) {
+          const localTubes = await tx.inventoryMovementLine.findMany({
+            where: { tenantId, inventoryItemId: item.id, storageLocationId: locationId },
+            select: { containerDelta: true, actualContainerCount: true, direction: true },
+          });
+          const physical = (localTubes as AnyRecord[]).reduce((sum: number, row: AnyRecord) =>
+            sum + (row.containerDelta == null ? 0 : Number(row.containerDelta)), 0);
+          if (physical < packages) throw new BadRequestException('Недостаточно банок на выбранном складе.');
+        }
+        const stock = packages * size;
+        const available = await this.storageBalanceInTx(tx, tenantId, item.id, locationId);
+        if (stock > available + EPSILON) throw new BadRequestException('Недостаточный остаток на складе возврата.');
+        stockLines.push({
+          itemId, quantity: stock, direction: 'OUT', storageLocationId: locationId,
+          ...(weighted ? { containerDelta: -packages } : {}),
+          note: reason,
+        });
+        claimParts.push({
+          tenantId, claimId: randomUUID(), orderId, itemId,
+          sourceKind: 'supplier-return', packages, packPrice: line.packPrice,
+          amount: Math.round(packages * decimalNumber(line.packPrice) * 100) / 100,
+          reason, movementId,
+        });
+      }
+      await this.createMovementInTx(tx, tenantId, {
+        movementId, kind: 'SUPPLIER_RETURN', sourceType: 'inventory-supplier-return',
+        sourceId: orderId, occurredAt, note: text(source.note) || 'Возврат товара поставщику',
+        lines: stockLines,
+      });
+      for (const claim of claimParts) await tx.inventorySupplierClaim.create({ data: claim });
+    }, { timeout: 60000, maxWait: 10000 });
+    return this.snapshot(tenantId);
+  }
+
+  // The claim exists before money moves. A reimbursement is posted atomically
+  // to Finance's canonical wallet ledger, never as a fabricated sale.
+  async refundSupplierClaim(tenantId: string, claimId: string, body: unknown) {
+    const source = objectValue(body);
+    const settlementId = text(source.settlementId);
+    const walletId = text(source.walletId), walletName = text(source.walletName);
+    const amount = Number(String(source.amount ?? '').replace(',', '.'));
+    if (!settlementId || settlementId.length > 128) throw new BadRequestException('Не указан идентификатор погашения.');
+    if (!walletId || !walletName) throw new BadRequestException('Выберите кошелёк поступления.');
+    if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) / 100 !== amount)
+      throw new BadRequestException('Проверьте сумму возврата.');
+    const occurredAt = optionalDate(source.occurredAt, 'Дата возврата денег') || new Date();
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${claimId}))) AS guard`;
+      const previous = await tx.inventorySupplierClaimSettlement.findFirst({ where: { tenantId, settlementId } });
+      if (previous) {
+        if (previous.claimId === claimId && decimalNumber(previous.amount) === amount) return;
+        throw new BadRequestException('Идентификатор погашения уже использован.');
+      }
+      const claim = await tx.inventorySupplierClaim.findFirst({ where: { tenantId, claimId } });
+      if (!claim) throw new NotFoundException('Задолженность поставщика не найдена.');
+      if (amount > decimalNumber(claim.amount) - decimalNumber(claim.settledAmount) + 0.001)
+        throw new BadRequestException('Сумма превышает задолженность поставщика.');
+      const operationId = 'inventory-supplier-refund-' + settlementId;
+      await this.finance.recordInventorySupplierRefundInTx(
+        tx as Prisma.TransactionClient, tenantId, claimId, settlementId, walletId, walletName, amount, occurredAt,
+      );
+      await tx.inventorySupplierClaimSettlement.create({ data: {
+        tenantId, settlementId, claimId, kind: 'refund', amount,
+        walletId, walletName, financeOperationId: operationId, occurredAt,
+      } });
+      await tx.inventorySupplierClaim.update({
+        where: { id: claim.id }, data: {
+          settledAmount: Math.round((decimalNumber(claim.settledAmount) + amount) * 100) / 100,
+        },
       });
     }, { timeout: 60000, maxWait: 10000 });
     return this.snapshot(tenantId);

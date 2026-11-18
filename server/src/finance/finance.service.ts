@@ -827,6 +827,34 @@ export class FinanceService {
     });
   }
 
+  // Reimburse a purchase into a wallet, reversing material expense economically.
+  // This is not sales revenue. The claim is settled by Inventory in the same tx.
+  async recordInventorySupplierRefundInTx(
+    tx: Prisma.TransactionClient, tenantId: string,
+    claimId: string, settlementId: string, walletId: string, walletName: string,
+    amount: number, occurredAt: Date,
+  ) {
+    if (!text(walletId) || !(amount > 0)) throw new BadRequestException('Укажите кошелёк и сумму возврата.');
+    await this.ensureDefaultArticles(tenantId, tx);
+    const article = await tx.financeArticle.findFirst({
+      where: { tenantId, systemKey: 'MATERIALS', direction: 'OUT', archivedAt: null },
+    });
+    if (!article) throw new BadRequestException('Статья закупки материалов не найдена.');
+    return this.createOperationWithEntries(tx, tenantId, {
+      operationId: 'inventory-supplier-refund-' + settlementId,
+      kind: 'inventory-supplier-refund',
+      source: { type: 'inventory-supplier-claim', id: claimId },
+      occurredAt,
+      data: { direction: 'IN', walletId, walletName, amount: money(amount),
+        note: 'Возврат денег поставщиком за закупку', claimId },
+      entries: [{ walletId, walletName, direction: 'IN',
+        economicType: article.economicType, amount: money(amount),
+        component: 'materials-refund', articleId: article.articleId,
+        articleName: article.name, lineName: 'Возврат поставщика',
+        quantity: 1, unitPrice: money(amount), note: 'Возврат стоимости материалов' }],
+    });
+  }
+
   async recordManualOperation(tenantId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
     const input = objectValue(body);
