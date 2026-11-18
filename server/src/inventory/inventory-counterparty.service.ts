@@ -464,6 +464,69 @@ export class InventoryCounterpartyService {
     ]);
     return { priceList: list, count, items };
   }
+  // Canonical server-owned classification of supplier rows against working Stock.
+  // Matching codes are suggestions only; only persisted offers are confirmed links.
+  async linkStatuses(tenantId: string, id: string) {
+    await this.requireAccess(tenantId);
+    await this.company(tenantId, id);
+    const latest = await this.prisma.inventoryCounterpartyPriceList.findFirst({
+      where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+      orderBy: { revision: 'desc' }, select: { id: true },
+    });
+    if (!latest) return { count: 0, statuses: [] };
+    const [rows, items, offers] = await Promise.all([
+      this.prisma.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: latest.id, excludedAt: null },
+        select: { id: true, supplierSku: true, barcode: true },
+      }),
+      this.prisma.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null }, select: { id: true, itemId: true, sku: true, barcode: true },
+      }),
+      this.prisma.inventorySupplierOffer.findMany({
+        where: { tenantId, counterpartyId: id, isActive: true, catalogItemId: { not: null } },
+        select: { catalogItemId: true, inventoryItemId: true },
+      }),
+    ]);
+    const norm = (value: unknown) => plain(value).toLocaleUpperCase('ru-RU');
+    const index = <T>(values: T[], selector: (entry: T) => string) => {
+      const result = new Map<string, T[]>();
+      for (const entry of values) {
+        const key = selector(entry);
+        if (!key) continue;
+        const set = result.get(key) || [];
+        set.push(entry);
+        result.set(key, set);
+      }
+      return result;
+    };
+    const rowBySku = index(rows, row => norm(row.supplierSku));
+    const rowByBarcode = index(rows, row => norm(row.barcode));
+    const itemBySku = index(items, row => norm(row.sku));
+    const itemByBarcode = index(items, row => norm(row.barcode));
+    const itemByDbId = new Map(items.map(row => [row.id, row]));
+    const offerByRow = index(offers, row => row.catalogItemId || '');
+    const statuses = rows.map(row => {
+      const confirmed = [...new Set((offerByRow.get(row.id) || [])
+        .map(offer => itemByDbId.get(offer.inventoryItemId)?.itemId).filter(Boolean))];
+      if (confirmed.length === 1) return { catalogItemId: row.id,
+        status: 'linked', itemId: confirmed[0] };
+      if (confirmed.length > 1) return { catalogItemId: row.id,
+        status: 'conflict', itemId: null };
+      const candidates = new Set<string>();
+      const sku = norm(row.supplierSku), barcode = norm(row.barcode);
+      if (sku && rowBySku.get(sku)?.length === 1 && itemBySku.get(sku)?.length === 1)
+        candidates.add(itemBySku.get(sku)![0].itemId);
+      if (barcode && rowByBarcode.get(barcode)?.length === 1
+        && itemByBarcode.get(barcode)?.length === 1)
+        candidates.add(itemByBarcode.get(barcode)![0].itemId);
+      if (candidates.size > 1) return { catalogItemId: row.id, status: 'conflict', itemId: null };
+      if (candidates.size === 1) return { catalogItemId: row.id,
+        status: 'matched', itemId: [...candidates][0] };
+      return { catalogItemId: row.id, status: 'unlinked', itemId: null };
+    });
+    return { count: statuses.length, statuses };
+  }
+
   async original(tenantId: string, id: string, priceListId: string) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
