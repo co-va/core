@@ -311,7 +311,8 @@ export class InventoryCounterpartyService {
     return this.prisma.inventoryCounterparty.create({ data: { tenantId, name, kind,
       contactName: plain(input?.contactName).slice(0, 160),
       phone: plain(input?.phone).slice(0, 100), email: plain(input?.email).slice(0, 254),
-      website: plain(input?.website).slice(0, 500), note: plain(input?.note).slice(0, 2000) } });
+      website: plain(input?.website).slice(0, 500), note: plain(input?.note).slice(0, 2000),
+      discountPercent: this.discount(input?.discountPercent) } });
   }
   async update(tenantId: string, id: string, input: Record<string, unknown>) {
     await this.requireAccess(tenantId);
