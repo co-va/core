@@ -464,19 +464,10 @@ export class InventoryCounterpartyService {
     });
   }
 
-  async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
-    await this.requireAccess(tenantId);
-    const company = await this.company(tenantId, id);
-    const parsed = await this.parsed(file);
-    if (parsed.format === 'pdf' && parsed.status === 'READY' && !confirmedPdf) {
-      throw new BadRequestException('Перед импортом PDF проверьте распознанные строки в предпросмотре');
-    }
+  private async saveParsedInTx(tx: any, tenantId: string, id: string,
+    file: SupplierFile, parsed: Parsed, company: { discountPercent?: unknown }) {
     const hash = createHash('sha256').update(file.buffer).digest('hex');
-    const previous = await this.prisma.inventoryCounterpartyPriceList.findFirst({
-      where: { tenantId, counterpartyId: id, sha256: hash }, select: { id: true, revision: true, parserStatus: true },
-    });
-    if (previous) return { ...previous, duplicate: true };
-    return this.prisma.$transaction(async (tx) => {
+
       await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard) AS guard`;
       const duplicate = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id, sha256: hash },
@@ -546,7 +537,75 @@ export class InventoryCounterpartyService {
       }
       return { id: list.id, revision: list.revision, parserStatus: list.parserStatus,
         count: parsed.rows.length, errors: parsed.errors };
-    }, { timeout: 45000 });
+  }
+
+  async previewGlobal(tenantId: string, file: SupplierFile) {
+    await this.requireAccess(tenantId);
+    const parsed = await this.parsed(file);
+    const matches = parsed.supplierName
+      ? await this.prisma.inventoryCounterparty.findMany({
+        where: { tenantId, archivedAt: null,
+          name: { equals: parsed.supplierName, mode: 'insensitive' } },
+        select: { id: true, name: true },
+      }) : [];
+    return { format: parsed.format, status: parsed.status, count: parsed.rows.length,
+      sample: parsed.rows.slice(0, 30), errors: parsed.errors.slice(0, 30),
+      supplierName: parsed.supplierName || '',
+      matchedCounterpartyId: matches.length === 1 ? matches[0].id : null,
+      ambiguousMatch: matches.length > 1 };
+  }
+
+  async importGlobal(tenantId: string, file: SupplierFile,
+    options: { counterpartyId?: string; name?: string; confirmedPdf?: boolean } = {}) {
+    await this.requireAccess(tenantId);
+    const parsed = await this.parsed(file);
+    if (parsed.status !== 'READY' || !parsed.rows.length)
+      throw new BadRequestException(parsed.errors[0] || 'Не удалось распознать прайс. Используйте шаблон Excel.');
+    if (parsed.format === 'pdf' && !options.confirmedPdf)
+      throw new BadRequestException('Подтвердите распознанный PDF перед загрузкой.');
+    const selectedId = plain(options.counterpartyId);
+    const name = (plain(options.name) || plain(parsed.supplierName)).slice(0, 160);
+    if (!selectedId && !name)
+      throw new BadRequestException('Укажите поставщика или выберите существующего.');
+    return this.prisma.$transaction(async tx => {
+      let company: { id: string; name: string; discountPercent?: unknown };
+      let createdCompany = false;
+      if (selectedId) {
+        const found = await tx.inventoryCounterparty.findFirst({
+          where: { id: selectedId, tenantId, archivedAt: null },
+        });
+        if (!found) throw new NotFoundException('Выбранный контрагент не найден.');
+        company = found;
+      } else {
+        // Serialise matching names per account: simultaneous imports cannot create duplicates.
+        const key = name.toLocaleLowerCase('ru-RU');
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${key}))`;
+        const found = await tx.inventoryCounterparty.findMany({
+          where: { tenantId, archivedAt: null, name: { equals: name, mode: 'insensitive' } },
+        });
+        if (found.length > 1)
+          throw new BadRequestException('Найдено несколько контрагентов с этим названием. Выберите нужного.');
+        if (found.length) company = found[0];
+        else {
+          company = await tx.inventoryCounterparty.create({
+            data: { tenantId, name, kind: 'SUPPLIER' },
+          });
+          createdCompany = true;
+        }
+      }
+      const imported = await this.saveParsedInTx(tx, tenantId, company.id, file, parsed, company);
+      return { ...imported, counterpartyId: company.id, counterpartyName: company.name, createdCompany };
+    }, { timeout: 60000 });
+  }
+
+  async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
+    await this.requireAccess(tenantId);
+    const company = await this.company(tenantId, id);
+    const parsed = await this.parsed(file);
+    if (parsed.format === 'pdf' && parsed.status === 'READY' && !confirmedPdf)
+      throw new BadRequestException('Перед импортом PDF проверьте распознанные строки в предпросмотре');
+    return this.prisma.$transaction(tx =>
+      this.saveParsedInTx(tx, tenantId, id, file, parsed, company), { timeout: 45000 });
   }
   async catalog(tenantId: string, id: string, search = '', skip = 0, excluded = false) {
     await this.requireAccess(tenantId);
