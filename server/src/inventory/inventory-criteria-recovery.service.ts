@@ -111,7 +111,7 @@ export class InventoryCriteriaRecoveryService {
       // Serializes multiple classification repairs for this tenant.
       await tx.$queryRawUnsafe(
         'SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))) AS guard',
-        tenantId, 'inventory-classification-recovery',
+        tenantId, 'inventory-criteria',
       );
       const items = await tx.inventoryItem.findMany({
         where: { tenantId, archivedAt: null, itemId: { in: changes.map(row => row.itemId) } },
@@ -136,7 +136,38 @@ export class InventoryCriteriaRecoveryService {
         if (saved.count !== 1)
           throw new BadRequestException('При записи данные изменились. Вся операция отменена.');
       }
-      return { updatedCount: changes.length };
+      // Only superseded legacy values involved in this restore may be hidden.
+      // An old label is retired only when NO stock item still uses it. Values
+      // in other products, manual unused options and all product facts remain.
+      let hiddenValuesCount = 0;
+      const catalog = await tx.inventoryCriteriaCatalog.findUnique({ where: { tenantId } });
+      const data = isObject(catalog?.data) ? JSON.parse(JSON.stringify(catalog.data)) : null;
+      if (data && Array.isArray(data.groups)) {
+        const remaining = await tx.inventoryItem.findMany({
+          where: { tenantId, archivedAt: null },
+          select: { category: true, productType: true },
+        });
+        const remainingCategories = new Set(remaining.map(item => item.category));
+        const remainingTypes = new Set(remaining.map(item => item.productType));
+        const previousCategories = new Set(changes.map(change => change.beforeCategory));
+        const previousTypes = new Set(changes.map(change => change.beforeProductType));
+        for (const group of data.groups) {
+          if (!Array.isArray(group.values)) continue;
+          const field = group.legacyField;
+          if (field !== 'category' && field !== 'productType') continue;
+          const oldNames = field === 'category' ? previousCategories : previousTypes;
+          const stillUsed = field === 'category' ? remainingCategories : remainingTypes;
+          for (const value of group.values) {
+            if (value.archived === true || !oldNames.has(value.name) || stillUsed.has(value.name)) continue;
+            value.archived = true;
+            hiddenValuesCount++;
+          }
+        }
+        if (hiddenValuesCount) await tx.inventoryCriteriaCatalog.update({
+          where: { tenantId }, data: { data },
+        });
+      }
+      return { updatedCount: changes.length, hiddenValuesCount };
     }, { maxWait: 10000, timeout: 60000 });
   }
 }
