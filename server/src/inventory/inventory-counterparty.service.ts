@@ -233,6 +233,55 @@ function validFile(file: SupplierFile): 'xlsx' | 'pdf' {
 export class InventoryCounterpartyService {
   constructor(private readonly prisma: PrismaService, private readonly access: SaasAccessService) {}
 
+  private discount(value: unknown): number | null {
+    if (value == null || String(value).trim() === '') return null;
+    const result = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(result) || result < 0 || result > 100)
+      throw new BadRequestException('Скидка должна быть от 0 до 100%.');
+    return Math.round(result * 10000) / 10000;
+  }
+
+  private nonnegativePrice(value: unknown): number | null {
+    if (value == null || String(value).trim() === '') return null;
+    const result = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(result) || result < 0 || result > 1e9)
+      throw new BadRequestException('Цена должна быть неотрицательной.');
+    return Math.round((result + Number.EPSILON) * 100) / 100;
+  }
+
+  private appliedDiscount(row: {discountPercent?: unknown}, agreement: unknown): number {
+    return Number(row.discountPercent ?? agreement ?? 0);
+  }
+
+  private catalogView<T extends {listPrice?: unknown;discountPercent?: unknown}>(row: T, agreement: unknown) {
+    const discount = this.appliedDiscount(row, agreement);
+    const price = row.listPrice == null ? null : Number(row.listPrice);
+    return {
+      ...row,
+      appliedDiscountPercent: discount,
+      effectivePrice: price == null ? null : Math.round((price * (1 - discount / 100) + Number.EPSILON) * 100) / 100,
+      discountSource: row.discountPercent != null ? 'product' : agreement != null ? 'agreement' : 'none',
+    };
+  }
+
+  private async latestCatalogInTx(tx: any, tenantId: string, id: string) {
+    const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+      where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+      orderBy: { revision: 'desc' }, select: { id: true },
+    });
+    if (!latest) throw new NotFoundException('Ассортимент не найден.');
+    return latest;
+  }
+
+  private async refreshOfferForRow(tx: any, tenantId: string, id: string,
+    row: {id: string; supplierSku: string; listPrice: unknown; discountPercent: unknown}, agreement: unknown) {
+    await tx.inventorySupplierOffer.updateMany({
+      where: { tenantId, counterpartyId: id, catalogItemId: row.id, isActive: true },
+      data: { listPrice: row.listPrice as any, supplierSku: row.supplierSku,
+        discountPercent: this.appliedDiscount(row, agreement), agreementPriced: true },
+    });
+  }
+
   private async requireAccess(tenantId: string) {
     const right = await this.access.resolveCapability(tenantId, 'inventory.counterparties.access');
     if (!right.enabled) throw new ForbiddenException('Контрагенты недоступны для аккаунта');
@@ -268,7 +317,7 @@ export class InventoryCounterpartyService {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
     const allowed = ['name','kind','contactName','phone','email','website','note'] as const;
-    const changes: Record<string, string> = {};
+    const changes: Record<string, string | number | null> = {};
     for (const key of allowed) if (Object.prototype.hasOwnProperty.call(input || {}, key)) {
       changes[key] = plain(input[key]).slice(0, key === 'note' ? 2000 : key === 'website' ? 500 : 254);
     }
@@ -277,7 +326,39 @@ export class InventoryCounterpartyService {
       changes.kind = changes.kind.toUpperCase();
       if (!['SUPPLIER','MANUFACTURER','DISTRIBUTOR','MARKETPLACE','STORE','OTHER'].includes(changes.kind)) throw new BadRequestException('Неизвестный тип');
     }
-    await this.prisma.inventoryCounterparty.updateMany({ where: { tenantId, id, archivedAt: null }, data: changes });
+    if (Object.prototype.hasOwnProperty.call(input || {}, 'discountPercent')) {
+      changes.discountPercent = this.discount(input.discountPercent);
+    }
+    if (!Object.prototype.hasOwnProperty.call(changes, 'discountPercent')) {
+      await this.prisma.inventoryCounterparty.updateMany({ where: { tenantId, id, archivedAt: null }, data: changes });
+      return this.company(tenantId, id);
+    }
+    // An agreement change affects future offers, not already-paid invoices or receipts.
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}),hashtext(${id}))) AS guard`;
+      await tx.inventoryCounterparty.updateMany({ where: { tenantId, id, archivedAt: null }, data: changes });
+      const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+        orderBy: { revision: 'desc' }, select: { id: true },
+      });
+      if (!latest) return;
+      const rows = await tx.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: latest.id, excludedAt: null },
+        select: { id: true, discountPercent: true },
+      });
+      const grouped = new Map<number, string[]>();
+      for (const row of rows) {
+        const applied = this.appliedDiscount(row, changes.discountPercent);
+        const ids = grouped.get(applied) || [];
+        ids.push(row.id); grouped.set(applied, ids);
+      }
+      for (const [discountPercent, ids] of grouped) {
+        await tx.inventorySupplierOffer.updateMany({
+          where: { tenantId, counterpartyId: id, isActive: true, catalogItemId: { in: ids } },
+          data: { discountPercent, agreementPriced: true },
+        });
+      }
+    }, { timeout: 60000 });
     return this.company(tenantId, id);
   }
   async template(tenantId: string) {
@@ -418,7 +499,7 @@ export class InventoryCounterpartyService {
             tx.inventorySupplierOffer.findMany({
               where: { tenantId, counterpartyId: id, isActive: true,
                 catalogItemId: { not: null }, supplierSku: { in: uniqueSkus } },
-              select: { id: true, supplierSku: true },
+              select: { id: true, supplierSku: true, agreementPriced: true },
             }),
           ]);
           const current = new Map(catalogRows.map((row) => [row.supplierSku, row]));
@@ -428,8 +509,13 @@ export class InventoryCounterpartyService {
             await tx.inventorySupplierOffer.update({
               where: { id: offer.id }, data: {
                 catalogItemId: row.id, listPrice: row.listPrice,
-                // Never replace a manually entered invoice price or personal discount.
-                // The supplier price list updates only the advertised base price, not procurement history.
+                ...(offer.agreementPriced
+                  ? { discountPercent: this.appliedDiscount(row, (await tx.inventoryCounterparty.findFirst({
+                      where: { tenantId, id }, select: { discountPercent: true },
+                    }))?.discountPercent) }
+                  : {}),
+                // Keep legacy manual prices unchanged until the agreement is configured.
+                // Invoice / movement history is never re-priced.
               },
             });
           }
@@ -462,7 +548,9 @@ export class InventoryCounterpartyService {
         skip: Math.max(0, Math.min(Number(skip)||0, 100000)), take: 100,
       }),
     ]);
-    return { priceList: list, count, items };
+    const company = await this.company(tenantId, id);
+    return { priceList: list, count,
+      items: items.map(row => this.catalogView(row, company.discountPercent)) };
   }
   // Canonical server-owned classification of supplier rows against working Stock.
   // Matching codes are suggestions only; only persisted offers are confirmed links.
@@ -599,6 +687,8 @@ export class InventoryCounterpartyService {
         throw new BadRequestException('Укажите unitsPerOffer для безопасной привязки.');
       const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
         listPrice: row.listPrice, supplierSku: row.supplierSku,
+        discountPercent: this.appliedDiscount(row, company.discountPercent),
+        agreementPriced: row.listPrice != null,
         unitsPerOffer: size };
       if (existing) {
         await tx.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
@@ -607,7 +697,7 @@ export class InventoryCounterpartyService {
       const offerId = randomUUID();
       await tx.inventorySupplierOffer.create({
         data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
-          actualPrice: row.actualPrice, discountPercent: row.discountPercent },
+          actualPrice: row.actualPrice },
       });
       return { offerId, itemId };
     });
