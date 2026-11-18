@@ -1140,6 +1140,7 @@ model InventoryCounterpartyCatalogItem {
   createdAt DateTime @default(now())
   priceList InventoryCounterpartyPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
   @@index([tenantId, priceListId, position])
+  @@index([tenantId, priceListId, excludedAt])
   @@index([tenantId, supplierSku])
 }
 model InventorySupplierOffer {
