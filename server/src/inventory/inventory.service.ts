@@ -1327,6 +1327,73 @@ export class InventoryService {
     return db ? { itemId } : this.snapshot(tenantId);
   }
 
+  // One safety check is shared by single-item and selected-item archival.
+  // Physical inventory is never destroyed merely because a card is hidden.
+  private async assertItemsCanBeArchived(tx: Tx, tenantId: string, items: AnyRecord[]) {
+    if (!items.length) return;
+    const ids = items.map(item => item.id);
+    const relevant = await tx.inventoryMovementLine.findMany({
+      where: { tenantId, inventoryItemId: { in: ids } },
+      select: { inventoryItemId: true, storageLocationId: true, direction: true, quantity: true, containerDelta: true },
+    });
+    const balances = new Map<string, number>();
+    const containers = new Map<string, number>();
+    for (const line of relevant as AnyRecord[]) {
+      const key = line.inventoryItemId + ':' + (line.storageLocationId || PRIMARY_STORAGE);
+      const signed = (line.direction === 'OUT' ? -1 : 1) * decimalNumber(line.quantity);
+      balances.set(key, (balances.get(key) || 0) + signed);
+      if (line.containerDelta != null)
+        containers.set(key, (containers.get(key) || 0) + Number(line.containerDelta));
+    }
+    const occupied = items.filter(item =>
+      [...balances].some(([key, amount]) => key.startsWith(item.id + ':') && Math.abs(amount) > EPSILON)
+      || [...containers].some(([key, count]) => key.startsWith(item.id + ':') && count !== 0)
+      || item.containerCount != null && Number(item.containerCount) > 0);
+    if (occupied.length)
+      throw new BadRequestException('Нельзя удалить товары с остатками. Сначала оформите движение: ' +
+        occupied.slice(0, 4).map(item => item.name).join(', '));
+    // Paid or draft orders must remain fulfillable. Received orders are historical.
+    const orderLines = await tx.inventoryPurchaseOrderLine.findMany({
+      where: { tenantId, itemId: { in: items.map(item => item.itemId) } },
+      select: { itemId: true, orderId: true },
+    });
+    if (orderLines.length) {
+      const orderIds = [...new Set(orderLines.map((line: AnyRecord) => line.orderId))];
+      const activeOrders = await tx.inventoryPurchaseOrder.findMany({
+        where: { tenantId, orderId: { in: orderIds }, status: { in: ['draft', 'paid'] } },
+        select: { orderId: true },
+      });
+      if (activeOrders.length) {
+        const active = new Set(activeOrders.map((order: AnyRecord) => order.orderId));
+        const affected = new Set(orderLines.filter((line: AnyRecord) => active.has(line.orderId))
+          .map((line: AnyRecord) => line.itemId));
+        if (affected.size) throw new BadRequestException('Нельзя удалить позиции из неоплаченного или не полученного заказа.');
+      }
+    }
+  }
+
+  async archiveSelectedItems(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const ids = Array.isArray(source.itemIds) ? source.itemIds.map(text) : [];
+    if (!ids.length || ids.length > 500 || ids.some(id => !id) || new Set(ids).size !== ids.length)
+      throw new BadRequestException('Выберите от 1 до 500 разных товаров.');
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await this.lockInventoryOrder(tx, tenantId);
+      const items = await tx.inventoryItem.findMany({
+        where: { tenantId, itemId: { in: ids }, archivedAt: null },
+      });
+      if (items.length !== ids.length)
+        throw new BadRequestException('Список товаров изменился. Обновите остатки.');
+      for (const item of [...items].sort((a, b) => a.id.localeCompare(b.id)))
+        await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+      await this.assertItemsCanBeArchived(tx, tenantId, items);
+      // Reuse the same canonical item archival operation as the single-item editor.
+      for (const item of items)
+        await this.updateItem(tenantId, item.itemId, { archived: true }, tx);
+    }, { maxWait: 10000, timeout: 120000 });
+    return this.snapshot(tenantId);
+  }
+
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
     const source = objectValue(body);
     // Public manual number writes must carry the last visible value. Internal
@@ -1432,7 +1499,11 @@ export class InventoryService {
       await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition, current.id,
         manufacturer === current.manufacturer ? current.position : 0);
     }
-    if (source.archived === true) data.archivedAt = new Date();
+    if (source.archived === true) {
+      if (!db) throw new BadRequestException('Для удаления требуется транзакция.');
+      await this.assertItemsCanBeArchived(db, tenantId, [current]);
+      data.archivedAt = new Date();
+    }
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
     return db ? { itemId } : this.snapshot(tenantId);
@@ -1812,6 +1883,9 @@ export class InventoryService {
       }
       await this.assertStorageLocations(tx, tenantId, [from, to]);
       const ids = [...new Set(requested.map((row: AnyRecord) => text(row.itemId)))].sort();
+      if (requested.some((row: AnyRecord) => row.fullBalance === true) &&
+        ids.length !== requested.length)
+        throw new BadRequestException('При полном перемещении товар нельзя повторять.');
       const items = await tx.inventoryItem.findMany({ where: { tenantId, itemId: { in: ids }, archivedAt: null } });
       if (items.length !== ids.length) throw new BadRequestException('Одна из позиций переноса не найдена.');
       const byId = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
@@ -1822,20 +1896,37 @@ export class InventoryService {
       for (const row of requested) {
         const itemId = text(row.itemId);
         const item = byId.get(itemId) as AnyRecord;
-        const quantity = Number(String(row.quantity ?? '').replace(',', '.'));
-        if (!Number.isFinite(quantity) || quantity <= 0) throw new BadRequestException('Количество переноса должно быть положительным.');
+        const full = row.fullBalance === true;
+        const quantity = full ? 0 : Number(String(row.quantity ?? '').replace(',', '.'));
+        if (!full && (!Number.isFinite(quantity) || quantity <= 0))
+          throw new BadRequestException('Количество переноса должно быть положительным.');
         let stock: number;
-        try {
-          stock = stockQuantityForUnit({ unit: item.unit, packageQuantity: item.packageQuantity,
-            netPackageWeight: item.grossWeight != null && item.tareWeight != null
-              ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
-            nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
-            conversionRules: item.conversionRules }, quantity, row.unit || item.unit);
-        } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Единица переноса'); }
+        if (full) {
+          stock = await this.storageBalanceInTx(tx, tenantId, item.id, from);
+          if (!(stock > EPSILON)) throw new BadRequestException('Нет остатка для переноса: ' + item.name);
+          // A full move includes the actual number of containers recorded at
+          // this source. Do not infer tubes from grams or nominal size.
+          const physical = await tx.inventoryMovementLine.findMany({
+            where: { tenantId, inventoryItemId: item.id, storageLocationId: from },
+            select: { containerDelta: true },
+          });
+          const count = (physical as AnyRecord[]).reduce((total: number, line: AnyRecord) =>
+            total + (line.containerDelta == null ? 0 : Number(line.containerDelta)), 0);
+          if (count < 0) throw new BadRequestException('Исправьте учёт упаковок перед переносом: ' + item.name);
+          if (count > 0) physicalQuantities.set(itemId, count);
+        } else {
+          try {
+            stock = stockQuantityForUnit({ unit: item.unit, packageQuantity: item.packageQuantity,
+              netPackageWeight: item.grossWeight != null && item.tareWeight != null
+                ? decimalNumber(item.grossWeight) - decimalNumber(item.tareWeight) : null,
+              nominalQuantity: item.nominalQuantity, nominalUnit: item.nominalUnit,
+              conversionRules: item.conversionRules }, quantity, row.unit || item.unit);
+          } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Единица переноса'); }
+        }
         quantities.set(itemId, (quantities.get(itemId) || 0) + stock);
         // A weighed tube transferred by 'шт.' has two independent dimensions:
         // its usable grams/ml and the exact number of physical containers.
-        if (['г','мл'].includes(canonicalInventoryUnit(item.unit) || '') &&
+        if (!full && ['г','мл'].includes(canonicalInventoryUnit(item.unit) || '') &&
             canonicalInventoryUnit(row.unit || item.unit) === 'шт.') {
           if (!Number.isSafeInteger(quantity))
             throw new BadRequestException('Тюбики переносятся целыми штуками.');
