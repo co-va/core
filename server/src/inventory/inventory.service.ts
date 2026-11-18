@@ -1435,12 +1435,16 @@ export class InventoryService {
     const source = objectValue(body);
     const name = text(source.name);
     if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
-    const locations = await this.prisma.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
-    if (name.toLocaleLowerCase('ru-RU') === 'основное'
-      || locations.some((location: AnyRecord) => location.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
-      throw new BadRequestException('Такое место хранения уже существует.');
-    await this.prisma.inventoryStorageLocation.create({
-      data: { tenantId, locationId: randomUUID(), name },
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))`;
+      const locations = await tx.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
+      if (name.toLocaleLowerCase('ru-RU') === 'основное'
+        || locations.some((location: AnyRecord) =>
+          location.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
+        throw new BadRequestException('Такое место хранения уже существует.');
+      await tx.inventoryStorageLocation.create({
+        data: { tenantId, locationId: randomUUID(), name },
+      });
     });
     return this.snapshot(tenantId);
   }
@@ -1449,7 +1453,10 @@ export class InventoryService {
     if (!locationId || locationId === PRIMARY_STORAGE) throw new BadRequestException('Основное место нельзя изменять.');
     const source = objectValue(body);
     await this.prisma.$transaction(async (tx: Tx) => {
-      const location = await tx.inventoryStorageLocation.findFirst({ where: { tenantId, locationId } });
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))`;
+      const location = await tx.inventoryStorageLocation.findFirst({
+        where: { tenantId, locationId, archivedAt: null },
+      });
       if (!location) throw new NotFoundException('Место хранения не найдено.');
       if (source.archived === true) {
         const rows = await tx.inventoryMovementLine.findMany({ where: { tenantId, storageLocationId: locationId }, select: { inventoryItemId: true, direction: true, quantity: true } });
@@ -1464,6 +1471,11 @@ export class InventoryService {
       } else if ('name' in source) {
         const name = text(source.name);
         if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
+        const duplicates = await tx.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
+        if (name.toLocaleLowerCase('ru-RU') === 'основное'
+          || duplicates.some((other: AnyRecord) => other.id !== location.id
+            && other.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
+          throw new BadRequestException('Такое место хранения уже существует.');
         await tx.inventoryStorageLocation.update({ where: { id: location.id }, data: { name } });
       }
     });
