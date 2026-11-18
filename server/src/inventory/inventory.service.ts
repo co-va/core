@@ -395,7 +395,7 @@ export class InventoryService {
   }
 
   async snapshot(tenantId: string) {
-    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups] = await Promise.all([
+    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, locationTargets] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -428,6 +428,7 @@ export class InventoryService {
       this.prisma.inventoryClassificationGroup.findMany({
         where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { name: 'asc' }],
       }),
+      this.prisma.inventoryLocationTarget.findMany({ where: { tenantId } }),
     ]);
 
     const balances = new Map<string, number>();
@@ -533,6 +534,12 @@ export class InventoryService {
       || collator.compare(String(left.name || ''), String(right.name || ''))
       || String(left.itemId || '').localeCompare(String(right.itemId || '')));
 
+    const targetsByItem = new Map<string, AnyRecord[]>();
+    for (const row of locationTargets as AnyRecord[]) {
+      const values = targetsByItem.get(row.inventoryItemId) || [];
+      values.push({ locationId: row.locationId, targetStock: decimalNumber(row.targetStock) });
+      targetsByItem.set(row.inventoryItemId, values);
+    }
     const classificationById = new Map((classificationGroups as AnyRecord[])
       .map(row => [row.groupId, row]));
     const pathFor = (id: string): string[] => {
@@ -590,6 +597,8 @@ export class InventoryService {
           supplier: item.supplier,
           minStock: item.minStock == null ? null : decimalNumber(item.minStock),
           targetStock: item.targetStock == null ? null : decimalNumber(item.targetStock),
+          targetStockMode: item.targetStockMode === 'locations' ? 'locations' : 'overall',
+          locationTargets: targetsByItem.get(item.id) || [],
           packageQuantity: item.packageQuantity == null ? null : decimalNumber(item.packageQuantity),
           containerCount: item.containerCount == null ? null : Number(item.containerCount),
           grossWeight,
@@ -1058,6 +1067,7 @@ export class InventoryService {
           supplier: optionalText(source.supplier),
           minStock: nullableNonNegative(source.minStock),
           targetStock: nullableNonNegative(source.targetStock),
+          targetStockMode: 'overall',
           packageQuantity: nullableNonNegative(source.packageQuantity),
           containerCount: optionalContainerInteger(source.containerCount, 'Количество тюбиков'),
           grossWeight,
