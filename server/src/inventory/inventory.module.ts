@@ -10,12 +10,13 @@ import { InventoryExcelController } from './inventory-excel.controller';
 import { InventoryExcelService } from './inventory-excel-final.service';
 import { InventoryService } from './inventory.service';
 import { InventoryCriteriaService } from './inventory-criteria.service';
+import { InventoryCriteriaRecoveryService } from './inventory-criteria-recovery.service';
 import { InventoryOrderExportService } from './inventory-order-export.service';
 
 @Module({
   imports: [AuthModule, FinanceModule, SaasAccessModule],
   controllers: [InventoryController, InventoryExcelController, InventoryCounterpartyController],
-  providers: [InventoryService, InventoryExcelService, InventoryOrderExportService, InventoryCounterpartyService, InventoryCriteriaService, PrismaService],
+  providers: [InventoryService, InventoryExcelService, InventoryOrderExportService, InventoryCounterpartyService, InventoryCriteriaService, InventoryCriteriaRecoveryService, PrismaService],
   exports: [InventoryService],
 })
 export class InventoryModule {}
