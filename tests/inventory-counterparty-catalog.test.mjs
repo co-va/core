@@ -42,5 +42,7 @@ assert.match(service, /async linkCompany\(/);
 assert.match(service, /async link\(/);
 assert.match(service, /this\.access\.resolveCapability\(tenantId, 'inventory\.counterparties\.access'\)/);
 assert.doesNotMatch(service, /inventoryMovement\.(create|update|delete)/);
-assert.match(service, /item\.packageQuantity != null && Number\(item\.packageQuantity\) > 0/);
+assert.match(service, /const ownSize = item\.packageQuantity == null/);
+assert.match(service, /supplierUnit && supplierUnit !== itemUnit && explicit == null/);
+assert.match(service, /catalogItemId: row\.id/);
 console.log('PASS: independent supplier catalog, permissions, PDF/Excel/template, import and links');
