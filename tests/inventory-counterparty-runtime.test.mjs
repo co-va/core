@@ -26,6 +26,12 @@ const priceListRepository = {
     return value;
   },
 };
+const matchingCatalogRows = (where = {}) => rows.filter(row =>
+  (!where.priceListId || row.priceListId === where.priceListId)
+  && (!where.supplierSku?.in || where.supplierSku.in.includes(row.supplierSku))
+  && (!where.id?.in || where.id.in.includes(row.id))
+  && (where.excludedAt === null ? !row.excludedAt
+    : where.excludedAt?.not === null ? Boolean(row.excludedAt) : true));
 const db = {
   inventoryCounterparty: { findFirst: async ({ where }) =>
     where.tenantId === 'tenant' && where.id === company.id ? company : null },
@@ -33,6 +39,8 @@ const db = {
   inventoryCounterpartyPriceList: priceListRepository,
   inventoryCounterpartyCatalogItem: {
     findFirst: async ({ where }) => rows.find(row => row.id === where.id) || null,
+    findMany: async ({ where }) => matchingCatalogRows(where),
+    count: async ({ where }) => matchingCatalogRows(where).length,
   },
   inventorySupplierOffer: {
     findFirst: async ({ where }) => offers.find(offer =>
@@ -45,7 +53,13 @@ const db = {
     inventoryCounterpartyPriceList: priceListRepository,
     inventoryCounterpartyCatalogItem: {
       createMany: async ({ data }) => { rows.push(...data.map(row => ({ id: 'row-' + ++counter, ...row }))); },
-      findMany: async ({ where }) => rows.filter(row => row.priceListId === where.priceListId && where.supplierSku.in.includes(row.supplierSku)),
+      findMany: async ({ where }) => matchingCatalogRows(where),
+      count: async ({ where }) => matchingCatalogRows(where).length,
+      updateMany: async ({ where, data }) => {
+        const found = matchingCatalogRows(where);
+        found.forEach(row => Object.assign(row, data));
+        return { count: found.length };
+      },
     },
     inventorySupplierOffer: {
       findMany: async ({ where }) => offers.filter(offer => offer.counterpartyId === where.counterpartyId
@@ -109,6 +123,14 @@ const duplicate = await service.import('tenant', company.id, file);
 assert.equal(duplicate.duplicate, true);
 assert.equal(lists.length, 1);
 
+const hiddenRow = rows[1];
+await service.setExcluded('tenant', company.id, { rowIds: [hiddenRow.id], excluded: true });
+assert.ok(hiddenRow.excludedAt instanceof Date);
+assert.equal((await service.catalog('tenant', company.id)).count, 1, 'Excluded row is hidden, not erased');
+assert.equal((await service.catalog('tenant', company.id, '', 0, true)).count, 1, 'Excluded row is recoverable');
+await assert.rejects(() => service.setExcluded('tenant', company.id, {
+  rowIds: ['not-in-current-catalog'], excluded: true,
+}), /устарел/);
 const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId);
 assert.equal(offer.itemId, stock.itemId);
 assert.equal(offers.length, 1);
@@ -120,6 +142,14 @@ offers[0].discountPercent = 7;
 const second = await service.import('tenant', company.id, await excelFile(390));
 assert.equal(second.revision, 2);
 assert.equal(lists.length, 2);
+assert.equal((await service.catalog('tenant', company.id)).count, 1,
+  'Unambiguously excluded supplier SKU stays hidden across revisions');
+const restored = await service.catalog('tenant', company.id, '', 0, true);
+assert.equal(restored.count, 1);
+assert.equal(restored.items[0].supplierSku, '002');
+await service.setExcluded('tenant', company.id, { rowIds: [restored.items[0].id], excluded: false });
+assert.equal((await service.catalog('tenant', company.id)).count, 2,
+  'Restoring affects the latest version without touching stock or source file');
 assert.equal(offers[0].listPrice, 390, 'Linked offers follow new supplier price');
 assert.equal(offers[0].actualPrice, 278, 'Supplier price revisions cannot overwrite invoice purchase price');
 assert.equal(offers[0].discountPercent, 7, 'Supplier price revisions cannot invent a different personal discount');
