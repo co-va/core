@@ -303,6 +303,61 @@ export class InventoryCounterpartyService {
     return { format: parsed.format, status: parsed.status, count: parsed.rows.length,
       sample: parsed.rows.slice(0, 30), errors: parsed.errors.slice(0, 30) };
   }
+  // Only unambiguous identifiers allow excluded choices to survive a new file revision.
+  // Ambiguous rows remain excluded in their original revision, never auto-excluded elsewhere.
+  private excludedFromPrevious(previous: Array<{supplierSku: string; barcode: string; excludedAt: Date | null}>, current: Row[]) {
+    const key = (value: unknown) => plain(value).toLocaleUpperCase('ru-RU');
+    const counts = (values: string[]) => {
+      const seen = new Map<string, number>();
+      values.filter(Boolean).forEach(value => seen.set(value, (seen.get(value) || 0) + 1));
+      return seen;
+    };
+    const oldSku = counts(previous.map(row => key(row.supplierSku)));
+    const oldBarcode = counts(previous.map(row => key(row.barcode)));
+    const newSku = counts(current.map(row => key(row.supplierSku)));
+    const newBarcode = counts(current.map(row => key(row.barcode)));
+    const bySku = new Map(previous.map(row => [key(row.supplierSku), row]));
+    const byBarcode = new Map(previous.map(row => [key(row.barcode), row]));
+    return current.map(row => {
+      const sku = key(row.supplierSku), barcode = key(row.barcode);
+      const candidates = new Set<typeof previous[number]>();
+      if (sku && oldSku.get(sku) === 1 && newSku.get(sku) === 1)
+        candidates.add(bySku.get(sku)!);
+      if (barcode && oldBarcode.get(barcode) === 1 && newBarcode.get(barcode) === 1)
+        candidates.add(byBarcode.get(barcode)!);
+      if (candidates.size !== 1) return null;
+      const old = [...candidates][0];
+      // A changed barcode with unchanged SKU can mean an entirely different product.
+      if (sku && key(old.supplierSku) === sku && barcode && old.barcode
+        && key(old.barcode) !== barcode) return null;
+      return old.excludedAt || null;
+    });
+  }
+
+  async setExcluded(tenantId: string, id: string, body: { rowIds?: string[]; excluded?: boolean }) {
+    await this.requireAccess(tenantId);
+    await this.company(tenantId, id);
+    const ids = Array.isArray(body?.rowIds) ? [...new Set(body.rowIds)] : [];
+    if (!ids.length || ids.length > 10000 || ids.some(value => typeof value !== 'string' || !value.trim()))
+      throw new BadRequestException('Выберите позиции ассортимента');
+    if (typeof body?.excluded !== 'boolean')
+      throw new BadRequestException('Не указано действие');
+    return this.prisma.$transaction(async tx => {
+      const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+        orderBy: { revision: 'desc' }, select: { id: true },
+      });
+      if (!latest) throw new NotFoundException('Ассортимент не найден');
+      const where = { tenantId, priceListId: latest.id, id: { in: ids } };
+      const found = await tx.inventoryCounterpartyCatalogItem.count({ where });
+      if (found !== ids.length) throw new BadRequestException('Выбор устарел. Обновите ассортимент.');
+      await tx.inventoryCounterpartyCatalogItem.updateMany({
+        where, data: { excludedAt: body.excluded ? new Date() : null },
+      });
+      return { updated: ids.length, excluded: body.excluded };
+    });
+  }
+
   async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
@@ -325,6 +380,16 @@ export class InventoryCounterpartyService {
       const last = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id }, orderBy: { revision: 'desc' }, select: { revision: true },
       });
+      const previousReady = parsed.status === 'READY'
+        ? await tx.inventoryCounterpartyPriceList.findFirst({
+            where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+            orderBy: { revision: 'desc' }, select: { id: true },
+          }) : null;
+      const prior = previousReady ? await tx.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: previousReady.id },
+        select: { supplierSku: true, barcode: true, excludedAt: true },
+      }) : [];
+      const inheritedExcluded = this.excludedFromPrevious(prior, parsed.rows);
       const list = await tx.inventoryCounterpartyPriceList.create({
         data: { tenantId, counterpartyId: id, revision: (last?.revision || 0) + 1,
           filename: file.originalname.slice(0, 250), format: parsed.format, sha256: hash,
@@ -332,8 +397,8 @@ export class InventoryCounterpartyService {
       });
       for (let i = 0; i < parsed.rows.length; i += 500) {
         await tx.inventoryCounterpartyCatalogItem.createMany({
-          data: parsed.rows.slice(i, i + 500).map((row) => ({ ...row,
-            tenantId, priceListId: list.id })),
+          data: parsed.rows.slice(i, i + 500).map((row, offset) => ({ ...row,
+            tenantId, priceListId: list.id, excludedAt: inheritedExcluded[i + offset] })),
         });
       }
       // Refresh only explicitly connected offers with unique supplier SKU.
@@ -374,7 +439,7 @@ export class InventoryCounterpartyService {
         count: parsed.rows.length, errors: parsed.errors };
     }, { timeout: 45000 });
   }
-  async catalog(tenantId: string, id: string, search = '', skip = 0) {
+  async catalog(tenantId: string, id: string, search = '', skip = 0, excluded = false) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
     const list = await this.prisma.inventoryCounterpartyPriceList.findFirst({
@@ -383,6 +448,7 @@ export class InventoryCounterpartyService {
     });
     if (!list) return { priceList: null, count: 0, items: [] };
     const condition = { tenantId, priceListId: list.id,
+      excludedAt: excluded ? { not: null } : null,
       ...(search.trim() ? { OR: [
         { name: { contains: search.trim(), mode: 'insensitive' as const } },
         { supplierSku: { contains: search.trim(), mode: 'insensitive' as const } },
