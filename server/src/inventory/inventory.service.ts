@@ -1054,7 +1054,7 @@ export class InventoryService {
       if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
       const classificationGroupId = await this.resolveItemGroup(tx, tenantId, source);
       const criteriaValues = 'criteriaValues' in source
-        ? await this.criteria.validateSelections(tx, tenantId, source.criteriaValues)
+        ? await this.criteria.validateSelections(tx as Prisma.TransactionClient, tenantId, source.criteriaValues)
         : undefined;
       await tx.inventoryItem.create({
         data: {
@@ -1151,7 +1151,7 @@ export class InventoryService {
       : undefined;
     if (classificationGroupId !== undefined) data.classificationGroupId = classificationGroupId;
     if ('criteriaValues' in source) data.criteriaValues = await this.criteria.validateSelections(
-      owner as Tx, tenantId, source.criteriaValues, current.criteriaValues);
+      owner as Prisma.TransactionClient, tenantId, source.criteriaValues, current.criteriaValues);
     if ('name' in source) {
       const name = text(source.name);
       if (!name) throw new BadRequestException('Укажите наименование позиции');
