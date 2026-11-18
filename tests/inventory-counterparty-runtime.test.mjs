@@ -329,7 +329,8 @@ assert.equal(repeated.createdCompany, false);
 assert.equal(companies.filter(x => x.name === 'Вася Пупкин').length, 1);
 // Legacy Excel without an explicit supplier requires the user to choose an existing
 // supplier or supply a name; it must not create an unnamed or guessed company.
-await assert.rejects(() => service.importGlobal('tenant', await excelFile(555)),
+const anonymousSupplierFile = await excelFile(555);
+await assert.rejects(() => service.importGlobal('tenant', anonymousSupplierFile),
   /Укажите поставщика/);
 const inferredKnown = await service.previewGlobal('tenant',
   { ...await excelFile(555), originalname: 'Supply Store.xlsx' });
