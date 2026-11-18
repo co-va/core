@@ -12,7 +12,7 @@ type Row = {
   listPrice: number | null; retailPrice: number | null; suggestedOrderQuantity: number | null;
   actualPrice: number | null; discountPercent: number | null;
 };
-type Parsed = { format: 'xlsx' | 'pdf'; status: 'READY' | 'NEEDS_TEMPLATE'; rows: Row[]; errors: string[]; terms?: string };
+type Parsed = { format: 'xlsx' | 'pdf'; status: 'READY' | 'NEEDS_TEMPLATE'; rows: Row[]; errors: string[]; terms?: string; supplierName?: string };
 
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_ROWS = 10000;
@@ -113,6 +113,7 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
   try { await workbook.xlsx.load(data as any); }
   catch { return { format: 'xlsx', status: 'NEEDS_TEMPLATE', rows: [], errors: ['Не удалось прочитать Excel. Используйте шаблон .xlsx.'] }; }
   const rows: Row[] = [], errors: string[] = [], terms: string[] = [];
+  const supplierNames = new Set<string>();
   // An order form can have hidden lookup/helper sheets. Choose the actual priced
   // supplier sheets, never import auxiliary SKU lists as additional products.
   const definitions = workbook.worksheets.map((sheet) => {
@@ -139,14 +140,31 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
   }
   for (const { sheet, header, mapping } of eligible) {
     let brand = '', category = '';
+    let sheetSupplier = '';
+    const headerCells = sheet.getRow(header);
+    let supplierColumn = 0;
+    headerCells.eachCell({ includeEmpty: false }, (cell, index) => {
+      if (['контрагент', 'поставщик', 'supplier'].includes(normal(cell.value)))
+        supplierColumn = index;
+    });
     for (let n = 1; n < header; n++) {
       sheet.getRow(n).eachCell({ includeEmpty: false }, (cell) => {
         const phrase = plain(cell.value);
         if (/минимальн.*сумм.*заказ/i.test(phrase)) terms.push(sheet.name + ': ' + phrase.slice(0, 500));
+        const inlineSupplier = phrase.match(/^(?:контрагент|поставщик|supplier)\s*[:：]\s*(.+)$/i);
+        if (inlineSupplier) sheetSupplier = inlineSupplier[1].trim().slice(0, 160);
+        else if (/^(?:контрагент|поставщик|supplier)\s*[:：]?$/i.test(phrase)) {
+          const next = plain(sheet.getRow(n).getCell(cell.col + 1).value);
+          if (next) sheetSupplier = next.slice(0, 160);
+        }
       });
     }
     for (let n = header + 1; n <= sheet.rowCount; n++) {
       const source = sheet.getRow(n);
+      if (supplierColumn) {
+        const cellSupplier = plain(source.getCell(supplierColumn).value).slice(0, 160);
+        if (cellSupplier) sheetSupplier = cellSupplier;
+      }
       const values = Object.fromEntries(COLUMNS.map((key) =>
         [key, mapping[key] ? source.getCell(mapping[key]!).value : ''])) as Record<Column, unknown>;
       // Supplier's unlabeled helper column may mark a product as new.
@@ -179,13 +197,19 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
       }
       if (!sku && !barcode && !price) continue;
       const row = mapRow(values, rows.length + 1, errors, { brand, category, sourceSheet: sheet.name, sourceRow: n });
-      if (row) rows.push(row);
+      if (row) {
+        rows.push(row);
+        if (sheetSupplier) supplierNames.add(sheetSupplier);
+      }
       if (rows.length > MAX_ROWS) throw new BadRequestException('Слишком большой прайс: максимум 10 000 строк');
     }
   }
   if (!rows.length) errors.push('В файле нет строк товаров.');
+  if (new Set([...supplierNames].map(value => normal(value))).size > 1)
+    errors.push('В файле несколько поставщиков. Загрузите прайс каждого отдельно.');
   return { format: 'xlsx', status: errors.length ? 'NEEDS_TEMPLATE' : 'READY',
-    rows: errors.length ? [] : rows, errors, terms: terms.join(' | ').slice(0, 3000) };
+    rows: errors.length ? [] : rows, errors, terms: terms.join(' | ').slice(0, 3000),
+    supplierName: supplierNames.size ? [...supplierNames][0] : '' };
 }
 async function parsePdf(data: Buffer): Promise<Parsed> {
   const parse: (data: Buffer, options?: Record<string, unknown>) => Promise<{ text: string; numpages: number }> = require('pdf-parse');
@@ -366,12 +390,12 @@ export class InventoryCounterpartyService {
     await this.requireAccess(tenantId);
     const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet('Прайс');
-    sheet.addRow(['Артикул','Наименование','Производитель','Бренд','Категория','Есть/нет на складе','БЦО','РРЦ',
+    sheet.addRow(['Контрагент','Артикул','Наименование','Производитель','Бренд','Категория','Есть/нет на складе','БЦО','РРЦ',
       'Цена закупки','Скидка %','Единица','В упаковке','Штрихкод','Новинка','Кол-во штук']);
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).height = 28;
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    for (let n = 1; n <= 15; n++) sheet.getColumn(n).width = [23,48,28,22,24,20,18,18,20,16,16,18,25,16,18][n-1];
+    for (let n = 1; n <= 16; n++) sheet.getColumn(n).width = [28,23,48,28,22,24,20,18,18,20,16,16,18,25,16,18][n-1];
     return Buffer.from(await book.xlsx.writeBuffer());
   }
   private async parsed(file: SupplierFile): Promise<Parsed> {
