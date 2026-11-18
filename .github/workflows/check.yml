@@ -49,6 +49,8 @@ jobs:
         run: npm run prisma:generate --prefix server
       - name: Build server
         run: npm run build --prefix server
+      - name: Verify independent Inventory criteria runtime
+        run: node tests/inventory-criteria-runtime.test.mjs
       - name: Verify supplier pricelist import runtime
         run: node tests/inventory-counterparty-runtime.test.mjs
       - name: Verify nested Inventory classifications

@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { InventoryCriteriaService } from './inventory-criteria.service';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
 import { effectiveSupplierOfferPrice, resolveInventoryBasePricing, supplierOfferUnitPrice } from './inventory-pricing';
@@ -260,7 +261,8 @@ export class InventoryService {
   transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryClassificationGroup', 'InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine']); }
   restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryClassificationGroup', 'InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine'],before,after,checkOnly); }
 
-  constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
+  constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService,
+    private readonly criteria: InventoryCriteriaService) {}
 
   private groupName(value: unknown) {
     const name = text(value);
@@ -560,6 +562,7 @@ export class InventoryService {
           itemId: item.itemId,
           position: item.position,
           classificationGroupId: item.classificationGroupId || null,
+          criteriaValues: item.criteriaValues || {},
           classificationPath: pathFor(item.classificationGroupId || ''),
 
           name: item.name,
@@ -1041,12 +1044,16 @@ export class InventoryService {
       await this.lockInventoryOrder(tx, tenantId);
       if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
       const classificationGroupId = await this.resolveItemGroup(tx, tenantId, source);
+      const criteriaValues = 'criteriaValues' in source
+        ? await this.criteria.validateSelections(tx as Prisma.TransactionClient, tenantId, source.criteriaValues)
+        : undefined;
       await tx.inventoryItem.create({
         data: {
           tenantId,
           itemId,
           name,
           classificationGroupId,
+          ...(criteriaValues === undefined ? {} : { criteriaValues }),
           ...card,
           manufacturer: optionalText(source.manufacturer),
           productType: optionalText(source.productType),
@@ -1109,7 +1116,8 @@ export class InventoryService {
       throw new BadRequestException('Обновите склад перед изменением номера.');
     // A number edit or company transfer is atomic with its order adjustment.
     if (!db && ('position' in source || 'manufacturer' in source || 'category' in source
-        || 'productType' in source || 'classificationGroupId' in source || source.archived === true)) {
+        || 'productType' in source || 'classificationGroupId' in source
+        || 'criteriaValues' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
       });
@@ -1131,6 +1139,8 @@ export class InventoryService {
       ? await this.resolveItemGroup(db, tenantId, source, current)
       : undefined;
     if (classificationGroupId !== undefined) data.classificationGroupId = classificationGroupId;
+    if ('criteriaValues' in source) data.criteriaValues = await this.criteria.validateSelections(
+      owner as Prisma.TransactionClient, tenantId, source.criteriaValues, current.criteriaValues);
     if ('name' in source) {
       const name = text(source.name);
       if (!name) throw new BadRequestException('Укажите наименование позиции');
