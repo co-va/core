@@ -436,6 +436,7 @@ export class InventoryService {
 
     const balances = new Map<string, number>();
     const byStorage = new Map<string, Map<string, number>>();
+    const byStorageContainers = new Map<string, Map<string, number>>();
     lines.forEach((line: AnyRecord) => {
       const signed = line.direction === 'OUT' ? -decimalNumber(line.quantity) : decimalNumber(line.quantity);
       balances.set(line.inventoryItemId, (balances.get(line.inventoryItemId) || 0) + signed);
@@ -443,6 +444,11 @@ export class InventoryService {
       const perItem = byStorage.get(line.inventoryItemId) || new Map<string, number>();
       perItem.set(site, (perItem.get(site) || 0) + signed);
       byStorage.set(line.inventoryItemId, perItem);
+      if (line.containerDelta != null) {
+        const units = byStorageContainers.get(line.inventoryItemId) || new Map<string, number>();
+        units.set(site, (units.get(site) || 0) + Number(line.containerDelta));
+        byStorageContainers.set(line.inventoryItemId, units);
+      }
     });
     // A threshold is a whole receipt unit; compare it to the physical stock
     // unit only through an explicit, grounded quantity per unit.
@@ -585,6 +591,9 @@ export class InventoryService {
           serviceEndAt: item.serviceEndAt,
           resourceProgress: resourceByItem.get(item.id) || [],
           locationBalances: [...(byStorage.get(item.id) || new Map([[PRIMARY_STORAGE, 0]])).entries()].map(([locationId, balance]) => ({ locationId, balance: Math.round(balance * 1000) / 1000 })),
+          locationContainerCounts: [...(byStorageContainers.get(item.id) || new Map()).entries()].map(
+            ([locationId, containers]) => ({ locationId, containers }),
+          ),
           manufacturer: item.manufacturer,
           productType: item.productType,
           unit: item.unit,
@@ -1062,7 +1071,7 @@ export class InventoryService {
         movementId, kind: 'SUPPLIER_RETURN', sourceType: 'inventory-supplier-return',
         sourceId: orderId, occurredAt, note: text(source.note) || 'Возврат товара поставщику',
         lines: stockLines,
-      });
+      }, { allowSupplierReturn: true });
       for (const claim of claimParts) await tx.inventorySupplierClaim.create({ data: claim });
     }, { timeout: 60000, maxWait: 10000 });
     return this.snapshot(tenantId);
@@ -1713,6 +1722,7 @@ export class InventoryService {
       if (items.length !== ids.length) throw new BadRequestException('Одна из позиций переноса не найдена.');
       const byId = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
       const quantities = new Map<string, number>();
+      const physicalQuantities = new Map<string, number>();
       for (const item of (items as AnyRecord[]).sort((a, b) => String(a.id).localeCompare(String(b.id))))
         await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
       for (const row of requested) {
@@ -1729,11 +1739,30 @@ export class InventoryService {
             conversionRules: item.conversionRules }, quantity, row.unit || item.unit);
         } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Единица переноса'); }
         quantities.set(itemId, (quantities.get(itemId) || 0) + stock);
+        // A weighed tube transferred by 'шт.' has two independent dimensions:
+        // its usable grams/ml and the exact number of physical containers.
+        if (['г','мл'].includes(canonicalInventoryUnit(item.unit) || '') &&
+            canonicalInventoryUnit(row.unit || item.unit) === 'шт.') {
+          if (!Number.isSafeInteger(quantity))
+            throw new BadRequestException('Тюбики переносятся целыми штуками.');
+          physicalQuantities.set(itemId, (physicalQuantities.get(itemId) || 0) + quantity);
+        }
       }
       for (const [itemId, quantity] of quantities) {
         const item = byId.get(itemId) as AnyRecord;
         const available = await this.storageBalanceInTx(tx, tenantId, item.id, from);
         if (quantity > available + EPSILON) throw new BadRequestException('Недостаточный остаток для переноса: ' + item.name);
+      }
+      for (const [itemId, containers] of physicalQuantities) {
+        const item = byId.get(itemId) as AnyRecord;
+        const prior = await tx.inventoryMovementLine.findMany({
+          where: { tenantId, inventoryItemId: item.id, storageLocationId: from },
+          select: { containerDelta: true },
+        });
+        const available = (prior as AnyRecord[]).reduce((sum: number, line: AnyRecord) =>
+          sum + (line.containerDelta == null ? 0 : Number(line.containerDelta)), 0);
+        if (containers > available)
+          throw new BadRequestException('Недостаточно целых тюбиков на исходном складе.');
       }
       const movement = await tx.inventoryMovement.create({ data: {
         tenantId, movementId, kind: 'TRANSFER', status: 'completed',
@@ -1748,6 +1777,8 @@ export class InventoryService {
             tenantId, inventoryMovementId: movement.id, inventoryItemId: item.id,
             lineId: randomUUID(), position: position++, direction, storageLocationId: locationId,
             quantity: Math.round(quantity * 1000) / 1000, costKnown: false, unitCost: 0, amount: 0,
+            containerDelta: physicalQuantities.has(itemId)
+              ? (direction === 'OUT' ? -1 : 1) * (physicalQuantities.get(itemId) || 0) : null,
             note: '',
           } });
         }
@@ -2133,12 +2164,14 @@ export class InventoryService {
   }
 
   private async createMovementInTx(tx: Tx, tenantId: string, raw: AnyRecord,
-    options: { allowPurchaseOrderReceipt?: boolean; allowRecordSale?: boolean } = {}) {
+    options: { allowPurchaseOrderReceipt?: boolean; allowRecordSale?: boolean; allowSupplierReturn?: boolean } = {}) {
     // The generic movement endpoint cannot impersonate a purchase receipt.
     // The Purchase Order owner alone authorizes this source in its transaction.
     if (text(raw.sourceType) === 'inventory-purchase-order' && !options.allowPurchaseOrderReceipt) {
       throw new BadRequestException('Приход по заказу создаётся только при получении заказа');
     }
+    if (text(raw.kind) === 'SUPPLIER_RETURN' && !options.allowSupplierReturn)
+      throw new BadRequestException('Возврат поставщику оформляется только из полученного заказа.');
     if (text(raw.sourceType) === 'record-sale' && !options.allowRecordSale) {
       throw new BadRequestException('Продажа из записи создаётся только при сохранении записи');
     }
