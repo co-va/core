@@ -1355,17 +1355,17 @@ export class InventoryService {
     // Paid or draft orders must remain fulfillable. Received orders are historical.
     const orderLines = await tx.inventoryPurchaseOrderLine.findMany({
       where: { tenantId, itemId: { in: items.map(item => item.itemId) } },
-      select: { itemId: true, orderId: true },
+      select: { itemId: true, purchaseOrderId: true },
     });
     if (orderLines.length) {
-      const orderIds = [...new Set(orderLines.map((line: AnyRecord) => line.orderId))];
+      const orderIds = [...new Set(orderLines.map((line: AnyRecord) => line.purchaseOrderId))];
       const activeOrders = await tx.inventoryPurchaseOrder.findMany({
-        where: { tenantId, orderId: { in: orderIds }, status: { in: ['draft', 'paid'] } },
-        select: { orderId: true },
+        where: { tenantId, id: { in: orderIds }, status: { in: ['formed', 'paid'] } },
+        select: { id: true },
       });
       if (activeOrders.length) {
-        const active = new Set(activeOrders.map((order: AnyRecord) => order.orderId));
-        const affected = new Set(orderLines.filter((line: AnyRecord) => active.has(line.orderId))
+        const active = new Set(activeOrders.map((order: AnyRecord) => order.id));
+        const affected = new Set(orderLines.filter((line: AnyRecord) => active.has(line.purchaseOrderId))
           .map((line: AnyRecord) => line.itemId));
         if (affected.size) throw new BadRequestException('Нельзя удалить позиции из неоплаченного или не полученного заказа.');
       }
