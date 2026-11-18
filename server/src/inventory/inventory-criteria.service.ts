@@ -45,7 +45,7 @@ export class InventoryCriteriaService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async lock(tx: Tx, tenantId: string) {
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))::text AS locked',
+    await tx.$queryRawUnsafe('SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))) AS guard',
       tenantId, 'inventory-criteria');
   }
 
