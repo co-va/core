@@ -12,7 +12,7 @@ type Row = {
   listPrice: number | null; retailPrice: number | null; suggestedOrderQuantity: number | null;
   actualPrice: number | null; discountPercent: number | null;
 };
-type Parsed = { format: 'xlsx' | 'pdf'; status: 'READY' | 'NEEDS_TEMPLATE'; rows: Row[]; errors: string[]; terms?: string };
+type Parsed = { format: 'xlsx' | 'pdf'; status: 'READY' | 'NEEDS_TEMPLATE'; rows: Row[]; errors: string[]; terms?: string; supplierName?: string };
 
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_ROWS = 10000;
@@ -113,6 +113,7 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
   try { await workbook.xlsx.load(data as any); }
   catch { return { format: 'xlsx', status: 'NEEDS_TEMPLATE', rows: [], errors: ['Не удалось прочитать Excel. Используйте шаблон .xlsx.'] }; }
   const rows: Row[] = [], errors: string[] = [], terms: string[] = [];
+  const supplierNames = new Set<string>();
   // An order form can have hidden lookup/helper sheets. Choose the actual priced
   // supplier sheets, never import auxiliary SKU lists as additional products.
   const definitions = workbook.worksheets.map((sheet) => {
@@ -139,14 +140,31 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
   }
   for (const { sheet, header, mapping } of eligible) {
     let brand = '', category = '';
+    let sheetSupplier = '';
+    const headerCells = sheet.getRow(header);
+    let supplierColumn = 0;
+    headerCells.eachCell({ includeEmpty: false }, (cell, index) => {
+      if (['контрагент', 'поставщик', 'supplier'].includes(normal(cell.value)))
+        supplierColumn = index;
+    });
     for (let n = 1; n < header; n++) {
       sheet.getRow(n).eachCell({ includeEmpty: false }, (cell) => {
         const phrase = plain(cell.value);
         if (/минимальн.*сумм.*заказ/i.test(phrase)) terms.push(sheet.name + ': ' + phrase.slice(0, 500));
+        const inlineSupplier = phrase.match(/^(?:контрагент|поставщик|supplier)\s*[:：]\s*(.+)$/i);
+        if (inlineSupplier) sheetSupplier = inlineSupplier[1].trim().slice(0, 160);
+        else if (/^(?:контрагент|поставщик|supplier)\s*[:：]?$/i.test(phrase)) {
+          const next = plain(sheet.getRow(n).getCell(cell.col + 1).value);
+          if (next) sheetSupplier = next.slice(0, 160);
+        }
       });
     }
     for (let n = header + 1; n <= sheet.rowCount; n++) {
       const source = sheet.getRow(n);
+      if (supplierColumn) {
+        const cellSupplier = plain(source.getCell(supplierColumn).value).slice(0, 160);
+        if (cellSupplier) sheetSupplier = cellSupplier;
+      }
       const values = Object.fromEntries(COLUMNS.map((key) =>
         [key, mapping[key] ? source.getCell(mapping[key]!).value : ''])) as Record<Column, unknown>;
       // Supplier's unlabeled helper column may mark a product as new.
@@ -179,13 +197,19 @@ async function parseExcel(data: Buffer): Promise<Parsed> {
       }
       if (!sku && !barcode && !price) continue;
       const row = mapRow(values, rows.length + 1, errors, { brand, category, sourceSheet: sheet.name, sourceRow: n });
-      if (row) rows.push(row);
+      if (row) {
+        rows.push(row);
+        if (sheetSupplier) supplierNames.add(sheetSupplier);
+      }
       if (rows.length > MAX_ROWS) throw new BadRequestException('Слишком большой прайс: максимум 10 000 строк');
     }
   }
   if (!rows.length) errors.push('В файле нет строк товаров.');
+  if (new Set([...supplierNames].map(value => normal(value))).size > 1)
+    errors.push('В файле несколько поставщиков. Загрузите прайс каждого отдельно.');
   return { format: 'xlsx', status: errors.length ? 'NEEDS_TEMPLATE' : 'READY',
-    rows: errors.length ? [] : rows, errors, terms: terms.join(' | ').slice(0, 3000) };
+    rows: errors.length ? [] : rows, errors, terms: terms.join(' | ').slice(0, 3000),
+    supplierName: supplierNames.size ? [...supplierNames][0] : '' };
 }
 async function parsePdf(data: Buffer): Promise<Parsed> {
   const parse: (data: Buffer, options?: Record<string, unknown>) => Promise<{ text: string; numpages: number }> = require('pdf-parse');
@@ -233,6 +257,55 @@ function validFile(file: SupplierFile): 'xlsx' | 'pdf' {
 export class InventoryCounterpartyService {
   constructor(private readonly prisma: PrismaService, private readonly access: SaasAccessService) {}
 
+  private discount(value: unknown): number | null {
+    if (value == null || String(value).trim() === '') return null;
+    const result = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(result) || result < 0 || result > 100)
+      throw new BadRequestException('Скидка должна быть от 0 до 100%.');
+    return Math.round(result * 10000) / 10000;
+  }
+
+  private nonnegativePrice(value: unknown): number | null {
+    if (value == null || String(value).trim() === '') return null;
+    const result = Number(String(value).replace(',', '.'));
+    if (!Number.isFinite(result) || result < 0 || result > 1e9)
+      throw new BadRequestException('Цена должна быть неотрицательной.');
+    return Math.round((result + Number.EPSILON) * 100) / 100;
+  }
+
+  private appliedDiscount(row: {discountPercent?: unknown}, agreement: unknown): number {
+    return Number(row.discountPercent ?? agreement ?? 0);
+  }
+
+  private catalogView<T extends {listPrice?: unknown;discountPercent?: unknown}>(row: T, agreement: unknown) {
+    const discount = this.appliedDiscount(row, agreement);
+    const price = row.listPrice == null ? null : Number(row.listPrice);
+    return {
+      ...row,
+      appliedDiscountPercent: discount,
+      effectivePrice: price == null ? null : Math.round((price * (1 - discount / 100) + Number.EPSILON) * 100) / 100,
+      discountSource: row.discountPercent != null ? 'product' : agreement != null ? 'agreement' : 'none',
+    };
+  }
+
+  private async latestCatalogInTx(tx: any, tenantId: string, id: string) {
+    const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+      where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+      orderBy: { revision: 'desc' }, select: { id: true },
+    });
+    if (!latest) throw new NotFoundException('Ассортимент не найден.');
+    return latest;
+  }
+
+  private async refreshOfferForRow(tx: any, tenantId: string, id: string,
+    row: {id: string; supplierSku: string; listPrice: unknown; discountPercent: unknown}, agreement: unknown) {
+    await tx.inventorySupplierOffer.updateMany({
+      where: { tenantId, counterpartyId: id, catalogItemId: row.id, isActive: true },
+      data: { listPrice: row.listPrice as any, supplierSku: row.supplierSku,
+        discountPercent: this.appliedDiscount(row, agreement), agreementPriced: true },
+    });
+  }
+
   private async requireAccess(tenantId: string) {
     const right = await this.access.resolveCapability(tenantId, 'inventory.counterparties.access');
     if (!right.enabled) throw new ForbiddenException('Контрагенты недоступны для аккаунта');
@@ -262,13 +335,14 @@ export class InventoryCounterpartyService {
     return this.prisma.inventoryCounterparty.create({ data: { tenantId, name, kind,
       contactName: plain(input?.contactName).slice(0, 160),
       phone: plain(input?.phone).slice(0, 100), email: plain(input?.email).slice(0, 254),
-      website: plain(input?.website).slice(0, 500), note: plain(input?.note).slice(0, 2000) } });
+      website: plain(input?.website).slice(0, 500), note: plain(input?.note).slice(0, 2000),
+      discountPercent: this.discount(input?.discountPercent) } });
   }
   async update(tenantId: string, id: string, input: Record<string, unknown>) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
     const allowed = ['name','kind','contactName','phone','email','website','note'] as const;
-    const changes: Record<string, string> = {};
+    const changes: Record<string, any> = {};
     for (const key of allowed) if (Object.prototype.hasOwnProperty.call(input || {}, key)) {
       changes[key] = plain(input[key]).slice(0, key === 'note' ? 2000 : key === 'website' ? 500 : 254);
     }
@@ -277,19 +351,51 @@ export class InventoryCounterpartyService {
       changes.kind = changes.kind.toUpperCase();
       if (!['SUPPLIER','MANUFACTURER','DISTRIBUTOR','MARKETPLACE','STORE','OTHER'].includes(changes.kind)) throw new BadRequestException('Неизвестный тип');
     }
-    await this.prisma.inventoryCounterparty.updateMany({ where: { tenantId, id, archivedAt: null }, data: changes });
+    if (Object.prototype.hasOwnProperty.call(input || {}, 'discountPercent')) {
+      changes.discountPercent = this.discount(input.discountPercent);
+    }
+    if (!Object.prototype.hasOwnProperty.call(changes, 'discountPercent')) {
+      await this.prisma.inventoryCounterparty.updateMany({ where: { tenantId, id, archivedAt: null }, data: changes });
+      return this.company(tenantId, id);
+    }
+    // An agreement change affects future offers, not already-paid invoices or receipts.
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}),hashtext(${id}))) AS guard`;
+      await tx.inventoryCounterparty.updateMany({ where: { tenantId, id, archivedAt: null }, data: changes });
+      const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+        orderBy: { revision: 'desc' }, select: { id: true },
+      });
+      if (!latest) return;
+      const rows = await tx.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: latest.id, excludedAt: null },
+        select: { id: true, discountPercent: true },
+      });
+      const grouped = new Map<number, string[]>();
+      for (const row of rows) {
+        const applied = this.appliedDiscount(row, changes.discountPercent);
+        const ids = grouped.get(applied) || [];
+        ids.push(row.id); grouped.set(applied, ids);
+      }
+      for (const [discountPercent, ids] of grouped) {
+        await tx.inventorySupplierOffer.updateMany({
+          where: { tenantId, counterpartyId: id, isActive: true, catalogItemId: { in: ids } },
+          data: { discountPercent, agreementPriced: true },
+        });
+      }
+    }, { timeout: 60000 });
     return this.company(tenantId, id);
   }
   async template(tenantId: string) {
     await this.requireAccess(tenantId);
     const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet('Прайс');
-    sheet.addRow(['Артикул','Наименование','Производитель','Бренд','Категория','Есть/нет на складе','БЦО','РРЦ',
+    sheet.addRow(['Контрагент','Артикул','Наименование','Производитель','Бренд','Категория','Есть/нет на складе','БЦО','РРЦ',
       'Цена закупки','Скидка %','Единица','В упаковке','Штрихкод','Новинка','Кол-во штук']);
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).height = 28;
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    for (let n = 1; n <= 15; n++) sheet.getColumn(n).width = [23,48,28,22,24,20,18,18,20,16,16,18,25,16,18][n-1];
+    for (let n = 1; n <= 16; n++) sheet.getColumn(n).width = [28,23,48,28,22,24,20,18,18,20,16,16,18,25,16,18][n-1];
     return Buffer.from(await book.xlsx.writeBuffer());
   }
   private async parsed(file: SupplierFile): Promise<Parsed> {
@@ -358,19 +464,10 @@ export class InventoryCounterpartyService {
     });
   }
 
-  async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
-    await this.requireAccess(tenantId);
-    await this.company(tenantId, id);
-    const parsed = await this.parsed(file);
-    if (parsed.format === 'pdf' && parsed.status === 'READY' && !confirmedPdf) {
-      throw new BadRequestException('Перед импортом PDF проверьте распознанные строки в предпросмотре');
-    }
+  private async saveParsedInTx(tx: any, tenantId: string, id: string,
+    file: SupplierFile, parsed: Parsed, company: { discountPercent?: unknown }) {
     const hash = createHash('sha256').update(file.buffer).digest('hex');
-    const previous = await this.prisma.inventoryCounterpartyPriceList.findFirst({
-      where: { tenantId, counterpartyId: id, sha256: hash }, select: { id: true, revision: true, parserStatus: true },
-    });
-    if (previous) return { ...previous, duplicate: true };
-    return this.prisma.$transaction(async (tx) => {
+
       await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard) AS guard`;
       const duplicate = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id, sha256: hash },
@@ -418,18 +515,23 @@ export class InventoryCounterpartyService {
             tx.inventorySupplierOffer.findMany({
               where: { tenantId, counterpartyId: id, isActive: true,
                 catalogItemId: { not: null }, supplierSku: { in: uniqueSkus } },
-              select: { id: true, supplierSku: true },
+              select: { id: true, supplierSku: true, agreementPriced: true },
             }),
           ]);
-          const current = new Map(catalogRows.map((row) => [row.supplierSku, row]));
+          const current = new Map<string, { id: string; listPrice: unknown; discountPercent: unknown }>(
+            (catalogRows as Array<{ id: string; supplierSku: string; listPrice: unknown; discountPercent: unknown }>)
+              .map(row => [row.supplierSku, row]));
           for (const offer of linkedOffers) {
             const row = current.get(offer.supplierSku);
             if (!row) continue;
             await tx.inventorySupplierOffer.update({
               where: { id: offer.id }, data: {
                 catalogItemId: row.id, listPrice: row.listPrice,
-                // Never replace a manually entered invoice price or personal discount.
-                // The supplier price list updates only the advertised base price, not procurement history.
+                ...(offer.agreementPriced
+                  ? { discountPercent: this.appliedDiscount(row, company.discountPercent) }
+                  : {}),
+                // Keep legacy manual prices unchanged until the agreement is configured.
+                // Invoice / movement history is never re-priced.
               },
             });
           }
@@ -437,7 +539,90 @@ export class InventoryCounterpartyService {
       }
       return { id: list.id, revision: list.revision, parserStatus: list.parserStatus,
         count: parsed.rows.length, errors: parsed.errors };
-    }, { timeout: 45000 });
+  }
+
+  async previewGlobal(tenantId: string, file: SupplierFile) {
+    await this.requireAccess(tenantId);
+    const parsed = await this.parsed(file);
+    const filename = file.originalname.replace(/\.(xlsx|pdf)$/i, '').trim().slice(0, 160);
+    const hintNames = parsed.supplierName ? [parsed.supplierName]
+      : [filename, ...new Set(parsed.rows.map(row => row.sourceSheet))].filter(value =>
+        value && !/^(?:лист\s*\d+|sheet\s*\d+|прайс|catalog|каталог|supplier)$/i.test(value));
+    const matches = new Map<string, { id: string; name: string }>();
+    for (const hint of [...new Set(hintNames)].slice(0, 8)) {
+      const found = await this.prisma.inventoryCounterparty.findMany({
+        where: { tenantId, archivedAt: null, name: { equals: hint, mode: 'insensitive' } },
+        select: { id: true, name: true },
+      });
+      found.forEach(company => matches.set(company.id, company));
+    }
+    const exact = [...matches.values()];
+    const matched = exact.length === 1 ? exact[0] : null;
+    return { format: parsed.format, status: parsed.status, count: parsed.rows.length,
+      sample: parsed.rows.slice(0, 30), errors: parsed.errors.slice(0, 30),
+      supplierName: parsed.supplierName || matched?.name || '',
+      matchedCounterpartyId: matched?.id || null,
+      ambiguousMatch: exact.length > 1 };
+  }
+
+  async importGlobal(tenantId: string, file: SupplierFile,
+    options: { counterpartyId?: string; name?: string; confirmedPdf?: boolean } = {}) {
+    await this.requireAccess(tenantId);
+    const parsed = await this.parsed(file);
+    const selectedId = plain(options.counterpartyId);
+    // Preserve an unrecognized original only under an explicitly selected existing
+    // company. Never create an empty supplier or merge files containing multiple suppliers.
+    const originalOnly = parsed.status !== 'READY' || !parsed.rows.length;
+    if (originalOnly && (!selectedId ||
+      parsed.errors.some(error => /несколько поставщиков/i.test(error))))
+      throw new BadRequestException(parsed.errors[0] || 'Не удалось распознать прайс. Используйте шаблон Excel.');
+    if (parsed.format === 'pdf' && parsed.status === 'READY' && !options.confirmedPdf)
+      throw new BadRequestException('Подтвердите распознанный PDF перед загрузкой.');
+    const name = (plain(options.name) || plain(parsed.supplierName)).slice(0, 160);
+    if (!selectedId && !name)
+      throw new BadRequestException('Укажите поставщика или выберите существующего.');
+    return this.prisma.$transaction(async tx => {
+      let company: { id: string; name: string; discountPercent?: unknown };
+      let createdCompany = false;
+      if (selectedId) {
+        const found = await tx.inventoryCounterparty.findFirst({
+          where: { id: selectedId, tenantId, archivedAt: null },
+        });
+        if (!found) throw new NotFoundException('Выбранный контрагент не найден.');
+        company = found;
+      } else {
+        // Serialise matching names per account: simultaneous imports cannot create duplicates.
+        const key = name.toLocaleLowerCase('ru-RU');
+        await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${key}))) AS guard`;
+        const found = await tx.inventoryCounterparty.findMany({
+          where: { tenantId, archivedAt: null, name: { equals: name, mode: 'insensitive' } },
+        });
+        if (found.length > 1)
+          throw new BadRequestException('Найдено несколько контрагентов с этим названием. Выберите нужного.');
+        if (found.length) company = found[0];
+        else {
+          company = await tx.inventoryCounterparty.create({
+            data: { tenantId, name, kind: 'SUPPLIER' },
+          });
+          createdCompany = true;
+        }
+      }
+      if (parsed.supplierName && normal(company.name) !== normal(parsed.supplierName))
+        throw new BadRequestException('В файле указан другой поставщик: ' + parsed.supplierName +
+          '. Выберите его или исправьте файл.');
+      const imported = await this.saveParsedInTx(tx, tenantId, company.id, file, parsed, company);
+      return { ...imported, counterpartyId: company.id, counterpartyName: company.name, createdCompany };
+    }, { timeout: 60000 });
+  }
+
+  async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
+    await this.requireAccess(tenantId);
+    const company = await this.company(tenantId, id);
+    const parsed = await this.parsed(file);
+    if (parsed.format === 'pdf' && parsed.status === 'READY' && !confirmedPdf)
+      throw new BadRequestException('Перед импортом PDF проверьте распознанные строки в предпросмотре');
+    return this.prisma.$transaction(tx =>
+      this.saveParsedInTx(tx, tenantId, id, file, parsed, company), { timeout: 45000 });
   }
   async catalog(tenantId: string, id: string, search = '', skip = 0, excluded = false) {
     await this.requireAccess(tenantId);
@@ -462,8 +647,98 @@ export class InventoryCounterpartyService {
         skip: Math.max(0, Math.min(Number(skip)||0, 100000)), take: 100,
       }),
     ]);
-    return { priceList: list, count, items };
+    const company = await this.company(tenantId, id);
+    return { priceList: list, count,
+      items: items.map(row => this.catalogView(row, company.discountPercent)) };
   }
+  async editCatalogRow(tenantId: string, id: string, rowId: string, input: Record<string, unknown>) {
+    await this.requireAccess(tenantId);
+    const company = await this.company(tenantId, id);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}),hashtext(${id}))) AS guard`;
+      const latest = await this.latestCatalogInTx(tx, tenantId, id);
+      const row = await tx.inventoryCounterpartyCatalogItem.findFirst({
+        where: { tenantId, id: rowId, priceListId: latest.id, excludedAt: null },
+      });
+      if (!row) throw new NotFoundException('Позиция отсутствует в текущем прайсе.');
+      const changes: Record<string, any> = {};
+      const fields: Record<string, number> = {
+        name: 300, manufacturer: 160, brand: 160, category: 200,
+        supplierNote: 2000, supplierSku: 160, barcode: 160, unit: 24,
+      };
+      for (const [field, limit] of Object.entries(fields)) {
+        if (Object.prototype.hasOwnProperty.call(input, field))
+          changes[field] = plain(input[field]).slice(0, limit);
+      }
+      if ('name' in changes && !changes.name)
+        throw new BadRequestException('Наименование поставщика не может быть пустым.');
+      if (Object.prototype.hasOwnProperty.call(input, 'listPrice'))
+        changes.listPrice = this.nonnegativePrice(input.listPrice);
+      if (Object.prototype.hasOwnProperty.call(input, 'retailPrice'))
+        changes.retailPrice = this.nonnegativePrice(input.retailPrice);
+      if (Object.prototype.hasOwnProperty.call(input, 'discountPercent'))
+        changes.discountPercent = this.discount(input.discountPercent);
+      if (Object.prototype.hasOwnProperty.call(input, 'packageQuantity')) {
+        const raw = input.packageQuantity;
+        const quantity = raw == null || raw === '' ? null : Number(String(raw).replace(',', '.'));
+        if (quantity !== null && (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1e9))
+          throw new BadRequestException('Неверный номинал поставщика.');
+        changes.packageQuantity = quantity;
+      }
+      if (!Object.keys(changes).length) throw new BadRequestException('Нет изменений.');
+      const updated = await tx.inventoryCounterpartyCatalogItem.update({
+        where: { id: row.id }, data: changes,
+      });
+      if ('listPrice' in changes || 'discountPercent' in changes || 'supplierSku' in changes) {
+        await this.refreshOfferForRow(tx, tenantId, id, updated, company.discountPercent);
+      }
+      return this.catalogView(updated, company.discountPercent);
+    }, { timeout: 60000 });
+  }
+
+  async changeCatalogPrices(tenantId: string, id: string, input: {
+    rowIds?: string[]; mode?: string; value?: number;
+  }) {
+    await this.requireAccess(tenantId);
+    const company = await this.company(tenantId, id);
+    const ids = Array.isArray(input?.rowIds) ? [...new Set(input.rowIds)] : [];
+    if (!ids.length || ids.length > 1000 || ids.some(x => typeof x !== 'string' || !x))
+      throw new BadRequestException('Выберите от 1 до 1000 позиций.');
+    if (input.mode !== 'percent' && input.mode !== 'amount')
+      throw new BadRequestException('Выберите изменение в процентах или рублях.');
+    const value = Number(input.value);
+    if (!Number.isFinite(value)
+      || input.mode === 'percent' && (value < -100 || value > 1000)
+      || input.mode === 'amount' && Math.abs(value) > 1e9)
+      throw new BadRequestException('Проверьте размер изменения цены.');
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}),hashtext(${id}))) AS guard`;
+      const latest = await this.latestCatalogInTx(tx, tenantId, id);
+      const rows = await tx.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: latest.id, excludedAt: null, id: { in: ids } },
+      });
+      if (rows.length !== ids.length)
+        throw new BadRequestException('Выбор устарел. Обновите ассортимент.');
+      // Validate every price before changing any row; transaction rolls back on failure.
+      const proposed = rows.map(row => {
+        if (row.listPrice == null)
+          throw new BadRequestException('У позиции «' + row.name + '» не указана цена.');
+        const oldPrice = Number(row.listPrice);
+        const changed = input.mode === 'percent' ? oldPrice * (1 + value / 100) : oldPrice + value;
+        if (!Number.isFinite(changed) || changed < 0 || changed > 1e9)
+          throw new BadRequestException('Некорректная новая цена: ' + row.name);
+        return { row, price: Math.round((changed + Number.EPSILON) * 100) / 100 };
+      });
+      for (const { row, price } of proposed) {
+        const updated = await tx.inventoryCounterpartyCatalogItem.update({
+          where: { id: row.id }, data: { listPrice: price },
+        });
+        await this.refreshOfferForRow(tx, tenantId, id, updated, company.discountPercent);
+      }
+      return { updated: proposed.length };
+    }, { timeout: 60000 });
+  }
+
   // Canonical server-owned classification of supplier rows against working Stock.
   // Matching codes are suggestions only; only persisted offers are confirmed links.
   async linkStatuses(tenantId: string, id: string) {
@@ -599,6 +874,8 @@ export class InventoryCounterpartyService {
         throw new BadRequestException('Укажите unitsPerOffer для безопасной привязки.');
       const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
         listPrice: row.listPrice, supplierSku: row.supplierSku,
+        discountPercent: this.appliedDiscount(row, company.discountPercent),
+        agreementPriced: row.listPrice != null,
         unitsPerOffer: size };
       if (existing) {
         await tx.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
@@ -607,7 +884,7 @@ export class InventoryCounterpartyService {
       const offerId = randomUUID();
       await tx.inventorySupplierOffer.create({
         data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
-          actualPrice: row.actualPrice, discountPercent: row.discountPercent },
+          actualPrice: row.actualPrice },
       });
       return { offerId, itemId };
     });
