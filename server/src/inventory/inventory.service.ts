@@ -297,7 +297,7 @@ export class InventoryService {
     if (current && !legacy.some(key => key in raw)) return undefined;
     const parts = legacy.map(key => text(key in raw ? raw[key] : current?.[key])).filter(Boolean);
     if (!parts.length) return null;
-    await owner.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))`;
+    await owner.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))) AS guard`;
     let parentGroupId = '';
     for (const name of parts) {
       let group = await owner.inventoryClassificationGroup.findFirst({
@@ -332,7 +332,7 @@ export class InventoryService {
     const name = this.groupName(source.name);
     const parentGroupId = text(source.parentGroupId);
     await this.prisma.$transaction(async (tx: Tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))) AS guard`;
       if (parentGroupId) await this.groupPath(tx, tenantId, parentGroupId);
       const existing = await tx.inventoryClassificationGroup.findFirst({
         where: { tenantId, parentGroupId, name: { equals: name, mode: 'insensitive' } },
@@ -354,7 +354,7 @@ export class InventoryService {
   async updateClassificationGroup(tenantId: string, groupId: string, body: unknown) {
     const source = objectValue(body);
     await this.prisma.$transaction(async (tx: Tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))) AS guard`;
       const group = await tx.inventoryClassificationGroup.findFirst({
         where: { tenantId, groupId, archivedAt: null },
       });
@@ -1436,7 +1436,7 @@ export class InventoryService {
     const name = text(source.name);
     if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
     await this.prisma.$transaction(async (tx: Tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))) AS guard`;
       const locations = await tx.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
       if (name.toLocaleLowerCase('ru-RU') === 'основное'
         || locations.some((location: AnyRecord) =>
@@ -1453,7 +1453,7 @@ export class InventoryService {
     if (!locationId || locationId === PRIMARY_STORAGE) throw new BadRequestException('Основное место нельзя изменять.');
     const source = objectValue(body);
     await this.prisma.$transaction(async (tx: Tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))) AS guard`;
       const location = await tx.inventoryStorageLocation.findFirst({
         where: { tenantId, locationId, archivedAt: null },
       });
