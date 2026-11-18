@@ -203,6 +203,18 @@ export class InventoryController {
     return this.inventory.payPurchaseOrder(request.auth!.tenantId, orderId, body);
   }
 
+  @Post('orders/:orderId/supplier-returns')
+  returnOrderToSupplier(@Req() request: AuthenticatedRequest,
+    @Param('orderId') orderId: string, @Body() body: unknown) {
+    return this.inventory.returnPurchaseOrderToSupplier(request.auth!.tenantId, orderId, body);
+  }
+
+  @Post('supplier-claims/:claimId/refund')
+  refundSupplierClaim(@Req() request: AuthenticatedRequest,
+    @Param('claimId') claimId: string, @Body() body: unknown) {
+    return this.inventory.refundSupplierClaim(request.auth!.tenantId, claimId, body);
+  }
+
   @Post('orders/:orderId/receive')
   receiveOrder(@Req() request: AuthenticatedRequest, @Param('orderId') orderId: string, @Body() body: unknown) {
     return this.inventory.receivePurchaseOrder(request.auth!.tenantId, orderId, body);
