@@ -995,6 +995,7 @@ model InventoryItem {
   manufacturer      String   @default("")
   productType       String   @default("")
   classificationGroupId String?
+  criteriaValues      Json?
   unit              String   @default("шт.")
   category          String   @default("")
   sku               String   @default("")
@@ -1039,6 +1040,14 @@ model InventoryItem {
   @@index([tenantId, classificationGroupId])
   @@index([tenantId, manufacturer, name])
   @@index([tenantId, name])
+}
+
+
+model InventoryCriteriaCatalog {
+  tenantId  String   @id
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model InventoryClassificationGroup {
