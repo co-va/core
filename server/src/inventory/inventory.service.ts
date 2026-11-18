@@ -2189,7 +2189,6 @@ export class InventoryService {
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
     applyMovementQuantityUnits(lines, items as AnyRecord[]);
-    await this.assertStorageLocations(tx, tenantId, lines.map((row) => row.storageLocationId));
     await this.assertStorageLocations(tx, tenantId, lines.map((line) => line.storageLocationId));
     // Protect named locations against negative stock, including multiple lines
     // for the same item in one movement. Legacy primary behaviour is unchanged.
