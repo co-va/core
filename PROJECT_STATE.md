@@ -321,3 +321,9 @@ For Admin capability status: NOT_READY hidden for everybody, TESTING visible to 
 - Новые и обновлённые связки InventorySupplierOffer могут использовать agreementPriced=true: расчёт закупки по условиям контрагента, без приоритета старого actualPrice. Legacy-предложения остаются с agreementPriced=false, поэтому старые вручную внесённые цены не потеряны.
 - Миграция 20261118183000_counterparty_agreement_discount в Core/staging добавляет discountPercent и agreementPriced без удаления данных. CI и PostgreSQL smoke на версии e7cf254c успешны. Amvera и production-данные не обновлены этими коммитами.
 - Фактическая стоимость заказа до оплаты корректируется в отдельном документе закупки. Изменение уже оплаченного или принятого заказа требует самостоятельной финансовой корректировки и не должно менять прайс.
+
+## 2026-11-18 — Контрагенты: сохранение всех полей при создании
+
+- Исправление API `POST /inventory/counterparties`: скидка по договору `discountPercent` теперь проходит тот же валидатор 0–100%, что и `PUT /inventory/counterparties/:id`, и сохраняется при создании. Остальные семь полей формы — название, тип, представитель, телефон, email, сайт, примечание — проверены на наличие в обоих путях.
+- Защитный runtime-тест проверяет все восемь полей при создании, 0%, пустое значение и отклонение 120%. Core/staging Check Core успешно собрал сервер, выполнил `Verify supplier pricelist import runtime` и PostgreSQL staging smoke на SHA a5a0d8d; запуск production/Amvera не подтверждён.
+- API по-прежнему принадлежит Core, Professional лишь потребитель. Изменения не означают обновления production или миграции БД.
