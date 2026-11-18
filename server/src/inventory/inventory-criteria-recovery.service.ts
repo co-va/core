@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
@@ -151,19 +152,32 @@ export class InventoryCriteriaRecoveryService {
         const remainingTypes = new Set(remaining.map(item => item.productType));
         const previousCategories = new Set(changes.map(change => change.beforeCategory));
         const previousTypes = new Set(changes.map(change => change.beforeProductType));
+        const requiredCategories = new Set(changes.map(change => change.category));
+        const requiredTypes = new Set(changes.map(change => change.productType));
+        let addedValuesCount = 0;
         for (const group of data.groups) {
           if (!Array.isArray(group.values)) continue;
           const field = group.legacyField;
           if (field !== 'category' && field !== 'productType') continue;
           const oldNames = field === 'category' ? previousCategories : previousTypes;
           const stillUsed = field === 'category' ? remainingCategories : remainingTypes;
+          const required = field === 'category' ? requiredCategories : requiredTypes;
+          for (const label of required) {
+            const existing = group.values.find((entry: {name:string}) => entry.name === label);
+            if (existing) {
+              if (existing.archived) { existing.archived = false; addedValuesCount++; }
+            } else {
+              group.values.push({ id: randomUUID(), name: label, archived: false });
+              addedValuesCount++;
+            }
+          }
           for (const value of group.values) {
             if (value.archived === true || !oldNames.has(value.name) || stillUsed.has(value.name)) continue;
             value.archived = true;
             hiddenValuesCount++;
           }
         }
-        if (hiddenValuesCount) await tx.inventoryCriteriaCatalog.update({
+        if (hiddenValuesCount || addedValuesCount) await tx.inventoryCriteriaCatalog.update({
           where: { tenantId }, data: { data },
         });
       }
