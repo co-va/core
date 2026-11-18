@@ -6,6 +6,14 @@ require('../server/node_modules/reflect-metadata');
 const ExcelJS = require('../server/node_modules/exceljs');
 const PDFDocument = require('../server/node_modules/pdfkit');
 const { InventoryCounterpartyService } = require('../server/dist/inventory/inventory-counterparty.service.js');
+const { effectiveSupplierOfferPrice } = require('../server/dist/inventory/inventory-pricing.js');
+assert.equal(effectiveSupplierOfferPrice({
+  agreementPriced: true, listPrice: 1500, discountPercent: 10, actualPrice: 1300,
+}), 1350, 'Current contract price ignores a legacy manually entered price');
+assert.equal(effectiveSupplierOfferPrice({
+  agreementPriced: false, listPrice: 1500, discountPercent: 10, actualPrice: 1300,
+}), 1300, 'Legacy manual offer price stays unchanged without agreement');
+
 
 let counter = 0;
 const company = { id: 'company', tenantId: 'tenant', name: 'Supply Store',
