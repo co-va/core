@@ -45,6 +45,7 @@ const db = {
   inventoryCounterparty: {
     findFirst: async ({ where }) =>
       where.tenantId === 'tenant' && where.id === company.id ? company : null,
+    create: async ({ data }) => ({ id: 'new-company', ...data }),
     updateMany: async ({ data }) => { Object.assign(company, data); return { count: 1 }; },
   },
   inventoryItem: {
@@ -110,6 +111,23 @@ const db = {
   }),
 };
 const service = new InventoryCounterpartyService(db, { resolveCapability: async () => ({ enabled: true }) });
+// Contract of the entire Professional editor: no field may be silently ignored on create.
+const inputCompany = {
+  name: 'Supplier One', kind: 'DISTRIBUTOR', contactName: 'Alex',
+  phone: '+79990000000', email: 'supply@example.com', website: 'https://example.com',
+  note: 'Agreed terms', discountPercent: 12.5,
+};
+const createdCompany = await service.create('tenant', inputCompany);
+for (const [field, value] of Object.entries(inputCompany)) {
+  assert.equal(createdCompany[field], value, 'Create must persist Professional field: ' + field);
+}
+assert.equal(createdCompany.tenantId, 'tenant');
+assert.equal((await service.create('tenant', { name: 'Zero discount', discountPercent: 0 })).discountPercent, 0,
+  'Explicit zero must not be mistaken for a missing discount');
+assert.equal((await service.create('tenant', { name: 'No discount' })).discountPercent, null,
+  'Unset agreement remains nullable');
+await assert.rejects(() => service.create('tenant', { name: 'Bad agreement', discountPercent: 120 }),
+  /0 до 100/, 'Create must reject an invalid agreement instead of silently ignoring it');
 const excelFile = async price => {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Supplier');
