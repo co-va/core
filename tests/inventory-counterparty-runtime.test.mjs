@@ -44,14 +44,19 @@ const db = {
   },
   inventorySupplierOffer: {
     findFirst: async ({ where }) => offers.find(offer =>
-      offer.counterpartyId === where.counterpartyId && offer.inventoryItemId === where.inventoryItemId
-      && offer.supplierSku === where.supplierSku) || null,
-    create: async ({ data }) => { offers.push({ id: 'offer-' + ++counter, ...data }); },
+      offer.counterpartyId === where.counterpartyId
+      && (!where.inventoryItemId || offer.inventoryItemId === where.inventoryItemId)
+      && (!where.catalogItemId || offer.catalogItemId === where.catalogItemId)
+      && (!where.supplierSku || offer.supplierSku === where.supplierSku)
+      && offer.isActive !== false) || null,
+    create: async ({ data }) => { offers.push({ id: 'offer-' + ++counter, isActive: true, ...data }); },
   },
   $transaction: async callback => callback({
     $queryRaw: async () => [{ locked: 1 }],
     inventoryCounterpartyPriceList: priceListRepository,
+    inventoryItem: { findFirst: async ({ where }) => where.itemId === stock.itemId ? stock : null },
     inventoryCounterpartyCatalogItem: {
+      findFirst: async ({ where }) => matchingCatalogRows(where).find(row => row.id === where.id) || null,
       createMany: async ({ data }) => { rows.push(...data.map(row => ({ id: 'row-' + ++counter, ...row }))); },
       findMany: async ({ where }) => matchingCatalogRows(where),
       count: async ({ where }) => matchingCatalogRows(where).length,
@@ -62,6 +67,8 @@ const db = {
       },
     },
     inventorySupplierOffer: {
+      findFirst: async ({ where }) => db.inventorySupplierOffer.findFirst({ where }),
+      create: async ({ data }) => db.inventorySupplierOffer.create({ data }),
       findMany: async ({ where }) => offers.filter(offer => offer.counterpartyId === where.counterpartyId
         && offer.isActive !== false && offer.catalogItemId && where.supplierSku.in.includes(offer.supplierSku)),
       update: async ({ where, data }) => Object.assign(offers.find(offer => offer.id === where.id), data),
@@ -131,10 +138,17 @@ assert.equal((await service.catalog('tenant', company.id, '', 0, true)).count, 1
 await assert.rejects(() => service.setExcluded('tenant', company.id, {
   rowIds: ['not-in-current-catalog'], excluded: true,
 }), /устарел/);
-const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId);
+await assert.rejects(() => service.link('tenant', company.id, rows[0].id, stock.itemId),
+  /Единицы поставщика и склада различаются/,
+  'Mismatched units cannot be silently interpreted as the stock card pack');
+const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
 assert.equal(offer.itemId, stock.itemId);
 assert.equal(offers.length, 1);
-assert.equal(offers[0].unitsPerOffer, 70, 'No fake conversion from supplier pieces to working stock grams');
+assert.equal(offers[0].unitsPerOffer, 70, 'Explicitly confirmed offer quantity is preserved');
+await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
+assert.equal(offers.length, 1, 'Repeated binding to same card is idempotent');
+await assert.rejects(() => service.link('tenant', company.id, rows[1].id, stock.itemId, 70),
+  /не найдена/, 'Excluded supplier entries cannot be linked');
 assert.equal(savedHistory[0].price, 150);
 // The price on a real invoice and the personal discount are entered separately.
 offers[0].actualPrice = 278;
