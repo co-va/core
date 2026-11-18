@@ -518,7 +518,9 @@ export class InventoryCounterpartyService {
               select: { id: true, supplierSku: true, agreementPriced: true },
             }),
           ]);
-          const current = new Map(catalogRows.map((row) => [row.supplierSku, row]));
+          const current = new Map<string, { id: string; listPrice: unknown }>(
+            (catalogRows as Array<{ id: string; supplierSku: string; listPrice: unknown }>)
+              .map(row => [row.supplierSku, row]));
           for (const offer of linkedOffers) {
             const row = current.get(offer.supplierSku);
             if (!row) continue;
