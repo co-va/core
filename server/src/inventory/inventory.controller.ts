@@ -19,6 +19,22 @@ export class InventoryController {
     return this.inventory.snapshot(request.auth!.tenantId);
   }
 
+  @Get('classification-groups')
+  classificationGroups(@Req() request: AuthenticatedRequest) {
+    return this.inventory.listClassificationGroups(request.auth!.tenantId);
+  }
+
+  @Post('classification-groups')
+  createClassificationGroup(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.createClassificationGroup(request.auth!.tenantId, body);
+  }
+
+  @Put('classification-groups/:groupId')
+  updateClassificationGroup(@Req() request: AuthenticatedRequest,
+    @Param('groupId') groupId: string, @Body() body: unknown) {
+    return this.inventory.updateClassificationGroup(request.auth!.tenantId, groupId, body);
+  }
+
   @Post('storage-locations')
   createStorageLocation(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.createStorageLocation(request.auth!.tenantId, body);

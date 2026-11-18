@@ -257,13 +257,145 @@ function compareDates(left: unknown, right: unknown): number {
 
 @Injectable()
 export class InventoryService {
-  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine']); }
-  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine'],before,after,checkOnly); }
+  transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryClassificationGroup', 'InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine']); }
+  restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryClassificationGroup', 'InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine'],before,after,checkOnly); }
 
   constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
 
+  private groupName(value: unknown) {
+    const name = text(value);
+    if (!name || name.length > 120) throw new BadRequestException('Название группы: 1–120 символов.');
+    return name;
+  }
+
+  private async groupPath(owner: Tx | PrismaService, tenantId: string, groupId: string) {
+    const groups = await owner.inventoryClassificationGroup.findMany({
+      where: { tenantId, archivedAt: null },
+    });
+    const byId = new Map((groups as AnyRecord[]).map(row => [row.groupId, row]));
+    const path: AnyRecord[] = [], visited = new Set<string>();
+    let id = groupId;
+    while (id) {
+      if (visited.has(id) || path.length > 64) throw new BadRequestException('Повреждена вложенность групп.');
+      visited.add(id);
+      const group = byId.get(id);
+      if (!group) throw new BadRequestException('Группа не найдена или исключена.');
+      path.unshift(group);
+      id = group.parentGroupId || '';
+    }
+    return path;
+  }
+
+  private async resolveItemGroup(owner: Tx, tenantId: string, raw: AnyRecord, current?: AnyRecord) {
+    if ('classificationGroupId' in raw) {
+      const id = text(raw.classificationGroupId);
+      if (!id) return null;
+      await this.groupPath(owner, tenantId, id);
+      return id;
+    }
+    const legacy = ['manufacturer', 'category', 'productType'] as const;
+    if (current && !legacy.some(key => key in raw)) return undefined;
+    const parts = legacy.map(key => text(key in raw ? raw[key] : current?.[key])).filter(Boolean);
+    if (!parts.length) return null;
+    await owner.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))) AS guard`;
+    let parentGroupId = '';
+    for (const name of parts) {
+      let group = await owner.inventoryClassificationGroup.findFirst({
+        where: { tenantId, parentGroupId, name: { equals: name, mode: 'insensitive' } },
+      });
+      if (group?.archivedAt) {
+        await owner.inventoryClassificationGroup.update({
+          where: { id: group.id }, data: { archivedAt: null },
+        });
+      } else if (!group) {
+        group = await owner.inventoryClassificationGroup.create({
+          data: { tenantId, groupId: randomUUID(), parentGroupId, name },
+        });
+      }
+      parentGroupId = group!.groupId;
+    }
+    return parentGroupId;
+  }
+
+  async listClassificationGroups(tenantId: string) {
+    const rows = await this.prisma.inventoryClassificationGroup.findMany({
+      where: { tenantId, archivedAt: null },
+      orderBy: [{ position: 'asc' }, { name: 'asc' }],
+    });
+    return rows.map(row => ({
+      groupId: row.groupId, parentGroupId: row.parentGroupId, name: row.name, position: row.position,
+    }));
+  }
+
+  async createClassificationGroup(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const name = this.groupName(source.name);
+    const parentGroupId = text(source.parentGroupId);
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))) AS guard`;
+      if (parentGroupId) await this.groupPath(tx, tenantId, parentGroupId);
+      const existing = await tx.inventoryClassificationGroup.findFirst({
+        where: { tenantId, parentGroupId, name: { equals: name, mode: 'insensitive' } },
+      });
+      if (existing) {
+        if (!existing.archivedAt) throw new BadRequestException('Такая группа уже существует.');
+        await tx.inventoryClassificationGroup.update({
+          where: { id: existing.id }, data: { archivedAt: null },
+        });
+      } else {
+        await tx.inventoryClassificationGroup.create({
+          data: { tenantId, groupId: randomUUID(), parentGroupId, name },
+        });
+      }
+    });
+    return this.listClassificationGroups(tenantId);
+  }
+
+  async updateClassificationGroup(tenantId: string, groupId: string, body: unknown) {
+    const source = objectValue(body);
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-classification'))) AS guard`;
+      const group = await tx.inventoryClassificationGroup.findFirst({
+        where: { tenantId, groupId, archivedAt: null },
+      });
+      if (!group) throw new NotFoundException('Группа не найдена.');
+      const nextParent = 'parentGroupId' in source ? text(source.parentGroupId) : group.parentGroupId;
+      const name = 'name' in source ? this.groupName(source.name) : group.name;
+      if (nextParent) {
+        const path = await this.groupPath(tx, tenantId, nextParent);
+        if (path.some(node => node.groupId === groupId))
+          throw new BadRequestException('Нельзя переместить группу внутрь себя.');
+      }
+      if (source.archived === true) {
+        const child = await tx.inventoryClassificationGroup.findFirst({
+          where: { tenantId, parentGroupId: groupId, archivedAt: null },
+        });
+        const member = await tx.inventoryItem.findFirst({
+          where: { tenantId, classificationGroupId: groupId }, select: { id: true },
+        });
+        if (child || member) throw new BadRequestException('Группа содержит подгруппы или товары.');
+        await tx.inventoryClassificationGroup.update({
+          where: { id: group.id }, data: { archivedAt: new Date() },
+        });
+        return;
+      }
+      const duplicate = await tx.inventoryClassificationGroup.findFirst({
+        where: { tenantId, parentGroupId: nextParent,
+          name: { equals: name, mode: 'insensitive' }, groupId: { not: groupId } },
+      });
+      if (duplicate) throw new BadRequestException('Такая группа уже существует.');
+      const position = 'position' in source ? Number(source.position) : group.position;
+      if (!Number.isSafeInteger(position) || position < 0)
+        throw new BadRequestException('Неверный порядок группы.');
+      await tx.inventoryClassificationGroup.update({
+        where: { id: group.id }, data: { name, parentGroupId: nextParent, position },
+      });
+    });
+    return this.listClassificationGroups(tenantId);
+  }
+
   async snapshot(tenantId: string) {
-    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents] = await Promise.all([
+    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -293,6 +425,9 @@ export class InventoryService {
       this.prisma.inventoryStorageLocation.findMany({ where: { tenantId }, orderBy: { name: 'asc' } }),
       this.prisma.inventoryResourceProgress.findMany({ where: { tenantId } }),
       this.prisma.inventoryResourceEvent.findMany({ where: { tenantId }, orderBy: { occurredAt: 'desc' }, take: 200 }),
+      this.prisma.inventoryClassificationGroup.findMany({
+        where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { name: 'asc' }],
+      }),
     ]);
 
     const balances = new Map<string, number>();
@@ -398,7 +533,24 @@ export class InventoryService {
       || collator.compare(String(left.name || ''), String(right.name || ''))
       || String(left.itemId || '').localeCompare(String(right.itemId || '')));
 
+    const classificationById = new Map((classificationGroups as AnyRecord[])
+      .map(row => [row.groupId, row]));
+    const pathFor = (id: string): string[] => {
+      const values: string[] = [], visited = new Set<string>();
+      while (id && !visited.has(id) && values.length < 64) {
+        visited.add(id);
+        const row = classificationById.get(id) as AnyRecord | undefined;
+        if (!row) break;
+        values.unshift(row.name);
+        id = row.parentGroupId || '';
+      }
+      return values;
+    };
     return {
+      classificationGroups: (classificationGroups as AnyRecord[]).map(row => ({
+        groupId: row.groupId, parentGroupId: row.parentGroupId,
+        name: row.name, position: row.position,
+      })),
       items: orderedItems.map((item: AnyRecord) => {
         const grossWeight = item.grossWeight == null ? null : decimalNumber(item.grossWeight);
         const tareWeight = item.tareWeight == null ? null : decimalNumber(item.tareWeight);
@@ -407,6 +559,9 @@ export class InventoryService {
         return {
           itemId: item.itemId,
           position: item.position,
+          classificationGroupId: item.classificationGroupId || null,
+          classificationPath: pathFor(item.classificationGroupId || ''),
+
           name: item.name,
           catalogName: item.catalogName || '',
           nominalQuantity: item.nominalQuantity == null ? null : decimalNumber(item.nominalQuantity),
@@ -885,11 +1040,13 @@ export class InventoryService {
     const work = async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
       if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
+      const classificationGroupId = await this.resolveItemGroup(tx, tenantId, source);
       await tx.inventoryItem.create({
         data: {
           tenantId,
           itemId,
           name,
+          classificationGroupId,
           ...card,
           manufacturer: optionalText(source.manufacturer),
           productType: optionalText(source.productType),
@@ -951,7 +1108,8 @@ export class InventoryService {
     if (!db && 'position' in source && !('expectedPosition' in source))
       throw new BadRequestException('Обновите склад перед изменением номера.');
     // A number edit or company transfer is atomic with its order adjustment.
-    if (!db && ('position' in source || 'manufacturer' in source || source.archived === true)) {
+    if (!db && ('position' in source || 'manufacturer' in source || 'category' in source
+        || 'productType' in source || 'classificationGroupId' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
       });
@@ -969,6 +1127,10 @@ export class InventoryService {
     }
 
     const data: AnyRecord = {};
+    const classificationGroupId = db
+      ? await this.resolveItemGroup(db, tenantId, source, current)
+      : undefined;
+    if (classificationGroupId !== undefined) data.classificationGroupId = classificationGroupId;
     if ('name' in source) {
       const name = text(source.name);
       if (!name) throw new BadRequestException('Укажите наименование позиции');
@@ -1273,12 +1435,16 @@ export class InventoryService {
     const source = objectValue(body);
     const name = text(source.name);
     if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
-    const locations = await this.prisma.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
-    if (name.toLocaleLowerCase('ru-RU') === 'основное'
-      || locations.some((location: AnyRecord) => location.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
-      throw new BadRequestException('Такое место хранения уже существует.');
-    await this.prisma.inventoryStorageLocation.create({
-      data: { tenantId, locationId: randomUUID(), name },
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))) AS guard`;
+      const locations = await tx.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
+      if (name.toLocaleLowerCase('ru-RU') === 'основное'
+        || locations.some((location: AnyRecord) =>
+          location.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
+        throw new BadRequestException('Такое место хранения уже существует.');
+      await tx.inventoryStorageLocation.create({
+        data: { tenantId, locationId: randomUUID(), name },
+      });
     });
     return this.snapshot(tenantId);
   }
@@ -1287,7 +1453,10 @@ export class InventoryService {
     if (!locationId || locationId === PRIMARY_STORAGE) throw new BadRequestException('Основное место нельзя изменять.');
     const source = objectValue(body);
     await this.prisma.$transaction(async (tx: Tx) => {
-      const location = await tx.inventoryStorageLocation.findFirst({ where: { tenantId, locationId } });
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('inventory-storage'))) AS guard`;
+      const location = await tx.inventoryStorageLocation.findFirst({
+        where: { tenantId, locationId, archivedAt: null },
+      });
       if (!location) throw new NotFoundException('Место хранения не найдено.');
       if (source.archived === true) {
         const rows = await tx.inventoryMovementLine.findMany({ where: { tenantId, storageLocationId: locationId }, select: { inventoryItemId: true, direction: true, quantity: true } });
@@ -1302,6 +1471,11 @@ export class InventoryService {
       } else if ('name' in source) {
         const name = text(source.name);
         if (!name || name.length > 120) throw new BadRequestException('Название места хранения: 1–120 символов.');
+        const duplicates = await tx.inventoryStorageLocation.findMany({ where: { tenantId, archivedAt: null } });
+        if (name.toLocaleLowerCase('ru-RU') === 'основное'
+          || duplicates.some((other: AnyRecord) => other.id !== location.id
+            && other.name.toLocaleLowerCase('ru-RU') === name.toLocaleLowerCase('ru-RU')))
+          throw new BadRequestException('Такое место хранения уже существует.');
         await tx.inventoryStorageLocation.update({ where: { id: location.id }, data: { name } });
       }
     });

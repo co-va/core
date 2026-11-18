@@ -10,7 +10,7 @@ const { InventoryCounterpartyService } = require('../server/dist/inventory/inven
 let counter = 0;
 const company = { id: 'company', tenantId: 'tenant', name: 'Supply Store', kind: 'SUPPLIER' };
 const stock = { id: 'stock-db-1', itemId: 'stock-1', tenantId: 'tenant', name: 'Working Dye',
-  unit: 'г', packageQuantity: 70 };
+  sku: '001', barcode: '', unit: 'г', packageQuantity: 70 };
 const lists = [], rows = [], offers = [];
 const savedHistory = [{ id: 'historical-movement', price: 150 }];
 const latest = () => lists.at(-1);
@@ -26,28 +26,53 @@ const priceListRepository = {
     return value;
   },
 };
+const matchingCatalogRows = (where = {}) => rows.filter(row =>
+  (!where.priceListId || row.priceListId === where.priceListId)
+  && (!where.supplierSku?.in || where.supplierSku.in.includes(row.supplierSku))
+  && (!where.id?.in || where.id.in.includes(row.id))
+  && (where.excludedAt === null ? !row.excludedAt
+    : where.excludedAt?.not === null ? Boolean(row.excludedAt) : true));
 const db = {
   inventoryCounterparty: { findFirst: async ({ where }) =>
     where.tenantId === 'tenant' && where.id === company.id ? company : null },
-  inventoryItem: { findFirst: async () => stock },
+  inventoryItem: {
+    findFirst: async () => stock,
+    findMany: async () => [stock],
+  },
   inventoryCounterpartyPriceList: priceListRepository,
   inventoryCounterpartyCatalogItem: {
     findFirst: async ({ where }) => rows.find(row => row.id === where.id) || null,
+    findMany: async ({ where }) => matchingCatalogRows(where),
+    count: async ({ where }) => matchingCatalogRows(where).length,
   },
   inventorySupplierOffer: {
+    findMany: async () => offers.filter(offer => offer.isActive !== false),
     findFirst: async ({ where }) => offers.find(offer =>
-      offer.counterpartyId === where.counterpartyId && offer.inventoryItemId === where.inventoryItemId
-      && offer.supplierSku === where.supplierSku) || null,
-    create: async ({ data }) => { offers.push({ id: 'offer-' + ++counter, ...data }); },
+      offer.counterpartyId === where.counterpartyId
+      && (!where.inventoryItemId || offer.inventoryItemId === where.inventoryItemId)
+      && (!where.catalogItemId || offer.catalogItemId === where.catalogItemId)
+      && (!where.supplierSku || offer.supplierSku === where.supplierSku)
+      && offer.isActive !== false) || null,
+    create: async ({ data }) => { offers.push({ id: 'offer-' + ++counter, isActive: true, ...data }); },
   },
   $transaction: async callback => callback({
     $queryRaw: async () => [{ locked: 1 }],
     inventoryCounterpartyPriceList: priceListRepository,
+    inventoryItem: { findFirst: async ({ where }) => where.itemId === stock.itemId ? stock : null },
     inventoryCounterpartyCatalogItem: {
+      findFirst: async ({ where }) => matchingCatalogRows(where).find(row => row.id === where.id) || null,
       createMany: async ({ data }) => { rows.push(...data.map(row => ({ id: 'row-' + ++counter, ...row }))); },
-      findMany: async ({ where }) => rows.filter(row => row.priceListId === where.priceListId && where.supplierSku.in.includes(row.supplierSku)),
+      findMany: async ({ where }) => matchingCatalogRows(where),
+      count: async ({ where }) => matchingCatalogRows(where).length,
+      updateMany: async ({ where, data }) => {
+        const found = matchingCatalogRows(where);
+        found.forEach(row => Object.assign(row, data));
+        return { count: found.length };
+      },
     },
     inventorySupplierOffer: {
+      findFirst: async ({ where }) => db.inventorySupplierOffer.findFirst({ where }),
+      create: async ({ data }) => db.inventorySupplierOffer.create({ data }),
       findMany: async ({ where }) => offers.filter(offer => offer.counterpartyId === where.counterpartyId
         && offer.isActive !== false && offer.catalogItemId && where.supplierSku.in.includes(offer.supplierSku)),
       update: async ({ where, data }) => Object.assign(offers.find(offer => offer.id === where.id), data),
@@ -109,10 +134,32 @@ const duplicate = await service.import('tenant', company.id, file);
 assert.equal(duplicate.duplicate, true);
 assert.equal(lists.length, 1);
 
-const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId);
+const hiddenRow = rows[1];
+assert.deepEqual((await service.linkStatuses('tenant', company.id)).statuses
+  .find(result => result.catalogItemId === rows[0].id),
+  { catalogItemId: rows[0].id, status: 'matched', itemId: stock.itemId },
+  'Unique matching manufacturer SKU suggests existing stock but does not link');
+await service.setExcluded('tenant', company.id, { rowIds: [hiddenRow.id], excluded: true });
+assert.ok(hiddenRow.excludedAt instanceof Date);
+assert.equal((await service.catalog('tenant', company.id)).count, 1, 'Excluded row is hidden, not erased');
+assert.equal((await service.catalog('tenant', company.id, '', 0, true)).count, 1, 'Excluded row is recoverable');
+await assert.rejects(() => service.setExcluded('tenant', company.id, {
+  rowIds: ['not-in-current-catalog'], excluded: true,
+}), /устарел/);
+await assert.rejects(() => service.link('tenant', company.id, rows[0].id, stock.itemId),
+  /Единицы поставщика и склада различаются/,
+  'Mismatched units cannot be silently interpreted as the stock card pack');
+const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
 assert.equal(offer.itemId, stock.itemId);
 assert.equal(offers.length, 1);
-assert.equal(offers[0].unitsPerOffer, 70, 'No fake conversion from supplier pieces to working stock grams');
+assert.equal(offers[0].unitsPerOffer, 70, 'Explicitly confirmed offer quantity is preserved');
+assert.equal((await service.linkStatuses('tenant', company.id)).statuses
+  .find(result => result.catalogItemId === rows[0].id)?.status, 'linked',
+  'Only a saved supplier offer produces a confirmed green link');
+await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
+assert.equal(offers.length, 1, 'Repeated binding to same card is idempotent');
+await assert.rejects(() => service.link('tenant', company.id, rows[1].id, stock.itemId, 70),
+  /не найдена/, 'Excluded supplier entries cannot be linked');
 assert.equal(savedHistory[0].price, 150);
 // The price on a real invoice and the personal discount are entered separately.
 offers[0].actualPrice = 278;
@@ -120,6 +167,14 @@ offers[0].discountPercent = 7;
 const second = await service.import('tenant', company.id, await excelFile(390));
 assert.equal(second.revision, 2);
 assert.equal(lists.length, 2);
+assert.equal((await service.catalog('tenant', company.id)).count, 1,
+  'Unambiguously excluded supplier SKU stays hidden across revisions');
+const restored = await service.catalog('tenant', company.id, '', 0, true);
+assert.equal(restored.count, 1);
+assert.equal(restored.items[0].supplierSku, '002');
+await service.setExcluded('tenant', company.id, { rowIds: [restored.items[0].id], excluded: false });
+assert.equal((await service.catalog('tenant', company.id)).count, 2,
+  'Restoring affects the latest version without touching stock or source file');
 assert.equal(offers[0].listPrice, 390, 'Linked offers follow new supplier price');
 assert.equal(offers[0].actualPrice, 278, 'Supplier price revisions cannot overwrite invoice purchase price');
 assert.equal(offers[0].discountPercent, 7, 'Supplier price revisions cannot invent a different personal discount');

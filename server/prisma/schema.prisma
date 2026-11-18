@@ -994,6 +994,7 @@ model InventoryItem {
   serviceEndAt      DateTime?
   manufacturer      String   @default("")
   productType       String   @default("")
+  classificationGroupId String?
   unit              String   @default("шт.")
   category          String   @default("")
   sku               String   @default("")
@@ -1033,8 +1034,25 @@ model InventoryItem {
 
   @@unique([tenantId, itemId])
   @@index([tenantId, archivedAt, position])
+  @@index([tenantId, classificationGroupId])
   @@index([tenantId, manufacturer, name])
   @@index([tenantId, name])
+}
+
+model InventoryClassificationGroup {
+  id String @id @default(cuid())
+  tenantId String
+  groupId String
+  parentGroupId String @default("")
+  name String
+  position Int @default(0)
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, groupId])
+  @@unique([tenantId, parentGroupId, name])
+  @@index([tenantId, archivedAt, parentGroupId, position])
 }
 
 // Named storage locations; 'primary' is the virtual legacy/default location.
@@ -1136,9 +1154,11 @@ model InventoryCounterpartyCatalogItem {
   suggestedOrderQuantity Decimal? @db.Decimal(14,3)
   actualPrice Decimal? @db.Decimal(14,4)
   discountPercent Decimal? @db.Decimal(7,4)
+  excludedAt DateTime?
   createdAt DateTime @default(now())
   priceList InventoryCounterpartyPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
   @@index([tenantId, priceListId, position])
+  @@index([tenantId, priceListId, excludedAt])
   @@index([tenantId, supplierSku])
 }
 model InventorySupplierOffer {

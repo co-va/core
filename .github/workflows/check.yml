@@ -51,6 +51,8 @@ jobs:
         run: npm run build --prefix server
       - name: Verify supplier pricelist import runtime
         run: node tests/inventory-counterparty-runtime.test.mjs
+      - name: Verify nested Inventory classifications
+        run: node tests/inventory-classification-runtime.test.mjs
       - name: Verify new tariff terms, campaigns and immutable order quotes
         run: node tests/commercial-tariff-draft.test.mjs
 

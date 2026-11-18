@@ -85,12 +85,23 @@ export class InventoryExcelService {
     const snapshot = await this.inventory.snapshot(tenantId);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Остатки');
-    styleSheet(sheet, STOCK_HEADERS);
+    const levelCount = Math.max(0, ...snapshot.items.map((item: AnyRecord) =>
+      Array.isArray(item.classificationPath) ? item.classificationPath.length : 0));
+    const groupColumns = Array.from({ length: levelCount }, (_, index) => 'Группа ' + (index + 1));
+    styleSheet(sheet, [...STOCK_HEADERS, ...groupColumns]);
     snapshot.items.forEach((item: AnyRecord) => sheet.addRow([
       item.manufacturer || '', item.name, item.productType || item.category || '', item.unit, item.balance,
       item.containerCount ?? '', item.packageQuantity ?? '', item.grossWeight ?? '', item.tareWeight ?? '',
       '', '', '', item.lastPurchasePrice ?? '',
       item.location || '', item.minStock ?? '', item.targetStock ?? '', item.sku || '', item.barcode || '',
+      ...Array.from({ length: levelCount }, (_, index) => item.classificationPath?.[index] || ''),
+    ]));
+
+    // Export the full editable group dictionary, including empty groups.
+    const groups = workbook.addWorksheet('Группы');
+    styleSheet(groups, ['ID группы', 'Родительская группа', 'Наименование', 'Порядок']);
+    (snapshot.classificationGroups || []).forEach((group: AnyRecord) => groups.addRow([
+      group.groupId, group.parentGroupId || '', group.name, group.position || 0,
     ]));
 
     const suppliers = workbook.addWorksheet('Поставщики');

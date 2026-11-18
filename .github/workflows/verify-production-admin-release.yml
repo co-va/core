@@ -1,0 +1,53 @@
+name: Verify production Admin release
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - .github/workflows/verify-production-admin-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify actual deployed Admin assets and Core health
+        shell: bash
+        run: |
+          set -euo pipefail
+          admin="https://admin.va-tools.ru"
+          api="https://api.va-tools.ru"
+          tag="release-20261117-${GITHUB_RUN_ID}"
+          curl -fLsS --retry 2 --connect-timeout 5 --max-time 20 \
+            "${admin}/admin/admin.js?check=${tag}" -o /tmp/actual-admin.js
+          curl -fLsS --retry 2 --connect-timeout 5 --max-time 20 \
+            "${admin}/admin/tariff-workbench.js?check=${tag}" -o /tmp/actual-tariffs.js
+          curl -fLsS --retry 2 --connect-timeout 5 --max-time 20 \
+            "${admin}/admin/admin.css?check=${tag}" -o /tmp/actual-admin.css
+          curl -fLsS --retry 2 --connect-timeout 5 --max-time 20 \
+            "${api}/health?check=${tag}" -o /tmp/actual-health.json
+          node -e "const h=require('/tmp/actual-health.json'); if(h.status!=='ok'||h.database!=='ok')process.exit(1); console.log('CORE_HEALTH_OK')"
+          if grep -Fq 'const visitTime = item.presence.lastVisitAt || item.presence.lastSeenAt;' /tmp/actual-admin.js; then
+            echo 'LIVE_LAST_VISIT_ADMIN_PRESENT'
+          else
+            echo 'LIVE_LAST_VISIT_ADMIN_NOT_DEPLOYED'
+            exit 1
+          fi
+          if grep -Fq 'const publishLabel=d?.published' /tmp/actual-tariffs.js; then
+            echo 'LIVE_TARIFF_INITIAL_RENDER_FIX_PRESENT'
+          else
+            echo 'LIVE_TARIFF_INITIAL_RENDER_FIX_NOT_DEPLOYED'
+            exit 1
+          fi
+          if grep -Fq 'tw-publish-action admin-button secondary' /tmp/actual-tariffs.js \
+            && grep -Fq '.tw-save-row{display:flex;align-items:center;justify-content:flex-end;' /tmp/actual-admin.css; then
+            echo 'LIVE_TARIFF_SAVE_ALIGNMENT_PRESENT'
+          else
+            echo 'LIVE_TARIFF_SAVE_ALIGNMENT_NOT_DEPLOYED'
+            exit 1
+          fi
+          echo 'LIVE_CORE_ADMIN_RELEASE_ASSETS_VERIFIED'

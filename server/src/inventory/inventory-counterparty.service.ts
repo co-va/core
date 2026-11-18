@@ -303,6 +303,61 @@ export class InventoryCounterpartyService {
     return { format: parsed.format, status: parsed.status, count: parsed.rows.length,
       sample: parsed.rows.slice(0, 30), errors: parsed.errors.slice(0, 30) };
   }
+  // Only unambiguous identifiers allow excluded choices to survive a new file revision.
+  // Ambiguous rows remain excluded in their original revision, never auto-excluded elsewhere.
+  private excludedFromPrevious(previous: Array<{supplierSku: string; barcode: string; excludedAt: Date | null}>, current: Row[]) {
+    const key = (value: unknown) => plain(value).toLocaleUpperCase('ru-RU');
+    const counts = (values: string[]) => {
+      const seen = new Map<string, number>();
+      values.filter(Boolean).forEach(value => seen.set(value, (seen.get(value) || 0) + 1));
+      return seen;
+    };
+    const oldSku = counts(previous.map(row => key(row.supplierSku)));
+    const oldBarcode = counts(previous.map(row => key(row.barcode)));
+    const newSku = counts(current.map(row => key(row.supplierSku)));
+    const newBarcode = counts(current.map(row => key(row.barcode)));
+    const bySku = new Map(previous.map(row => [key(row.supplierSku), row]));
+    const byBarcode = new Map(previous.map(row => [key(row.barcode), row]));
+    return current.map(row => {
+      const sku = key(row.supplierSku), barcode = key(row.barcode);
+      const candidates = new Set<typeof previous[number]>();
+      if (sku && oldSku.get(sku) === 1 && newSku.get(sku) === 1)
+        candidates.add(bySku.get(sku)!);
+      if (barcode && oldBarcode.get(barcode) === 1 && newBarcode.get(barcode) === 1)
+        candidates.add(byBarcode.get(barcode)!);
+      if (candidates.size !== 1) return null;
+      const old = [...candidates][0];
+      // A changed barcode with unchanged SKU can mean an entirely different product.
+      if (sku && key(old.supplierSku) === sku && barcode && old.barcode
+        && key(old.barcode) !== barcode) return null;
+      return old.excludedAt || null;
+    });
+  }
+
+  async setExcluded(tenantId: string, id: string, body: { rowIds?: string[]; excluded?: boolean }) {
+    await this.requireAccess(tenantId);
+    await this.company(tenantId, id);
+    const ids = Array.isArray(body?.rowIds) ? [...new Set(body.rowIds)] : [];
+    if (!ids.length || ids.length > 10000 || ids.some(value => typeof value !== 'string' || !value.trim()))
+      throw new BadRequestException('Выберите позиции ассортимента');
+    if (typeof body?.excluded !== 'boolean')
+      throw new BadRequestException('Не указано действие');
+    return this.prisma.$transaction(async tx => {
+      const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+        orderBy: { revision: 'desc' }, select: { id: true },
+      });
+      if (!latest) throw new NotFoundException('Ассортимент не найден');
+      const where = { tenantId, priceListId: latest.id, id: { in: ids } };
+      const found = await tx.inventoryCounterpartyCatalogItem.count({ where });
+      if (found !== ids.length) throw new BadRequestException('Выбор устарел. Обновите ассортимент.');
+      await tx.inventoryCounterpartyCatalogItem.updateMany({
+        where, data: { excludedAt: body.excluded ? new Date() : null },
+      });
+      return { updated: ids.length, excluded: body.excluded };
+    });
+  }
+
   async import(tenantId: string, id: string, file: SupplierFile, confirmedPdf = false) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
@@ -316,7 +371,7 @@ export class InventoryCounterpartyService {
     });
     if (previous) return { ...previous, duplicate: true };
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`;
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard) AS guard`;
       const duplicate = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id, sha256: hash },
         select: { id: true, revision: true, parserStatus: true },
@@ -325,6 +380,16 @@ export class InventoryCounterpartyService {
       const last = await tx.inventoryCounterpartyPriceList.findFirst({
         where: { tenantId, counterpartyId: id }, orderBy: { revision: 'desc' }, select: { revision: true },
       });
+      const previousReady = parsed.status === 'READY'
+        ? await tx.inventoryCounterpartyPriceList.findFirst({
+            where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+            orderBy: { revision: 'desc' }, select: { id: true },
+          }) : null;
+      const prior = previousReady ? await tx.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: previousReady.id },
+        select: { supplierSku: true, barcode: true, excludedAt: true },
+      }) : [];
+      const inheritedExcluded = this.excludedFromPrevious(prior, parsed.rows);
       const list = await tx.inventoryCounterpartyPriceList.create({
         data: { tenantId, counterpartyId: id, revision: (last?.revision || 0) + 1,
           filename: file.originalname.slice(0, 250), format: parsed.format, sha256: hash,
@@ -332,8 +397,8 @@ export class InventoryCounterpartyService {
       });
       for (let i = 0; i < parsed.rows.length; i += 500) {
         await tx.inventoryCounterpartyCatalogItem.createMany({
-          data: parsed.rows.slice(i, i + 500).map((row) => ({ ...row,
-            tenantId, priceListId: list.id })),
+          data: parsed.rows.slice(i, i + 500).map((row, offset) => ({ ...row,
+            tenantId, priceListId: list.id, excludedAt: inheritedExcluded[i + offset] })),
         });
       }
       // Refresh only explicitly connected offers with unique supplier SKU.
@@ -374,7 +439,7 @@ export class InventoryCounterpartyService {
         count: parsed.rows.length, errors: parsed.errors };
     }, { timeout: 45000 });
   }
-  async catalog(tenantId: string, id: string, search = '', skip = 0) {
+  async catalog(tenantId: string, id: string, search = '', skip = 0, excluded = false) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
     const list = await this.prisma.inventoryCounterpartyPriceList.findFirst({
@@ -383,6 +448,7 @@ export class InventoryCounterpartyService {
     });
     if (!list) return { priceList: null, count: 0, items: [] };
     const condition = { tenantId, priceListId: list.id,
+      excludedAt: excluded ? { not: null } : null,
       ...(search.trim() ? { OR: [
         { name: { contains: search.trim(), mode: 'insensitive' as const } },
         { supplierSku: { contains: search.trim(), mode: 'insensitive' as const } },
@@ -398,6 +464,69 @@ export class InventoryCounterpartyService {
     ]);
     return { priceList: list, count, items };
   }
+  // Canonical server-owned classification of supplier rows against working Stock.
+  // Matching codes are suggestions only; only persisted offers are confirmed links.
+  async linkStatuses(tenantId: string, id: string) {
+    await this.requireAccess(tenantId);
+    await this.company(tenantId, id);
+    const latest = await this.prisma.inventoryCounterpartyPriceList.findFirst({
+      where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+      orderBy: { revision: 'desc' }, select: { id: true },
+    });
+    if (!latest) return { count: 0, statuses: [] };
+    const [rows, items, offers] = await Promise.all([
+      this.prisma.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, priceListId: latest.id, excludedAt: null },
+        select: { id: true, supplierSku: true, barcode: true },
+      }),
+      this.prisma.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null }, select: { id: true, itemId: true, sku: true, barcode: true },
+      }),
+      this.prisma.inventorySupplierOffer.findMany({
+        where: { tenantId, counterpartyId: id, isActive: true, catalogItemId: { not: null } },
+        select: { catalogItemId: true, inventoryItemId: true },
+      }),
+    ]);
+    const norm = (value: unknown) => plain(value).toLocaleUpperCase('ru-RU');
+    const index = <T>(values: T[], selector: (entry: T) => string) => {
+      const result = new Map<string, T[]>();
+      for (const entry of values) {
+        const key = selector(entry);
+        if (!key) continue;
+        const set = result.get(key) || [];
+        set.push(entry);
+        result.set(key, set);
+      }
+      return result;
+    };
+    const rowBySku = index(rows, row => norm(row.supplierSku));
+    const rowByBarcode = index(rows, row => norm(row.barcode));
+    const itemBySku = index(items, row => norm(row.sku));
+    const itemByBarcode = index(items, row => norm(row.barcode));
+    const itemByDbId = new Map(items.map(row => [row.id, row]));
+    const offerByRow = index(offers, row => row.catalogItemId || '');
+    const statuses = rows.map(row => {
+      const confirmed = [...new Set((offerByRow.get(row.id) || [])
+        .map(offer => itemByDbId.get(offer.inventoryItemId)?.itemId).filter(Boolean))];
+      if (confirmed.length === 1) return { catalogItemId: row.id,
+        status: 'linked', itemId: confirmed[0] };
+      if (confirmed.length > 1) return { catalogItemId: row.id,
+        status: 'conflict', itemId: null };
+      const candidates = new Set<string>();
+      const sku = norm(row.supplierSku), barcode = norm(row.barcode);
+      if (sku && rowBySku.get(sku)?.length === 1 && itemBySku.get(sku)?.length === 1)
+        candidates.add(itemBySku.get(sku)![0].itemId);
+      if (barcode && rowByBarcode.get(barcode)?.length === 1
+        && itemByBarcode.get(barcode)?.length === 1)
+        candidates.add(itemByBarcode.get(barcode)![0].itemId);
+      if (candidates.size > 1) return { catalogItemId: row.id, status: 'conflict', itemId: null };
+      if (candidates.size === 1) return { catalogItemId: row.id,
+        status: 'matched', itemId: [...candidates][0] };
+      return { catalogItemId: row.id, status: 'unlinked', itemId: null };
+    });
+    return { count: statuses.length, statuses };
+  }
+
   async original(tenantId: string, id: string, priceListId: string) {
     await this.requireAccess(tenantId);
     await this.company(tenantId, id);
@@ -424,38 +553,63 @@ export class InventoryCounterpartyService {
     });
     return { offerId, itemId };
   }
-  async link(tenantId: string, id: string, rowId: string, itemId: string) {
+  async link(tenantId: string, id: string, rowId: string, itemId: string, requestedUnits?: number) {
     await this.requireAccess(tenantId);
     const company = await this.company(tenantId, id);
-    const [row, item] = await Promise.all([
-      this.prisma.inventoryCounterpartyCatalogItem.findFirst({
-        where: { id: rowId, tenantId, priceList: { counterpartyId: id, parserStatus: 'READY' } },
-      }),
-      this.prisma.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } }),
-    ]);
-    if (!row) throw new NotFoundException('Позиция прайса не найдена');
-    if (!item) throw new NotFoundException('Рабочая карточка не найдена');
-    const existing = await this.prisma.inventorySupplierOffer.findFirst({
-      where: { tenantId, inventoryItemId: item.id, counterpartyId: id, isActive: true,
-        ...(row.supplierSku ? { supplierSku: row.supplierSku } : { catalogItemId: row.id }) },
+    return this.prisma.$transaction(async tx => {
+      // Serialise supplier-specific links to avoid duplicate offers from concurrent taps.
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))) AS guard`;
+      const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+        orderBy: { revision: 'desc' }, select: { id: true },
+      });
+      if (!latest) throw new NotFoundException('Ассортимент не найден');
+      const [row, item] = await Promise.all([
+        tx.inventoryCounterpartyCatalogItem.findFirst({
+          where: { id: rowId, tenantId, priceListId: latest.id, excludedAt: null },
+        }),
+        tx.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } }),
+      ]);
+      if (!row) throw new NotFoundException('Позиция не найдена в действующем ассортименте');
+      if (!item) throw new NotFoundException('Карточка склада не найдена');
+      const linkedRow = await tx.inventorySupplierOffer.findFirst({
+        where: { tenantId, counterpartyId: id, catalogItemId: row.id, isActive: true },
+      });
+      if (linkedRow && linkedRow.inventoryItemId !== item.id)
+        throw new BadRequestException('Эта позиция уже связана с другой карточкой склада.');
+
+      const existing = linkedRow || await tx.inventorySupplierOffer.findFirst({
+        where: { tenantId, inventoryItemId: item.id, counterpartyId: id, isActive: true,
+          ...(row.supplierSku ? { supplierSku: row.supplierSku } : { catalogItemId: row.id }) },
+      });
+      const unit = (value: unknown) => plain(value).toLocaleLowerCase('ru-RU').replace(/\.$/, '');
+      const supplierUnit = unit(row.unit), itemUnit = unit(item.unit);
+      const explicit = requestedUnits == null ? null : Number(requestedUnits);
+      if (explicit != null && (!Number.isFinite(explicit) || explicit <= 0 || explicit > 100000000))
+        throw new BadRequestException('Количество учётных единиц в предложении должно быть положительным.');
+      if (supplierUnit && supplierUnit !== itemUnit && explicit == null)
+        throw new BadRequestException('Единицы поставщика и склада различаются. Укажите unitsPerOffer.');
+      const supplierSize = row.packageQuantity == null ? 0 : Number(row.packageQuantity);
+      const ownSize = item.packageQuantity == null ? 0 : Number(item.packageQuantity);
+      const size = explicit
+        ?? (supplierUnit === itemUnit && supplierSize > 0 ? supplierSize
+          : ownSize > 0 ? ownSize
+          : itemUnit === 'шт' ? 1 : null);
+      if (size == null || !Number.isFinite(size) || size <= 0)
+        throw new BadRequestException('Укажите unitsPerOffer для безопасной привязки.');
+      const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
+        listPrice: row.listPrice, supplierSku: row.supplierSku,
+        unitsPerOffer: size };
+      if (existing) {
+        await tx.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
+        return { offerId: existing.offerId, itemId };
+      }
+      const offerId = randomUUID();
+      await tx.inventorySupplierOffer.create({
+        data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
+          actualPrice: row.actualPrice, discountPercent: row.discountPercent },
+      });
+      return { offerId, itemId };
     });
-    const sameUnit = Boolean(row.unit) && row.unit.trim().toLowerCase() === item.unit.trim().toLowerCase();
-    const size = sameUnit && row.packageQuantity != null && Number(row.packageQuantity) > 0
-      ? Number(row.packageQuantity)
-      : item.packageQuantity != null && Number(item.packageQuantity) > 0
-        ? Number(item.packageQuantity) : 1;
-    const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
-      listPrice: row.listPrice, supplierSku: row.supplierSku,
-      unitsPerOffer: size };
-    if (existing) {
-      await this.prisma.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
-      return { offerId: existing.offerId, itemId };
-    }
-    const offerId = randomUUID();
-    await this.prisma.inventorySupplierOffer.create({
-      data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
-        actualPrice: row.actualPrice, discountPercent: row.discountPercent },
-    });
-    return { offerId, itemId };
   }
 }

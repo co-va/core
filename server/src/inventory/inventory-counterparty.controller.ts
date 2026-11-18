@@ -34,8 +34,20 @@ export class InventoryCounterpartyController {
 
   @Get(':id/catalog')
   catalog(@Req() request: Authorized, @Param('id') id: string,
-    @Query('search') search = '', @Query('skip') skip = '0') {
-    return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip));
+    @Query('search') search = '', @Query('skip') skip = '0',
+    @Query('excluded') excluded = 'false') {
+    return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip), excluded === 'true');
+  }
+
+  @Get(':id/catalog/link-status')
+  linkStatuses(@Req() request: Authorized, @Param('id') id: string) {
+    return this.companies.linkStatuses(request.auth!.tenantId, id);
+  }
+
+  @Post(':id/catalog/selection')
+  selectCatalogRows(@Req() request: Authorized, @Param('id') id: string,
+    @Body() body: { rowIds?: string[]; excluded?: boolean }) {
+    return this.companies.setExcluded(request.auth!.tenantId, id, body);
   }
 
   @Post(':id/pricelists/preview')
@@ -71,8 +83,8 @@ export class InventoryCounterpartyController {
 
   @Post(':id/catalog/:rowId/link')
   link(@Req() request: Authorized, @Param('id') id: string, @Param('rowId') rowId: string,
-    @Body() body: { itemId?: string }) {
+    @Body() body: { itemId?: string; unitsPerOffer?: number }) {
     if (!body?.itemId) throw new BadRequestException('Выберите рабочую карточку товара');
-    return this.companies.link(request.auth!.tenantId, id, rowId, body.itemId);
+    return this.companies.link(request.auth!.tenantId, id, rowId, body.itemId, body.unitsPerOffer);
   }
 }
