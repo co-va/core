@@ -569,11 +569,15 @@ export class InventoryCounterpartyService {
     options: { counterpartyId?: string; name?: string; confirmedPdf?: boolean } = {}) {
     await this.requireAccess(tenantId);
     const parsed = await this.parsed(file);
-    if (parsed.status !== 'READY' || !parsed.rows.length)
-      throw new BadRequestException(parsed.errors[0] || 'Не удалось распознать прайс. Используйте шаблон Excel.');
-    if (parsed.format === 'pdf' && !options.confirmedPdf)
-      throw new BadRequestException('Подтвердите распознанный PDF перед загрузкой.');
     const selectedId = plain(options.counterpartyId);
+    // Preserve an unrecognized original only under an explicitly selected existing
+    // company. Never create an empty supplier or merge files containing multiple suppliers.
+    const originalOnly = parsed.status !== 'READY' || !parsed.rows.length;
+    if (originalOnly && (!selectedId ||
+      parsed.errors.some(error => /несколько поставщиков/i.test(error))))
+      throw new BadRequestException(parsed.errors[0] || 'Не удалось распознать прайс. Используйте шаблон Excel.');
+    if (parsed.format === 'pdf' && parsed.status === 'READY' && !options.confirmedPdf)
+      throw new BadRequestException('Подтвердите распознанный PDF перед загрузкой.');
     const name = (plain(options.name) || plain(parsed.supplierName)).slice(0, 160);
     if (!selectedId && !name)
       throw new BadRequestException('Укажите поставщика или выберите существующего.');
