@@ -10,7 +10,7 @@ const { InventoryCounterpartyService } = require('../server/dist/inventory/inven
 let counter = 0;
 const company = { id: 'company', tenantId: 'tenant', name: 'Supply Store', kind: 'SUPPLIER' };
 const stock = { id: 'stock-db-1', itemId: 'stock-1', tenantId: 'tenant', name: 'Working Dye',
-  unit: 'г', packageQuantity: 70 };
+  sku: '001', barcode: '', unit: 'г', packageQuantity: 70 };
 const lists = [], rows = [], offers = [];
 const savedHistory = [{ id: 'historical-movement', price: 150 }];
 const latest = () => lists.at(-1);
@@ -35,7 +35,10 @@ const matchingCatalogRows = (where = {}) => rows.filter(row =>
 const db = {
   inventoryCounterparty: { findFirst: async ({ where }) =>
     where.tenantId === 'tenant' && where.id === company.id ? company : null },
-  inventoryItem: { findFirst: async () => stock },
+  inventoryItem: {
+    findFirst: async () => stock,
+    findMany: async () => [stock],
+  },
   inventoryCounterpartyPriceList: priceListRepository,
   inventoryCounterpartyCatalogItem: {
     findFirst: async ({ where }) => rows.find(row => row.id === where.id) || null,
@@ -43,6 +46,7 @@ const db = {
     count: async ({ where }) => matchingCatalogRows(where).length,
   },
   inventorySupplierOffer: {
+    findMany: async () => offers.filter(offer => offer.isActive !== false),
     findFirst: async ({ where }) => offers.find(offer =>
       offer.counterpartyId === where.counterpartyId
       && (!where.inventoryItemId || offer.inventoryItemId === where.inventoryItemId)
@@ -131,6 +135,10 @@ assert.equal(duplicate.duplicate, true);
 assert.equal(lists.length, 1);
 
 const hiddenRow = rows[1];
+assert.deepEqual((await service.linkStatuses('tenant', company.id)).statuses
+  .find(result => result.catalogItemId === rows[0].id),
+  { catalogItemId: rows[0].id, status: 'matched', itemId: stock.itemId },
+  'Unique matching manufacturer SKU suggests existing stock but does not link');
 await service.setExcluded('tenant', company.id, { rowIds: [hiddenRow.id], excluded: true });
 assert.ok(hiddenRow.excludedAt instanceof Date);
 assert.equal((await service.catalog('tenant', company.id)).count, 1, 'Excluded row is hidden, not erased');
@@ -145,6 +153,9 @@ const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId,
 assert.equal(offer.itemId, stock.itemId);
 assert.equal(offers.length, 1);
 assert.equal(offers[0].unitsPerOffer, 70, 'Explicitly confirmed offer quantity is preserved');
+assert.equal((await service.linkStatuses('tenant', company.id)).statuses
+  .find(result => result.catalogItemId === rows[0].id)?.status, 'linked',
+  'Only a saved supplier offer produces a confirmed green link');
 await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
 assert.equal(offers.length, 1, 'Repeated binding to same card is idempotent');
 await assert.rejects(() => service.link('tenant', company.id, rows[1].id, stock.itemId, 70),
