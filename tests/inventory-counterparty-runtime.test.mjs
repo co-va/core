@@ -265,7 +265,7 @@ assert.equal(pdfPreview.count, 0);
 const savedPdf = await service.import('tenant', company.id, pdfFile);
 assert.equal(savedPdf.parserStatus, 'NEEDS_TEMPLATE');
 assert.equal(lists.at(-1).sourceFile.length, pdfBuffer.length);
-assert.equal(offers[0].listPrice, 390, 'Unrecognized PDF never corrupts linked prices');
+assert.equal(offers[0].listPrice, 500, 'Unrecognized PDF never corrupts the latest manually corrected linked price');
 
 const blocked = new InventoryCounterpartyService(db, { resolveCapability: async () => ({ enabled: false }) });
 await assert.rejects(() => blocked.list('tenant'), /недоступны/);
