@@ -29,7 +29,7 @@ function rowsFrom(body: unknown): RecoveryRow[] {
       sku: clean(record.sku), manufacturer: clean(record.manufacturer),
       category: clean(record.category), productType: clean(record.productType),
     };
-    if (!row.sku || !row.manufacturer || !row.category || !row.productType
+    if (!row.sku || !row.manufacturer || !row.category
       || Object.values(row).some(value => value.length > 200))
       throw new BadRequestException('Неполные данные классификации в файле.');
     const key = keyOf(row);
@@ -101,7 +101,7 @@ export class InventoryCriteriaRecoveryService {
         beforeCategory: clean(input.beforeCategory),
         beforeProductType: clean(input.beforeProductType),
       };
-      if (!row.itemId || !row.sku || !row.manufacturer || !row.category || !row.productType
+      if (!row.itemId || !row.sku || !row.manufacturer || !row.category
         || Object.values(row).some(part => part.length > 200))
         throw new BadRequestException('Некорректная строка восстановления.');
       if (unique.has(itemId)) throw new BadRequestException('Повторяется товар ' + itemId);
@@ -163,6 +163,7 @@ export class InventoryCriteriaRecoveryService {
           const stillUsed = field === 'category' ? remainingCategories : remainingTypes;
           const required = field === 'category' ? requiredCategories : requiredTypes;
           for (const label of required) {
+            if (!label) continue; // Blank Type is a legitimate unclassified source row.
             const existing = group.values.find((entry: {name:string}) => entry.name === label);
             if (existing) {
               if (existing.archived) { existing.archived = false; addedValuesCount++; }
