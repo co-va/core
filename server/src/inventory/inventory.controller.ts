@@ -43,6 +43,12 @@ export class InventoryController {
     return this.criteria.createValue(request.auth!.tenantId, groupId, body);
   }
 
+  @Put('criteria/:groupId/values/order')
+  reorderCriterionValues(@Req() request: AuthenticatedRequest,
+    @Param('groupId') groupId: string, @Body() body: unknown) {
+    return this.criteria.reorderValues(request.auth!.tenantId, groupId, body);
+  }
+
   @Put('criteria/:groupId/values/:valueId')
   updateCriterionValue(@Req() request: AuthenticatedRequest,
     @Param('groupId') groupId: string, @Param('valueId') valueId: string,
