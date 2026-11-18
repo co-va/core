@@ -44,6 +44,18 @@ export class InventoryCounterpartyController {
     return this.companies.linkStatuses(request.auth!.tenantId, id);
   }
 
+  @Put(':id/catalog/:rowId')
+  editCatalogRow(@Req() request: Authorized, @Param('id') id: string,
+    @Param('rowId') rowId: string, @Body() body: Record<string, unknown>) {
+    return this.companies.editCatalogRow(request.auth!.tenantId, id, rowId, body);
+  }
+
+  @Post(':id/catalog/prices')
+  changeCatalogPrices(@Req() request: Authorized, @Param('id') id: string,
+    @Body() body: { rowIds?: string[]; mode?: string; value?: number }) {
+    return this.companies.changeCatalogPrices(request.auth!.tenantId, id, body);
+  }
+
   @Post(':id/catalog/selection')
   selectCatalogRows(@Req() request: Authorized, @Param('id') id: string,
     @Body() body: { rowIds?: string[]; excluded?: boolean }) {
