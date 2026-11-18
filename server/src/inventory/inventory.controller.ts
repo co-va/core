@@ -118,6 +118,11 @@ export class InventoryController {
     return this.inventory.updateItem(request.auth!.tenantId, itemId, body);
   }
 
+  @Post('items/archive-selection')
+  archiveSelectedItems(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.archiveSelectedItems(request.auth!.tenantId, body);
+  }
+
   @Post('items/reorder')
   reorderItems(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.reorderItems(request.auth!.tenantId, body);
