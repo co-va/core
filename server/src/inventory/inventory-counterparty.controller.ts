@@ -39,6 +39,11 @@ export class InventoryCounterpartyController {
     return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip), excluded === 'true');
   }
 
+  @Get(':id/catalog/link-status')
+  linkStatuses(@Req() request: Authorized, @Param('id') id: string) {
+    return this.companies.linkStatuses(request.auth!.tenantId, id);
+  }
+
   @Post(':id/catalog/selection')
   selectCatalogRows(@Req() request: Authorized, @Param('id') id: string,
     @Body() body: { rowIds?: string[]; excluded?: boolean }) {
