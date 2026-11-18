@@ -19,6 +19,25 @@ export class InventoryCounterpartyController {
     return this.companies.create(request.auth!.tenantId, body);
   }
 
+  // Global import first resolves the supplier, then saves its catalog in one transaction.
+  // It never silently assigns a supplier's products to an unrelated account.
+  @Post('import/preview')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
+  previewGlobal(@Req() request: Authorized, @UploadedFile() file: SupplierFile) {
+    if (!file) throw new BadRequestException('Выберите Excel или PDF.');
+    return this.companies.previewGlobal(request.auth!.tenantId, file);
+  }
+
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
+  importGlobal(@Req() request: Authorized, @UploadedFile() file: SupplierFile,
+    @Body('counterpartyId') counterpartyId?: string, @Body('name') name?: string,
+    @Body('confirmedPdf') confirmedPdf?: string) {
+    if (!file) throw new BadRequestException('Выберите Excel или PDF.');
+    return this.companies.importGlobal(request.auth!.tenantId, file,
+      { counterpartyId, name, confirmedPdf: confirmedPdf === 'true' });
+  }
+
   @Get('template/xlsx')
   async template(@Req() request: Authorized, @Res() response: Response) {
     const buffer = await this.companies.template(request.auth!.tenantId);
@@ -42,6 +61,18 @@ export class InventoryCounterpartyController {
   @Get(':id/catalog/link-status')
   linkStatuses(@Req() request: Authorized, @Param('id') id: string) {
     return this.companies.linkStatuses(request.auth!.tenantId, id);
+  }
+
+  @Put(':id/catalog/:rowId')
+  editCatalogRow(@Req() request: Authorized, @Param('id') id: string,
+    @Param('rowId') rowId: string, @Body() body: Record<string, unknown>) {
+    return this.companies.editCatalogRow(request.auth!.tenantId, id, rowId, body);
+  }
+
+  @Post(':id/catalog/prices')
+  changeCatalogPrices(@Req() request: Authorized, @Param('id') id: string,
+    @Body() body: { rowIds?: string[]; mode?: string; value?: number }) {
+    return this.companies.changeCatalogPrices(request.auth!.tenantId, id, body);
   }
 
   @Post(':id/catalog/selection')
