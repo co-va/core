@@ -1471,6 +1471,13 @@ export class InventoryService {
       throw new BadRequestException('Выберите расчёт: от общего или по складам.');
     if (!Array.isArray(source.locations) || source.locations.length > 100)
       throw new BadRequestException('Передайте распределение по складам.');
+    const parseTarget = (raw: unknown): number | null => {
+      if (raw == null || raw === '') return null;
+      const numeric = Number(String(raw).replace(',', '.'));
+      if (!Number.isFinite(numeric) || numeric < 0 || numeric > 999999999)
+        throw new BadRequestException('Некорректный желаемый остаток.');
+      return Math.round(numeric * 1000) / 1000;
+    };
     const targets = new Map<string, number>();
     for (const value of source.locations) {
       const line = objectValue(value);
@@ -1478,16 +1485,13 @@ export class InventoryService {
       if (!locationId || targets.has(locationId))
         throw new BadRequestException('Повторяющееся или пустое место хранения.');
       if (line.targetStock == null || line.targetStock === '') continue;
-      const amount = nullableNonNegative(line.targetStock);
-      if (amount == null || amount > 999999999)
-        throw new BadRequestException('Некорректный желаемый остаток.');
-      targets.set(locationId, Math.round(amount * 1000) / 1000);
+      const amount = parseTarget(line.targetStock);
+      if (amount == null) continue;
+      targets.set(locationId, amount);
     }
     let manualTarget: number | null = null;
     if (mode === 'overall') {
-      manualTarget = nullableNonNegative(source.targetStock);
-      if (manualTarget != null && manualTarget > 999999999)
-        throw new BadRequestException('Некорректный общий желаемый остаток.');
+      manualTarget = parseTarget(source.targetStock);
     }
     await this.prisma.$transaction(async (tx: Tx) => {
       await tx.$queryRaw`SELECT id FROM "InventoryItem"
