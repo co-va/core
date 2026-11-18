@@ -490,38 +490,63 @@ export class InventoryCounterpartyService {
     });
     return { offerId, itemId };
   }
-  async link(tenantId: string, id: string, rowId: string, itemId: string) {
+  async link(tenantId: string, id: string, rowId: string, itemId: string, requestedUnits?: number) {
     await this.requireAccess(tenantId);
     const company = await this.company(tenantId, id);
-    const [row, item] = await Promise.all([
-      this.prisma.inventoryCounterpartyCatalogItem.findFirst({
-        where: { id: rowId, tenantId, priceList: { counterpartyId: id, parserStatus: 'READY' } },
-      }),
-      this.prisma.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } }),
-    ]);
-    if (!row) throw new NotFoundException('Позиция прайса не найдена');
-    if (!item) throw new NotFoundException('Рабочая карточка не найдена');
-    const existing = await this.prisma.inventorySupplierOffer.findFirst({
-      where: { tenantId, inventoryItemId: item.id, counterpartyId: id, isActive: true,
-        ...(row.supplierSku ? { supplierSku: row.supplierSku } : { catalogItemId: row.id }) },
+    return this.prisma.$transaction(async tx => {
+      // Serialise supplier-specific links to avoid duplicate offers from concurrent taps.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${id}))`;
+      const latest = await tx.inventoryCounterpartyPriceList.findFirst({
+        where: { tenantId, counterpartyId: id, parserStatus: 'READY' },
+        orderBy: { revision: 'desc' }, select: { id: true },
+      });
+      if (!latest) throw new NotFoundException('Ассортимент не найден');
+      const [row, item] = await Promise.all([
+        tx.inventoryCounterpartyCatalogItem.findFirst({
+          where: { id: rowId, tenantId, priceListId: latest.id, excludedAt: null },
+        }),
+        tx.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } }),
+      ]);
+      if (!row) throw new NotFoundException('Позиция не найдена в действующем ассортименте');
+      if (!item) throw new NotFoundException('Карточка склада не найдена');
+      const linkedRow = await tx.inventorySupplierOffer.findFirst({
+        where: { tenantId, counterpartyId: id, catalogItemId: row.id, isActive: true },
+      });
+      if (linkedRow && linkedRow.inventoryItemId !== item.id)
+        throw new BadRequestException('Эта позиция уже связана с другой карточкой склада.');
+
+      const existing = linkedRow || await tx.inventorySupplierOffer.findFirst({
+        where: { tenantId, inventoryItemId: item.id, counterpartyId: id, isActive: true,
+          ...(row.supplierSku ? { supplierSku: row.supplierSku } : { catalogItemId: row.id }) },
+      });
+      const unit = (value: unknown) => plain(value).toLocaleLowerCase('ru-RU').replace(/\.$/, '');
+      const supplierUnit = unit(row.unit), itemUnit = unit(item.unit);
+      const explicit = requestedUnits == null ? null : Number(requestedUnits);
+      if (explicit != null && (!Number.isFinite(explicit) || explicit <= 0 || explicit > 100000000))
+        throw new BadRequestException('Количество учётных единиц в предложении должно быть положительным.');
+      if (supplierUnit && supplierUnit !== itemUnit && explicit == null)
+        throw new BadRequestException('Единицы поставщика и склада различаются. Укажите unitsPerOffer.');
+      const supplierSize = row.packageQuantity == null ? 0 : Number(row.packageQuantity);
+      const ownSize = item.packageQuantity == null ? 0 : Number(item.packageQuantity);
+      const size = explicit
+        ?? (supplierUnit === itemUnit && supplierSize > 0 ? supplierSize
+          : ownSize > 0 ? ownSize
+          : itemUnit === 'шт' ? 1 : null);
+      if (size == null || !Number.isFinite(size) || size <= 0)
+        throw new BadRequestException('Укажите unitsPerOffer для безопасной привязки.');
+      const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
+        listPrice: row.listPrice, supplierSku: row.supplierSku,
+        unitsPerOffer: size };
+      if (existing) {
+        await tx.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
+        return { offerId: existing.offerId, itemId };
+      }
+      const offerId = randomUUID();
+      await tx.inventorySupplierOffer.create({
+        data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
+          actualPrice: row.actualPrice, discountPercent: row.discountPercent },
+      });
+      return { offerId, itemId };
     });
-    const sameUnit = Boolean(row.unit) && row.unit.trim().toLowerCase() === item.unit.trim().toLowerCase();
-    const size = sameUnit && row.packageQuantity != null && Number(row.packageQuantity) > 0
-      ? Number(row.packageQuantity)
-      : item.packageQuantity != null && Number(item.packageQuantity) > 0
-        ? Number(item.packageQuantity) : 1;
-    const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
-      listPrice: row.listPrice, supplierSku: row.supplierSku,
-      unitsPerOffer: size };
-    if (existing) {
-      await this.prisma.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
-      return { offerId: existing.offerId, itemId };
-    }
-    const offerId = randomUUID();
-    await this.prisma.inventorySupplierOffer.create({
-      data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
-        actualPrice: row.actualPrice, discountPercent: row.discountPercent },
-    });
-    return { offerId, itemId };
   }
 }
