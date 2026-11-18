@@ -579,7 +579,7 @@ export class InventoryCounterpartyService {
       } else {
         // Serialise matching names per account: simultaneous imports cannot create duplicates.
         const key = name.toLocaleLowerCase('ru-RU');
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${key}))`;
+        await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${key}))) AS guard`;
         const found = await tx.inventoryCounterparty.findMany({
           where: { tenantId, archivedAt: null, name: { equals: name, mode: 'insensitive' } },
         });
