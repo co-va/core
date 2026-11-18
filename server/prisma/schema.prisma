@@ -1136,6 +1136,7 @@ model InventoryCounterpartyCatalogItem {
   suggestedOrderQuantity Decimal? @db.Decimal(14,3)
   actualPrice Decimal? @db.Decimal(14,4)
   discountPercent Decimal? @db.Decimal(7,4)
+  excludedAt DateTime?
   createdAt DateTime @default(now())
   priceList InventoryCounterpartyPriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
   @@index([tenantId, priceListId, position])
