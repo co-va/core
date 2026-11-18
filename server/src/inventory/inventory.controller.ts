@@ -35,6 +35,12 @@ export class InventoryController {
     return this.inventory.updateClassificationGroup(request.auth!.tenantId, groupId, body);
   }
 
+  @Put('items/:itemId/targets')
+  updateStockTargets(@Req() request: AuthenticatedRequest,
+    @Param('itemId') itemId: string, @Body() body: unknown) {
+    return this.inventory.updateStockTargets(request.auth!.tenantId, itemId, body);
+  }
+
   @Post('storage-locations')
   createStorageLocation(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.createStorageLocation(request.auth!.tenantId, body);
