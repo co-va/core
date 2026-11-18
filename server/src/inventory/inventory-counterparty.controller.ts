@@ -78,8 +78,8 @@ export class InventoryCounterpartyController {
 
   @Post(':id/catalog/:rowId/link')
   link(@Req() request: Authorized, @Param('id') id: string, @Param('rowId') rowId: string,
-    @Body() body: { itemId?: string }) {
+    @Body() body: { itemId?: string; unitsPerOffer?: number }) {
     if (!body?.itemId) throw new BadRequestException('Выберите рабочую карточку товара');
-    return this.companies.link(request.auth!.tenantId, id, rowId, body.itemId);
+    return this.companies.link(request.auth!.tenantId, id, rowId, body.itemId, body.unitsPerOffer);
   }
 }
