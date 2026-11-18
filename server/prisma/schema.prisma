@@ -955,6 +955,44 @@ model InventoryPurchaseOrder {
   @@index([tenantId, status, createdAt])
 }
 
+// Claims preserve what the supplier owes after a rejected or returned purchase.
+// Physical stock changes remain exclusively in InventoryMovement.
+model InventorySupplierClaim {
+  id            String   @id @default(cuid())
+  tenantId      String
+  claimId       String
+  orderId       String
+  itemId        String
+  sourceKind    String
+  packages      Int
+  packPrice     Decimal  @db.Decimal(14,4)
+  amount        Decimal  @db.Decimal(14,2)
+  settledAmount Decimal  @default(0) @db.Decimal(14,2)
+  reason        String   @default("")
+  movementId    String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([tenantId, claimId])
+  @@index([tenantId, orderId])
+  @@index([tenantId, itemId])
+}
+
+model InventorySupplierClaimSettlement {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  settlementId       String
+  claimId            String
+  kind               String
+  amount             Decimal  @db.Decimal(14,2)
+  walletId           String   @default("")
+  walletName         String   @default("")
+  financeOperationId String   @default("")
+  occurredAt         DateTime
+  createdAt          DateTime @default(now())
+  @@unique([tenantId, settlementId])
+  @@index([tenantId, claimId])
+}
+
 model InventoryPurchaseOrderLine {
   id               String   @id @default(cuid())
   tenantId         String

@@ -397,7 +397,7 @@ export class InventoryService {
   }
 
   async snapshot(tenantId: string) {
-    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, locationTargets] = await Promise.all([
+    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, locationTargets, supplierClaims, claimSettlements] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -431,6 +431,8 @@ export class InventoryService {
         where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { name: 'asc' }],
       }),
       this.prisma.inventoryLocationTarget.findMany({ where: { tenantId } }),
+      this.prisma.inventorySupplierClaim.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.inventorySupplierClaimSettlement.findMany({ where: { tenantId }, orderBy: { occurredAt: 'desc' } }),
     ]);
 
     const balances = new Map<string, number>();
@@ -636,6 +638,18 @@ export class InventoryService {
         storageLocationId: row.storageLocationId, quantity: decimalNumber(row.quantity),
         resourceUnit: row.resourceUnit, writeOffMovementId: row.writeOffMovementId,
         occurredAt: row.occurredAt, note: row.note,
+      })),
+      supplierClaims: (supplierClaims as AnyRecord[]).map(row => ({
+        claimId: row.claimId, orderId: row.orderId, itemId: row.itemId,
+        sourceKind: row.sourceKind, packages: row.packages,
+        amount: decimalNumber(row.amount), settledAmount: decimalNumber(row.settledAmount),
+        outstanding: Math.round((decimalNumber(row.amount) - decimalNumber(row.settledAmount)) * 100) / 100,
+        reason: row.reason, movementId: row.movementId, createdAt: row.createdAt,
+      })),
+      supplierClaimSettlements: (claimSettlements as AnyRecord[]).map(row => ({
+        settlementId: row.settlementId, claimId: row.claimId, kind: row.kind,
+        amount: decimalNumber(row.amount), walletId: row.walletId,
+        occurredAt: row.occurredAt, financeOperationId: row.financeOperationId,
       })),
       orders: orders.map((order: AnyRecord) => ({
         orderId: order.orderId,
@@ -869,17 +883,52 @@ export class InventoryService {
         text(byId.get(line.itemId)?.unit) !== line.unit)) {
         throw new BadRequestException('Карточка материала изменилась или удалена. Проверьте заказ перед приходом');
       }
+      // Physical allocations are decided at RECEIPT, not in the supplier order.
+      // Legacy clients without allocations retain their original primary receipt.
+      const allocations = Array.isArray(raw.allocations) ? raw.allocations.map(objectValue) : null;
+      const rejections = Array.isArray(raw.rejections) ? raw.rejections.map(objectValue) : [];
+      const orderByItem = new Map((order.lines as AnyRecord[]).map(line => [line.itemId, line]));
+      const receivedByItem = new Map<string, number>();
+      const rejectedByItem = new Map<string, number>();
+      const receiptParts: AnyRecord[] = [];
+      const rejectionParts: AnyRecord[] = [];
+      if (allocations) {
+        if (allocations.length > 500 || rejections.length > 500) throw new BadRequestException('Слишком много строк приёмки.');
+        for (const row of allocations) {
+          const itemId = text(row.itemId), locationId = text(row.storageLocationId);
+          if (!orderByItem.has(itemId) || !locationId) throw new BadRequestException('Неизвестная позиция или склад приёмки.');
+          const packages = Number(row.packages);
+          if (!Number.isSafeInteger(packages) || packages <= 0) throw new BadRequestException('Приёмка ведётся целыми упаковками.');
+          receivedByItem.set(itemId, (receivedByItem.get(itemId) || 0) + packages);
+          receiptParts.push({ itemId, locationId, packages });
+        }
+        for (const row of rejections) {
+          const itemId = text(row.itemId);
+          if (!orderByItem.has(itemId)) throw new BadRequestException('Неизвестная позиция возврата.');
+          const packages = Number(row.packages), reason = text(row.reason);
+          if (!Number.isSafeInteger(packages) || packages <= 0 || !reason) throw new BadRequestException('Укажите число возвращённых упаковок и причину.');
+          rejectedByItem.set(itemId, (rejectedByItem.get(itemId) || 0) + packages);
+          rejectionParts.push({ itemId, packages, reason });
+        }
+        for (const line of order.lines as AnyRecord[]) {
+          if ((receivedByItem.get(line.itemId) || 0) + (rejectedByItem.get(line.itemId) || 0) !== line.packages)
+            throw new BadRequestException('Приёмка и возвраты должны точно совпадать с количеством в заказе: ' + line.name);
+        }
+        await this.assertStorageLocations(tx, tenantId, receiptParts.map(part => part.locationId));
+      } else {
+        if (rejections.length) throw new BadRequestException('Для возврата при получении укажите распределение по складам.');
+        for (const line of order.lines as AnyRecord[]) receiptParts.push({
+          itemId: line.itemId, locationId: PRIMARY_STORAGE, packages: line.packages,
+        });
+      }
       const movementId = 'inventory-order-receipt-' + orderId;
       const previous = await tx.inventoryMovement.findFirst({
         where: { tenantId, sourceType: 'inventory-purchase-order', sourceId: orderId },
       });
       if (previous) throw new BadRequestException('По этому заказу приход уже был создан');
-      await this.createMovementInTx(tx, tenantId, {
-        movementId, kind: 'RECEIPT', sourceType: 'inventory-purchase-order',
-        sourceId: orderId, occurredAt: receivedAt,
-        supplier: order.supplier, note: 'Приход по заказу',
-        lines: order.lines.map((line: AnyRecord) => {
-          const item = byId.get(line.itemId) as AnyRecord;
+      const plannedReceipts = receiptParts.map(part => {
+          const line = orderByItem.get(part.itemId) as AnyRecord;
+          const item = byId.get(part.itemId) as AnyRecord;
           const weighted = ['г', 'гр', 'гр.', 'грамм', 'граммы'].includes(
             String(line.unit).toLocaleLowerCase('ru-RU'));
           const savedSize = decimalNumber(line.packageSize);
@@ -902,16 +951,32 @@ export class InventoryService {
           if (!weighted && size <= 0) throw new BadRequestException('Проверьте количество в упаковке: ' + text(line.name));
           return {
             itemId: line.itemId,
-            quantity: line.packages * size,
+            quantity: part.packages * size,
             unitCost: size > 0 ? decimalNumber(line.packPrice) / size : null,
-            containerDelta: weighted ? line.packages : null,
+            containerDelta: weighted ? part.packages : null,
+            storageLocationId: part.locationId,
             supplier: order.supplier, offerId: '',
             ...(weighted && size === 0 ? { note: 'Тюбики получены; вес содержимого пока не определён' } : {}),
           };
-        }),
-      }, { allowPurchaseOrderReceipt: true });
+      });
+      if (plannedReceipts.length) {
+        await this.createMovementInTx(tx, tenantId, {
+          movementId, kind: 'RECEIPT', sourceType: 'inventory-purchase-order',
+          sourceId: orderId, occurredAt: receivedAt,
+          supplier: order.supplier, note: 'Приход по заказу', lines: plannedReceipts,
+        }, { allowPurchaseOrderReceipt: true });
+      }
+      for (const part of rejectionParts) {
+        const ordered = orderByItem.get(part.itemId) as AnyRecord;
+        await tx.inventorySupplierClaim.create({ data: {
+          tenantId, claimId: randomUUID(), orderId, itemId: part.itemId,
+          sourceKind: 'receipt-rejection', packages: part.packages,
+          packPrice: ordered.packPrice, amount: Math.round(part.packages * decimalNumber(ordered.packPrice) * 100) / 100,
+          reason: part.reason,
+        } });
+      }
       await tx.inventoryPurchaseOrder.update({
-        where: { id: order.id }, data: { receiptMovementId: movementId },
+        where: { id: order.id }, data: { receiptMovementId: plannedReceipts.length ? movementId : '' },
       });
     }, { timeout: 60000, maxWait: 10000 });
     return this.snapshot(tenantId);
