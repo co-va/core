@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, R
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
+import { InventoryCriteriaService } from './inventory-criteria.service';
 import { InventoryOrderExportService } from './inventory-order-export.service';
 
 type AuthenticatedRequest = Request & {
@@ -12,11 +13,41 @@ type AuthenticatedRequest = Request & {
 @UseGuards(JwtAuthGuard)
 export class InventoryController {
   constructor(private readonly inventory: InventoryService,
-    private readonly documents: InventoryOrderExportService) {}
+    private readonly documents: InventoryOrderExportService,
+    private readonly criteria: InventoryCriteriaService) {}
 
   @Get()
   snapshot(@Req() request: AuthenticatedRequest) {
     return this.inventory.snapshot(request.auth!.tenantId);
+  }
+
+  @Get('criteria')
+  criteriaCatalog(@Req() request: AuthenticatedRequest) {
+    return this.criteria.list(request.auth!.tenantId);
+  }
+
+  @Post('criteria')
+  createCriterion(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.criteria.create(request.auth!.tenantId, body);
+  }
+
+  @Put('criteria/:groupId')
+  updateCriterion(@Req() request: AuthenticatedRequest,
+    @Param('groupId') groupId: string, @Body() body: unknown) {
+    return this.criteria.update(request.auth!.tenantId, groupId, body);
+  }
+
+  @Post('criteria/:groupId/values')
+  createCriterionValue(@Req() request: AuthenticatedRequest,
+    @Param('groupId') groupId: string, @Body() body: unknown) {
+    return this.criteria.createValue(request.auth!.tenantId, groupId, body);
+  }
+
+  @Put('criteria/:groupId/values/:valueId')
+  updateCriterionValue(@Req() request: AuthenticatedRequest,
+    @Param('groupId') groupId: string, @Param('valueId') valueId: string,
+    @Body() body: unknown) {
+    return this.criteria.updateValue(request.auth!.tenantId, groupId, valueId, body);
   }
 
   @Get('classification-groups')
