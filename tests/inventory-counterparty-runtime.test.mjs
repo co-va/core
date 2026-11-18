@@ -31,7 +31,6 @@ const createCompany = async ({ data }) => {
 const findCompanies = async ({ where }) => companies.filter(row => row.tenantId === where.tenantId
   && !row.archivedAt && (!where.name || row.name.toLocaleLowerCase('ru-RU') ===
     String(where.name.equals).toLocaleLowerCase('ru-RU')));
-const latest = () => lists.at(-1);
 const priceListRepository = {
   findFirst: async ({ where } = {}) => {
     const scoped = lists.filter(row => !where?.counterpartyId || row.counterpartyId === where.counterpartyId);
@@ -328,7 +327,6 @@ const repeated = await service.importGlobal('tenant', globalFile);
 assert.equal(repeated.duplicate, true, 'Repeat Excel upload must preserve the original revision');
 assert.equal(repeated.createdCompany, false);
 assert.equal(companies.filter(x => x.name === 'Вася Пупкин').length, 1);
-const sameNameFile = { ...globalFile, buffer: Buffer.from(globalBytes) };
 // Legacy Excel without an explicit supplier requires the user to choose an existing
 // supplier or supply a name; it must not create an unnamed or guessed company.
 await assert.rejects(() => service.importGlobal('tenant', await excelFile(555)),
