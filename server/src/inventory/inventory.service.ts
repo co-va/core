@@ -1119,7 +1119,8 @@ export class InventoryService {
       throw new BadRequestException('Обновите склад перед изменением номера.');
     // A number edit or company transfer is atomic with its order adjustment.
     if (!db && ('position' in source || 'manufacturer' in source || 'category' in source
-        || 'productType' in source || 'classificationGroupId' in source || source.archived === true)) {
+        || 'productType' in source || 'classificationGroupId' in source
+        || 'targetStock' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
       });
@@ -1164,6 +1165,25 @@ export class InventoryService {
     }
     for (const key of ['minStock', 'targetStock', 'packageQuantity', 'grossWeight', 'tareWeight', 'lastPurchasePrice'] as const) {
       if (key in source) data[key] = nullableNonNegative(source[key]);
+    }
+    // Existing stock editor may still send an unchanged global target.
+    // Never overwrite a location-derived value, or permit a global target
+    // below the sum of declared per-location targets.
+    if ('targetStock' in source) {
+      if (current.targetStockMode === 'locations') {
+        const previous = current.targetStock == null ? null : decimalNumber(current.targetStock);
+        if (data.targetStock !== previous)
+          throw new BadRequestException('Желаемый остаток рассчитывается по складам.');
+        delete data.targetStock;
+      } else {
+        const targets = await owner.inventoryLocationTarget.findMany({
+          where: { tenantId, inventoryItemId: current.id }, select: { targetStock: true },
+        });
+        const allocated = Math.round(targets.reduce((sum: number, row: AnyRecord) =>
+          sum + decimalNumber(row.targetStock), 0) * 1000) / 1000;
+        if (targets.length && (data.targetStock == null || data.targetStock < allocated))
+          data.targetStock = allocated;
+      }
     }
     if ('referencePrice' in source) data.referencePrice = optionalOfferAmount(source.referencePrice, 'Базовая цена');
     const grossWeight = 'grossWeight' in data ? data.grossWeight : (current.grossWeight == null ? null : decimalNumber(current.grossWeight));
@@ -1439,6 +1459,66 @@ export class InventoryService {
     });
     return rows.reduce((sum: number, row: AnyRecord) =>
       sum + (row.direction === 'OUT' ? -1 : 1) * decimalNumber(row.quantity), 0);
+  }
+
+  // Desired stock is planning metadata, never a physical movement. The effective
+  // global target is either the manually declared total (at least the location
+  // allocation sum) or the sum of individual locations, as explicitly selected.
+  async updateStockTargets(tenantId: string, itemId: string, body: unknown) {
+    const source = objectValue(body);
+    const mode = text(source.mode);
+    if (mode !== 'overall' && mode !== 'locations')
+      throw new BadRequestException('Выберите расчёт: от общего или по складам.');
+    if (!Array.isArray(source.locations) || source.locations.length > 100)
+      throw new BadRequestException('Передайте распределение по складам.');
+    const targets = new Map<string, number>();
+    for (const value of source.locations) {
+      const line = objectValue(value);
+      const locationId = text(line.locationId);
+      if (!locationId || targets.has(locationId))
+        throw new BadRequestException('Повторяющееся или пустое место хранения.');
+      if (line.targetStock == null || line.targetStock === '') continue;
+      const amount = nullableNonNegative(line.targetStock);
+      if (amount == null || amount > 999999999)
+        throw new BadRequestException('Некорректный желаемый остаток.');
+      targets.set(locationId, Math.round(amount * 1000) / 1000);
+    }
+    let manualTarget: number | null = null;
+    if (mode === 'overall') {
+      manualTarget = nullableNonNegative(source.targetStock);
+      if (manualTarget != null && manualTarget > 999999999)
+        throw new BadRequestException('Некорректный общий желаемый остаток.');
+    }
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT id FROM "InventoryItem"
+        WHERE "tenantId" = ${tenantId} AND "itemId" = ${itemId} FOR UPDATE`;
+      const item = await tx.inventoryItem.findFirst({
+        where: { tenantId, itemId, archivedAt: null },
+      });
+      if (!item) throw new NotFoundException('Товар не найден.');
+      await this.assertStorageLocations(tx, tenantId, [...targets.keys()]);
+      const allocated = Math.round([...targets.values()]
+        .reduce((total, value) => total + value, 0) * 1000) / 1000;
+      const targetStock = mode === 'locations'
+        ? targets.size ? allocated : null
+        : manualTarget == null ? (targets.size ? allocated : null)
+          : Math.max(manualTarget, allocated);
+      if (item.minStock != null && targetStock != null &&
+          targetStock <= decimalNumber(item.minStock))
+        throw new BadRequestException('Желаемый остаток должен быть больше критического.');
+      await tx.inventoryLocationTarget.deleteMany({ where: { tenantId, inventoryItemId: item.id } });
+      if (targets.size) {
+        await tx.inventoryLocationTarget.createMany({
+          data: [...targets.entries()].map(([locationId, targetStock]) => ({
+            tenantId, inventoryItemId: item.id, locationId, targetStock,
+          })),
+        });
+      }
+      await tx.inventoryItem.update({
+        where: { id: item.id }, data: { targetStockMode: mode, targetStock },
+      });
+    }, { timeout: 20000 });
+    return this.snapshot(tenantId);
   }
 
   async createStorageLocation(tenantId: string, body: unknown) {
