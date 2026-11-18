@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { InventoryCriteriaService } from './inventory-criteria.service';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
 import { effectiveSupplierOfferPrice, resolveInventoryBasePricing, supplierOfferUnitPrice } from './inventory-pricing';
@@ -260,7 +261,8 @@ export class InventoryService {
   transferState(tx: Prisma.TransactionClient, tenantId: string) { return captureOwnedState(tx, tenantId, ['InventoryClassificationGroup', 'InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine']); }
   restoreTransfer(tx: Prisma.TransactionClient, tenantId: string, before: TransferState, after: TransferState, checkOnly = false) { return restoreOwnedState(tx,tenantId,['InventoryClassificationGroup', 'InventoryItem', 'InventorySupplierOffer', 'InventoryLot', 'InventoryMovement', 'InventoryMovementLine', 'InventoryMovementAllocation', 'InventoryPurchaseOrder', 'InventoryPurchaseOrderLine'],before,after,checkOnly); }
 
-  constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService) {}
+  constructor(private readonly prisma: PrismaService, private readonly finance: FinanceService,
+    private readonly criteria: InventoryCriteriaService) {}
 
   private groupName(value: unknown) {
     const name = text(value);
