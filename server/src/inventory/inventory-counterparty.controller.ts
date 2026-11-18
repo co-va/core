@@ -34,8 +34,15 @@ export class InventoryCounterpartyController {
 
   @Get(':id/catalog')
   catalog(@Req() request: Authorized, @Param('id') id: string,
-    @Query('search') search = '', @Query('skip') skip = '0') {
-    return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip));
+    @Query('search') search = '', @Query('skip') skip = '0',
+    @Query('excluded') excluded = 'false') {
+    return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip), excluded === 'true');
+  }
+
+  @Post(':id/catalog/selection')
+  selectCatalogRows(@Req() request: Authorized, @Param('id') id: string,
+    @Body() body: { rowIds?: string[]; excluded?: boolean }) {
+    return this.companies.setExcluded(request.auth!.tenantId, id, body);
   }
 
   @Post(':id/pricelists/preview')
