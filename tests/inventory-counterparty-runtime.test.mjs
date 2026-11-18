@@ -22,12 +22,22 @@ const stock = { id: 'stock-db-1', itemId: 'stock-1', tenantId: 'tenant', name: '
   sku: '001', barcode: '', unit: 'г', packageQuantity: 70 };
 const lists = [], rows = [], offers = [];
 const savedHistory = [{ id: 'historical-movement', price: 150 }];
+const companies = [company];
+const createCompany = async ({ data }) => {
+  const item = { id: 'new-company-' + ++counter, ...data };
+  companies.push(item);
+  return item;
+};
+const findCompanies = async ({ where }) => companies.filter(row => row.tenantId === where.tenantId
+  && !row.archivedAt && (!where.name || row.name.toLocaleLowerCase('ru-RU') ===
+    String(where.name.equals).toLocaleLowerCase('ru-RU')));
 const latest = () => lists.at(-1);
 const priceListRepository = {
   findFirst: async ({ where } = {}) => {
-    if (where?.sha256) return lists.find(row => row.sha256 === where.sha256 && row.counterpartyId === where.counterpartyId) || null;
-    if (where?.parserStatus) return lists.filter(row => row.parserStatus === where.parserStatus).at(-1) || null;
-    return latest() || null;
+    const scoped = lists.filter(row => !where?.counterpartyId || row.counterpartyId === where.counterpartyId);
+    if (where?.sha256) return scoped.find(row => row.sha256 === where.sha256) || null;
+    if (where?.parserStatus) return scoped.filter(row => row.parserStatus === where.parserStatus).at(-1) || null;
+    return scoped.at(-1) || null;
   },
   create: async ({ data }) => {
     const value = { id: 'list-' + ++counter, ...data };
@@ -43,9 +53,10 @@ const matchingCatalogRows = (where = {}) => rows.filter(row =>
     : where.excludedAt?.not === null ? Boolean(row.excludedAt) : true));
 const db = {
   inventoryCounterparty: {
-    findFirst: async ({ where }) =>
-      where.tenantId === 'tenant' && where.id === company.id ? company : null,
-    create: async ({ data }) => ({ id: 'new-company', ...data }),
+    findFirst: async ({ where }) => companies.find(row => row.tenantId === where.tenantId
+      && row.id === where.id && !row.archivedAt) || null,
+    findMany: findCompanies,
+    create: createCompany,
     updateMany: async ({ data }) => { Object.assign(company, data); return { count: 1 }; },
   },
   inventoryItem: {
@@ -72,7 +83,10 @@ const db = {
     $queryRaw: async () => [{ locked: 1 }],
     inventoryCounterpartyPriceList: priceListRepository,
     inventoryCounterparty: {
-      findFirst: async () => company,
+      findFirst: async ({ where }) => companies.find(row => row.tenantId === where.tenantId
+        && row.id === where.id && !row.archivedAt) || null,
+      findMany: findCompanies,
+      create: createCompany,
       updateMany: async ({ data }) => { Object.assign(company, data); return { count: 1 }; },
     },
     inventoryItem: { findFirst: async ({ where }) => where.itemId === stock.itemId ? stock : null },
@@ -264,7 +278,8 @@ assert.deepEqual(Buffer.from(lists[1].sourceFile), immutableOriginal,
 
 const template = new ExcelJS.Workbook();
 await template.xlsx.load(await service.template('tenant'));
-assert.equal(template.worksheets[0].getRow(1).getCell(2).value, 'Наименование');
+assert.equal(template.worksheets[0].getRow(1).getCell(1).value, 'Контрагент');
+assert.equal(template.worksheets[0].getRow(1).getCell(3).value, 'Наименование');
 
 const pdfBuffer = await new Promise((resolve, reject) => {
   const pdf = new PDFDocument();
@@ -284,6 +299,57 @@ const savedPdf = await service.import('tenant', company.id, pdfFile);
 assert.equal(savedPdf.parserStatus, 'NEEDS_TEMPLATE');
 assert.equal(lists.at(-1).sourceFile.length, pdfBuffer.length);
 assert.equal(offers[0].listPrice, 500, 'Unrecognized PDF never corrupts the latest manually corrected linked price');
+
+// Global Excel intake: preview identifies the supplier, then import atomically creates
+// the missing supplier and saves the catalog. Repeat imports must not duplicate companies.
+const globalWorkbook = new ExcelJS.Workbook();
+const globalSheet = globalWorkbook.addWorksheet('Прайс');
+globalSheet.addRow(['Контрагент','Артикул','Наименование','Цена']);
+globalSheet.addRow(['Вася Пупкин','VP-01','Краска 1',110]);
+globalSheet.addRow(['','VP-02','Краска 2',120]);
+const globalBytes = Buffer.from(await globalWorkbook.xlsx.writeBuffer());
+const globalFile = { originalname: 'va-supplier.xlsx', buffer: globalBytes, size: globalBytes.length };
+const globalPreview = await service.previewGlobal('tenant', globalFile);
+assert.equal(globalPreview.status, 'READY', JSON.stringify(globalPreview.errors));
+assert.equal(globalPreview.supplierName, 'Вася Пупкин');
+assert.equal(globalPreview.count, 2);
+assert.equal(globalPreview.matchedCounterpartyId, null);
+const globalFirst = await service.importGlobal('tenant', globalFile);
+assert.equal(globalFirst.createdCompany, true);
+assert.equal(globalFirst.counterpartyName, 'Вася Пупкин');
+assert.equal(globalFirst.count, 2);
+assert.equal(companies.filter(x => x.name === 'Вася Пупкин').length, 1);
+assert.equal((await service.catalog('tenant', globalFirst.counterpartyId)).count, 2);
+assert.equal((await service.catalog('tenant', company.id)).count, 2,
+  'Global import must not overwrite another supplier');
+const afterPreview = await service.previewGlobal('tenant', globalFile);
+assert.equal(afterPreview.matchedCounterpartyId, globalFirst.counterpartyId);
+const repeated = await service.importGlobal('tenant', globalFile);
+assert.equal(repeated.duplicate, true, 'Repeat Excel upload must preserve the original revision');
+assert.equal(repeated.createdCompany, false);
+assert.equal(companies.filter(x => x.name === 'Вася Пупкин').length, 1);
+const sameNameFile = { ...globalFile, buffer: Buffer.from(globalBytes) };
+// Legacy Excel without an explicit supplier requires the user to choose an existing
+// supplier or supply a name; it must not create an unnamed or guessed company.
+await assert.rejects(() => service.importGlobal('tenant', await excelFile(555)),
+  /Укажите поставщика/);
+const manualExisting = await service.importGlobal('tenant', await excelFile(555),
+  { counterpartyId: globalFirst.counterpartyId });
+assert.equal(manualExisting.counterpartyId, globalFirst.counterpartyId);
+assert.equal(manualExisting.createdCompany, false);
+assert.equal(companies.filter(x => x.name === 'Вася Пупкин').length, 1);
+const mixedWorkbook = new ExcelJS.Workbook();
+const mixedSheet = mixedWorkbook.addWorksheet('Прайс');
+mixedSheet.addRow(['Контрагент','Артикул','Наименование','Цена']);
+mixedSheet.addRow(['Первый','A1','Товар А',100]);
+mixedSheet.addRow(['Второй','B1','Товар Б',120]);
+const mixedBuffer = Buffer.from(await mixedWorkbook.xlsx.writeBuffer());
+const mixedFile = { originalname: 'mixed.xlsx', buffer: mixedBuffer, size: mixedBuffer.length };
+const mixedPreview = await service.previewGlobal('tenant', mixedFile);
+assert.equal(mixedPreview.status, 'NEEDS_TEMPLATE');
+assert.match(mixedPreview.errors[0], /несколько поставщиков/);
+await assert.rejects(() => service.importGlobal('tenant', mixedFile), /несколько поставщиков/);
+assert.equal(companies.filter(x => x.name === 'Первый' || x.name === 'Второй').length, 0);
 
 const blocked = new InventoryCounterpartyService(db, { resolveCapability: async () => ({ enabled: false }) });
 await assert.rejects(() => blocked.list('tenant'), /недоступны/);
