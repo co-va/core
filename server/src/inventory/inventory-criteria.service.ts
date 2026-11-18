@@ -198,15 +198,21 @@ export class InventoryCriteriaService {
 
   // Existing legacy fields retain their ordinary source-of-truth semantics.
   // Only extra groups use the new ID-based selection map.
-  async validateSelections(tx: Tx, tenantId: string, requested: unknown) {
+  async validateSelections(tx: Tx, tenantId: string, requested: unknown, previous: unknown = {}) {
     const source = asObject(requested);
     const groups = await this.state(tx, tenantId);
+    // Preserve assignments belonging to archived groups; a normal edit
+    // of other fields must never destroy historical classification data.
     const result: Record<string, string> = {};
+    for (const [id, rawValue] of Object.entries(asObject(previous))) {
+      if (text(rawValue)) result[id] = text(rawValue);
+    }
     for (const [id, rawValue] of Object.entries(source)) {
       const valueId = text(rawValue);
-      if (!valueId) continue;
       const group = groups.find(g => g.id === id && !g.archived && !g.legacyField);
-      if (!group || !group.values.some(v => v.id === valueId && !v.archived))
+      if (!group) throw new BadRequestException('Группа классификации недоступна.');
+      if (!valueId) { delete result[id]; continue; }
+      if (!group.values.some(v => v.id === valueId && !v.archived))
         throw new BadRequestException('Неизвестное значение классификации.');
       result[id] = valueId;
     }
