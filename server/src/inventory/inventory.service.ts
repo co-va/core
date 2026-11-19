@@ -1327,23 +1327,26 @@ export class InventoryService {
     return db ? { itemId } : this.snapshot(tenantId);
   }
 
-  // One safety check is shared by single-item and selected-item archival.
-  // Physical inventory is never destroyed merely because a card is hidden.
+  // Archiving only changes the active catalog flag. Inventory history is never
+  // rewritten and no full /inventory snapshot is reconstructed for this action.
   private async assertItemsCanBeArchived(tx: Tx, tenantId: string, items: AnyRecord[]) {
     if (!items.length) return;
     const ids = items.map(item => item.id);
-    const relevant = await tx.inventoryMovementLine.findMany({
+    // Aggregate in PostgreSQL: avoid loading every historical movement line
+    // into Node just to decide whether an item can be archived.
+    const totals = await tx.inventoryMovementLine.groupBy({
+      by: ['inventoryItemId', 'storageLocationId', 'direction'],
       where: { tenantId, inventoryItemId: { in: ids } },
-      select: { inventoryItemId: true, storageLocationId: true, direction: true, quantity: true, containerDelta: true },
+      _sum: { quantity: true, containerDelta: true },
     });
     const balances = new Map<string, number>();
     const containers = new Map<string, number>();
-    for (const line of relevant as AnyRecord[]) {
-      const key = line.inventoryItemId + ':' + (line.storageLocationId || PRIMARY_STORAGE);
-      const signed = (line.direction === 'OUT' ? -1 : 1) * decimalNumber(line.quantity);
+    for (const row of totals as AnyRecord[]) {
+      const key = row.inventoryItemId + ':' + (row.storageLocationId || PRIMARY_STORAGE);
+      const quantity = decimalNumber(row._sum.quantity);
+      const signed = row.direction === 'OUT' ? -quantity : quantity;
       balances.set(key, (balances.get(key) || 0) + signed);
-      if (line.containerDelta != null)
-        containers.set(key, (containers.get(key) || 0) + Number(line.containerDelta));
+      containers.set(key, (containers.get(key) || 0) + Number(row._sum.containerDelta || 0));
     }
     const occupied = items.filter(item =>
       [...balances].some(([key, amount]) => key.startsWith(item.id + ':') && Math.abs(amount) > EPSILON)
@@ -1352,24 +1355,16 @@ export class InventoryService {
     if (occupied.length)
       throw new BadRequestException('Нельзя удалить товары с остатками. Сначала оформите движение: ' +
         occupied.slice(0, 4).map(item => item.name).join(', '));
-    // Paid or draft orders must remain fulfillable. Received orders are historical.
-    const orderLines = await tx.inventoryPurchaseOrderLine.findMany({
-      where: { tenantId, itemId: { in: items.map(item => item.itemId) } },
-      select: { itemId: true, purchaseOrderId: true },
+    // One indexed relationship query instead of loading every order line.
+    const activeOrder = await tx.inventoryPurchaseOrderLine.findFirst({
+      where: {
+        tenantId, itemId: { in: items.map(item => item.itemId) },
+        order: { is: { tenantId, status: { in: ['formed', 'paid'] } } },
+      },
+      select: { itemId: true },
     });
-    if (orderLines.length) {
-      const orderIds = [...new Set(orderLines.map((line: AnyRecord) => line.purchaseOrderId))];
-      const activeOrders = await tx.inventoryPurchaseOrder.findMany({
-        where: { tenantId, id: { in: orderIds }, status: { in: ['formed', 'paid'] } },
-        select: { id: true },
-      });
-      if (activeOrders.length) {
-        const active = new Set(activeOrders.map((order: AnyRecord) => order.id));
-        const affected = new Set(orderLines.filter((line: AnyRecord) => active.has(line.purchaseOrderId))
-          .map((line: AnyRecord) => line.itemId));
-        if (affected.size) throw new BadRequestException('Нельзя удалить позиции из неоплаченного или не полученного заказа.');
-      }
-    }
+    if (activeOrder)
+      throw new BadRequestException('Нельзя удалить позицию из не полученного заказа.');
   }
 
   async archiveSelectedItems(tenantId: string, body: unknown) {
@@ -1380,18 +1375,26 @@ export class InventoryService {
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
       const items = await tx.inventoryItem.findMany({
-        where: { tenantId, itemId: { in: ids }, archivedAt: null },
+        where: { tenantId, itemId: { in: ids } },
       });
       if (items.length !== ids.length)
-        throw new BadRequestException('Список товаров изменился. Обновите остатки.');
-      for (const item of [...items].sort((a, b) => a.id.localeCompare(b.id)))
-        await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
-      await this.assertItemsCanBeArchived(tx, tenantId, items);
-      // Reuse the same canonical item archival operation as the single-item editor.
-      for (const item of items)
-        await this.updateItem(tenantId, item.itemId, { archived: true }, tx);
+        throw new BadRequestException('Одна из позиций не найдена. Обновите остатки.');
+      const active = items.filter(item => !item.archivedAt);
+      if (!active.length) return; // An acknowledged retry is idempotent.
+      // Lock the selected items with one query, rather than one per product.
+      await tx.$queryRaw`SELECT id FROM "InventoryItem"
+        WHERE id IN (${Prisma.join(active.map(item => item.id))})
+        ORDER BY id FOR UPDATE`;
+      await this.assertItemsCanBeArchived(tx, tenantId, active);
+      const updated = await tx.inventoryItem.updateMany({
+        where: { tenantId, itemId: { in: active.map(item => item.itemId) }, archivedAt: null },
+        data: { archivedAt: new Date() },
+      });
+      if (updated.count !== active.length)
+        throw new BadRequestException('Состав товаров изменился. Повторите операцию.');
     }, { maxWait: 10000, timeout: 120000 });
-    return this.snapshot(tenantId);
+    // The IDs are the only response. No read of lots, movements or orders.
+    return { archivedItemIds: ids };
   }
 
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
