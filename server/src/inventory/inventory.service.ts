@@ -1390,15 +1390,15 @@ export class InventoryService {
       });
       if (items.length !== ids.length)
         throw new BadRequestException('Одна из позиций не найдена. Обновите остатки.');
-      const active = items.filter(item => !item.archivedAt);
+      const active = items.filter((item: AnyRecord) => !item.archivedAt);
       if (!active.length) return; // An acknowledged retry is idempotent.
       // Lock the selected items with one query, rather than one per product.
       await tx.$queryRaw`SELECT id FROM "InventoryItem"
-        WHERE id IN (${Prisma.join(active.map(item => item.id))})
+        WHERE id IN (${Prisma.join(active.map((item: AnyRecord) => item.id))})
         ORDER BY id FOR UPDATE`;
       await this.assertItemsCanBeArchived(tx, tenantId, active);
       const updated = await tx.inventoryItem.updateMany({
-        where: { tenantId, itemId: { in: active.map(item => item.itemId) }, archivedAt: null },
+        where: { tenantId, itemId: { in: active.map((item: AnyRecord) => item.itemId) }, archivedAt: null },
         data: { archivedAt: new Date() },
       });
       if (updated.count !== active.length)
