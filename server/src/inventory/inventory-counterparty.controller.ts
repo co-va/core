@@ -54,8 +54,8 @@ export class InventoryCounterpartyController {
   @Get(':id/catalog')
   catalog(@Req() request: Authorized, @Param('id') id: string,
     @Query('search') search = '', @Query('skip') skip = '0',
-    @Query('excluded') excluded = 'false') {
-    return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip), excluded === 'true');
+    @Query('excluded') excluded = 'false', @Query('take') take = '100') {
+    return this.companies.catalog(request.auth!.tenantId, id, search, Number(skip), excluded === 'true', Number(take));
   }
 
   @Get(':id/catalog/link-status')

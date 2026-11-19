@@ -624,14 +624,17 @@ export class InventoryCounterpartyService {
     return this.prisma.$transaction(tx =>
       this.saveParsedInTx(tx, tenantId, id, file, parsed, company), { timeout: 45000 });
   }
-  async catalog(tenantId: string, id: string, search = '', skip = 0, excluded = false) {
+  async catalog(tenantId: string, id: string, search = '', skip = 0, excluded = false, requestedTake = 100) {
     await this.requireAccess(tenantId);
-    await this.company(tenantId, id);
+    const company = await this.company(tenantId, id);
+    // The grouped catalog can request up to 500 rows at once. Search/picker
+    // keep their existing 100-row default and old endpoints stay compatible.
+    const take = Math.max(1, Math.min(500, Math.trunc(Number(requestedTake) || 100)));
     const list = await this.prisma.inventoryCounterpartyPriceList.findFirst({
       where: { tenantId, counterpartyId: id, parserStatus: 'READY' }, orderBy: { revision: 'desc' },
       select: { id: true, revision: true, filename: true, createdAt: true },
     });
-    if (!list) return { priceList: null, count: 0, items: [] };
+    if (!list) return { priceList: null, count: 0, items: [], pageSize: take };
     const condition = { tenantId, priceListId: list.id,
       excludedAt: excluded ? { not: null } : null,
       ...(search.trim() ? { OR: [
@@ -644,11 +647,10 @@ export class InventoryCounterpartyService {
       this.prisma.inventoryCounterpartyCatalogItem.count({ where: condition }),
       this.prisma.inventoryCounterpartyCatalogItem.findMany({
         where: condition, orderBy: { position: 'asc' },
-        skip: Math.max(0, Math.min(Number(skip)||0, 100000)), take: 100,
+        skip: Math.max(0, Math.min(Number(skip)||0, 100000)), take,
       }),
     ]);
-    const company = await this.company(tenantId, id);
-    return { priceList: list, count,
+    return { priceList: list, count, pageSize: take,
       items: items.map(row => this.catalogView(row, company.discountPercent)) };
   }
   async editCatalogRow(tenantId: string, id: string, rowId: string, input: Record<string, unknown>) {
