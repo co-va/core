@@ -117,6 +117,11 @@ export class InventoryController {
     return this.inventory.updateItemsBatch(request.auth!.tenantId, body);
   }
 
+  @Post('items/positions/clear')
+  clearItemPositions(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.clearItemPositions(request.auth!.tenantId, body);
+  }
+
   @Post('items/archive-selection')
   archiveSelectedItems(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.archiveSelectedItems(request.auth!.tenantId, body);
