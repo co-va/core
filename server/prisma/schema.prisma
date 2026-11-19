@@ -1044,6 +1044,7 @@ model InventoryItem {
   supplier          String   @default("")
   minStock          Decimal? @db.Decimal(14, 3)
   targetStock       Decimal? @db.Decimal(14, 3)
+  targetStockMode   String   @default("overall")
   packageQuantity   Decimal? @db.Decimal(14, 3)
   // Observed physical containers. NULL means unknown, never estimated.
   containerCount    Int?
@@ -1072,6 +1073,7 @@ model InventoryItem {
   supplierOffers InventorySupplierOffer[]
   resourceProgress InventoryResourceProgress[]
   resourceEvents InventoryResourceEvent[]
+  locationTargets InventoryLocationTarget[]
 
   @@unique([tenantId, itemId])
   @@index([tenantId, archivedAt, position])
@@ -1079,6 +1081,7 @@ model InventoryItem {
   @@index([tenantId, manufacturer, name])
   @@index([tenantId, name])
 }
+
 
 model InventoryCriteriaCatalog {
   tenantId  String   @id
@@ -1101,6 +1104,22 @@ model InventoryClassificationGroup {
   @@unique([tenantId, groupId])
   @@unique([tenantId, parentGroupId, name])
   @@index([tenantId, archivedAt, parentGroupId, position])
+}
+
+// A desired stock allocation is planning data, never an actual balance.
+// All figures use the item's thresholdUnit (whole receipt units, not grams).
+model InventoryLocationTarget {
+  id              String @id @default(cuid())
+  tenantId        String
+  inventoryItemId String
+  locationId      String
+  targetStock     Decimal @db.Decimal(14, 3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  item InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, inventoryItemId, locationId])
+  @@index([tenantId, locationId])
 }
 
 // Named storage locations; 'primary' is the virtual legacy/default location.

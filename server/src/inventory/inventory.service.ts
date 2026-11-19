@@ -397,7 +397,7 @@ export class InventoryService {
   }
 
   async snapshot(tenantId: string) {
-    const [items, lots, movements, movementTotals, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, supplierClaims, claimSettlements] = await Promise.all([
+    const [items, lots, movements, movementTotals, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, locationTargets, supplierClaims, claimSettlements] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -433,6 +433,7 @@ export class InventoryService {
       this.prisma.inventoryClassificationGroup.findMany({
         where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { name: 'asc' }],
       }),
+      this.prisma.inventoryLocationTarget.findMany({ where: { tenantId } }),
       this.prisma.inventorySupplierClaim.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' } }),
       this.prisma.inventorySupplierClaimSettlement.findMany({ where: { tenantId }, orderBy: { occurredAt: 'desc' } }),
     ]);
@@ -554,6 +555,12 @@ export class InventoryService {
       || collator.compare(String(left.name || ''), String(right.name || ''))
       || String(left.itemId || '').localeCompare(String(right.itemId || '')));
 
+    const targetsByItem = new Map<string, AnyRecord[]>();
+    for (const row of locationTargets as AnyRecord[]) {
+      const values = targetsByItem.get(row.inventoryItemId) || [];
+      values.push({ locationId: row.locationId, targetStock: decimalNumber(row.targetStock) });
+      targetsByItem.set(row.inventoryItemId, values);
+    }
     const classificationById = new Map((classificationGroups as AnyRecord[])
       .map(row => [row.groupId, row]));
     const pathFor = (id: string): string[] => {
@@ -617,6 +624,8 @@ export class InventoryService {
           supplier: item.supplier,
           minStock: item.minStock == null ? null : decimalNumber(item.minStock),
           targetStock: item.targetStock == null ? null : decimalNumber(item.targetStock),
+          targetStockMode: item.targetStockMode === 'locations' ? 'locations' : 'overall',
+          locationTargets: targetsByItem.get(item.id) || [],
           packageQuantity: item.packageQuantity == null ? null : decimalNumber(item.packageQuantity),
           containerCount: item.containerCount == null ? null : Number(item.containerCount),
           grossWeight,
@@ -1358,6 +1367,7 @@ export class InventoryService {
           supplier: optionalText(source.supplier),
           minStock: nullableNonNegative(source.minStock),
           targetStock: nullableNonNegative(source.targetStock),
+          targetStockMode: 'overall',
           packageQuantity: nullableNonNegative(source.packageQuantity),
           containerCount: optionalContainerInteger(source.containerCount, 'Количество тюбиков'),
           grossWeight,
@@ -1525,10 +1535,11 @@ export class InventoryService {
     // A number edit or company transfer is atomic with its order adjustment.
     if (!db && ('position' in source || 'manufacturer' in source || 'category' in source
         || 'productType' in source || 'classificationGroupId' in source
-        || 'criteriaValues' in source || source.archived === true)) {
+        || 'criteriaValues' in source
+        || 'targetStock' in source || source.archived === true)) {
       await this.prisma.$transaction(async (tx: Tx) => {
         await this.updateItem(tenantId, itemId, body, tx);
-      });
+      }, { maxWait: 10000, timeout: 60000 });
       return this.snapshot(tenantId);
     }
     const owner = db || this.prisma;
@@ -1573,6 +1584,25 @@ export class InventoryService {
     for (const key of ['minStock', 'targetStock', 'packageQuantity', 'grossWeight', 'tareWeight', 'lastPurchasePrice'] as const) {
       if (key in source) data[key] = nullableNonNegative(source[key]);
     }
+    // Existing stock editor may still send an unchanged global target.
+    // Never overwrite a location-derived value, or permit a global target
+    // below the sum of declared per-location targets.
+    if ('targetStock' in source) {
+      if (current.targetStockMode === 'locations') {
+        const previous = current.targetStock == null ? null : decimalNumber(current.targetStock);
+        if (data.targetStock !== previous)
+          throw new BadRequestException('Желаемый остаток рассчитывается по складам.');
+        delete data.targetStock;
+      } else {
+        const targets = await owner.inventoryLocationTarget.findMany({
+          where: { tenantId, inventoryItemId: current.id }, select: { targetStock: true },
+        });
+        const allocated = Math.round(targets.reduce((sum: number, row: AnyRecord) =>
+          sum + decimalNumber(row.targetStock), 0) * 1000) / 1000;
+        if (targets.length && (data.targetStock == null || data.targetStock < allocated))
+          data.targetStock = allocated;
+      }
+    }
     if ('referencePrice' in source) data.referencePrice = optionalOfferAmount(source.referencePrice, 'Базовая цена');
     const grossWeight = 'grossWeight' in data ? data.grossWeight : (current.grossWeight == null ? null : decimalNumber(current.grossWeight));
     const tareWeight = 'tareWeight' in data ? data.tareWeight : (current.tareWeight == null ? null : decimalNumber(current.tareWeight));
@@ -1608,7 +1638,8 @@ export class InventoryService {
     }
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
-    // The same rule applies to clearing one product from its editor.
+    // The same rule applies to editing one product: clearing an assigned number
+    // closes gaps immediately, not only when using the selection editor.
     if ('position' in data && Number(current.position) > 0 && Number(data.position) === 0)
       await this.compactInventoryPositions(owner, tenantId, String(current.manufacturer || ''));
     return db ? { itemId } : this.snapshot(tenantId);
@@ -1856,6 +1887,70 @@ export class InventoryService {
       sum + (row.direction === 'OUT' ? -1 : 1) * decimalNumber(row.quantity), 0);
   }
 
+  // Desired stock is planning metadata, never a physical movement. The effective
+  // global target is either the manually declared total (at least the location
+  // allocation sum) or the sum of individual locations, as explicitly selected.
+  async updateStockTargets(tenantId: string, itemId: string, body: unknown) {
+    const source = objectValue(body);
+    const mode = text(source.mode);
+    if (mode !== 'overall' && mode !== 'locations')
+      throw new BadRequestException('Выберите расчёт: от общего или по складам.');
+    if (!Array.isArray(source.locations) || source.locations.length > 100)
+      throw new BadRequestException('Передайте распределение по складам.');
+    const parseTarget = (raw: unknown): number | null => {
+      if (raw == null || raw === '') return null;
+      const numeric = Number(String(raw).replace(',', '.'));
+      if (!Number.isFinite(numeric) || numeric < 0 || numeric > 999999999)
+        throw new BadRequestException('Некорректный желаемый остаток.');
+      return Math.round(numeric * 1000) / 1000;
+    };
+    const targets = new Map<string, number>();
+    for (const value of source.locations) {
+      const line = objectValue(value);
+      const locationId = text(line.locationId);
+      if (!locationId || targets.has(locationId))
+        throw new BadRequestException('Повторяющееся или пустое место хранения.');
+      if (line.targetStock == null || line.targetStock === '') continue;
+      const amount = parseTarget(line.targetStock);
+      if (amount == null) continue;
+      targets.set(locationId, amount);
+    }
+    let manualTarget: number | null = null;
+    if (mode === 'overall') {
+      manualTarget = parseTarget(source.targetStock);
+    }
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await tx.$queryRaw`SELECT id FROM "InventoryItem"
+        WHERE "tenantId" = ${tenantId} AND "itemId" = ${itemId} FOR UPDATE`;
+      const item = await tx.inventoryItem.findFirst({
+        where: { tenantId, itemId, archivedAt: null },
+      });
+      if (!item) throw new NotFoundException('Товар не найден.');
+      await this.assertStorageLocations(tx, tenantId, [...targets.keys()]);
+      const allocated = Math.round([...targets.values()]
+        .reduce((total, value) => total + value, 0) * 1000) / 1000;
+      const targetStock = mode === 'locations'
+        ? targets.size ? allocated : null
+        : manualTarget == null ? (targets.size ? allocated : null)
+          : Math.max(manualTarget, allocated);
+      if (item.minStock != null && targetStock != null &&
+          targetStock <= decimalNumber(item.minStock))
+        throw new BadRequestException('Желаемый остаток должен быть больше критического.');
+      await tx.inventoryLocationTarget.deleteMany({ where: { tenantId, inventoryItemId: item.id } });
+      if (targets.size) {
+        await tx.inventoryLocationTarget.createMany({
+          data: [...targets.entries()].map(([locationId, targetStock]) => ({
+            tenantId, inventoryItemId: item.id, locationId, targetStock,
+          })),
+        });
+      }
+      await tx.inventoryItem.update({
+        where: { id: item.id }, data: { targetStockMode: mode, targetStock },
+      });
+    }, { timeout: 20000 });
+    return this.snapshot(tenantId);
+  }
+
   async createStorageLocation(tenantId: string, body: unknown) {
     const source = objectValue(body);
     const name = text(source.name);
@@ -1943,8 +2038,7 @@ export class InventoryService {
       const physicalQuantities = new Map<string, number>();
       for (const item of (items as AnyRecord[]).sort((a, b) => String(a.id).localeCompare(String(b.id))))
         await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
-      // A card can belong to several warehouse assortments without moving
-      // stock. This is metadata only: do not generate zero-quantity movements.
+      // Assigning a zero-stock card changes catalog availability, not grams.
       for (const itemId of assignmentItemIds) {
         const item = byId.get(itemId) as AnyRecord;
         const existing = Array.isArray(item.storageLocationIds)
