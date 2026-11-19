@@ -173,16 +173,16 @@ assert.match(source,/Порядок изменился в другом окне/
 // Clearing a number now compacts every remaining numbered slot in that
 // manufacturer. Previously existing gaps are closed; the cleared entries
 // become unnumbered (0) and sort below the assigned numbers.
-assert.match(controller, /@Post\\('items\\/positions\\/clear'\\)/,
+assert.match(controller, /@Post\('items\/positions\/clear'\)/,
   'Atomic clear-and-renumber endpoint must exist');
-assert.match(source, /await this\\.compactInventoryPositions\\(owner, tenantId,/,
+assert.match(source, /await this\.compactInventoryPositions\(owner, tenantId,/,
   'Single-item number clearing must use the same algorithm');
 
 const compactStart = source.indexOf('  private async compactInventoryPositions(');
 const compactEnd = source.indexOf('  // A drag only permutes explicit numbered slots', compactStart);
 assert.ok(compactStart > 0 && compactEnd > compactStart, 'Canonical position compactor exists');
 const compactSource = source.slice(compactStart, compactEnd)
-  .replace(/private async compactInventoryPositions\\(tx: Tx, tenantId: string, manufacturer: string,\\s*clearItemIds: Set<string> = new Set\\(\\)\\): Promise<\\{ itemId: string; position: number \\}\\[]>/,
+  .replace(/private async compactInventoryPositions\(tx: Tx, tenantId: string, manufacturer: string,\s*clearItemIds: Set<string> = new Set\(\)\): Promise<\{ itemId: string; position: number \}\[]>/,
     'async compactInventoryPositions(tx, tenantId, manufacturer, clearItemIds = new Set())')
   .replace('async clearItemPositions(tenantId: string, body: unknown)', 'async clearItemPositions(tenantId, body)')
   .replaceAll('const rows: AnyRecord[]', 'const rows')
