@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
 import { InventoryCriteriaService } from './inventory-criteria.service';
+import { InventoryCriteriaRecoveryService } from './inventory-criteria-recovery.service';
 import { InventoryOrderExportService } from './inventory-order-export.service';
 
 type AuthenticatedRequest = Request & {
@@ -14,11 +15,22 @@ type AuthenticatedRequest = Request & {
 export class InventoryController {
   constructor(private readonly inventory: InventoryService,
     private readonly documents: InventoryOrderExportService,
-    private readonly criteria: InventoryCriteriaService) {}
+    private readonly criteria: InventoryCriteriaService,
+    private readonly recovery: InventoryCriteriaRecoveryService) {}
 
   @Get()
   snapshot(@Req() request: AuthenticatedRequest) {
     return this.inventory.snapshot(request.auth!.tenantId);
+  }
+
+  @Post('criteria/recovery/preview')
+  previewClassificationRecovery(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.recovery.preview(request.auth!.tenantId, body);
+  }
+
+  @Post('criteria/recovery/apply')
+  applyClassificationRecovery(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.recovery.apply(request.auth!.tenantId, body);
   }
 
   @Get('criteria')

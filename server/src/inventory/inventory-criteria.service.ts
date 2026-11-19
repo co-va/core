@@ -59,19 +59,23 @@ export class InventoryCriteriaService {
       groups.push({ ...seed, position: index, archived: false, values: [] });
       changed = true;
     }
-    // Reconstitute existing Excel values without touching product records.
-    const items = await tx.inventoryItem.findMany({
-      where: { tenantId, archivedAt: null },
-      select: { manufacturer: true, category: true, productType: true },
-    });
-    for (const group of groups) {
-      if (!legacyKeys.has(group.legacyField)) continue;
-      const field = group.legacyField as 'manufacturer' | 'category' | 'productType';
-      for (const item of items) {
-        const value = text(item[field]);
-        if (!value || group.values.some(v => v.name === value)) continue;
-        group.values.push({ id: randomUUID(), name: value, archived: false });
-        changed = true;
+    // Import existing product fields ONCE when the catalog is first created.
+    // Later GETs must not manufacture values from stale/incorrect product
+    // fields, or undo an explicit cleanup of the user's choices.
+    if (!stored) {
+      const items = await tx.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { manufacturer: true, category: true, productType: true },
+      });
+      for (const group of groups) {
+        if (!legacyKeys.has(group.legacyField)) continue;
+        const field = group.legacyField as 'manufacturer' | 'category' | 'productType';
+        for (const item of items) {
+          const value = text(item[field]);
+          if (!value || group.values.some(v => v.name === value)) continue;
+          group.values.push({ id: randomUUID(), name: value, archived: false });
+          changed = true;
+        }
       }
     }
     // Brand and legacy values have an alphabetical initial order; later
