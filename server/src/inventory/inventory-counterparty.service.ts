@@ -653,6 +653,36 @@ export class InventoryCounterpartyService {
     return { priceList: list, count, pageSize: take,
       items: items.map(row => this.catalogView(row, company.discountPercent)) };
   }
+  // Shared validation for individual and selected supplier catalog updates.
+  private catalogRowChanges(input: Record<string, unknown>) {
+    const changes: Record<string, any> = {};
+    const fields: Record<string, number> = {
+      name: 300, manufacturer: 160, brand: 160, category: 200,
+      supplierNote: 2000, supplierSku: 160, barcode: 160, unit: 24,
+    };
+    for (const [field, limit] of Object.entries(fields)) {
+      if (Object.prototype.hasOwnProperty.call(input, field))
+        changes[field] = plain(input[field]).slice(0, limit);
+    }
+    if ('name' in changes && !changes.name)
+      throw new BadRequestException('Наименование поставщика не может быть пустым.');
+    if (Object.prototype.hasOwnProperty.call(input, 'listPrice'))
+      changes.listPrice = this.nonnegativePrice(input.listPrice);
+    if (Object.prototype.hasOwnProperty.call(input, 'retailPrice'))
+      changes.retailPrice = this.nonnegativePrice(input.retailPrice);
+    if (Object.prototype.hasOwnProperty.call(input, 'discountPercent'))
+      changes.discountPercent = this.discount(input.discountPercent);
+    if (Object.prototype.hasOwnProperty.call(input, 'packageQuantity')) {
+      const raw = input.packageQuantity;
+      const quantity = raw == null || raw === '' ? null : Number(String(raw).replace(',', '.'));
+      if (quantity !== null && (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1e9))
+        throw new BadRequestException('Неверный номинал поставщика.');
+      changes.packageQuantity = quantity;
+    }
+    if (!Object.keys(changes).length) throw new BadRequestException('Нет изменений.');
+    return changes;
+  }
+
   async editCatalogRow(tenantId: string, id: string, rowId: string, input: Record<string, unknown>) {
     await this.requireAccess(tenantId);
     const company = await this.company(tenantId, id);
@@ -663,31 +693,7 @@ export class InventoryCounterpartyService {
         where: { tenantId, id: rowId, priceListId: latest.id, excludedAt: null },
       });
       if (!row) throw new NotFoundException('Позиция отсутствует в текущем прайсе.');
-      const changes: Record<string, any> = {};
-      const fields: Record<string, number> = {
-        name: 300, manufacturer: 160, brand: 160, category: 200,
-        supplierNote: 2000, supplierSku: 160, barcode: 160, unit: 24,
-      };
-      for (const [field, limit] of Object.entries(fields)) {
-        if (Object.prototype.hasOwnProperty.call(input, field))
-          changes[field] = plain(input[field]).slice(0, limit);
-      }
-      if ('name' in changes && !changes.name)
-        throw new BadRequestException('Наименование поставщика не может быть пустым.');
-      if (Object.prototype.hasOwnProperty.call(input, 'listPrice'))
-        changes.listPrice = this.nonnegativePrice(input.listPrice);
-      if (Object.prototype.hasOwnProperty.call(input, 'retailPrice'))
-        changes.retailPrice = this.nonnegativePrice(input.retailPrice);
-      if (Object.prototype.hasOwnProperty.call(input, 'discountPercent'))
-        changes.discountPercent = this.discount(input.discountPercent);
-      if (Object.prototype.hasOwnProperty.call(input, 'packageQuantity')) {
-        const raw = input.packageQuantity;
-        const quantity = raw == null || raw === '' ? null : Number(String(raw).replace(',', '.'));
-        if (quantity !== null && (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1e9))
-          throw new BadRequestException('Неверный номинал поставщика.');
-        changes.packageQuantity = quantity;
-      }
-      if (!Object.keys(changes).length) throw new BadRequestException('Нет изменений.');
+      const changes = this.catalogRowChanges(input);
       const updated = await tx.inventoryCounterpartyCatalogItem.update({
         where: { id: row.id }, data: changes,
       });
@@ -696,6 +702,36 @@ export class InventoryCounterpartyService {
       }
       return this.catalogView(updated, company.discountPercent);
     }, { timeout: 60000 });
+  }
+
+  async updateCatalogRowsBatch(tenantId: string, id: string, body: Record<string, unknown>) {
+    await this.requireAccess(tenantId);
+    const company = await this.company(tenantId, id);
+    const rowIds = Array.isArray(body?.rowIds) ? body.rowIds.map(value => plain(value)) : [];
+    if (!rowIds.length || rowIds.length > 100 || rowIds.some(value => !value)
+        || new Set(rowIds).size !== rowIds.length)
+      throw new BadRequestException('Выберите от 1 до 100 разных позиций прайса.');
+    const field = plain(body?.field);
+    const allowed = new Set(['name','manufacturer','brand','category','supplierNote',
+      'supplierSku','barcode','unit','listPrice','retailPrice','discountPercent','packageQuantity']);
+    if (!allowed.has(field)) throw new BadRequestException('Выберите характеристику прайса.');
+    const changes = this.catalogRowChanges({ [field]: body?.value });
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${tenantId}),hashtext(${id}))) AS guard`;
+      const latest = await this.latestCatalogInTx(tx, tenantId, id);
+      const where = { tenantId, priceListId: latest.id, excludedAt: null, id: { in: rowIds } };
+      const found = await tx.inventoryCounterpartyCatalogItem.count({ where });
+      if (found !== rowIds.length)
+        throw new BadRequestException('Состав прайса изменился. Обновите список.');
+      const updated = await tx.inventoryCounterpartyCatalogItem.updateMany({ where, data: changes });
+      if (updated.count !== rowIds.length)
+        throw new BadRequestException('Не все позиции прайса удалось изменить.');
+      const rows = await tx.inventoryCounterpartyCatalogItem.findMany({ where, orderBy: { position: 'asc' } });
+      // Supplier offer pricing remains owned by the existing canonical helper.
+      if ('listPrice' in changes || 'discountPercent' in changes || 'supplierSku' in changes)
+        for (const row of rows) await this.refreshOfferForRow(tx, tenantId, id, row, company.discountPercent);
+      return { items: rows.map(row => this.catalogView(row, company.discountPercent)) };
+    }, { timeout: 120000 });
   }
 
   async changeCatalogPrices(tenantId: string, id: string, input: {
