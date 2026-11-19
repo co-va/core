@@ -1368,6 +1368,51 @@ export class InventoryService {
       throw new BadRequestException('Нельзя удалить позицию из не полученного заказа.');
   }
 
+  // One server request for selected product master data; no N repeated full
+  // inventory snapshots. Physical movements and purchase history are untouched.
+  async updateItemsBatch(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const raw = Array.isArray(source.updates) ? source.updates : [];
+    if (!raw.length || raw.length > 100)
+      throw new BadRequestException('Выберите от 1 до 100 позиций для изменения.');
+    const allowed = new Set([
+      'category', 'productType', 'name', 'manufacturer', 'sku', 'barcode',
+      'supplier', 'referencePrice', 'unit', 'packageQuantity',
+      'grossWeight', 'tareWeight', 'minStock', 'targetStock',
+      'canConsume', 'canSell',
+    ]);
+    const updates = raw.map((value: unknown) => {
+      const input = objectValue(value);
+      const itemId = text(input.itemId);
+      const patch = objectValue(input.patch);
+      const keys = Object.keys(patch);
+      if (!itemId || !keys.length || keys.some(key => !allowed.has(key)))
+        throw new BadRequestException('Выберите товар и допустимые поля изменения.');
+      return { itemId, patch };
+    });
+    const ids = updates.map(row => row.itemId);
+    if (new Set(ids).size !== ids.length)
+      throw new BadRequestException('Повторяющаяся позиция в изменениях.');
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await this.lockInventoryOrder(tx, tenantId);
+      const existing = await tx.inventoryItem.findMany({
+        where: { tenantId, itemId: { in: ids }, archivedAt: null },
+        select: { id: true, itemId: true },
+      });
+      if (existing.length !== ids.length)
+        throw new BadRequestException('Состав товаров изменился. Обновите остатки.');
+      // Lock once in deterministic order. Existing updateItem remains the sole
+      // owner of every field validation and classification rule.
+      await tx.$queryRaw`SELECT id FROM "InventoryItem"
+        WHERE id IN (${Prisma.join(existing.map((item: AnyRecord) => item.id))})
+        ORDER BY id FOR UPDATE`;
+      for (const update of updates) {
+        await this.updateItem(tenantId, update.itemId, update.patch, tx);
+      }
+    }, { maxWait: 10000, timeout: 120000 });
+    return { updatedItemIds: ids };
+  }
+
   async archiveSelectedItems(tenantId: string, body: unknown) {
     const source = objectValue(body);
     const ids = Array.isArray(source.itemIds) ? source.itemIds.map(text) : [];
