@@ -1368,7 +1368,7 @@ export class InventoryService {
       throw new BadRequestException('Нельзя удалить позицию из не полученного заказа.');
   }
 
-  // One server request for selected product master data; no N repeated full
+  // One server request for selected product characteristics; no N repeated full
   // inventory snapshots. Physical movements and purchase history are untouched.
   async updateItemsBatch(tenantId: string, body: unknown) {
     const source = objectValue(body);
