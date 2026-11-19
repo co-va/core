@@ -1039,6 +1039,8 @@ model InventoryItem {
   sku               String   @default("")
   barcode           String   @default("")
   location          String   @default("")
+  // Catalog visibility at any number of storage locations, independent of mass.
+  storageLocationIds Json?
   supplier          String   @default("")
   minStock          Decimal? @db.Decimal(14, 3)
   targetStock       Decimal? @db.Decimal(14, 3)
