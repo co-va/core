@@ -63,6 +63,12 @@ export class InventoryCounterpartyController {
     return this.companies.linkStatuses(request.auth!.tenantId, id);
   }
 
+  @Post(':id/catalog/bulk')
+  updateCatalogRowsBatch(@Req() request: Authorized, @Param('id') id: string,
+    @Body() body: Record<string, unknown>) {
+    return this.companies.updateCatalogRowsBatch(request.auth!.tenantId, id, body);
+  }
+
   @Put(':id/catalog/:rowId')
   editCatalogRow(@Req() request: Authorized, @Param('id') id: string,
     @Param('rowId') rowId: string, @Body() body: Record<string, unknown>) {
