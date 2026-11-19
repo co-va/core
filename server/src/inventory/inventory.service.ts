@@ -397,7 +397,7 @@ export class InventoryService {
   }
 
   async snapshot(tenantId: string) {
-    const [items, lots, movements, lines, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, supplierClaims, claimSettlements] = await Promise.all([
+    const [items, lots, movements, movementTotals, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, supplierClaims, claimSettlements] = await Promise.all([
       this.prisma.inventoryItem.findMany({
         where: { tenantId, archivedAt: null },
         orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }, { name: 'asc' }],
@@ -411,9 +411,12 @@ export class InventoryService {
         orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
         take: 600,
       }),
-      this.prisma.inventoryMovementLine.findMany({
+      // All-time totals remain exact, but historical movement lines are not
+      // materialized in Node for every inventory screen visit.
+      this.prisma.inventoryMovementLine.groupBy({
+        by: ['inventoryItemId', 'storageLocationId', 'direction'],
         where: { tenantId },
-        orderBy: { position: 'asc' },
+        _sum: { quantity: true, containerDelta: true },
       }),
       this.prisma.inventorySupplierOffer.findMany({
         where: { tenantId, isActive: true },
@@ -434,19 +437,27 @@ export class InventoryService {
       this.prisma.inventorySupplierClaimSettlement.findMany({ where: { tenantId }, orderBy: { occurredAt: 'desc' } }),
     ]);
 
+    // The UI requests only the latest 600 movements. Fetch line details
+    // for those movements alone; old lines were already counted above.
+    const lines = movements.length ? await this.prisma.inventoryMovementLine.findMany({
+      where: { tenantId, inventoryMovementId: { in: movements.map(movement => movement.id) } },
+      orderBy: { position: 'asc' },
+    }) : [];
+
     const balances = new Map<string, number>();
     const byStorage = new Map<string, Map<string, number>>();
     const byStorageContainers = new Map<string, Map<string, number>>();
-    lines.forEach((line: AnyRecord) => {
-      const signed = line.direction === 'OUT' ? -decimalNumber(line.quantity) : decimalNumber(line.quantity);
+    movementTotals.forEach((line: AnyRecord) => {
+      const quantity = decimalNumber(line._sum.quantity);
+      const signed = line.direction === 'OUT' ? -quantity : quantity;
       balances.set(line.inventoryItemId, (balances.get(line.inventoryItemId) || 0) + signed);
       const site = line.storageLocationId || PRIMARY_STORAGE;
       const perItem = byStorage.get(line.inventoryItemId) || new Map<string, number>();
       perItem.set(site, (perItem.get(site) || 0) + signed);
       byStorage.set(line.inventoryItemId, perItem);
-      if (line.containerDelta != null) {
+      if (line._sum.containerDelta != null) {
         const units = byStorageContainers.get(line.inventoryItemId) || new Map<string, number>();
-        units.set(site, (units.get(site) || 0) + Number(line.containerDelta));
+        units.set(site, (units.get(site) || 0) + Number(line._sum.containerDelta));
         byStorageContainers.set(line.inventoryItemId, units);
       }
     });
