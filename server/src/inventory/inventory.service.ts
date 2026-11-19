@@ -1227,8 +1227,8 @@ export class InventoryService {
   async clearItemPositions(tenantId: string, body: unknown) {
     const source = objectValue(body);
     const raw = Array.isArray(source.items) ? source.items : [];
-    if (!raw.length || raw.length > 500)
-      throw new BadRequestException('Выберите от 1 до 500 товаров.');
+    if (!raw.length || raw.length > 10000)
+      throw new BadRequestException('Выберите от 1 до 10000 товаров.');
     const selected = raw.map((entry: unknown) => {
       const value = objectValue(entry);
       const itemId = text(value.itemId);
