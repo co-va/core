@@ -32,7 +32,7 @@ assert.equal(sorted.find(item => item.manufacturer === 'Wella').itemId, 'item-20
 assert.equal(all.filter(item => item.position > 0).length, 3, 'No numbering before explicit user action');
 
 const rawHelpers = source.slice(source.indexOf('  private inventoryPosition('),
-  source.indexOf('  // A drag only permutes explicit numbered slots', source.indexOf('  private inventoryPosition(')));
+  source.indexOf('  // Clearing a position removes its number', source.indexOf('  private inventoryPosition(')));
 assert.ok(rawHelpers.startsWith('  private inventoryPosition('));
 const helperFunctions = rawHelpers
   .replace('private inventoryPosition(value: unknown): number', 'function inventoryPosition(value)')
@@ -170,4 +170,83 @@ assert.match(source,/Обновите склад перед изменением
   'Legacy client without expected position is rejected');
 assert.match(source,/Порядок изменился в другом окне/,
   'Stale single item number writes are rejected');
-console.log('PASS: partial physical shelf numbering, stale-tab guard, no mass renumbering and isolation by manufacturer');
+// Clearing a number now compacts every remaining numbered slot in that
+// manufacturer. Previously existing gaps are closed; the cleared entries
+// become unnumbered (0) and sort below the assigned numbers.
+assert.match(controller, /@Post\\('items\\/positions\\/clear'\\)/,
+  'Atomic clear-and-renumber endpoint must exist');
+assert.match(source, /await this\\.compactInventoryPositions\\(owner, tenantId,/,
+  'Single-item number clearing must use the same algorithm');
+
+const compactStart = source.indexOf('  private async compactInventoryPositions(');
+const compactEnd = source.indexOf('  // A drag only permutes explicit numbered slots', compactStart);
+assert.ok(compactStart > 0 && compactEnd > compactStart, 'Canonical position compactor exists');
+const compactSource = source.slice(compactStart, compactEnd)
+  .replace(/private async compactInventoryPositions\\(tx: Tx, tenantId: string, manufacturer: string,\\s*clearItemIds: Set<string> = new Set\\(\\)\\): Promise<\\{ itemId: string; position: number \\}\\[]>/,
+    'async compactInventoryPositions(tx, tenantId, manufacturer, clearItemIds = new Set())')
+  .replace('async clearItemPositions(tenantId: string, body: unknown)', 'async clearItemPositions(tenantId, body)')
+  .replaceAll('const rows: AnyRecord[]', 'const rows')
+  .replaceAll('const targets: AnyRecord[]', 'const targets')
+  .replace('const positions: { itemId: string; position: number }[] = [];', 'const positions = [];')
+  .replace('raw.map((entry: unknown) =>', 'raw.map(entry =>')
+  .replaceAll('async (tx: Tx) =>', 'async tx =>');
+const PositionEngine = new Function('Prisma', 'objectValue', 'text', 'BadRequestException',
+  'return class PositionEngine { constructor(prisma) { this.prisma = prisma; } ' +
+  'async lockInventoryOrder(tx, tenantId) { tx.lockCount++; }' +
+  compactSource + '}')(Prisma,
+  value => value && typeof value === 'object' && !Array.isArray(value) ? value : {},
+  value => String(value ?? '').trim(), Error);
+
+const examples = [1, 2, 3, 10, 11, 12, 15, 16, 20, 21].map((position, index) => ({
+  id: 'db-' + index, tenantId: 'tenant', itemId: 'i-' + index,
+  manufacturer: 'CHI', archivedAt: null, name: 'Product ' + index,
+  position, balance: 10 + index,
+}));
+examples.push({ id: 'wella-1', tenantId: 'tenant', itemId: 'wella',
+  manufacturer: 'Wella', archivedAt: null, name: 'Wella', position: 23, balance: 99 });
+let massWrites = 0;
+const positionTx = {
+  lockCount: 0,
+  inventoryItem: {
+    findMany: async ({ where, select, orderBy }) => examples.filter(item =>
+      item.tenantId === where.tenantId && item.archivedAt === null
+      && (!('manufacturer' in where) || item.manufacturer === where.manufacturer)
+      && (!where.itemId || where.itemId.in.includes(item.itemId)))
+      .sort((left, right) => orderBy?.[0]?.position === 'asc' ? left.position - right.position : 0)
+      .map(item => Object.fromEntries(Object.keys(select).map(key => [key, item[key]]))),
+  },
+  $executeRaw: async query => {
+    massWrites++;
+    for (const expr of query.values[0].joined) {
+      const [id, position] = expr.values;
+      examples.find(item => item.id === id).position = position;
+    }
+    return query.values[0].joined.length;
+  },
+};
+const engine = new PositionEngine({ $transaction: async (callback, options) => {
+  assert.ok(options.timeout >= 60000);
+  return callback(positionTx);
+}});
+const cleared = await engine.clearItemPositions('tenant', { items: [
+  { itemId: 'i-4', expectedPosition: 11 },
+  { itemId: 'i-5', expectedPosition: 12 },
+] });
+assert.deepEqual(examples.slice(0, 10).map(item => item.position),
+  [1, 2, 3, 4, 0, 0, 5, 6, 7, 8],
+  'Cleared oxides become unnumbered; all other CHI ranks are consecutive');
+assert.equal(examples[10].position, 23, 'Other manufacturers are untouched');
+assert.ok(examples.every((item, index) => item.balance === (index === 10 ? 99 : 10 + index)),
+  'No stock balances or item details are changed');
+assert.equal(massWrites, 1, 'Entire manufacturer is renumbered in one SQL statement');
+assert.equal(positionTx.lockCount, 1, 'One transaction lock guards the entire clear');
+assert.equal(cleared.clearedItemIds.length, 2);
+assert.equal(cleared.positions.length, 10, 'Core confirms all affected numbers');
+
+await assert.rejects(() => engine.clearItemPositions('tenant', { items: [
+  { itemId: 'i-2', expectedPosition: 10 },
+] }), /Порядок изменился/, 'Old browser tabs must not overwrite fresh order');
+assert.equal(massWrites, 1, 'A stale request never mutates the database');
+
+console.log('PASS: inventory order/reorder and atomic clear with manufacturer renumbering');
+
