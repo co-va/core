@@ -3,7 +3,8 @@ meta:
   toolchain:
     name: docker
 build:
-  dockerfile: Dockerfile
-  skip: false
+  skip: true
 run:
+  image: ghcr.io/co-va/core@sha256:ea78ca87c87cf8a56af28c69aace381925059616dcc4d3d62c0310f84c7f8ea5
   containerPort: 3000
+  persistenceMount: /data
