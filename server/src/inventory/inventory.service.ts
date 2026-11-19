@@ -1181,6 +1181,77 @@ export class InventoryService {
     }
   }
 
+  // Clearing a position removes its number. All remaining numbered products
+  // for the manufacturer close their gaps in their existing numerical order.
+  // Unnumbered products (including the cleared rows) remain at the bottom.
+  // One transaction and one SQL UPDATE; no stock/lot/movement changes.
+  private async compactInventoryPositions(tx: Tx, tenantId: string, manufacturer: string,
+    clearItemIds: Set<string> = new Set()): Promise<{ itemId: string; position: number }[]> {
+    const rows: AnyRecord[] = await tx.inventoryItem.findMany({
+      where: { tenantId, manufacturer, archivedAt: null },
+      select: { id: true, itemId: true, position: true, name: true },
+      orderBy: [{ position: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+    });
+    let rank = 0;
+    const positions = rows.map(row => ({
+      id: row.id,
+      itemId: String(row.itemId),
+      before: Number(row.position) || 0,
+      position: clearItemIds.has(String(row.itemId)) || !(Number(row.position) > 0)
+        ? 0 : ++rank,
+    }));
+    const changes = positions.filter(row => row.before !== row.position);
+    if (changes.length) {
+      const cases = changes.map(row => Prisma.sql`WHEN ${row.id} THEN ${row.position}`);
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "InventoryItem"
+        SET "position" = CASE "id" ${Prisma.join(cases, ' ')} ELSE "position" END
+        WHERE "tenantId" = ${tenantId}
+          AND "id" IN (${Prisma.join(changes.map(row => row.id))})
+      `);
+    }
+    return positions.map(({ itemId, position }) => ({ itemId, position }));
+  }
+
+  // Clear any selection of positions at once. This is one atomic operation,
+  // including the deterministic renumbering of every affected manufacturer.
+  async clearItemPositions(tenantId: string, body: unknown) {
+    const source = objectValue(body);
+    const raw = Array.isArray(source.items) ? source.items : [];
+    if (!raw.length || raw.length > 10000)
+      throw new BadRequestException('Выберите от 1 до 10000 товаров.');
+    const selected = raw.map((entry: unknown) => {
+      const value = objectValue(entry);
+      const itemId = text(value.itemId);
+      const expectedPosition = value.expectedPosition;
+      if (!itemId || !Number.isSafeInteger(expectedPosition)
+        || expectedPosition < 0 || expectedPosition > 2147483647)
+        throw new BadRequestException('Обновите склад перед очисткой номеров.');
+      return { itemId, expectedPosition };
+    });
+    const ids = selected.map(row => row.itemId);
+    if (new Set(ids).size !== ids.length)
+      throw new BadRequestException('Повторяющаяся позиция.');
+    const previous = new Map(selected.map(row => [row.itemId, row.expectedPosition]));
+    const positions: { itemId: string; position: number }[] = [];
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await this.lockInventoryOrder(tx, tenantId);
+      const targets: AnyRecord[] = await tx.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null, itemId: { in: ids } },
+        select: { itemId: true, position: true, manufacturer: true },
+      });
+      if (targets.length !== ids.length
+        || targets.some(row => Number(row.position) !== previous.get(String(row.itemId))))
+        throw new BadRequestException('Порядок изменился. Обновите склад и повторите.');
+      const manufacturers = [...new Set(targets.map(row => String(row.manufacturer || '')))].sort();
+      const toClear = new Set(ids);
+      for (const manufacturer of manufacturers) {
+        positions.push(...await this.compactInventoryPositions(tx, tenantId, manufacturer, toClear));
+      }
+    }, { maxWait: 10000, timeout: 120000 });
+    return { clearedItemIds: ids, positions };
+  }
+
   // A drag only permutes explicit numbered slots. The 0 (unassigned)
   // positions stay unassigned; never normalize an entire partially numbered
   // physical shelf because one row was accidentally dragged.
@@ -1537,6 +1608,9 @@ export class InventoryService {
     }
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
+    // The same rule applies to clearing one product from its editor.
+    if ('position' in data && Number(current.position) > 0 && Number(data.position) === 0)
+      await this.compactInventoryPositions(owner, tenantId, String(current.manufacturer || ''));
     return db ? { itemId } : this.snapshot(tenantId);
   }
 
