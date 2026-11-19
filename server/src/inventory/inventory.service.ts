@@ -619,6 +619,8 @@ export class InventoryService {
           sku: item.sku,
           barcode: item.barcode,
           location: item.location,
+          assignedStorageLocations: Array.isArray(item.storageLocationIds)
+            ? item.storageLocationIds.filter((id: unknown) => typeof id === 'string') : [],
           supplier: item.supplier,
           minStock: item.minStock == null ? null : decimalNumber(item.minStock),
           targetStock: item.targetStock == null ? null : decimalNumber(item.targetStock),
@@ -1930,9 +1932,18 @@ export class InventoryService {
     const source = objectValue(body);
     const from = text(source.fromLocationId) || PRIMARY_STORAGE;
     const to = text(source.toLocationId) || PRIMARY_STORAGE;
-    if (from === to) throw new BadRequestException('Выберите другое место хранения.');
     const requested = Array.isArray(source.lines) ? source.lines.map(objectValue) : [];
-    if (!requested.length || requested.length > 500) throw new BadRequestException('Добавьте позиции переноса (не более 500).');
+    const assignmentItemIds = Array.isArray(source.assignmentItemIds)
+      ? source.assignmentItemIds.map(text) : [];
+    if (!requested.length && !assignmentItemIds.length)
+      throw new BadRequestException('Выберите позиции для перемещения.');
+    if (requested.length > 500 || assignmentItemIds.length > 500)
+      throw new BadRequestException('За один раз можно выбрать не более 500 позиций.');
+    if (assignmentItemIds.some(id => !id) ||
+        new Set(assignmentItemIds).size !== assignmentItemIds.length)
+      throw new BadRequestException('Некорректный список выбранных товаров.');
+    if (requested.length && from === to)
+      throw new BadRequestException('Выберите другое место хранения.');
     const movementId = text(source.transferId) || randomUUID();
     await this.prisma.$transaction(async (tx: Tx) => {
       const existing = await tx.inventoryMovement.findFirst({ where: { tenantId, movementId } });
@@ -1941,10 +1952,10 @@ export class InventoryService {
         throw new BadRequestException('Идентификатор движения уже используется.');
       }
       await this.assertStorageLocations(tx, tenantId, [from, to]);
-      const ids = [...new Set(requested.map((row: AnyRecord) => text(row.itemId)))].sort();
-      if (requested.some((row: AnyRecord) => row.fullBalance === true) &&
-        ids.length !== requested.length)
-        throw new BadRequestException('При полном перемещении товар нельзя повторять.');
+      const movementIds = requested.map((row: AnyRecord) => text(row.itemId));
+      if (movementIds.some(id => !id) || new Set(movementIds).size !== movementIds.length)
+        throw new BadRequestException('Товар нельзя повторять в одной операции.');
+      const ids = [...new Set([...movementIds, ...assignmentItemIds])].sort();
       const items = await tx.inventoryItem.findMany({ where: { tenantId, itemId: { in: ids }, archivedAt: null } });
       if (items.length !== ids.length) throw new BadRequestException('Одна из позиций переноса не найдена.');
       const byId = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
@@ -1952,6 +1963,19 @@ export class InventoryService {
       const physicalQuantities = new Map<string, number>();
       for (const item of (items as AnyRecord[]).sort((a, b) => String(a.id).localeCompare(String(b.id))))
         await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+      // Assigning a zero-stock card changes catalog availability, not grams.
+      for (const itemId of assignmentItemIds) {
+        const item = byId.get(itemId) as AnyRecord;
+        const existing = Array.isArray(item.storageLocationIds)
+          ? item.storageLocationIds.filter((id: unknown) => typeof id === 'string') : [];
+        if (!existing.includes(to)) {
+          await tx.inventoryItem.update({
+            where: { id: item.id },
+            data: { storageLocationIds: [...existing, to] },
+          });
+        }
+      }
+      if (!requested.length) return;
       for (const row of requested) {
         const itemId = text(row.itemId);
         const item = byId.get(itemId) as AnyRecord;
