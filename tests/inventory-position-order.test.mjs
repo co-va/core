@@ -11,7 +11,7 @@ assert.match(source, /pg_advisory_xact_lock/, 'Both manual edits and drag reorde
 assert.match(controller, /@Post\('items\/reorder'\)/, 'Single company reorder API is exposed');
 
 const start = source.indexOf("    const collator = new Intl.Collator('ru',");
-const end = source.indexOf('\n\n    const classificationById =', start);
+const end = source.indexOf('    const targetsByItem =', start);
 assert.ok(start > 0 && end > start, 'Snapshot sort exists');
 const sort = new Function('items',
   source.slice(start, end).replaceAll(': AnyRecord', '') + '\nreturn orderedItems;');
