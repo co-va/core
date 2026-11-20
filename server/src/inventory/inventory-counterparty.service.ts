@@ -919,7 +919,12 @@ export class InventoryCounterpartyService {
         actualPrice: row.actualPrice,
         unitsPerOffer: size };
       if (existing) {
-        await tx.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
+        // Re-linking with a catalog lacking package data must not erase a
+        // previously verified conversion on the existing supplier offer.
+        await tx.inventorySupplierOffer.update({
+          where: { id: existing.id },
+          data: { ...fields, unitsPerOffer: size ?? existing.unitsPerOffer },
+        });
         return { offerId: existing.offerId, itemId };
       }
       const offerId = randomUUID();
