@@ -29,10 +29,10 @@ assert.equal(sorted[0].manufacturer, 'CHI', 'Company grouping precedes manual nu
 assert.equal(sorted[0].itemId, 'item-15');
 assert.equal(sorted[1].itemId, 'item-110');
 assert.equal(sorted.find(item => item.manufacturer === 'Wella').itemId, 'item-201');
-assert.equal(all.filter(item => item.position > 0).length, 3, 'No numbering before explicit user action');
+assert.equal(all.filter(item => item.position > 0).length, 3, 'Legacy fixture includes previously unnumbered items');
 
 const rawHelpers = source.slice(source.indexOf('  private inventoryPosition('),
-  source.indexOf('  // Clearing a position removes its number', source.indexOf('  private inventoryPosition(')));
+  source.indexOf('  // Every active item has a positive', source.indexOf('  private inventoryPosition(')));
 assert.ok(rawHelpers.startsWith('  private inventoryPosition('));
 const helperFunctions = rawHelpers
   .replace('private inventoryPosition(value: unknown): number', 'function inventoryPosition(value)')
@@ -43,7 +43,7 @@ const helperFunctions = rawHelpers
   .replaceAll('const between: AnyRecord[]', 'const between');
 const helpers = new Function('BadRequestException',
   helperFunctions + '\nreturn { inventoryPosition, lockInventoryOrder, freeInventoryPosition };')(Error);
-assert.equal(helpers.inventoryPosition(0), 0, 'Blank number is represented as 0');
+assert.equal(helpers.inventoryPosition(0), 0, 'Zero is a request to move to the end, never a stored position');
 assert.equal(helpers.inventoryPosition(5), 5, 'No zero padding');
 assert.throws(() => helpers.inventoryPosition(-1), /целым/);
 
@@ -140,9 +140,10 @@ const reordered = [...orderedBefore];
 const beforePositions = reordered.map(id=>all.find(item=>item.itemId===id).position);
 await reorder.call(context,'tenant',{manufacturer:company,itemIds:reordered,previousPositions:beforePositions});
 assert.equal(writes,1, 'One SQL write on drop');
-assert.equal(rowsChanged,2, 'Only two swapped numbered rows changed, not all 200 goods');
-assert.equal(all.filter(item=>item.manufacturer===company && item.position===0).length,198,
-  'Unnumbered catalog remains unnumbered after drag');
+assert.equal(rowsChanged,200, 'Legacy unnumbered items receive sequential ranks in the same transaction');
+assert.deepEqual(sort(all).filter(item=>item.manufacturer===company).map(item=>item.position),
+  Array.from({length:200},(_,i)=>i+1),
+  'All 200 products receive a continuous nonzero rank after reorder');
 assert.deepEqual(sort(all).filter(item=>item.manufacturer===company).map(item=>item.itemId),reordered,
   'Manual order after drag is persistent');
 assert.equal(all.find(item=>item.itemId==='item-201').position,1,
@@ -154,13 +155,13 @@ await assert.rejects(()=>reorder.call(context,'tenant',{
 }),/Порядок изменён/,'Stale tab must not overwrite later changes');
 assert.equal(writes,1,'Stale write rejected before SQL');
 
-const unnumberedDrag = [...reordered];
-[unnumberedDrag[3],unnumberedDrag[4]]=[unnumberedDrag[4],unnumberedDrag[3]];
-await assert.rejects(()=>reorder.call(context,'tenant',{
-  manufacturer:company,itemIds:unnumberedDrag,
-  previousPositions:unnumberedDrag.map(id=>all.find(item=>item.itemId===id).position),
-}),/Сначала назначьте номер/,'Unnumbered rows cannot be rearranged invisibly');
-assert.equal(writes,1,'Unnumbered drag does not modify 200 products');
+const nextOrder = [...reordered];
+[nextOrder[3],nextOrder[4]]=[nextOrder[4],nextOrder[3]];
+await reorder.call(context,'tenant',{
+  manufacturer:company,itemIds:nextOrder,
+  previousPositions:nextOrder.map(id=>all.find(item=>item.itemId===id).position),
+});
+assert.equal(writes,2,'Existing numbered rows can be swapped in one additional SQL write');
 await assert.rejects(()=>reorder.call(context,'tenant',{
   manufacturer:company,itemIds:reordered.slice(1),
   previousPositions:reordered.slice(1).map(()=>0),
@@ -170,16 +171,15 @@ assert.match(source,/Обновите склад перед изменением
   'Legacy client without expected position is rejected');
 assert.match(source,/Порядок изменился в другом окне/,
   'Stale single item number writes are rejected');
-// Clearing a number now compacts every remaining numbered slot in that
-// manufacturer. Previously existing gaps are closed; the cleared entries
-// become unnumbered (0) and sort below the assigned numbers.
+// Clearing a number moves the selected item to the end, with positive
+// contiguous ranks for every product including older legacy blanks.
 assert.match(controller, /@Post\('items\/positions\/clear'\)/,
   'Atomic clear-and-renumber endpoint must exist');
 assert.match(source, /await this\.compactInventoryPositions\(owner, tenantId,/,
   'Single-item number clearing must use the same algorithm');
 
 const compactStart = source.indexOf('  private async compactInventoryPositions(');
-const compactEnd = source.indexOf('  // A drag only permutes explicit numbered slots', compactStart);
+const compactEnd = source.indexOf('  // A reorder is an atomic permutation', compactStart);
 assert.ok(compactStart > 0 && compactEnd > compactStart, 'Canonical position compactor exists');
 const compactSource = source.slice(compactStart, compactEnd)
   .replace(/private async compactInventoryPositions\(tx: Tx, tenantId: string, manufacturer: string,\s*clearItemIds: Set<string> = new Set\(\)\): Promise<\{ itemId: string; position: number \}\[]>/,
@@ -233,8 +233,8 @@ const cleared = await engine.clearItemPositions('tenant', { items: [
   { itemId: 'i-5', expectedPosition: 12 },
 ] });
 assert.deepEqual(examples.slice(0, 10).map(item => item.position),
-  [1, 2, 3, 4, 0, 0, 5, 6, 7, 8],
-  'Cleared oxides become unnumbered; all other CHI ranks are consecutive');
+  [1, 2, 3, 4, 9, 10, 5, 6, 7, 8],
+  'Cleared oxides move to the end (9, 10); all CHI ranks stay positive and sequential');
 assert.equal(examples[10].position, 23, 'Other manufacturers are untouched');
 assert.ok(examples.every((item, index) => item.balance === (index === 10 ? 99 : 10 + index)),
   'No stock balances or item details are changed');
@@ -248,5 +248,5 @@ await assert.rejects(() => engine.clearItemPositions('tenant', { items: [
 ] }), /Порядок изменился/, 'Old browser tabs must not overwrite fresh order');
 assert.equal(massWrites, 1, 'A stale request never mutates the database');
 
-console.log('PASS: inventory order/reorder and atomic clear with manufacturer renumbering');
+console.log('PASS: inventory order/reorder, automatic numbering and move-to-end clearing');
 
