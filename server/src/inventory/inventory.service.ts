@@ -1271,9 +1271,9 @@ export class InventoryService {
     return { clearedItemIds: ids, positions };
   }
 
-  // A drag only permutes explicit numbered slots. The 0 (unassigned)
-  // positions stay unassigned; never normalize an entire partially numbered
-  // physical shelf because one row was accidentally dragged.
+  // A reorder is an atomic permutation of the entire manufacturer list.
+  // It assigns consecutive 1..N ranks even to legacy unnumbered products,
+  // while protecting against changes made in another browser tab.
   async reorderItems(tenantId: string, body: unknown) {
     const source = objectValue(body);
     const manufacturer = text(source.manufacturer);
