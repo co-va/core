@@ -217,6 +217,8 @@ assert.equal(Number(offers[0].listPrice), 320, 'Only the given supplier quote is
 assert.equal(offers[0].discountPercent, null, 'No invented supplier discount');
 await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
 assert.equal(offers[0].unitsPerOffer, 70, 'A later explicit conversion is accepted');
+await service.link('tenant', company.id, rows[0].id, stock.itemId);
+assert.equal(offers[0].unitsPerOffer, 70, 'Missing quantity on repeat must preserve known conversion');
 assert.equal((await service.linkStatuses('tenant', company.id)).statuses
   .find(result => result.catalogItemId === rows[0].id)?.status, 'linked',
   'Only a saved supplier offer produces a confirmed green link');
