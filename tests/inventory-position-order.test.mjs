@@ -269,12 +269,13 @@ const repairEngine = new RepairEngine(engine.prisma);
 // relative order, without changing Wella or stock balances.
 examples[4].position = 0;
 examples[5].position = 0;
+examples[10].position = 1; // Healthy Wella ordering must remain unchanged.
 const repaired = await repairEngine.repairItemPositions('tenant');
 assert.deepEqual(repaired.repairedManufacturers,['CHI']);
 assert.equal(repaired.positions.length,10);
 assert.deepEqual(examples.slice(0,10).map(item=>item.position).sort((a,b)=>a-b),
   [1,2,3,4,5,6,7,8,9,10],'Every legacy zero becomes a positive consecutive rank');
-assert.equal(examples[10].position,23,'Unrelated manufacturer is not rewritten');
+assert.equal(examples[10].position,1,'Healthy unrelated manufacturer is not rewritten');
 assert.ok(examples.every((item,index)=>item.balance===(index===10?99:10+index)),
   'Position repair never changes stock quantities');
 const repairWrites=massWrites;
