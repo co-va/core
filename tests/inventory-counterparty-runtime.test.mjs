@@ -207,13 +207,16 @@ assert.equal((await service.catalog('tenant', company.id, '', 0, true)).count, 1
 await assert.rejects(() => service.setExcluded('tenant', company.id, {
   rowIds: ['not-in-current-catalog'], excluded: true,
 }), /устарел/);
-await assert.rejects(() => service.link('tenant', company.id, rows[0].id, stock.itemId),
-  /Единицы поставщика и склада различаются/,
-  'Mismatched units cannot be silently interpreted as the stock card pack');
-const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
+const offer = await service.link('tenant', company.id, rows[0].id, stock.itemId);
 assert.equal(offer.itemId, stock.itemId);
-assert.equal(offers.length, 1);
-assert.equal(offers[0].unitsPerOffer, 70, 'Explicitly confirmed offer quantity is preserved');
+assert.equal(offers.length, 1, 'Matching SKU must link even with no supplier package data');
+assert.equal(offers[0].unitsPerOffer, null, 'Unknown supplier conversion stays NULL');
+assert.equal(offers[0].catalogItemId, rows[0].id, 'The exact supplier catalog row is persisted');
+assert.equal(offers[0].supplier, company.name, 'The selected supplier is persisted');
+assert.equal(Number(offers[0].listPrice), 320, 'Only the given supplier quote is copied');
+assert.equal(offers[0].discountPercent, null, 'No invented supplier discount');
+await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
+assert.equal(offers[0].unitsPerOffer, 70, 'A later explicit conversion is accepted');
 assert.equal((await service.linkStatuses('tenant', company.id)).statuses
   .find(result => result.catalogItemId === rows[0].id)?.status, 'linked',
   'Only a saved supplier offer produces a confirmed green link');
