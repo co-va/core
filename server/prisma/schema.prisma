@@ -1085,6 +1085,23 @@ model InventoryItem {
 }
 
 
+// A virtual consumption group references real stock items without changing
+// physical inventory balances. Item membership is validated in Core.
+model InventoryConsumptionGroup {
+  id         String   @id @default(cuid())
+  tenantId   String
+  groupId    String
+  name       String
+  unit       String
+  itemIds    Json     @default("[]")
+  archivedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, groupId])
+  @@index([tenantId, archivedAt, name])
+}
+
 model InventoryCriteriaCatalog {
   tenantId  String   @id
   data      Json
