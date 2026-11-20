@@ -1527,7 +1527,7 @@ export class InventoryService {
         throw new BadRequestException('Состав товаров изменился. Повторите операцию.');
       // Removing a numbered product must never leave a gap in its company.
       // The archive flag and rank compaction commit in the SAME transaction.
-      for (const manufacturer of [...new Set(active.map((item: AnyRecord) =>
+      for (const manufacturer of [...new Set<string>(active.map((item: AnyRecord) =>
         String(item.manufacturer || '')))].sort()) {
         positions.push(...await this.compactInventoryPositions(tx, tenantId, manufacturer));
       }
