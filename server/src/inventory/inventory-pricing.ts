@@ -62,11 +62,13 @@ export function resolveInventoryBasePricing(item: ItemPrice, offers: OfferPrice[
   const primary = offers.find((offer) => offer.isActive !== false && offer.offerId === item.primaryOfferId);
   const primaryPackPrice = primary ? effectiveSupplierOfferPrice(primary) : null;
   const primaryUnits = primary ? positiveNumber(primary.unitsPerOffer) : null;
-  if (primary && primaryPackPrice !== null && primaryUnits !== null && nominalUnits !== null) {
-    const preciseUnitPrice = primaryPackPrice / primaryUnits;
+  if (primary && primaryPackPrice !== null) {
+    // The catalog article already identifies the product being purchased.
+    // Show its actual supplier quote independently of stock-unit conversions.
+    // A consumption-unit cost is calculated separately, only when verified.
     return {
-      basePrice: money(preciseUnitPrice * nominalUnits),
-      baseUnitPrice: money(preciseUnitPrice),
+      basePrice: primaryPackPrice,
+      baseUnitPrice: primaryUnits === null ? null : money(primaryPackPrice / primaryUnits),
       basePriceSource: 'primary-offer',
       primarySupplier: primary.supplier || '',
     };
