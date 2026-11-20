@@ -19,6 +19,14 @@ assert.equal(effectiveSupplierOfferPrice(standard), 900, 'list price minus disco
 assert.equal(effectiveSupplierOfferPrice({ ...standard, actualPrice: 820 }), 820, 'actual offer cost overrides discounted price');
 assert.equal(supplierOfferUnitPrice(standard), 3.6, 'one stocked ml costs 3.6');
 assert.equal(supplierOfferUnitPrice(onSale), 3.08, 'secondary supplier retains its own cost');
+const unknownSize = { offerId: 'catalog-sku', supplier: 'Поставщик из прайса',
+  listPrice: 480, discountPercent: null, unitsPerOffer: null, agreementPriced: true };
+assert.equal(effectiveSupplierOfferPrice(unknownSize), 480, 'Quoted price survives unknown pack size');
+assert.equal(supplierOfferUnitPrice(unknownSize), null, 'Do not divide by a fictional one-unit pack');
+assert.deepEqual(resolveInventoryBasePricing({ primaryOfferId: 'catalog-sku' }, [unknownSize]), {
+  basePrice: null, baseUnitPrice: null, basePriceSource: 'unset',
+  primarySupplier: 'Поставщик из прайса',
+}, 'Supplier identity remains linked while per-unit pricing stays unknown');
 assert.deepEqual(resolveInventoryBasePricing(primaryProduct, [standard, onSale]), {
   basePrice: 900, baseUnitPrice: 3.6, basePriceSource: 'primary-offer', primarySupplier: 'Обычный поставщик',
 }, 'primary supplier determines baseline, not newest or cheapest offer');
