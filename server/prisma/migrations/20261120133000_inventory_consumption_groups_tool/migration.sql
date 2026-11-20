@@ -1,4 +1,5 @@
--- A new independent Stock E instrument starts unavailable. No existing account,
+-- A new Stock E starts in TESTING for approved testers/owner; not READY.
+-- No existing account,
 -- tariff, product, balance, or previously issued tool permission is changed.
 INSERT INTO "Capability"
   ("id","key","groupKey","name","description","valueType",
@@ -18,5 +19,5 @@ ON CONFLICT ("key") DO UPDATE SET
   "updatedAt"=CURRENT_TIMESTAMP;
 
 INSERT INTO "AdminToolReadiness" ("key","status","enforced","updatedAt")
-VALUES ('cabinet.inventory.consumption-groups','NOT_READY',false,CURRENT_TIMESTAMP)
+VALUES ('cabinet.inventory.consumption-groups','TESTING',true,CURRENT_TIMESTAMP)
 ON CONFLICT ("key") DO NOTHING;
