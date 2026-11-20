@@ -249,5 +249,38 @@ await assert.rejects(() => engine.clearItemPositions('tenant', { items: [
 ] }), /Порядок изменился/, 'Old browser tabs must not overwrite fresh order');
 assert.equal(massWrites, 1, 'A stale request never mutates the database');
 
+assert.match(controller, /@Post\('items\/positions\/repair'\)/,
+  'Historical numbering repair is an explicit authenticated operation');
+const repairStart = source.indexOf('  async repairItemPositions(');
+const repairEnd = source.indexOf('  async createItem(',repairStart);
+assert.ok(repairStart > 0 && repairEnd > repairStart, 'Canonical rank repair exists');
+const repairSource = source.slice(repairStart,repairEnd)
+  .replace('async repairItemPositions(tenantId: string)', 'async repairItemPositions(tenantId)')
+  .replace('const changedManufacturers: string[] = [];', 'const changedManufacturers = [];')
+  .replace('const positions: { itemId: string; position: number }[] = [];','const positions = [];')
+  .replaceAll('async (tx: Tx) =>', 'async tx =>')
+  .replace('const rows: AnyRecord[]', 'const rows')
+  .replace('new Map<string, number[]>()','new Map()')
+  .replaceAll('groups.get(manufacturer)!','groups.get(manufacturer)');
+const RepairEngine = new Function('PositionEngine',
+  'return class RepairEngine extends PositionEngine { ' + repairSource + '}')(PositionEngine);
+const repairEngine = new RepairEngine(engine.prisma);
+// The oxides' missing numbers are restored atomically with their original
+// relative order, without changing Wella or stock balances.
+examples[4].position = 0;
+examples[5].position = 0;
+const repaired = await repairEngine.repairItemPositions('tenant');
+assert.deepEqual(repaired.repairedManufacturers,['CHI']);
+assert.equal(repaired.positions.length,10);
+assert.deepEqual(examples.slice(0,10).map(item=>item.position).sort((a,b)=>a-b),
+  [1,2,3,4,5,6,7,8,9,10],'Every legacy zero becomes a positive consecutive rank');
+assert.equal(examples[10].position,23,'Unrelated manufacturer is not rewritten');
+assert.ok(examples.every((item,index)=>item.balance===(index===10?99:10+index)),
+  'Position repair never changes stock quantities');
+const repairWrites=massWrites;
+const unchanged=await repairEngine.repairItemPositions('tenant');
+assert.equal(unchanged.positions.length,0,'Healthy numbering is a no-op');
+assert.equal(massWrites,repairWrites,'No unnecessary SQL rewrite after repair');
+
 console.log('PASS: inventory order/reorder, automatic numbering and move-to-end clearing');
 
