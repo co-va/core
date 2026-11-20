@@ -1063,7 +1063,9 @@ model InventoryItem {
   saleMarkupMode    String?
   saleMarkupValue   Decimal? @db.Decimal(14, 4)
   salePrice         Decimal? @db.Decimal(14, 4)
-  position          Int      @default(0)
+  // Active catalog items always have a positive manufacturer-local rank.
+  // The API assigns this explicitly; no database default of zero is allowed.
+  position          Int
   archivedAt        DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

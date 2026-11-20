@@ -5,13 +5,20 @@ const source = readFileSync('server/src/inventory/inventory.service.ts', 'utf8')
 const controller = readFileSync('server/src/inventory/inventory.controller.ts', 'utf8');
 assert.match(source, /items: orderedItems\.map/, 'Snapshot returns one shared position order');
 assert.match(source, /position: item.position/, 'Manual numbers are included in inventory snapshot');
-assert.match(source, /await this\.freeInventoryPosition\(owner, tenantId, manufacturer, nextPosition, current\.id,/,
+assert.match(source, /await this\.freeInventoryPosition\(owner, tenantId, manufacturer, nextPosition,\s*current\.id,/,
   'Manual numbered insertion is automatic, not a duplicate error');
 assert.match(source, /pg_advisory_xact_lock/, 'Both manual edits and drag reorder use a transaction lock');
+assert.match(source, /const existing = await this\.compactInventoryPositions\(tx, tenantId, manufacturer\)/,
+  'Creation first repairs older numbering gaps in its manufacturer');
+assert.match(source, /position: assignedPosition/,
+  'Every newly created product persists a positive assigned rank');
+assert.match(source, /const nextPosition = requested > 0[\s\S]*?: existing\.length \+ \(changedManufacturer \? 1 : 0\)/,
+  'Empty position on edit is resolved to the end of its manufacturer');
+
 assert.match(controller, /@Post\('items\/reorder'\)/, 'Single company reorder API is exposed');
 
 const start = source.indexOf("    const collator = new Intl.Collator('ru',");
-const end = source.indexOf('\n\n    const classificationById =', start);
+const end = source.indexOf('    const targetsByItem =', start);
 assert.ok(start > 0 && end > start, 'Snapshot sort exists');
 const sort = new Function('items',
   source.slice(start, end).replaceAll(': AnyRecord', '') + '\nreturn orderedItems;');
@@ -29,10 +36,10 @@ assert.equal(sorted[0].manufacturer, 'CHI', 'Company grouping precedes manual nu
 assert.equal(sorted[0].itemId, 'item-15');
 assert.equal(sorted[1].itemId, 'item-110');
 assert.equal(sorted.find(item => item.manufacturer === 'Wella').itemId, 'item-201');
-assert.equal(all.filter(item => item.position > 0).length, 3, 'No numbering before explicit user action');
+assert.equal(all.filter(item => item.position > 0).length, 3, 'Legacy fixture includes previously unnumbered items');
 
 const rawHelpers = source.slice(source.indexOf('  private inventoryPosition('),
-  source.indexOf('  // Clearing a position removes its number', source.indexOf('  private inventoryPosition(')));
+  source.indexOf('  // Every active item has a positive', source.indexOf('  private inventoryPosition(')));
 assert.ok(rawHelpers.startsWith('  private inventoryPosition('));
 const helperFunctions = rawHelpers
   .replace('private inventoryPosition(value: unknown): number', 'function inventoryPosition(value)')
@@ -43,7 +50,7 @@ const helperFunctions = rawHelpers
   .replaceAll('const between: AnyRecord[]', 'const between');
 const helpers = new Function('BadRequestException',
   helperFunctions + '\nreturn { inventoryPosition, lockInventoryOrder, freeInventoryPosition };')(Error);
-assert.equal(helpers.inventoryPosition(0), 0, 'Blank number is represented as 0');
+assert.equal(helpers.inventoryPosition(0), 0, 'Zero is a request to move to the end, never a stored position');
 assert.equal(helpers.inventoryPosition(5), 5, 'No zero padding');
 assert.throws(() => helpers.inventoryPosition(-1), /целым/);
 
@@ -140,9 +147,10 @@ const reordered = [...orderedBefore];
 const beforePositions = reordered.map(id=>all.find(item=>item.itemId===id).position);
 await reorder.call(context,'tenant',{manufacturer:company,itemIds:reordered,previousPositions:beforePositions});
 assert.equal(writes,1, 'One SQL write on drop');
-assert.equal(rowsChanged,2, 'Only two swapped numbered rows changed, not all 200 goods');
-assert.equal(all.filter(item=>item.manufacturer===company && item.position===0).length,198,
-  'Unnumbered catalog remains unnumbered after drag');
+assert.equal(rowsChanged,200, 'Legacy unnumbered items receive sequential ranks in the same transaction');
+assert.deepEqual(sort(all).filter(item=>item.manufacturer===company).map(item=>item.position),
+  Array.from({length:200},(_,i)=>i+1),
+  'All 200 products receive a continuous nonzero rank after reorder');
 assert.deepEqual(sort(all).filter(item=>item.manufacturer===company).map(item=>item.itemId),reordered,
   'Manual order after drag is persistent');
 assert.equal(all.find(item=>item.itemId==='item-201').position,1,
@@ -154,38 +162,79 @@ await assert.rejects(()=>reorder.call(context,'tenant',{
 }),/Порядок изменён/,'Stale tab must not overwrite later changes');
 assert.equal(writes,1,'Stale write rejected before SQL');
 
-const unnumberedDrag = [...reordered];
-[unnumberedDrag[3],unnumberedDrag[4]]=[unnumberedDrag[4],unnumberedDrag[3]];
-await assert.rejects(()=>reorder.call(context,'tenant',{
-  manufacturer:company,itemIds:unnumberedDrag,
-  previousPositions:unnumberedDrag.map(id=>all.find(item=>item.itemId===id).position),
-}),/Сначала назначьте номер/,'Unnumbered rows cannot be rearranged invisibly');
-assert.equal(writes,1,'Unnumbered drag does not modify 200 products');
+const nextOrder = [...reordered];
+[nextOrder[3],nextOrder[4]]=[nextOrder[4],nextOrder[3]];
+await reorder.call(context,'tenant',{
+  manufacturer:company,itemIds:nextOrder,
+  previousPositions:nextOrder.map(id=>all.find(item=>item.itemId===id).position),
+});
+assert.equal(writes,2,'Existing numbered rows can be swapped in one additional SQL write');
 await assert.rejects(()=>reorder.call(context,'tenant',{
   manufacturer:company,itemIds:reordered.slice(1),
   previousPositions:reordered.slice(1).map(()=>0),
 }),/Список материалов изменился/);
 
+// A mass edit across two manufacturers must be all-or-nothing: validate
+// BOTH current rank snapshots before sending any SQL update.
+const multiRows=[
+  ...Array.from({length:3},(_,i)=>({id:'m'+i,itemId:'m'+i,manufacturer:'CHI',position:i+1})),
+  ...Array.from({length:3},(_,i)=>({id:'n'+i,itemId:'n'+i,manufacturer:'Wella',position:i+1})),
+];
+let batchWrites=0;
+const multiTx={
+  inventoryItem:{findMany:async({where})=>multiRows.filter(row=>row.manufacturer===where.manufacturer)
+    .map(row=>({...row}))},
+  $executeRaw:async query=>{
+    batchWrites++;
+    for(const part of query.values[0].joined) {
+      const [id,position]=part.values;
+      multiRows.find(row=>row.id===id).position=position;
+    }
+  },
+};
+const multiContext={
+  prisma:{$transaction:async fn=>fn(multiTx)},
+  lockInventoryOrder:async()=>{},
+  snapshot:async()=>multiRows,
+};
+const multiInput={
+  reorders:[
+    {manufacturer:'CHI',itemIds:['m1','m0','m2'],previousPositions:[2,1,3]},
+    {manufacturer:'Wella',itemIds:['n1','n0','n2'],previousPositions:[9,1,3]},
+  ],
+};
+await assert.rejects(()=>reorder.call(multiContext,'tenant',multiInput),
+  /Порядок изменён/,'Stale second company aborts the whole mass operation');
+assert.equal(batchWrites,0,'No first-company SQL write before second-company validation');
+assert.deepEqual(multiRows.map(row=>row.position),[1,2,3,1,2,3]);
+multiInput.reorders[1].previousPositions=[2,1,3];
+await reorder.call(multiContext,'tenant',multiInput);
+assert.equal(batchWrites,2,'Both companies update atomically in one transaction');
+assert.deepEqual(multiRows.map(row=>row.position),[2,1,3,2,1,3]);
+await assert.rejects(()=>reorder.call(multiContext,'tenant',{
+  reorders:[multiInput.reorders[0],multiInput.reorders[0]],
+}),/Повторяющийся производитель/,'Duplicate company in mass request is refused');
+
 assert.match(source,/Обновите склад перед изменением номера/,
   'Legacy client without expected position is rejected');
 assert.match(source,/Порядок изменился в другом окне/,
   'Stale single item number writes are rejected');
-// Clearing a number now compacts every remaining numbered slot in that
-// manufacturer. Previously existing gaps are closed; the cleared entries
-// become unnumbered (0) and sort below the assigned numbers.
+// Clearing a number moves the selected item to the end, with positive
+// contiguous ranks for every product including older legacy blanks.
 assert.match(controller, /@Post\('items\/positions\/clear'\)/,
   'Atomic clear-and-renumber endpoint must exist');
 assert.match(source, /await this\.compactInventoryPositions\(owner, tenantId,/,
   'Single-item number clearing must use the same algorithm');
 
 const compactStart = source.indexOf('  private async compactInventoryPositions(');
-const compactEnd = source.indexOf('  // A drag only permutes explicit numbered slots', compactStart);
+const compactEnd = source.indexOf('  // Every reorder is a permutation', compactStart);
 assert.ok(compactStart > 0 && compactEnd > compactStart, 'Canonical position compactor exists');
 const compactSource = source.slice(compactStart, compactEnd)
   .replace(/private async compactInventoryPositions\(tx: Tx, tenantId: string, manufacturer: string,\s*clearItemIds: Set<string> = new Set\(\)\): Promise<\{ itemId: string; position: number \}\[]>/,
     'async compactInventoryPositions(tx, tenantId, manufacturer, clearItemIds = new Set())')
   .replace('async clearItemPositions(tenantId: string, body: unknown)', 'async clearItemPositions(tenantId, body)')
   .replaceAll('const rows: AnyRecord[]', 'const rows')
+  .replaceAll('(item: AnyRecord)', '(item)')
   .replaceAll('const targets: AnyRecord[]', 'const targets')
   .replace('const positions: { itemId: string; position: number }[] = [];', 'const positions = [];')
   .replace('raw.map((entry: unknown) =>', 'raw.map(entry =>')
@@ -233,8 +282,8 @@ const cleared = await engine.clearItemPositions('tenant', { items: [
   { itemId: 'i-5', expectedPosition: 12 },
 ] });
 assert.deepEqual(examples.slice(0, 10).map(item => item.position),
-  [1, 2, 3, 4, 0, 0, 5, 6, 7, 8],
-  'Cleared oxides become unnumbered; all other CHI ranks are consecutive');
+  [1, 2, 3, 4, 9, 10, 5, 6, 7, 8],
+  'Cleared oxides move to the end (9, 10); all CHI ranks stay positive and sequential');
 assert.equal(examples[10].position, 23, 'Other manufacturers are untouched');
 assert.ok(examples.every((item, index) => item.balance === (index === 10 ? 99 : 10 + index)),
   'No stock balances or item details are changed');
@@ -248,5 +297,106 @@ await assert.rejects(() => engine.clearItemPositions('tenant', { items: [
 ] }), /Порядок изменился/, 'Old browser tabs must not overwrite fresh order');
 assert.equal(massWrites, 1, 'A stale request never mutates the database');
 
-console.log('PASS: inventory order/reorder and atomic clear with manufacturer renumbering');
+assert.match(controller, /@Post\('items\/positions\/repair'\)/,
+  'Historical numbering repair is an explicit authenticated operation');
+const repairStart = source.indexOf('  async repairItemPositions(');
+const repairEnd = source.lastIndexOf('\n}');
+assert.ok(repairStart > 0 && repairEnd > repairStart, 'Canonical rank repair exists');
+const repairSource = source.slice(repairStart,repairEnd)
+  .replace('async repairItemPositions(tenantId: string)', 'async repairItemPositions(tenantId)')
+  .replace('const changedManufacturers: string[] = [];', 'const changedManufacturers = [];')
+  .replace('const positions: { itemId: string; position: number }[] = [];','const positions = [];')
+  .replaceAll('async (tx: Tx) =>', 'async tx =>')
+  .replace('const rows: AnyRecord[]', 'const rows')
+  .replace('new Map<string, number[]>()','new Map()')
+  .replaceAll('groups.get(manufacturer)!','groups.get(manufacturer)');
+const RepairEngine = new Function('PositionEngine',
+  'return class RepairEngine extends PositionEngine { ' + repairSource + '}')(PositionEngine);
+const repairEngine = new RepairEngine(engine.prisma);
+// The oxides' missing numbers are restored atomically with their original
+// relative order, without changing Wella or stock balances.
+examples[4].position = 0;
+examples[5].position = 0;
+examples[10].position = 1; // Healthy Wella ordering must remain unchanged.
+const repaired = await repairEngine.repairItemPositions('tenant');
+assert.deepEqual(repaired.repairedManufacturers,['CHI']);
+assert.equal(repaired.positions.length,10);
+assert.deepEqual(examples.slice(0,10).map(item=>item.position).sort((a,b)=>a-b),
+  [1,2,3,4,5,6,7,8,9,10],'Every legacy zero becomes a positive consecutive rank');
+assert.equal(examples[10].position,1,'Healthy unrelated manufacturer is not rewritten');
+assert.ok(examples.every((item,index)=>item.balance===(index===10?99:10+index)),
+  'Position repair never changes stock quantities');
+const repairWrites=massWrites;
+const unchanged=await repairEngine.repairItemPositions('tenant');
+assert.equal(unchanged.positions.length,0,'Healthy numbering is a no-op');
+assert.equal(massWrites,repairWrites,'No unnecessary SQL rewrite after repair');
+
+
+// Archive is another order mutation: removing item #2 closes the gap and
+// returns updated ranks for a Professional client without an extra GET.
+const archiveStart=source.indexOf('  async archiveSelectedItems(');
+const archiveEnd=source.indexOf('  async updateItem(',archiveStart);
+assert.ok(archiveStart>0 && archiveEnd>archiveStart,'Archive method is available');
+const archiveMethod=source.slice(archiveStart,archiveEnd)
+  .replace('async archiveSelectedItems(tenantId: string, body: unknown)',
+    'async archiveSelectedItems(tenantId, body)')
+  .replaceAll('async (tx: Tx) =>','async tx =>')
+  .replaceAll('const positions: { itemId: string; position: number }[] = [];','const positions = [];')
+  .replaceAll('(item: AnyRecord)','(item)')
+  .replace('new Set<string>', 'new Set');
+const ArchiveEngine=new Function('PositionEngine','objectValue','text','BadRequestException','Prisma',
+  'return class ArchiveEngine extends PositionEngine { '+
+  'async assertItemsCanBeArchived() {} ' + archiveMethod + '}')(
+    PositionEngine,value=>value&&typeof value==='object'?value:{},
+    value=>String(value??'').trim(),Error,Prisma);
+const inventoryArchiveRows=[
+  ...Array.from({length:5},(_,i)=>({
+    id:'archive-'+i,itemId:'SKU-'+i,tenantId:'tenant',
+    name:'Item '+i,manufacturer:'CHI',position:i+1,archivedAt:null,balance:5+i,
+  })),
+  {id:'archive-w',itemId:'WELLA',tenantId:'tenant',manufacturer:'Wella',
+    name:'Other',position:1,archivedAt:null,balance:99},
+];
+const archiveDb={
+  lockCount:0,
+  $queryRaw:async()=>[],
+  inventoryItem:{
+    findMany:async ({where,select})=>inventoryArchiveRows.filter(row=>
+      row.tenantId===where.tenantId
+      && (!where.itemId || where.itemId.in.includes(row.itemId))
+      && (!('manufacturer' in where) || row.manufacturer===where.manufacturer)
+      && (!('archivedAt' in where) || row.archivedAt===where.archivedAt))
+      .map(row=>select?Object.fromEntries(Object.keys(select).map(key=>[key,row[key]])):{...row}),
+    updateMany:async ({where,data})=>{
+      const targets=inventoryArchiveRows.filter(row=>
+        row.tenantId===where.tenantId && where.itemId.in.includes(row.itemId)
+        && row.archivedAt===where.archivedAt);
+      for(const row of targets)Object.assign(row,data);
+      return {count:targets.length};
+    },
+  },
+  $executeRaw:async query=>{
+    for(const expr of query.values[0].joined){
+      const [id,position]=expr.values;
+      inventoryArchiveRows.find(row=>row.id===id).position=position;
+    }
+    return query.values[0].joined.length;
+  },
+};
+const archiveEngine=new ArchiveEngine({$transaction:async callback=>callback(archiveDb)});
+const archiveAnswer=await archiveEngine.archiveSelectedItems('tenant',{itemIds:['SKU-1']});
+assert.deepEqual(archiveAnswer.archivedItemIds,['SKU-1']);
+assert.deepEqual(archiveAnswer.positions.map(row=>row.position),[1,2,3,4],
+  'Archive returns a contiguous sequence to update the UI');
+assert.deepEqual(inventoryArchiveRows.slice(0,5).map(row=>row.position),
+  [1,2,2,3,4],'Archive closes the deleted item’s slot for all remaining products');
+assert.ok(inventoryArchiveRows[1].archivedAt instanceof Date);
+assert.equal(inventoryArchiveRows[5].position,1,'Archiving CHI does not modify Wella');
+assert.equal(inventoryArchiveRows[0].balance,5,'Archive only modifies ranks and archivedAt');
+const retry=await archiveEngine.archiveSelectedItems('tenant',{itemIds:['SKU-1']});
+assert.deepEqual(retry.positions,[],'Retry after successful archive is idempotent');
+assert.match(source,/if \(changedManufacturer \|\| source\.archived === true\)/,
+  'Single-item archive and company transfer close the old rank gap');
+
+console.log('PASS: inventory order/reorder, automatic numbering and move-to-end clearing');
 

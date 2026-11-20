@@ -129,6 +129,11 @@ export class InventoryController {
     return this.inventory.updateItemsBatch(request.auth!.tenantId, body);
   }
 
+  @Post('items/positions/repair')
+  repairItemPositions(@Req() request: AuthenticatedRequest) {
+    return this.inventory.repairItemPositions(request.auth!.tenantId);
+  }
+
   @Post('items/positions/clear')
   clearItemPositions(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.inventory.clearItemPositions(request.auth!.tenantId, body);
