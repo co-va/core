@@ -58,11 +58,11 @@ export function supplierOfferUnitPrice(offer: OfferPrice): number | null {
 // Base price is always comparable: price per nominal item package, not arbitrary supplier pack.
 // When the nominated primary offer has no price, the manually entered reference price remains the fallback.
 export function resolveInventoryBasePricing(item: ItemPrice, offers: OfferPrice[] = []) {
-  const nominalUnits = positiveNumber(item.packageQuantity) ?? 1;
+  const nominalUnits = positiveNumber(item.packageQuantity);
   const primary = offers.find((offer) => offer.isActive !== false && offer.offerId === item.primaryOfferId);
   const primaryPackPrice = primary ? effectiveSupplierOfferPrice(primary) : null;
   const primaryUnits = primary ? positiveNumber(primary.unitsPerOffer) : null;
-  if (primary && primaryPackPrice !== null && primaryUnits !== null) {
+  if (primary && primaryPackPrice !== null && primaryUnits !== null && nominalUnits !== null) {
     const preciseUnitPrice = primaryPackPrice / primaryUnits;
     return {
       basePrice: money(preciseUnitPrice * nominalUnits),
@@ -74,7 +74,7 @@ export function resolveInventoryBasePricing(item: ItemPrice, offers: OfferPrice[
   const reference = validNumber(item.referencePrice);
   return {
     basePrice: reference == null ? null : money(reference),
-    baseUnitPrice: reference == null ? null : money(reference / nominalUnits),
+    baseUnitPrice: reference == null || nominalUnits == null ? null : money(reference / nominalUnits),
     basePriceSource: reference == null ? 'unset' : 'reference',
     primarySupplier: primary?.supplier || '',
   };
