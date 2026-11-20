@@ -70,6 +70,7 @@ export const TOOL_MAP = Object.freeze({
         { label: 'Движения', kind: 'e', readinessKey: 'cabinet.inventory.movements' },
         { label: 'Заказ', kind: 'e', readinessKey: 'cabinet.inventory.order' },
         { label: 'Контрагенты', kind: 'e', readinessKey: 'cabinet.inventory.counterparties' },
+        { label: 'Группы расхода', kind: 'e', readinessKey: 'cabinet.inventory.consumption-groups' },
       ],
     },
     {
