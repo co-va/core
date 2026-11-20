@@ -31,6 +31,7 @@ const oldPositions = async (manufacturer, itemIds) => {
   return itemIds.map(id=>ranks.get(id));
 };
 try {
+  await prisma.tenant.create({data:{id:tenantId,name:'Isolated Stock Rank smoke'}});
   await item('CHI','A');      // 1
   await item('CHI','B');      // 2
   await item('CHI','C');      // 3
@@ -105,5 +106,6 @@ try {
   await prisma.inventoryItem.deleteMany({where:{tenantId}});
   await prisma.inventoryClassificationGroup.deleteMany({where:{tenantId}});
   await prisma.inventoryCriteriaCatalog.deleteMany({where:{tenantId}});
+  await prisma.tenant.deleteMany({where:{id:tenantId}});
   await prisma.$disconnect();
 }
