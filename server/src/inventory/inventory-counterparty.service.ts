@@ -279,12 +279,13 @@ export class InventoryCounterpartyService {
 
   private catalogView<T extends {listPrice?: unknown;discountPercent?: unknown}>(row: T, agreement: unknown) {
     const discount = this.appliedDiscount(row, agreement);
+    const discountSource = row.discountPercent != null ? 'product' : agreement != null ? 'agreement' : 'none';
     const price = row.listPrice == null ? null : Number(row.listPrice);
     return {
       ...row,
-      appliedDiscountPercent: discount,
+      appliedDiscountPercent: discountSource === 'none' ? null : discount,
       effectivePrice: price == null ? null : Math.round((price * (1 - discount / 100) + Number.EPSILON) * 100) / 100,
-      discountSource: row.discountPercent != null ? 'product' : agreement != null ? 'agreement' : 'none',
+      discountSource,
     };
   }
 
