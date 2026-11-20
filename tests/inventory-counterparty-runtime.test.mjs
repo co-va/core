@@ -88,7 +88,15 @@ const db = {
       create: createCompany,
       updateMany: async ({ data }) => { Object.assign(company, data); return { count: 1 }; },
     },
-    inventoryItem: { findFirst: async ({ where }) => where.itemId === stock.itemId ? stock : null },
+    inventoryItem: {
+      findFirst: async ({ where }) => where.itemId === stock.itemId ? stock : null,
+      update: async ({ where, data }) => {
+        assert.equal(where.id, stock.id, 'Only the matched stock card may change');
+        assert.ok(!Object.hasOwn(data, 'name'), 'Supplier must not overwrite the specialist short name');
+        Object.assign(stock, data);
+        return stock;
+      },
+    },
     inventoryCounterpartyCatalogItem: {
       findFirst: async ({ where }) => matchingCatalogRows(where).find(row => row.id === where.id) || null,
       createMany: async ({ data }) => { rows.push(...data.map(row => ({ id: 'row-' + ++counter, ...row }))); },
@@ -215,6 +223,10 @@ assert.equal(offers[0].catalogItemId, rows[0].id, 'The exact supplier catalog ro
 assert.equal(offers[0].supplier, company.name, 'The selected supplier is persisted');
 assert.equal(Number(offers[0].listPrice), 320, 'Only the given supplier quote is copied');
 assert.equal(offers[0].discountPercent, null, 'No invented supplier discount');
+assert.equal(stock.name, 'Working Dye', 'Specialist short name stays untouched on linking');
+assert.equal(stock.catalogName, 'Dye 7.1', 'Supplier full name is stored separately');
+assert.equal(stock.primaryOfferId, offer.offerId, 'Supplier is assigned as primary price source');
+assert.equal(Number(stock.referencePrice), 320, 'Outdated manual price is replaced by current supplier quote');
 await service.link('tenant', company.id, rows[0].id, stock.itemId, 70);
 assert.equal(offers[0].unitsPerOffer, 70, 'A later explicit conversion is accepted');
 await service.link('tenant', company.id, rows[0].id, stock.itemId);
