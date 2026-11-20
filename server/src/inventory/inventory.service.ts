@@ -1232,6 +1232,37 @@ export class InventoryService {
     return positions.map(({ itemId, position }) => ({ itemId, position }));
   }
 
+  // Explicit, tenant-scoped repair for historical incomplete numbering.
+  // It does not run during GET/snapshot. Within a single transaction, keep
+  // each manufacturer's relative order and assign 1..N only if needed.
+  // No stock quantity, movement, price or item association is modified.
+  async repairItemPositions(tenantId: string) {
+    const changedManufacturers: string[] = [];
+    const positions: { itemId: string; position: number }[] = [];
+    await this.prisma.$transaction(async (tx: Tx) => {
+      await this.lockInventoryOrder(tx, tenantId);
+      const rows: AnyRecord[] = await tx.inventoryItem.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { manufacturer: true, position: true },
+        orderBy: [{ manufacturer: 'asc' }, { position: 'asc' }],
+      });
+      const groups = new Map<string, number[]>();
+      for (const row of rows) {
+        const manufacturer = String(row.manufacturer || '');
+        if (!groups.has(manufacturer)) groups.set(manufacturer, []);
+        groups.get(manufacturer)!.push(Number(row.position) || 0);
+      }
+      for (const [manufacturer, numbers] of groups) {
+        // Missing, duplicate and gapped ranks violate the same 1..N invariant.
+        const ordered = numbers.sort((a,b)=>a-b);
+        if (ordered.every((position,index)=>position===index+1)) continue;
+        positions.push(...await this.compactInventoryPositions(tx,tenantId,manufacturer));
+        changedManufacturers.push(manufacturer);
+      }
+    }, { maxWait: 10000, timeout: 120000 });
+    return { repairedManufacturers: changedManufacturers, positions };
+  }
+
   // "Clear number" means MOVE TO END. Every selected item is numbered
   // after the remaining items; all affected manufacturer ranks stay 1..N.
   async clearItemPositions(tenantId: string, body: unknown) {
