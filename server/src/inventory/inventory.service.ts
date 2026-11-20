@@ -1156,7 +1156,8 @@ export class InventoryService {
   // An occupied number is an insertion point, not a validation failure.
   // Shift the consecutive occupied slots inside this manufacturer only.
   private async freeInventoryPosition(tx: Tx, tenantId: string, manufacturer: string, position: number, excludeId = '', oldPosition = 0) {
-    if (position === 0) return;
+    if (!Number.isSafeInteger(position) || position < 1)
+      throw new BadRequestException('Номер позиции должен быть положительным.');
     // Moving an already-numbered item down uses the vacated slot above it:
     // 2 → 4 shifts old 3 to 2 and old 4 to 3, instead of leaving an empty 2.
     if (oldPosition > 0 && oldPosition < position) {
