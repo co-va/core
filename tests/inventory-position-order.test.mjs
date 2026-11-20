@@ -290,5 +290,71 @@ const unchanged=await repairEngine.repairItemPositions('tenant');
 assert.equal(unchanged.positions.length,0,'Healthy numbering is a no-op');
 assert.equal(massWrites,repairWrites,'No unnecessary SQL rewrite after repair');
 
+
+// Archive is another order mutation: removing item #2 closes the gap and
+// returns updated ranks for a Professional client without an extra GET.
+const archiveStart=source.indexOf('  async archiveSelectedItems(');
+const archiveEnd=source.indexOf('  async updateItem(',archiveStart);
+assert.ok(archiveStart>0 && archiveEnd>archiveStart,'Archive method is available');
+const archiveMethod=source.slice(archiveStart,archiveEnd)
+  .replace('async archiveSelectedItems(tenantId: string, body: unknown)',
+    'async archiveSelectedItems(tenantId, body)')
+  .replaceAll('async (tx: Tx) =>','async tx =>')
+  .replaceAll('const positions: { itemId: string; position: number }[] = [];','const positions = [];')
+  .replaceAll('(item: AnyRecord)','(item)');
+const ArchiveEngine=new Function('PositionEngine','objectValue','text','BadRequestException','Prisma',
+  'return class ArchiveEngine extends PositionEngine { '+
+  'async assertItemsCanBeArchived() {} ' + archiveMethod + '}')(
+    PositionEngine,value=>value&&typeof value==='object'?value:{},
+    value=>String(value??'').trim(),Error,Prisma);
+const inventoryArchiveRows=[
+  ...Array.from({length:5},(_,i)=>({
+    id:'archive-'+i,itemId:'SKU-'+i,tenantId:'tenant',
+    name:'Item '+i,manufacturer:'CHI',position:i+1,archivedAt:null,balance:5+i,
+  })),
+  {id:'archive-w',itemId:'WELLA',tenantId:'tenant',manufacturer:'Wella',
+    name:'Other',position:1,archivedAt:null,balance:99},
+];
+const archiveDb={
+  lockCount:0,
+  $queryRaw:async()=>[],
+  inventoryItem:{
+    findMany:async ({where,select})=>inventoryArchiveRows.filter(row=>
+      row.tenantId===where.tenantId
+      && (!where.itemId || where.itemId.in.includes(row.itemId))
+      && (!('manufacturer' in where) || row.manufacturer===where.manufacturer)
+      && (!('archivedAt' in where) || row.archivedAt===where.archivedAt))
+      .map(row=>select?Object.fromEntries(Object.keys(select).map(key=>[key,row[key]])):{...row}),
+    updateMany:async ({where,data})=>{
+      const targets=inventoryArchiveRows.filter(row=>
+        row.tenantId===where.tenantId && where.itemId.in.includes(row.itemId)
+        && row.archivedAt===where.archivedAt);
+      for(const row of targets)Object.assign(row,data);
+      return {count:targets.length};
+    },
+  },
+  $executeRaw:async query=>{
+    for(const expr of query.values[0].joined){
+      const [id,position]=expr.values;
+      inventoryArchiveRows.find(row=>row.id===id).position=position;
+    }
+    return query.values[0].joined.length;
+  },
+};
+const archiveEngine=new ArchiveEngine({$transaction:async callback=>callback(archiveDb)});
+const archiveAnswer=await archiveEngine.archiveSelectedItems('tenant',{itemIds:['SKU-1']});
+assert.deepEqual(archiveAnswer.archivedItemIds,['SKU-1']);
+assert.deepEqual(archiveAnswer.positions.map(row=>row.position),[1,2,3,4],
+  'Archive returns a contiguous sequence to update the UI');
+assert.deepEqual(inventoryArchiveRows.slice(0,5).map(row=>row.position),
+  [1,2,2,3,4],'Archive closes the deleted item’s slot for all remaining products');
+assert.ok(inventoryArchiveRows[1].archivedAt instanceof Date);
+assert.equal(inventoryArchiveRows[5].position,1,'Archiving CHI does not modify Wella');
+assert.equal(inventoryArchiveRows[0].balance,5,'Archive only modifies ranks and archivedAt');
+const retry=await archiveEngine.archiveSelectedItems('tenant',{itemIds:['SKU-1']});
+assert.deepEqual(retry.positions,[],'Retry after successful archive is idempotent');
+assert.match(source,/if \(changedManufacturer \|\| source\.archived === true\)/,
+  'Single-item archive and company transfer close the old rank gap');
+
 console.log('PASS: inventory order/reorder, automatic numbering and move-to-end clearing');
 
