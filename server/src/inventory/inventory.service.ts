@@ -510,7 +510,7 @@ export class InventoryService {
         listPrice: offer.listPrice == null ? null : decimalNumber(offer.listPrice),
         discountPercent: offer.discountPercent == null ? null : decimalNumber(offer.discountPercent),
         actualPrice: offer.actualPrice == null ? null : decimalNumber(offer.actualPrice),
-        unitsPerOffer: decimalNumber(offer.unitsPerOffer) || 1,
+        unitsPerOffer: offer.unitsPerOffer == null ? null : decimalNumber(offer.unitsPerOffer),
         effectivePrice: effectiveSupplierOfferPrice(offer),
         unitPrice: supplierOfferUnitPrice(offer),
         supplierSku: offer.supplierSku,
@@ -1665,7 +1665,8 @@ export class InventoryService {
         listPrice: optionalOfferAmount(source.listPrice, 'Цена по прайсу'),
         discountPercent: optionalOfferAmount(source.discountPercent, 'Скидка', 100),
         actualPrice: optionalOfferAmount(source.actualPrice, 'Цена покупки'),
-        unitsPerOffer: source.unitsPerOffer == null ? 1 : offerPackSize(source.unitsPerOffer),
+        unitsPerOffer: source.unitsPerOffer == null || source.unitsPerOffer === ''
+          ? null : offerPackSize(source.unitsPerOffer),
         supplierSku: optionalText(source.supplierSku),
         note: optionalText(source.note),
         isActive: true,
@@ -1690,7 +1691,8 @@ export class InventoryService {
     if ('listPrice' in source) data.listPrice = optionalOfferAmount(source.listPrice, 'Цена по прайсу');
     if ('discountPercent' in source) data.discountPercent = optionalOfferAmount(source.discountPercent, 'Скидка', 100);
     if ('actualPrice' in source) data.actualPrice = optionalOfferAmount(source.actualPrice, 'Цена покупки');
-    if ('unitsPerOffer' in source) data.unitsPerOffer = offerPackSize(source.unitsPerOffer);
+    if ('unitsPerOffer' in source) data.unitsPerOffer = source.unitsPerOffer == null || source.unitsPerOffer === ''
+      ? null : offerPackSize(source.unitsPerOffer);
     if ('supplierSku' in source) data.supplierSku = optionalText(source.supplierSku);
     if ('note' in source) data.note = optionalText(source.note);
     await this.prisma.$transaction(async (tx: Tx) => {
@@ -2654,8 +2656,9 @@ export class InventoryService {
         // User-supplied actual cost wins; the selected offer supplies only a default.
         const offerUnitPrice = offer ? supplierOfferUnitPrice(offer) : null;
         const unitCost = line.unitCost ?? offerUnitPrice ?? (raw.historicalTransfer ? 0 : decimalNumber(item.lastPurchasePrice));
-        const packSize = offer ? decimalNumber(offer.unitsPerOffer) || 1 : 1;
-        const offeredListPrice = offer?.listPrice == null ? null : decimalNumber(offer.listPrice) / packSize;
+        const packSize = offer?.unitsPerOffer == null ? null : decimalNumber(offer.unitsPerOffer);
+        const offeredListPrice = offer?.listPrice == null || packSize == null || packSize <= 0
+          ? null : decimalNumber(offer.listPrice) / packSize;
         const lotListPrice = line.listPrice ?? offeredListPrice;
         const lotDiscount = line.discountPercent ?? (offer?.discountPercent == null ? null : decimalNumber(offer.discountPercent));
         const lotSupplier = line.supplier || offer?.supplier || optionalText(raw.supplier) || item.supplier;
