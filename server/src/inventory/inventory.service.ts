@@ -1631,7 +1631,19 @@ export class InventoryService {
           data.targetStock = allocated;
       }
     }
-    if ('referencePrice' in source) data.referencePrice = optionalOfferAmount(source.referencePrice, 'Базовая цена');
+    if ('referencePrice' in source) {
+      // A priced primary supplier owns the current quote. Manual edits would
+      // create a competing price; edit the supplier catalog instead.
+      if (current.primaryOfferId) {
+        const ownerOffer = await owner.inventorySupplierOffer.findFirst({
+          where: { tenantId, inventoryItemId: current.id,
+            offerId: current.primaryOfferId, isActive: true },
+        });
+        if (ownerOffer && effectiveSupplierOfferPrice(ownerOffer) != null)
+          throw new BadRequestException('Цена поступает из прайса поставщика. Измените её у контрагента.');
+      }
+      data.referencePrice = optionalOfferAmount(source.referencePrice, 'Базовая цена');
+    }
     const grossWeight = 'grossWeight' in data ? data.grossWeight : (current.grossWeight == null ? null : decimalNumber(current.grossWeight));
     const tareWeight = 'tareWeight' in data ? data.tareWeight : (current.tareWeight == null ? null : decimalNumber(current.tareWeight));
     if (grossWeight != null && tareWeight != null && tareWeight > grossWeight) {
@@ -1769,11 +1781,18 @@ export class InventoryService {
         where: { tenantId, inventoryItemId: item.id, offerId, isActive: true },
       }) : null;
       if (offerId && !offer) throw new NotFoundException('Предложение поставщика не найдено');
+      const catalog = offer?.catalogItemId ? await tx.inventoryCounterpartyCatalogItem.findFirst({
+        where: { id: offer.catalogItemId, tenantId },
+        select: { name: true },
+      }) : null;
+      const supplierPrice = offer ? effectiveSupplierOfferPrice(offer) : null;
       await tx.inventoryItem.update({
         where: { id: item.id },
         data: {
           primaryOfferId: offerId || null,
           ...(offer ? { supplier: offer.supplier } : {}),
+          ...(catalog?.name ? { catalogName: catalog.name } : {}),
+          ...(supplierPrice == null ? {} : { referencePrice: supplierPrice }),
         },
       });
     });
