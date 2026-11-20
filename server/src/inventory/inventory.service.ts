@@ -544,8 +544,9 @@ export class InventoryService {
       linesByMovement.set(line.inventoryMovementId, group);
     });
 
-    // Positions are user-assigned. 0 means "not assigned" and always comes last.
-    // Do not generate sequential numbers or alter other catalog records on update.
+    // Active items have manufacturer-local ranks 1..N. Before the staging
+    // backfill or an explicit repair, legacy 0s remain last in read-only order;
+    // reads never silently modify the database.
     const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
     const positionOf = (item: AnyRecord) => Number.isSafeInteger(item.position) && item.position > 0
       ? item.position : Number.MAX_SAFE_INTEGER;
