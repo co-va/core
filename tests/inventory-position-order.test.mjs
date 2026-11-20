@@ -174,6 +174,47 @@ await assert.rejects(()=>reorder.call(context,'tenant',{
   previousPositions:reordered.slice(1).map(()=>0),
 }),/Список материалов изменился/);
 
+// A mass edit across two manufacturers must be all-or-nothing: validate
+// BOTH current rank snapshots before sending any SQL update.
+const multiRows=[
+  ...Array.from({length:3},(_,i)=>({id:'m'+i,itemId:'m'+i,manufacturer:'CHI',position:i+1})),
+  ...Array.from({length:3},(_,i)=>({id:'n'+i,itemId:'n'+i,manufacturer:'Wella',position:i+1})),
+];
+let batchWrites=0;
+const multiTx={
+  inventoryItem:{findMany:async({where})=>multiRows.filter(row=>row.manufacturer===where.manufacturer)
+    .map(row=>({...row}))},
+  $executeRaw:async query=>{
+    batchWrites++;
+    for(const part of query.values[0].joined) {
+      const [id,position]=part.values;
+      multiRows.find(row=>row.id===id).position=position;
+    }
+  },
+};
+const multiContext={
+  prisma:{$transaction:async fn=>fn(multiTx)},
+  lockInventoryOrder:async()=>{},
+  snapshot:async()=>multiRows,
+};
+const multiInput={
+  reorders:[
+    {manufacturer:'CHI',itemIds:['m1','m0','m2'],previousPositions:[2,1,3]},
+    {manufacturer:'Wella',itemIds:['n1','n0','n2'],previousPositions:[9,1,3]},
+  ],
+};
+await assert.rejects(()=>reorder.call(multiContext,'tenant',multiInput),
+  /Порядок изменён/,'Stale second company aborts the whole mass operation');
+assert.equal(batchWrites,0,'No first-company SQL write before second-company validation');
+assert.deepEqual(multiRows.map(row=>row.position),[1,2,3,1,2,3]);
+multiInput.reorders[1].previousPositions=[2,1,3];
+await reorder.call(multiContext,'tenant',multiInput);
+assert.equal(batchWrites,2,'Both companies update atomically in one transaction');
+assert.deepEqual(multiRows.map(row=>row.position),[2,1,3,2,1,3]);
+await assert.rejects(()=>reorder.call(multiContext,'tenant',{
+  reorders:[multiInput.reorders[0],multiInput.reorders[0]],
+}),/Повторяющийся производитель/,'Duplicate company in mass request is refused');
+
 assert.match(source,/Обновите склад перед изменением номера/,
   'Legacy client without expected position is rejected');
 assert.match(source,/Порядок изменился в другом окне/,
