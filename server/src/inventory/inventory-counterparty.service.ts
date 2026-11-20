@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { PrismaService } from '../prisma.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
+import { effectiveSupplierOfferPrice } from './inventory-pricing';
 
 export type SupplierFile = { originalname: string; buffer: Buffer; size: number };
 type Row = {
@@ -918,18 +919,34 @@ export class InventoryCounterpartyService {
         agreementPriced: row.listPrice != null,
         actualPrice: row.actualPrice,
         unitsPerOffer: size };
+      const offerId = existing?.offerId || randomUUID();
       if (existing) {
-        // Re-linking with a catalog lacking package data must not erase a
-        // previously verified conversion on the existing supplier offer.
         await tx.inventorySupplierOffer.update({
           where: { id: existing.id },
           data: { ...fields, unitsPerOffer: size ?? existing.unitsPerOffer },
         });
-        return { offerId: existing.offerId, itemId };
+      } else {
+        await tx.inventorySupplierOffer.create({
+          data: { tenantId, inventoryItemId: item.id, offerId, ...fields },
+        });
       }
-      const offerId = randomUUID();
-      await tx.inventorySupplierOffer.create({
-        data: { tenantId, inventoryItemId: item.id, offerId, ...fields },
+      // Linking a catalog article is ONE operation: supplier identity, supplier's
+      // full product name and its current discounted price become authoritative.
+      // The owner's short item name, stock quantities and historical receipts stay intact.
+      const currentPrice = effectiveSupplierOfferPrice({
+        agreementPriced: row.listPrice != null,
+        listPrice: row.listPrice == null ? null : Number(row.listPrice),
+        actualPrice: row.actualPrice == null ? null : Number(row.actualPrice),
+        discountPercent: fields.discountPercent,
+      });
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          primaryOfferId: offerId,
+          supplier: company.name,
+          catalogName: row.name,
+          ...(currentPrice == null ? {} : { referencePrice: currentPrice }),
+        },
       });
       return { offerId, itemId };
     });
