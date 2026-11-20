@@ -186,7 +186,7 @@ assert.match(source, /await this\.compactInventoryPositions\(owner, tenantId,/,
   'Single-item number clearing must use the same algorithm');
 
 const compactStart = source.indexOf('  private async compactInventoryPositions(');
-const compactEnd = source.indexOf('  // A reorder is an atomic permutation', compactStart);
+const compactEnd = source.indexOf('  // Every reorder is a permutation', compactStart);
 assert.ok(compactStart > 0 && compactEnd > compactStart, 'Canonical position compactor exists');
 const compactSource = source.slice(compactStart, compactEnd)
   .replace(/private async compactInventoryPositions\(tx: Tx, tenantId: string, manufacturer: string,\s*clearItemIds: Set<string> = new Set\(\)\): Promise<\{ itemId: string; position: number \}\[]>/,
