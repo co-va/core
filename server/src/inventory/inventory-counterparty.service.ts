@@ -302,7 +302,9 @@ export class InventoryCounterpartyService {
     await tx.inventorySupplierOffer.updateMany({
       where: { tenantId, counterpartyId: id, catalogItemId: row.id, isActive: true },
       data: { listPrice: row.listPrice as any, supplierSku: row.supplierSku,
-        discountPercent: this.appliedDiscount(row, agreement), agreementPriced: true },
+        discountPercent: row.discountPercent != null || agreement != null
+          ? this.appliedDiscount(row, agreement) : null,
+        agreementPriced: true },
     });
   }
 
@@ -862,8 +864,7 @@ export class InventoryCounterpartyService {
     const offerId = randomUUID();
     await this.prisma.inventorySupplierOffer.create({
       data: { tenantId, inventoryItemId: item.id, offerId, supplier: company.name,
-        counterpartyId: id, unitsPerOffer: item.packageQuantity != null && Number(item.packageQuantity) > 0
-          ? item.packageQuantity : null, isActive: true },
+        counterpartyId: id, unitsPerOffer: null, isActive: true },
     });
     return { offerId, itemId };
   }
@@ -911,7 +912,8 @@ export class InventoryCounterpartyService {
         ? supplierSize : null);
       const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
         listPrice: row.listPrice, supplierSku: row.supplierSku,
-        discountPercent: this.appliedDiscount(row, company.discountPercent),
+        discountPercent: row.discountPercent != null || company.discountPercent != null
+          ? this.appliedDiscount(row, company.discountPercent) : null,
         agreementPriced: row.listPrice != null,
         actualPrice: row.actualPrice,
         unitsPerOffer: size };
