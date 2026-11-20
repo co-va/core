@@ -8,6 +8,13 @@ assert.match(source, /position: item.position/, 'Manual numbers are included in 
 assert.match(source, /await this\.freeInventoryPosition\(owner, tenantId, manufacturer, nextPosition,\s*current\.id,/,
   'Manual numbered insertion is automatic, not a duplicate error');
 assert.match(source, /pg_advisory_xact_lock/, 'Both manual edits and drag reorder use a transaction lock');
+assert.match(source, /const existing = await this\.compactInventoryPositions\(tx, tenantId, manufacturer\)/,
+  'Creation first repairs older numbering gaps in its manufacturer');
+assert.match(source, /position: assignedPosition/,
+  'Every newly created product persists a positive assigned rank');
+assert.match(source, /const nextPosition = requested > 0[\s\S]*?: existing\.length \+ \(changedManufacturer \? 1 : 0\)/,
+  'Empty position on edit is resolved to the end of its manufacturer');
+
 assert.match(controller, /@Post\('items\/reorder'\)/, 'Single company reorder API is exposed');
 
 const start = source.indexOf("    const collator = new Intl.Collator('ru',");
