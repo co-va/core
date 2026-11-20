@@ -90,6 +90,16 @@ try {
   await assertRanks('Wella',['W2','W1']);
   assert.deepEqual(archived.positions.map(row=>row.position),[1,2,3,4]);
 
+  // Simulate a legacy positive gap and repair it with the real Core
+  // operation. Existing relative ordering is preserved automatically.
+  await prisma.inventoryItem.update({
+    where:{tenantId_itemId:{tenantId,itemId:'A'}},data:{position:9},
+  });
+  const repaired=await service.repairItemPositions(tenantId);
+  assert.deepEqual(repaired.repairedManufacturers,['CHI']);
+  await assertRanks('CHI',['B','C','E','A']);
+  await assertRanks('Wella',['W2','W1']);
+
   // The database itself rejects a new invalid active rank.
   await assert.rejects(()=>prisma.inventoryItem.update({
     where:{tenantId_itemId:{tenantId,itemId:'B'}},data:{position:0},
