@@ -2,6 +2,43 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync('server/src/inventory/inventory.service.ts', 'utf8');
+
+const uniquenessSource = source.slice(
+  source.indexOf('  private async assertInventoryNameAvailable('),
+  source.indexOf('  private inventoryPosition('),
+);
+assert.ok(uniquenessSource.includes('archivedAt: null'), 'Name uniqueness covers the active stock');
+assert.ok(uniquenessSource.includes('tenantId, archivedAt: null'), 'Uniqueness is scoped to specialist account');
+assert.ok(uniquenessSource.includes("toLocaleLowerCase('ru-RU')"), 'Case-insensitive short name');
+assert.match(source, /await this\.assertInventoryNameAvailable\(tx, tenantId, name\)/,
+  'Creating a product checks its short name');
+assert.match(source, /await this\.assertInventoryNameAvailable\(owner, tenantId, name, current\.id\)/,
+  'Renaming a product checks across all manufacturers');
+const uniquenessRuntime = uniquenessSource
+  .replace("private async assertInventoryNameAvailable(tx: Tx, tenantId: string, name: string, exceptId = '')",
+    "async function assertInventoryNameAvailable(tx, tenantId, name, exceptId = '')")
+  .replace('const normalized = (value: string) =>', 'const normalized = (value) =>')
+  .replace('(item: {id: string; name: string}) =>', '(item) =>');
+const assertInventoryNameAvailable = new Function('BadRequestException',
+  uniquenessRuntime + '\nreturn assertInventoryNameAvailable;')(Error);
+const activeNames = [
+  { id: '1', name: 'Шампунь', manufacturer: 'CHI' },
+  { id: '2', name: 'Кондиционер', manufacturer: 'Wella' },
+];
+const namesDB = {
+  inventoryItem: { findMany: async ({ where }) => {
+    assert.equal(where.tenantId, 'tenant');
+    assert.equal(where.archivedAt, null);
+    return activeNames;
+  } },
+};
+await assert.rejects(() => assertInventoryNameAvailable(namesDB, 'tenant', 'ШАМПУНЬ'),
+  /Такое короткое название/, 'Same short name under another manufacturer is forbidden');
+await assert.rejects(() => assertInventoryNameAvailable(namesDB, 'tenant', '  шампунь '),
+  /Такое короткое название/, 'Spacing and case cannot bypass uniqueness');
+await assert.doesNotReject(() => assertInventoryNameAvailable(namesDB, 'tenant', 'Шампунь ромашка'));
+await assert.doesNotReject(() => assertInventoryNameAvailable(namesDB, 'tenant', 'Шампунь', '1'),
+  'Keeping the same name on the same card is allowed');
 const controller = readFileSync('server/src/inventory/inventory.controller.ts', 'utf8');
 assert.match(source, /items: orderedItems\.map/, 'Snapshot returns one shared position order');
 assert.match(source, /position: item.position/, 'Manual numbers are included in inventory snapshot');
