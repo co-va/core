@@ -885,6 +885,8 @@ jobs:
             exit 1
           fi
           echo "Platform-only API, Admin, landing, redirects, scoped presence and invitation, User isolation: PASS"
+      - name: Verify inventory rank invariants with real PostgreSQL
+        run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-inventory-positions.mjs
       - name: Verify durable owner service Email with PostgreSQL and fake Postbox
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-service-email-outbox.mjs
       - name: Verify canonical data transfer with PostgreSQL
