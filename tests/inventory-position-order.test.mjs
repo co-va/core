@@ -252,7 +252,7 @@ assert.equal(massWrites, 1, 'A stale request never mutates the database');
 assert.match(controller, /@Post\('items\/positions\/repair'\)/,
   'Historical numbering repair is an explicit authenticated operation');
 const repairStart = source.indexOf('  async repairItemPositions(');
-const repairEnd = source.indexOf('  async createItem(',repairStart);
+const repairEnd = source.lastIndexOf('\n}');
 assert.ok(repairStart > 0 && repairEnd > repairStart, 'Canonical rank repair exists');
 const repairSource = source.slice(repairStart,repairEnd)
   .replace('async repairItemPositions(tenantId: string)', 'async repairItemPositions(tenantId)')
