@@ -1524,6 +1524,12 @@ export class InventoryService {
       });
       if (updated.count !== active.length)
         throw new BadRequestException('Состав товаров изменился. Повторите операцию.');
+      // Removing a numbered product must never leave a gap in its company.
+      // The archive flag and rank compaction commit in the SAME transaction.
+      for (const manufacturer of [...new Set(active.map((item: AnyRecord) =>
+        String(item.manufacturer || '')))].sort()) {
+        await this.compactInventoryPositions(tx, tenantId, manufacturer);
+      }
     }, { maxWait: 10000, timeout: 120000 });
     // The IDs are the only response. No read of lots, movements or orders.
     return { archivedItemIds: ids };
@@ -1653,8 +1659,9 @@ export class InventoryService {
     }
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
-    // Moving an item to another manufacturer closes the old list's gap.
-    if (changedManufacturer)
+    // Any removal from the original company (archive or transfer) must close
+    // the vacated rank. Never leave a missing ordinal after an item is hidden.
+    if (changedManufacturer || source.archived === true)
       await this.compactInventoryPositions(owner, tenantId, String(current.manufacturer || ''));
     return db ? { itemId } : this.snapshot(tenantId);
   }
