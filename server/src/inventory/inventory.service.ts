@@ -1271,51 +1271,66 @@ export class InventoryService {
     return { clearedItemIds: ids, positions };
   }
 
-  // A reorder is an atomic permutation of the entire manufacturer list.
-  // It assigns consecutive 1..N ranks even to legacy unnumbered products,
-  // while protecting against changes made in another browser tab.
+  // Every reorder is a permutation of complete manufacturer-local lists.
+  // One request may include several manufacturers; ALL are validated and
+  // committed together under the same tenant order lock. Item ranks are 1..N
+  // after commit, including legacy rows with no previous number.
   async reorderItems(tenantId: string, body: unknown) {
     const source = objectValue(body);
-    const manufacturer = text(source.manufacturer);
-    const ids = Array.isArray(source.itemIds) ? source.itemIds.map(text) : [];
-    const previous = Array.isArray(source.previousPositions) ? source.previousPositions : [];
-    if (!ids.length || ids.length > 10000 || new Set(ids).size !== ids.length || ids.some(id => !id))
-      throw new BadRequestException('Некорректный список материалов');
-    // Required optimistic concurrency: older tabs must not overwrite a more
-    // recent manual numbering performed on another phone or computer.
-    if (previous.length !== ids.length || previous.some(value =>
-      !Number.isSafeInteger(value) || Number(value) < 0)) {
-      throw new BadRequestException('Список изменился. Обновите склад перед перемещением.');
-    }
+    const raw = Array.isArray(source.reorders) ? source.reorders : [source];
+    if (!raw.length || raw.length > 100)
+      throw new BadRequestException('Выберите от 1 до 100 групп перестановки.');
+    const plans = raw.map(input => {
+      const row = objectValue(input);
+      const manufacturer = text(row.manufacturer);
+      const itemIds = Array.isArray(row.itemIds) ? row.itemIds.map(text) : [];
+      const previousPositions = Array.isArray(row.previousPositions)
+        ? row.previousPositions : [];
+      if (!itemIds.length || itemIds.length > 10000
+        || new Set(itemIds).size !== itemIds.length || itemIds.some(id=>!id))
+        throw new BadRequestException('Некорректный список материалов.');
+      if (previousPositions.length !== itemIds.length
+        || previousPositions.some(value=>!Number.isSafeInteger(value) || value<0))
+        throw new BadRequestException('Список изменился. Обновите склад перед перемещением.');
+      return { manufacturer, itemIds, previousPositions };
+    });
+    if (new Set(plans.map(plan=>plan.manufacturer)).size !== plans.length)
+      throw new BadRequestException('Повторяющийся производитель в перестановке.');
 
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
-      const items: AnyRecord[] = await tx.inventoryItem.findMany({
-        where: { tenantId, archivedAt: null, manufacturer },
-        select: { id: true, itemId: true, name: true, position: true },
-      });
-      const byId = new Map(items.map(item => [item.itemId, item]));
-      if (ids.length !== items.length || ids.some(id => !byId.has(id)))
-        throw new BadRequestException('Список материалов изменился. Откройте компанию повторно.');
-      const ordered = ids.map(id => byId.get(id)!);
-      if (ordered.some((item, index) => Number(item.position) !== previous[index])) {
-        throw new BadRequestException('Порядок изменён в другом окне. Обновите список перед перемещением.');
+      const pending = [];
+      // Validate EVERY company's complete visible snapshot before the first
+      // SQL UPDATE. A stale second manufacturer cannot partially apply edits.
+      for (const plan of plans) {
+        const items: AnyRecord[] = await tx.inventoryItem.findMany({
+          where: { tenantId, archivedAt: null, manufacturer: plan.manufacturer },
+          select: { id: true, itemId: true, position: true },
+        });
+        const byId = new Map(items.map(item=>[String(item.itemId),item]));
+        if (plan.itemIds.length !== items.length
+          || plan.itemIds.some(id=>!byId.has(id)))
+          throw new BadRequestException('Список материалов изменился. Обновите склад.');
+        const ordered = plan.itemIds.map(id=>byId.get(id)!);
+        if (ordered.some((item,index)=>
+          Number(item.position)!==plan.previousPositions[index]))
+          throw new BadRequestException('Порядок изменён в другом окне. Обновите список.');
+        const changes = ordered.map((item,index)=>({id:item.id,
+          before:Number(item.position)||0,position:index+1}))
+          .filter(row=>row.before!==row.position);
+        pending.push(changes);
       }
-
-      // One atomic permutation also restores any legacy unnumbered items.
-      // Every item in the requested order receives rank index + 1.
-      const changed = ordered
-        .map((item, index) => ({ item, position: index + 1 }))
-        .filter(({ item, position }) => item.position !== position);
-      if (!changed.length) return;
-      const cases = changed.map(({ item, position }) => Prisma.sql`WHEN ${item.id} THEN ${position}`);
-      const internalIds = changed.map(({ item }) => item.id);
-      await tx.$executeRaw(Prisma.sql`
-        UPDATE "InventoryItem"
-        SET "position" = CASE "id" ${Prisma.join(cases, ' ')} ELSE "position" END
-        WHERE "tenantId" = ${tenantId} AND "id" IN (${Prisma.join(internalIds)})
-      `);
-    }, { timeout: 20000 });
+      for (const changes of pending) {
+        if (!changes.length) continue;
+        const cases = changes.map(row=>Prisma.sql`WHEN ${row.id} THEN ${row.position}`);
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE "InventoryItem"
+          SET "position" = CASE "id" ${Prisma.join(cases,' ')} ELSE "position" END
+          WHERE "tenantId" = ${tenantId}
+            AND "id" IN (${Prisma.join(changes.map(row=>row.id))})
+        `);
+      }
+    }, { maxWait:10000, timeout:120000 });
     return this.snapshot(tenantId);
   }
 
