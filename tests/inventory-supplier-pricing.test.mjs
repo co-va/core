@@ -24,9 +24,9 @@ const unknownSize = { offerId: 'catalog-sku', supplier: 'Поставщик из
 assert.equal(effectiveSupplierOfferPrice(unknownSize), 480, 'Quoted price survives unknown pack size');
 assert.equal(supplierOfferUnitPrice(unknownSize), null, 'Do not divide by a fictional one-unit pack');
 assert.deepEqual(resolveInventoryBasePricing({ primaryOfferId: 'catalog-sku' }, [unknownSize]), {
-  basePrice: null, baseUnitPrice: null, basePriceSource: 'unset',
+  basePrice: 480, baseUnitPrice: null, basePriceSource: 'primary-offer',
   primarySupplier: 'Поставщик из прайса',
-}, 'Supplier identity remains linked while per-unit pricing stays unknown');
+}, 'Supplier quote is active even if per-unit pricing is unknown');
 assert.deepEqual(resolveInventoryBasePricing(primaryProduct, [standard, onSale]), {
   basePrice: 900, baseUnitPrice: 3.6, basePriceSource: 'primary-offer', primarySupplier: 'Обычный поставщик',
 }, 'primary supplier determines baseline, not newest or cheapest offer');
@@ -44,11 +44,11 @@ assert.equal(resolveInventoryBasePricing({ packageQuantity: 250 }, []).basePrice
 
 assert.deepEqual(resolveInventoryBasePricing({ packageQuantity: 250, primaryOfferId: 'large' }, [
   { offerId: 'large', supplier: 'Большая упаковка', actualPrice: 1500, unitsPerOffer: 500 },
-]), { basePrice: 750, baseUnitPrice: 3, basePriceSource: 'primary-offer', primarySupplier: 'Большая упаковка' },
-'compare prices for the SAME nominal size');
+]), { basePrice: 1500, baseUnitPrice: 3, basePriceSource: 'primary-offer', primarySupplier: 'Большая упаковка' },
+'supplier quote remains the SKU price, unit cost uses verified conversion');
 assert.equal(resolveInventoryBasePricing({ packageQuantity: 9, primaryOfferId: 'pack' }, [
   { offerId: 'pack', supplier: 'Упаковка', actualPrice: 1000, unitsPerOffer: 3 },
-]).basePrice, 3000, 'round total AFTER pack conversion');
+]).basePrice, 1000, 'supplier price is independent of package conversion');
 assert.equal(effectiveSupplierOfferPrice({ actualPrice: 0, listPrice: 900 }), 0, 'explicit zero is not missing');
 
 const controller = fs.readFileSync('server/src/inventory/inventory.controller.ts', 'utf8');
