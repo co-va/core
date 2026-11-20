@@ -1190,10 +1190,10 @@ export class InventoryService {
     }
   }
 
-  // Clearing a position removes its number. All remaining numbered products
-  // for the manufacturer close their gaps in their existing numerical order.
-  // Unnumbered products (including the cleared rows) remain at the bottom.
-  // One transaction and one SQL UPDATE; no stock/lot/movement changes.
+  // Every active item has a positive, consecutive rank inside its manufacturer.
+  // Previously unnumbered legacy items join the end. Explicitly cleared
+  // selections move after all other items, in their former relative order.
+  // One atomic SQL update changes positions only; never stock or movements.
   private async compactInventoryPositions(tx: Tx, tenantId: string, manufacturer: string,
     clearItemIds: Set<string> = new Set()): Promise<{ itemId: string; position: number }[]> {
     const rows: AnyRecord[] = await tx.inventoryItem.findMany({
@@ -1201,14 +1201,24 @@ export class InventoryService {
       select: { id: true, itemId: true, position: true, name: true },
       orderBy: [{ position: 'asc' }, { name: 'asc' }, { id: 'asc' }],
     });
-    let rank = 0;
-    const positions = rows.map(row => ({
+    const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+    const ordered = [...rows].sort((a, b) => {
+      const rank = (item: AnyRecord) => Number(item.position) > 0
+        ? Number(item.position) : Number.MAX_SAFE_INTEGER;
+      return rank(a) - rank(b)
+        || collator.compare(String(a.name || ''), String(b.name || ''))
+        || String(a.id).localeCompare(String(b.id));
+    });
+    const remaining = ordered.filter(row => !clearItemIds.has(String(row.itemId)));
+    const moved = ordered.filter(row => clearItemIds.has(String(row.itemId)));
+    const positions = [...remaining, ...moved].map((row, index) => ({
       id: row.id,
       itemId: String(row.itemId),
       before: Number(row.position) || 0,
-      position: clearItemIds.has(String(row.itemId)) || !(Number(row.position) > 0)
-        ? 0 : ++rank,
+      position: index + 1,
     }));
+    if (positions.length > 2147483647)
+      throw new BadRequestException('Слишком много позиций для нумерации.');
     const changes = positions.filter(row => row.before !== row.position);
     if (changes.length) {
       const cases = changes.map(row => Prisma.sql`WHEN ${row.id} THEN ${row.position}`);
@@ -1222,8 +1232,8 @@ export class InventoryService {
     return positions.map(({ itemId, position }) => ({ itemId, position }));
   }
 
-  // Clear any selection of positions at once. This is one atomic operation,
-  // including the deterministic renumbering of every affected manufacturer.
+  // "Clear number" means MOVE TO END. Every selected item is numbered
+  // after the remaining items; all affected manufacturer ranks stay 1..N.
   async clearItemPositions(tenantId: string, body: unknown) {
     const source = objectValue(body);
     const raw = Array.isArray(source.items) ? source.items : [];
@@ -1292,25 +1302,10 @@ export class InventoryService {
         throw new BadRequestException('Порядок изменён в другом окне. Обновите список перед перемещением.');
       }
 
-      const positions = items.map(item => Number(item.position) || 0)
-        .filter(position => position > 0).sort((a, b) => a - b);
-      if (new Set(positions).size !== positions.length)
-        throw new BadRequestException('Обнаружены повторяющиеся номера. Перемещение отменено.');
-      const numberedCount = positions.length;
-      if (ordered.slice(0, numberedCount).some(item => Number(item.position) <= 0))
-        throw new BadRequestException('Нельзя переместить ненумерованную позицию между пронумерованными.');
-
-      // An unnumbered row has no persistent rank yet. A drag among such rows
-      // must be refused, not converted into numbering 200+ unrelated items.
-      const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
-      const originalUnnumbered = items.filter(item => Number(item.position) <= 0)
-        .sort((a, b) => collator.compare(String(a.name || ''), String(b.name || ''))
-          || String(a.itemId).localeCompare(String(b.itemId)));
-      if (ordered.slice(numberedCount).some((item, index) => item.itemId !== originalUnnumbered[index]?.itemId))
-        throw new BadRequestException('Сначала назначьте номер позиции. Ненумерованный список не перемещён.');
-
-      const changed = ordered.slice(0, numberedCount)
-        .map((item, index) => ({ item, position: positions[index] }))
+      // One atomic permutation also restores any legacy unnumbered items.
+      // Every item in the requested order receives rank index + 1.
+      const changed = ordered
+        .map((item, index) => ({ item, position: index + 1 }))
         .filter(({ item, position }) => item.position !== position);
       if (!changed.length) return;
       const cases = changed.map(({ item, position }) => Prisma.sql`WHEN ${item.id} THEN ${position}`);
@@ -1344,7 +1339,15 @@ export class InventoryService {
     validateInventoryCard(card);
     const work = async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
-      if (position) await this.freeInventoryPosition(tx, tenantId, optionalText(source.manufacturer), position);
+      const manufacturer = optionalText(source.manufacturer);
+      // Normalize older gaps/blank ranks before determining an insertion slot.
+      const existing = await this.compactInventoryPositions(tx, tenantId, manufacturer);
+      const assignedPosition = position > 0 ? Math.min(position, existing.length + 1)
+        : existing.length + 1;
+      if (assignedPosition > 2147483647)
+        throw new BadRequestException('Невозможно добавить позицию: список заполнен.');
+      if (position > 0)
+        await this.freeInventoryPosition(tx, tenantId, manufacturer, assignedPosition);
       const classificationGroupId = await this.resolveItemGroup(tx, tenantId, source);
       const criteriaValues = 'criteriaValues' in source
         ? await this.criteria.validateSelections(tx as Prisma.TransactionClient, tenantId, source.criteriaValues)
@@ -1384,7 +1387,7 @@ export class InventoryService {
           saleMarkupMode: source.saleMarkupMode === 'amount' ? 'amount' : 'percent',
           saleMarkupValue: optionalOfferAmount(source.saleMarkupValue, 'Наценка'),
           salePrice: optionalOfferAmount(source.salePrice, 'Цена продажи'),
-          position,
+          position: assignedPosition,
         },
       });
 
@@ -1624,12 +1627,24 @@ export class InventoryService {
     }
     if ('saleMarkupValue' in source) data.saleMarkupValue = optionalOfferAmount(source.saleMarkupValue, 'Наценка');
     if ('salePrice' in source) data.salePrice = optionalOfferAmount(source.salePrice, 'Цена продажи');
-    if ('position' in source) data.position = this.inventoryPosition(source.position);
     const manufacturer = 'manufacturer' in data ? data.manufacturer : current.manufacturer;
-    const nextPosition = 'position' in data ? data.position : current.position;
-    if (nextPosition > 0 && (nextPosition !== current.position || manufacturer !== current.manufacturer)) {
-      await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition, current.id,
-        manufacturer === current.manufacturer ? current.position : 0);
+    const changedManufacturer = manufacturer !== current.manufacturer;
+    const positionSpecified = 'position' in source;
+    if (positionSpecified || changedManufacturer) {
+      const existing = await this.compactInventoryPositions(owner, tenantId, manufacturer);
+      const oldPosition = changedManufacturer ? 0
+        : existing.find(row => row.itemId === itemId)?.position || 0;
+      const requested = positionSpecified ? this.inventoryPosition(source.position) : 0;
+      // An empty number means "to the end", not an unassigned rank.
+      const nextPosition = requested > 0
+        ? Math.min(requested, existing.length + (changedManufacturer ? 1 : 0))
+        : existing.length + (changedManufacturer ? 1 : 0);
+      if (nextPosition < 1 || nextPosition > 2147483647)
+        throw new BadRequestException('Невозможно определить новый порядковый номер.');
+      if (nextPosition !== oldPosition)
+        await this.freeInventoryPosition(owner, tenantId, manufacturer, nextPosition,
+          current.id, oldPosition);
+      data.position = nextPosition;
     }
     if (source.archived === true) {
       if (!db) throw new BadRequestException('Для удаления требуется транзакция.');
@@ -1638,9 +1653,8 @@ export class InventoryService {
     }
 
     await owner.inventoryItem.update({ where: { id: current.id }, data });
-    // The same rule applies to editing one product: clearing an assigned number
-    // closes gaps immediately, not only when using the selection editor.
-    if ('position' in data && Number(current.position) > 0 && Number(data.position) === 0)
+    // Moving an item to another manufacturer closes the old list's gap.
+    if (changedManufacturer)
       await this.compactInventoryPositions(owner, tenantId, String(current.manufacturer || ''));
     return db ? { itemId } : this.snapshot(tenantId);
   }
