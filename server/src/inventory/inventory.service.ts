@@ -1140,6 +1140,20 @@ export class InventoryService {
     return this.snapshot(tenantId);
   }
 
+  // The short working name is entered by the specialist, not supplied by an
+  // external price list. It must identify exactly one active item per tenant.
+  private async assertInventoryNameAvailable(tx: Tx, tenantId: string, name: string, exceptId = '') {
+    const normalized = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU');
+    const key = normalized(name);
+    const existing = await tx.inventoryItem.findMany({
+      where: { tenantId, archivedAt: null },
+      select: { id: true, name: true },
+    });
+    if (existing.some((item: {id: string; name: string}) =>
+      item.id !== exceptId && normalized(item.name) === key))
+      throw new BadRequestException('Такое короткое название уже есть на складе. Укажите другое.');
+  }
+
   private inventoryPosition(value: unknown): number {
     if (value == null) return 0;
     if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2147483647)
@@ -1356,6 +1370,7 @@ export class InventoryService {
     validateInventoryCard(card);
     const work = async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
+      await this.assertInventoryNameAvailable(tx, tenantId, name);
       const manufacturer = optionalText(source.manufacturer);
       // Normalize older gaps/blank ranks before determining an insertion slot.
       const existing = await this.compactInventoryPositions(tx, tenantId, manufacturer);
@@ -1561,7 +1576,7 @@ export class InventoryService {
     if (!db && 'position' in source && !('expectedPosition' in source))
       throw new BadRequestException('Обновите склад перед изменением номера.');
     // A number edit or company transfer is atomic with its order adjustment.
-    if (!db && ('position' in source || 'manufacturer' in source || 'category' in source
+    if (!db && ('name' in source || 'position' in source || 'manufacturer' in source || 'category' in source
         || 'productType' in source || 'classificationGroupId' in source
         || 'criteriaValues' in source
         || 'targetStock' in source || source.archived === true)) {
@@ -1571,7 +1586,7 @@ export class InventoryService {
       return this.snapshot(tenantId);
     }
     const owner = db || this.prisma;
-    if (db && ('position' in source || 'manufacturer' in source || source.archived === true))
+    if (db && ('name' in source || 'position' in source || 'manufacturer' in source || source.archived === true))
       await this.lockInventoryOrder(owner, tenantId);
     const current = await owner.inventoryItem.findFirst({ where: { tenantId, itemId, archivedAt: null } });
     if (!current) throw new NotFoundException('Позиция склада не найдена');
@@ -1591,6 +1606,7 @@ export class InventoryService {
     if ('name' in source) {
       const name = text(source.name);
       if (!name) throw new BadRequestException('Укажите наименование позиции');
+      await this.assertInventoryNameAvailable(owner, tenantId, name, current.id);
       data.name = name;
     }
     if ('unit' in source) {
