@@ -301,7 +301,8 @@ const archiveMethod=source.slice(archiveStart,archiveEnd)
     'async archiveSelectedItems(tenantId, body)')
   .replaceAll('async (tx: Tx) =>','async tx =>')
   .replaceAll('const positions: { itemId: string; position: number }[] = [];','const positions = [];')
-  .replaceAll('(item: AnyRecord)','(item)');
+  .replaceAll('(item: AnyRecord)','(item)')
+  .replace('new Set<string>', 'new Set');
 const ArchiveEngine=new Function('PositionEngine','objectValue','text','BadRequestException','Prisma',
   'return class ArchiveEngine extends PositionEngine { '+
   'async assertItemsCanBeArchived() {} ' + archiveMethod + '}')(
