@@ -862,7 +862,8 @@ export class InventoryCounterpartyService {
     const offerId = randomUUID();
     await this.prisma.inventorySupplierOffer.create({
       data: { tenantId, inventoryItemId: item.id, offerId, supplier: company.name,
-        counterpartyId: id, unitsPerOffer: item.packageQuantity || 1, isActive: true },
+        counterpartyId: id, unitsPerOffer: item.packageQuantity != null && Number(item.packageQuantity) > 0
+          ? item.packageQuantity : null, isActive: true },
     });
     return { offerId, itemId };
   }
@@ -900,20 +901,19 @@ export class InventoryCounterpartyService {
       const explicit = requestedUnits == null ? null : Number(requestedUnits);
       if (explicit != null && (!Number.isFinite(explicit) || explicit <= 0 || explicit > 100000000))
         throw new BadRequestException('Количество учётных единиц в предложении должно быть положительным.');
-      if (supplierUnit && supplierUnit !== itemUnit && explicit == null)
-        throw new BadRequestException('Единицы поставщика и склада различаются. Укажите unitsPerOffer.');
-      const supplierSize = row.packageQuantity == null ? 0 : Number(row.packageQuantity);
-      const ownSize = item.packageQuantity == null ? 0 : Number(item.packageQuantity);
-      const size = explicit
-        ?? (supplierUnit === itemUnit && supplierSize > 0 ? supplierSize
-          : ownSize > 0 ? ownSize
-          : itemUnit === 'шт' ? 1 : null);
-      if (size == null || !Number.isFinite(size) || size <= 0)
-        throw new BadRequestException('Укажите unitsPerOffer для безопасной привязки.');
+      // Catalog identity is established by the selected exact SKU row and stock item,
+      // regardless of packaging. A conversion exists only if explicitly given or
+      // supported by a matching supplier unit and documented supplier quantity.
+      // Missing data is NULL, not an invented 1 or a reason to refuse a link.
+      const supplierSize = row.packageQuantity == null ? null : Number(row.packageQuantity);
+      const size = explicit ?? (supplierUnit && supplierUnit === itemUnit
+        && supplierSize != null && Number.isFinite(supplierSize) && supplierSize > 0
+        ? supplierSize : null);
       const fields = { supplier: company.name, counterpartyId: id, catalogItemId: row.id,
         listPrice: row.listPrice, supplierSku: row.supplierSku,
         discountPercent: this.appliedDiscount(row, company.discountPercent),
         agreementPriced: row.listPrice != null,
+        actualPrice: row.actualPrice,
         unitsPerOffer: size };
       if (existing) {
         await tx.inventorySupplierOffer.update({ where: { id: existing.id }, data: fields });
@@ -921,8 +921,7 @@ export class InventoryCounterpartyService {
       }
       const offerId = randomUUID();
       await tx.inventorySupplierOffer.create({
-        data: { tenantId, inventoryItemId: item.id, offerId, ...fields,
-          actualPrice: row.actualPrice },
+        data: { tenantId, inventoryItemId: item.id, offerId, ...fields },
       });
       return { offerId, itemId };
     });
