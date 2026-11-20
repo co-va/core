@@ -1504,6 +1504,7 @@ export class InventoryService {
     const ids = Array.isArray(source.itemIds) ? source.itemIds.map(text) : [];
     if (!ids.length || ids.length > 500 || ids.some(id => !id) || new Set(ids).size !== ids.length)
       throw new BadRequestException('Выберите от 1 до 500 разных товаров.');
+    const positions: { itemId: string; position: number }[] = [];
     await this.prisma.$transaction(async (tx: Tx) => {
       await this.lockInventoryOrder(tx, tenantId);
       const items = await tx.inventoryItem.findMany({
@@ -1528,11 +1529,12 @@ export class InventoryService {
       // The archive flag and rank compaction commit in the SAME transaction.
       for (const manufacturer of [...new Set(active.map((item: AnyRecord) =>
         String(item.manufacturer || '')))].sort()) {
-        await this.compactInventoryPositions(tx, tenantId, manufacturer);
+        positions.push(...await this.compactInventoryPositions(tx, tenantId, manufacturer));
       }
     }, { maxWait: 10000, timeout: 120000 });
-    // The IDs are the only response. No read of lots, movements or orders.
-    return { archivedItemIds: ids };
+    // Compact confirmation lets Professional update the in-memory order
+    // without an extra full inventory snapshot.
+    return { archivedItemIds: ids, positions };
   }
 
   async updateItem(tenantId: string, itemId: string, body: unknown, db?: Tx) {
