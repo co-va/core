@@ -15,6 +15,7 @@ import {
   syncPersonalAccountDebt,
 } from '../loyalty/personal-account-state';
 import { FinanceService } from './finance.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 type JsonObject = Record<string, any>;
 type Source = { type: string; id: string };
@@ -154,6 +155,7 @@ export class PaymentSettlementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly finance: FinanceService,
+    private readonly inventory: InventoryService,
   ) {}
 
   private async serializable<T>(work: (tx: Prisma.TransactionClient) => Promise<T>) {
@@ -286,6 +288,7 @@ export class PaymentSettlementService {
     const operationId = randomUUID();
     let remainingDue = 0;
     await this.serializable(async (tx) => {
+      if (source.type === 'record') await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
       const condition = await resolvePersonPricePercent(tx, tenantId, person, occurredAt);
       const settlement = canonicalSettlementInput(input.settlement, condition.percent);
       const paid = await this.serviceNet(tx, tenantId, source);
@@ -350,6 +353,14 @@ export class PaymentSettlementService {
       });
 
       remainingDue = Math.max(0, money(due - serviceAmount));
+      if (source.type === 'record' && remainingDue <= 0.009) {
+        const row = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: source.id } } });
+        const record = objectValue(row?.data);
+        if (row && Array.isArray(record.consumableTemplates) && record.consumableTemplates.length) {
+          await this.inventory.syncRecordConsumptionInTx(tx, tenantId, record, record.consumableTemplates, true);
+          await tx.record.update({ where: { id: row.id }, data: { data: json({ ...record, consumablesPosted: true }) } });
+        }
+      }
       if (input.finalizeDebt === true && ownerKey) {
         await syncPersonalAccountDebt(tx, {
           tenantId,

@@ -285,6 +285,10 @@ export class BusinessStateService {
     return uei;
   }
 
+  async saveRecordConsumables(tenantId: string, recordId: string, body: unknown) {
+    return this.records.saveConsumables(tenantId, text(recordId), body);
+  }
+
   async upsertRecord(tenantId: string, recordId: string, body: unknown) {
     const id = text(recordId);
     if (!id) throw new BadRequestException('У записи отсутствует id');

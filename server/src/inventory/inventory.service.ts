@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { zonedDateTimeToDate } from '../../../core/time/zone.js';
 import { captureOwnedState, restoreOwnedState, TransferState } from '../data-transfer/restore-state';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -1945,6 +1946,101 @@ export class InventoryService {
     }, { allowRecordSale: true });
   }
 
+  // Record owns the template. The existing Inventory ledger owns the physical fact.
+  // Caller holds the Record row lock and commits both in the same transaction.
+  async syncRecordConsumptionInTx(tx: Tx, tenantId: string, record: AnyRecord, input: unknown, post: boolean) {
+    const recordId = text(record.id);
+    const procedureIds = new Set((Array.isArray(record.procedures) ? record.procedures : []).map((p: AnyRecord) => text(p.id)));
+    if (!Array.isArray(input) || input.length > 100) throw new BadRequestException('Некорректный шаблон расхода.');
+    const templates: AnyRecord[] = [], requested: AnyRecord[] = [];
+    const seen = new Set<string>();
+    for (const raw of input) {
+      const template = objectValue(raw), procedureId = text(template.procedureId);
+      if (!procedureIds.has(procedureId) || seen.has(procedureId) || !Array.isArray(template.groups) || template.groups.length > 100)
+        throw new BadRequestException('Некорректный шаблон услуги.');
+      seen.add(procedureId);
+      const groups: AnyRecord[] = [];
+      for (const rawGroup of template.groups) {
+        const group = objectValue(rawGroup);
+        if (!Array.isArray(group.items) || group.items.length > 200) throw new BadRequestException('Некорректные материалы.');
+        const items: AnyRecord[] = [];
+        for (const rawItem of group.items) {
+          const row = objectValue(rawItem), itemId = text(row.itemId), unit = canonicalInventoryUnit(text(row.unit)), quantity = Number(row.quantity);
+          if (!itemId || !unit || !Number.isFinite(quantity) || quantity <= 0 || quantity > 100000000)
+            throw new BadRequestException('Укажите товар, количество и единицу расхода.');
+          const item = { itemId, quantity, unit };
+          items.push(item);
+          requested.push({ ...item, procedureId });
+        }
+        if (items.length) groups.push({ name: text(group.name).slice(0,120), items });
+      }
+      if (groups.length) templates.push({ procedureId, groups });
+    }
+    const sourceType = 'record-consumption';
+    const movements = post ? await tx.inventoryMovement.findMany({
+      where: { tenantId, sourceType, sourceId: recordId },
+      include: { lines: { include: { item: true } } },
+      orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+    }) : [];
+    const ids = [...new Set<string>([...requested.map(row => text(row.itemId)),
+      ...movements.flatMap((m: AnyRecord) => m.lines.map((line: AnyRecord) => text(line.item?.itemId)))])].filter(Boolean).sort();
+    if (!ids.length) return templates;
+    const catalog = await tx.inventoryItem.findMany({ where: { tenantId, itemId: { in: ids } }, orderBy: { itemId: 'asc' } });
+    if (catalog.length !== ids.length) throw new BadRequestException('Складская позиция расхода не найдена.');
+    for (const item of catalog) await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
+    const byId = new Map<string, AnyRecord>(catalog.map((item: AnyRecord) => [text(item.itemId), item]));
+    const keyOf = (procedureId: string, itemId: string) => JSON.stringify([procedureId, itemId]);
+    const desired = new Map<string, { procedureId: string; itemId: string; amount: number }>();
+    for (const row of requested) {
+      const item = byId.get(row.itemId)!;
+      const lines = normalizedMovementLines('CONSUMPTION', [{ itemId: row.itemId, quantity: row.quantity, quantityUnit: row.unit }]);
+      applyMovementQuantityUnits(lines, catalog);
+      const amount = lines[0].quantity;
+      if (!(amount > 0) || !Number.isFinite(amount)) throw new BadRequestException('Некорректное количество: ' + item.name);
+      const key = keyOf(row.procedureId, row.itemId);
+      const entry = desired.get(key) || { procedureId: row.procedureId, itemId: row.itemId, amount: 0 };
+      entry.amount += amount;
+      desired.set(key, entry);
+      if (!post && (item.archivedAt || item.canConsume === false)) throw new BadRequestException('Товар недоступен для расхода: ' + item.name);
+    }
+    if (!post) return templates;
+    const previous = new Map<string, { procedureId: string; itemId: string; amount: number; unitCost: number }>();
+    const dates = new Map<string, Date>();
+    for (const m of movements) for (const line of m.lines) {
+      const procedureId = text(m.procedureKey), itemId = text(line.item?.itemId);
+      if (!dates.has(procedureId)) dates.set(procedureId, m.occurredAt);
+      const key = keyOf(procedureId, itemId);
+      const entry = previous.get(key) || { procedureId, itemId, amount: 0, unitCost: decimalNumber(line.unitCost) };
+      entry.amount += (line.direction === 'OUT' ? 1 : -1) * decimalNumber(line.quantity);
+      previous.set(key, entry);
+    }
+    const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(record.workplaceId) } } });
+    const day = text(record.date).slice(0,10), time = /^\d{2}:\d{2}$/.test(text(record.from)) ? text(record.from) : '12:00';
+    const date = zonedDateTimeToDate(day + 'T' + time, workplace?.timeZone);
+    if (!date || !Number.isFinite(date.getTime())) throw new BadRequestException('Дата записи не определена.');
+    const changes = new Map<string, { adds: AnyRecord[]; returns: AnyRecord[]; occurredAt: Date }>();
+    for (const key of new Set([...desired.keys(), ...previous.keys()])) {
+      const after = desired.get(key), old = previous.get(key), row = after || old!;
+      const delta = Math.round(((after?.amount || 0) - (old?.amount || 0)) * 1000) / 1000;
+      if (!delta) continue;
+      const item = byId.get(row.itemId)!;
+      if (delta > 0 && (item.archivedAt || item.canConsume === false)) throw new BadRequestException('Товар недоступен для расхода: ' + item.name);
+      const group = changes.get(row.procedureId) || { adds: [], returns: [], occurredAt: dates.get(row.procedureId) || date };
+      if (delta > 0) group.adds.push({ itemId: row.itemId, quantity: delta });
+      else group.returns.push({ itemId: row.itemId, quantity: -delta, direction: 'IN', unitCost: old?.unitCost ?? null });
+      changes.set(row.procedureId, group);
+    }
+    for (const [procedureKey, group] of changes) {
+      const metadata = { sourceType, sourceId: recordId, recordId, procedureKey,
+        personKey: text(record.person?.key || record.person?.id), workplaceKey: text(record.workplaceId), occurredAt: group.occurredAt.toISOString() };
+      if (group.returns.length) await this.createMovementInTx(tx, tenantId, { ...metadata, kind: 'CORRECTION',
+        note: 'Корректировка расхода по записи', lines: group.returns }, { allowRecordConsumption: true });
+      if (group.adds.length) await this.createMovementInTx(tx, tenantId, { ...metadata, kind: 'CONSUMPTION',
+        note: 'Расход по записи', lines: group.adds }, { allowRecordConsumption: true });
+    }
+    return templates;
+  }
+
   private async assertStorageLocations(tx: Tx, tenantId: string, locations: string[]) {
     const selected = [...new Set(locations.filter((id) => id && id !== PRIMARY_STORAGE))];
     if (!selected.length) return;
@@ -2289,6 +2385,7 @@ export class InventoryService {
     if (original.kind === 'TRANSFER') throw new BadRequestException('Перенос между местами нельзя корректировать обычной корректировкой.');
     if (original.lines.some((line: AnyRecord) => (line.storageLocationId || PRIMARY_STORAGE) !== PRIMARY_STORAGE))
       throw new BadRequestException('Движение по месту хранения исправляется отдельным компенсирующим движением.');
+    if (original.sourceType === 'record-consumption') throw new BadRequestException('Расход корректируется в записи.');
     if (original.sourceType === 'inventory-purchase-order') {
       throw new BadRequestException('Приход полученного заказа нельзя исправлять отдельно от заказа');
     }
@@ -2584,7 +2681,7 @@ export class InventoryService {
   }
 
   private async createMovementInTx(tx: Tx, tenantId: string, raw: AnyRecord,
-    options: { allowPurchaseOrderReceipt?: boolean; allowRecordSale?: boolean; allowSupplierReturn?: boolean } = {}) {
+    options: { allowPurchaseOrderReceipt?: boolean; allowRecordSale?: boolean; allowRecordConsumption?: boolean; allowSupplierReturn?: boolean } = {}) {
     // The generic movement endpoint cannot impersonate a purchase receipt.
     // The Purchase Order owner alone authorizes this source in its transaction.
     if (text(raw.sourceType) === 'inventory-purchase-order' && !options.allowPurchaseOrderReceipt) {
@@ -2595,6 +2692,8 @@ export class InventoryService {
     if (text(raw.sourceType) === 'record-sale' && !options.allowRecordSale) {
       throw new BadRequestException('Продажа из записи создаётся только при сохранении записи');
     }
+    if (text(raw.sourceType) === 'record-consumption' && !options.allowRecordConsumption)
+      throw new BadRequestException('Расход изменяется в записи.');
     const kind = text(raw.kind).toUpperCase();
     if (!MOVEMENT_KINDS.has(kind)) throw new BadRequestException('Неизвестный тип складского движения');
     const lines = normalizedMovementLines(kind, raw.lines);
@@ -2604,7 +2703,7 @@ export class InventoryService {
     const items = await tx.inventoryItem.findMany({
       where: { tenantId, itemId: { in: requestedIds },
         // Allow an original record sale to be returned after product archiving.
-        ...(options.allowRecordSale && kind === 'RETURN' ? {} : { archivedAt: null }) },
+        ...((options.allowRecordSale && kind === 'RETURN') || (options.allowRecordConsumption && kind === 'CORRECTION') ? {} : { archivedAt: null }) },
     });
     const itemById = new Map((items as AnyRecord[]).map((item) => [item.itemId, item]));
     if (itemById.size !== requestedIds.length) throw new BadRequestException('Одна из позиций склада не найдена');
