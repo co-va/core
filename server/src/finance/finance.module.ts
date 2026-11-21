@@ -5,11 +5,12 @@ import { PrismaService } from '../prisma.service';
 import { SaasAccessModule } from '../saas-access/saas-access.module';
 import { FinanceController } from './finance.controller';
 import { FinanceService } from './finance.service';
+import { InventoryModule } from '../inventory/inventory.module';
 import { PaymentSettlementService } from './payment-settlement.service';
 import { PersonalAccountFinanceService } from './personal-account-finance.service';
 
 @Module({
-  imports: [AuthModule, forwardRef(() => NotificationModule), SaasAccessModule],
+  imports: [AuthModule, forwardRef(() => NotificationModule), forwardRef(() => InventoryModule), SaasAccessModule],
   controllers: [FinanceController],
   providers: [FinanceService, PaymentSettlementService, PersonalAccountFinanceService, PrismaService],
   exports: [FinanceService, PaymentSettlementService, PersonalAccountFinanceService],

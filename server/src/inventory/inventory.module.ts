@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { FinanceModule } from '../finance/finance.module';
 import { PrismaService } from '../prisma.service';
@@ -16,7 +16,7 @@ import { InventoryCriteriaRecoveryService } from './inventory-criteria-recovery.
 import { InventoryOrderExportService } from './inventory-order-export.service';
 
 @Module({
-  imports: [AuthModule, FinanceModule, SaasAccessModule],
+  imports: [AuthModule, forwardRef(() => FinanceModule), SaasAccessModule],
   controllers: [InventoryController, InventoryExcelController, InventoryCounterpartyController, InventoryConsumptionGroupsController],
   providers: [InventoryService, InventoryExcelService, InventoryOrderExportService, InventoryCounterpartyService, InventoryConsumptionGroupsService, InventoryCriteriaService, InventoryCriteriaRecoveryService, PrismaService],
   exports: [InventoryService],
