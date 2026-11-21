@@ -192,6 +192,11 @@ export class BusinessStateController {
     return this.businessState.updateUEI(request.auth!.tenantId, body, request.auth!);
   }
 
+  @Put('records/:recordId/consumables')
+  async saveRecordConsumables(@Req() request: AuthenticatedRequest, @Param('recordId') recordId: string, @Body() body: unknown) {
+    return this.businessState.saveRecordConsumables(request.auth!.tenantId, recordId, body);
+  }
+
   @Put('records/:recordId')
   async upsertRecord(@Req() request: AuthenticatedRequest, @Param('recordId') recordId: string, @Body() body: unknown) {
     const tenantId = request.auth!.tenantId;

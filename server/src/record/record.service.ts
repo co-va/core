@@ -499,7 +499,34 @@ export class RecordService {
   }
 
   async releaseRecordSalesInTx(tx: Prisma.TransactionClient, tenantId: string, recordId: string) {
+    await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${recordId} FOR UPDATE`;
+    const row = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId } } });
     await this.inventory.syncRecordSalesInTx(tx, tenantId, recordId, []);
+    if (row && objectValue(row.data).consumablesPosted === true)
+      await this.inventory.syncRecordConsumptionInTx(tx, tenantId, objectValue(row.data), [], true);
+  }
+
+  async saveConsumables(tenantId: string, recordId: string, body: unknown) {
+    const input = objectValue(body);
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${recordId} FOR UPDATE`;
+      const row = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId } } });
+      if (!row) throw new BadRequestException('Запись не найдена.');
+      const record = objectValue(row.data);
+      const events = await tx.recordEvent.findMany({ where: { tenantId, recordId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] });
+      const lifecycle = this.projectLifecycle(record, events.map(event => objectValue(event.data)));
+      if (lifecycle.status === 'cancelled' || lifecycle.attendance === 'no-show') throw new BadRequestException('Посещение не состоялось.');
+      const settlement = await tx.financeSettlement.findUnique({
+        where: { tenantId_sourceType_sourceId: { tenantId, sourceType: 'record', sourceId: recordId } },
+      });
+      const payment = await this.finance.recordSettlementPaymentState(tenantId, recordId, settlement ? objectValue(settlement.data) : null, tx);
+      const post = record.consumablesPosted === true || (payment.state === 'paid' &&
+        (payment.paid > 0 || events.some(event => text(objectValue(event.data).type) === 'completed')));
+      const templates = await this.inventory.syncRecordConsumptionInTx(tx, tenantId, record, input.templates, post);
+      await tx.record.update({ where: { id: row.id }, data: { data: json({ ...record,
+        consumableTemplates: templates, consumablesPosted: post && templates.length > 0 }) } });
+      return { recordId, templates, posted: post && templates.length > 0 };
+    }, { timeout: 60000 });
   }
 
   async upsertFromOwner(tenantId: string, recordId: string, body: unknown) {
@@ -631,6 +658,17 @@ export class RecordService {
     };
 
     await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${id} FOR UPDATE`;
+      const latest = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: id } } });
+      const saved = objectValue(latest?.data);
+      if (Array.isArray(saved.consumableTemplates)) {
+        const ids = new Set(procedures.map(p => text(p.id)));
+        if (saved.consumableTemplates.some((template: JsonObject) => !ids.has(text(template.procedureId))))
+          throw new BadRequestException('Сначала удалите расход исключаемой услуги.');
+        if (saved.consumableTemplates.length && personChanged)
+          throw new BadRequestException('Сначала удалите индивидуальный расход перед сменой человека.');
+        Object.assign(stored, { consumableTemplates: saved.consumableTemplates, consumablesPosted: saved.consumablesPosted === true });
+      }
       if (productsChanged) await this.inventory.syncRecordSalesInTx(tx, tenantId, id, products, {
         personKey: text(person.key), workplaceKey: incomingWorkplaceId,
       });
