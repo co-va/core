@@ -478,12 +478,28 @@ export class RecordService {
         pricePercent,
       );
       const unknownPrice = record.historicalTransfer && (!arrayValue(record.procedures).length || arrayValue(record.procedures).some(item => item.cost == null || item.cost === ''));
-      const settlement = unknownPrice ? null : await this.finance.settlementForSource(
+      const storedSettlement = unknownPrice ? null : await this.finance.settlementForSource(
         tenantId,
         'record',
         text(record.id),
         fallbackSettlement,
       ) || fallbackSettlement;
+      // Project unpaid bookings from the deposit terms valid at their visit
+      // date. A newly funded deposit must appear, and an ended one must not
+      // remain on a future booking. Never rewrite a paid historical snapshot.
+      const storedPayment = await this.finance.recordSettlementPaymentState(
+        tenantId, text(record.id), storedSettlement,
+      );
+      const settlement = storedSettlement && storedPayment.paid <= 0.009
+        ? this.finance.repriceSettlement(
+            this.settlementSources(
+              arrayValue(record.procedures).map((item) => objectValue(item)),
+              arrayValue(record.products).map((item) => objectValue(item)),
+            ),
+            storedSettlement,
+            pricePercent,
+          )
+        : storedSettlement;
       const payment = await this.finance.recordSettlementPaymentState(tenantId, text(record.id), settlement);
       result.push({
         ...record,
