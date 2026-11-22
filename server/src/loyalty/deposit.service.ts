@@ -352,8 +352,12 @@ export class DepositService {
         where: { tenantId_depositId: { tenantId, depositId: id } },
       }) as DepositRow | null;
       if (!row) throw new NotFoundException('Депозит не найден');
-      if (row.status !== 'active' || !depositTermActiveAt(row.terms, occurredAt)) {
-        throw new BadRequestException('Этот депозит сейчас нельзя пополнить');
+      const historicTopUp = row.status === 'expired'
+        && occurredAt.getTime() < Date.now()
+        && depositTermActiveAt(row.terms, occurredAt)
+        && occurredAt >= row.fundedAt;
+      if ((!historicTopUp && row.status !== 'active') || !depositTermActiveAt(row.terms, occurredAt)) {
+        throw new BadRequestException('Этот депозит нельзя пополнить на указанную дату');
       }
       const nextFunded = money(money(row.initialAmount) + amount);
       this.assertFundingTarget(row, nextFunded);
@@ -361,13 +365,17 @@ export class DepositService {
       const benefit = this.fundingBenefit(terms, amount);
       await tx.loyaltyDepositInstance.update({
         where: { id: row.id },
-        data: {
-          initialAmount: nextFunded,
-          principalBalance: money(money(row.principalBalance) + amount),
-          benefitBalance: money(money(row.benefitBalance) + benefit),
-          balance: money(money(row.balance) + amount + benefit),
-          status: 'active',
-        },
+        data: historicTopUp
+          // Historic receipt is written to FinanceOperation. The deposit's
+          // current zeroed/expired balance is NOT reopened in 2026.
+          ? { initialAmount: nextFunded }
+          : {
+              initialAmount: nextFunded,
+              principalBalance: money(money(row.principalBalance) + amount),
+              benefitBalance: money(money(row.benefitBalance) + benefit),
+              balance: money(money(row.balance) + amount + benefit),
+              status: 'active',
+            },
       });
       await this.createFundingOperation(tx, tenantId, row, operationId, amount, walletId, walletName, occurredAt);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
