@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { depositHistoricalLedger } from '../core/loyalty/deposit-history.js';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
+const source = readFileSync(new URL('../server/src/loyalty/deposit-history.ts', import.meta.url), 'utf8')
+  .replaceAll('export ', '');
+const { depositHistoricalLedger } = runInNewContext(
+  stripTypeScriptTypes(source, { mode: 'strip' }) + '\n({ depositHistoricalLedger })',
+);
 
 const deposit = 'deposit-2024';
 const terms = { benefitType: 'discount', benefitValue: 20 };

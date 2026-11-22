@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
-import { depositHistoricalLedger } from '../../../core/loyalty/deposit-history.js';
+import { depositHistoricalLedger } from './deposit-history';
 import { FinanceService } from '../finance/finance.service';
 import {
   depositBenefitMode,
