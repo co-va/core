@@ -52,4 +52,45 @@ assert.deepEqual(JSON.parse(JSON.stringify(run('2024-01-03T12:00:00.000Z', 1100,
 assert.equal(run('2024-02-01T12:00:00.000Z', 0, [
   ...ops, op('deposit-withdrawal', '2024-01-31T12:00:00.000Z', 700),
 ]).available, 0, 'Deposit withdrawal closes the old balance');
+
+// Exercise the production expired-deposit allocation path, not just its pure
+// ledger helper, with a transaction stub that forbids materialized writes.
+const state = readFileSync(new URL('../server/src/loyalty/deposit-state.ts', import.meta.url), 'utf8');
+const body = state.slice(state.indexOf('function objectValue('),
+  state.indexOf('export async function restoreDepositAllocations(')).replaceAll('export ', '');
+const { consumeDepositAllocations } = runInNewContext(
+  stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ consumeDepositAllocations })',
+  { depositHistoricalLedger, BadRequestException: class extends Error {} },
+);
+let updates = 0;
+const expired = {
+  id: deposit, depositId: deposit, personKey: 'person-1', status: 'expired',
+  terms: { ...terms, termMode: 'dated', termStartDate: '2024-01-01', termEndDate: '2025-01-31' },
+  fundedAt: new Date('2024-01-02T12:00:00.000Z'),
+  balance: 0, principalBalance: 0, benefitBalance: 0,
+};
+const tx = {
+  loyaltyDepositInstance: {
+    findUnique: async () => expired,
+    update: async () => { updates += 1; throw new Error('Historical payment may not reopen deposit'); },
+  },
+  financeOperation: { findMany: async () => ops },
+};
+const receipt = await consumeDepositAllocations(tx, 'tenant-1',
+  [{ depositId: deposit, amount: 200 }], 'person-1', new Date('2024-03-15T14:00:00Z'), true);
+assert.equal(receipt.length, 1);
+assert.equal(receipt[0].amount, 200);
+assert.equal(receipt[0].principalAmount, 200);
+assert.equal(updates, 0, 'Backfill never changes the current expired balance');
+await assert.rejects(
+  consumeDepositAllocations(tx, 'tenant-1', [{ depositId: deposit, amount: 100 }],
+    'person-OTHER', new Date('2024-03-15T14:00:00Z'), true),
+  /другому человеку|принадлежит/,
+);
+await assert.rejects(
+  consumeDepositAllocations(tx, 'tenant-1', [{ depositId: deposit, amount: 100 }],
+    'person-1', new Date('2025-02-01T14:00:00Z'), true),
+  /недоступен/,
+);
+
 console.log('Historical deposit ledger: PASS');
