@@ -79,7 +79,7 @@ const historicalProjectionSource = depositState.slice(
 ).replaceAll('export ', '');
 const historicalProjection = runInNewContext(
   stripTypeScriptTypes(historicalProjectionSource, { mode: 'strip' }) +
-    '\\n({ depositPriceSourcesFromRows })',
+    '\n({ depositPriceSourcesFromRows })',
 );
 const historicRate = (day) => historicalProjection.depositPriceSourcesFromRows(
   [historicExpired], 'person-1', pricing.visitDatePriceMoment(day),
