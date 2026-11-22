@@ -63,6 +63,36 @@ rows.push({
 });
 assert.equal(await effective('2026-12-05'), 30, 'A new deposit applies its own rate');
 
+// Historical records must price a previously expired deposit as of the VISIT,
+// not according to its status in the present-day materialized balance.
+const pastTerms = {
+  termMode: 'dated', termStartDate: '2024-01-01', termEndDate: '2025-01-31',
+  benefitType: 'discount', benefitValue: 20,
+};
+const historicExpired = {
+  personKey: 'person-1', depositId: 'historic-1', status: 'expired',
+  fundedAt: new Date('2024-01-02T12:00:00.000Z'), terms: pastTerms,
+};
+const historicalProjectionSource = depositState.slice(
+  depositState.indexOf('function objectValue('),
+  depositState.indexOf('export async function activeDepositPriceSources('),
+).replaceAll('export ', '');
+const historicalProjection = runInNewContext(
+  stripTypeScriptTypes(historicalProjectionSource, { mode: 'strip' }) +
+    '\\n({ depositPriceSourcesFromRows })',
+);
+const historicRate = (day) => historicalProjection.depositPriceSourcesFromRows(
+  [historicExpired], 'person-1', pricing.visitDatePriceMoment(day),
+).map(item => item.percent);
+assert.deepEqual(Array.from(historicRate('2024-01-01')), [], 'Cannot discount before funding');
+assert.deepEqual(Array.from(historicRate('2024-01-15')), [20], 'Expired now, but valid on past visit');
+assert.deepEqual(Array.from(historicRate('2025-01-31')), [20], 'Past end date is inclusive');
+assert.deepEqual(Array.from(historicRate('2025-02-01')), [], 'Past day after term is excluded');
+assert.match(record, /historicalOwnerEntry = !publicBooking/,
+  'Manual historic Journal entries do not require an old configured working day');
+assert.match(record, /if \(!historicalOwnerEntry\) \{/,
+  'Past owner Record edits bypass only the workday availability check');
+
 assert.match(record, /visitDatePriceMoment\(visitDate\)/,
   'Record must price by its actual service date');
 assert.match(record, /repriceUnpaidVisit/,

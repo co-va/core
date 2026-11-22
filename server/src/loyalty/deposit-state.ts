@@ -134,19 +134,35 @@ export async function createDepositInstance(db: Db, tenantId: string, input: {
   });
 }
 
+// Historical visibility is based on effective date, not a present-day status.
+// Materialized balances/status may have been cleared by expiry after the visit.
+function depositWasFundedAt(row: { fundedAt?: Date | string }, at: Date) {
+  const funded = row.fundedAt instanceof Date ? row.fundedAt.toISOString() : text(row.fundedAt);
+  return !funded || funded.slice(0, 10) <= at.toISOString().slice(0, 10);
+}
+
+function depositPriceEligibleAt(row: { status: string; fundedAt?: Date | string; terms: unknown }, at: Date) {
+  const status = text(row.status);
+  // A previously expired deposit is valid for pricing a PAST visit inside
+  // its term, never for a visit today or in the future.
+  const historical = at.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
+  return (status === 'active' || (historical && status === 'expired'))
+    && depositWasFundedAt(row, at)
+    && depositTermActiveAt(row.terms, at);
+}
+
 // One canonical projection of an active deposit into its price-condition source.
 // Shared by settlement and batched /account/contacts reads; never use visibility
 // flags here because a price condition is independent of deposit-card visibility.
 export function depositPriceSourcesFromRows(
-  rows: Array<{ personKey: string; status: string; terms: unknown; depositId: string; programId: string; programName: string }>,
+  rows: Array<{ personKey: string; status: string; fundedAt?: Date | string; terms: unknown; depositId: string; programId: string; programName: string }>,
   personKey: string,
   at: Date,
 ) {
   if (!personKey) return [];
   return rows
     .filter((row) => row.personKey === personKey
-      && row.status === 'active'
-      && depositTermActiveAt(row.terms, at)
+      && depositPriceEligibleAt(row, at)
       && depositBenefitMode(row.terms) === 'discount'
       && depositBenefitRate(row.terms) > 0)
     .map((row) => ({
@@ -162,8 +178,9 @@ export function depositPriceSourcesFromRows(
 export async function activeDepositPriceSources(db: Db, tenantId: string, personKey: string, at: Date) {
   if (!personKey) return [];
   await expireDepositInstances(db, tenantId);
+  const historical = at.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
   const rows = await db.loyaltyDepositInstance.findMany({
-    where: { tenantId, personKey, status: 'active' },
+    where: { tenantId, personKey, status: historical ? { in: ['active', 'expired'] } : 'active' },
     orderBy: [{ fundedAt: 'asc' }, { createdAt: 'asc' }],
   });
   return depositPriceSourcesFromRows(rows, personKey, at);
@@ -184,7 +201,7 @@ export async function selectedDepositPriceSource(
   });
   if (!row) throw new BadRequestException('Выбранный депозит не найден');
   if (personKey && row.personKey !== personKey) throw new BadRequestException('Выбранный депозит принадлежит другому человеку');
-  if (row.status !== 'active' || !depositTermActiveAt(row.terms, at)) {
+  if (!depositPriceEligibleAt(row, at)) {
     throw new BadRequestException(`Депозит «${row.programName || 'Депозит'}» недоступен`);
   }
   if (depositBenefitMode(row.terms) !== 'discount') return null;

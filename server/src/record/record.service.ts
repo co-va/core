@@ -243,7 +243,12 @@ export class RecordService {
       ? this.time.minutesToTime(startMinutes + totalDuration)
       : '';
     const to = derivedTo || text(input.to);
-    await this.validateAvailability(tenantId, { date, workplaceId, from, to }, { excludeRequestId: sourceRequestId });
+    // Professional Journal may recreate historical visits without today's
+    // working schedule. Public booking still follows ordinary availability.
+    const historicalOwnerEntry = !publicBooking && date < new Date().toISOString().slice(0, 10);
+    if (!historicalOwnerEntry) {
+      await this.validateAvailability(tenantId, { date, workplaceId, from, to }, { excludeRequestId: sourceRequestId });
+    }
 
     const products = arrayValue(input.products).map((item) => clone(objectValue(item)));
     let person = clone(objectValue(input.person));
@@ -610,12 +615,16 @@ export class RecordService {
       || text(current.from) !== from
       || text(current.to) !== to;
     if (scheduleChanged) {
-      await this.validateAvailability(tenantId, {
-        date,
-        workplaceId: incomingWorkplaceId,
-        from,
-        to,
-      }, { excludeRecordId: id });
+      const publicBooking = ['online-booking', 'account-journal'].includes(text(current.source));
+      const historicalOwnerEntry = !publicBooking && date < new Date().toISOString().slice(0, 10);
+      if (!historicalOwnerEntry) {
+        await this.validateAvailability(tenantId, {
+          date,
+          workplaceId: incomingWorkplaceId,
+          from,
+          to,
+        }, { excludeRecordId: id });
+      }
     }
 
     const products = productsChanged
