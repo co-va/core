@@ -289,6 +289,7 @@ export class PaymentSettlementService {
     let remainingDue = 0;
     await this.serializable(async (tx) => {
       let condition;
+      let historicalRecordPayment = false;
       if (source.type === 'record') {
         await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
         const recordRow = await tx.record.findUnique({
@@ -296,6 +297,12 @@ export class PaymentSettlementService {
         });
         if (!recordRow) throw new BadRequestException('Запись для оплаты не найдена');
         const record = objectValue(recordRow.data);
+        const visitDay = text(record.date).slice(0, 10);
+        const paymentDay = occurredAt.toISOString().slice(0, 10);
+        const today = new Date().toISOString().slice(0, 10);
+        // Historical entry is identified by the dated service AND dated
+        // operation. Current-day payment of a past record is not backfill.
+        historicalRecordPayment = Boolean(visitDay && visitDay < today && paymentDay < today);
         // The visit, not the money transfer, determines the deposit percent.
         condition = await resolveSelectedRecordProgramPricePercent(
           tx, tenantId, objectValue(record.person), record.loyaltyProgram,
@@ -322,7 +329,9 @@ export class PaymentSettlementService {
         canonicalPersonKey = availability.personKey;
       }
 
-      const depositAllocations = await consumeDepositAllocations(tx, tenantId, requestedDepositAllocations, ownerKey, occurredAt);
+      const depositAllocations = await consumeDepositAllocations(
+        tx, tenantId, requestedDepositAllocations, ownerKey, occurredAt, historicalRecordPayment,
+      );
       if (personalAccountAmount > 0) {
         await applyPersonalAccountMovement(tx, {
           eventId: `personal-account:${operationId}`,
@@ -352,6 +361,7 @@ export class PaymentSettlementService {
           depositAllocations,
           personalAccountAmount,
           priceCondition: condition.source ? clone(condition.source) : null,
+          ...(historicalRecordPayment ? { historicalBackfill: true } : {}),
           cashTotal: cashAllocated,
           cashServiceAmount,
           total: money(serviceAmount + tips),
@@ -370,7 +380,9 @@ export class PaymentSettlementService {
       if (source.type === 'record' && remainingDue <= 0.009) {
         const row = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: source.id } } });
         const record = objectValue(row?.data);
-        if (row && Array.isArray(record.consumableTemplates) && record.consumableTemplates.length) {
+        // A historical invoice must not unexpectedly consume present-day
+        // stock. Inventory transfer has its own dated movement owner.
+        if (!historicalRecordPayment && row && Array.isArray(record.consumableTemplates) && record.consumableTemplates.length) {
           await this.inventory.syncRecordConsumptionInTx(tx, tenantId, record, record.consumableTemplates, true);
           await tx.record.update({ where: { id: row.id }, data: { data: json({ ...record, consumablesPosted: true }) } });
         }
