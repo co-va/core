@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { depositHistoricalLedger } from '../../../core/loyalty/deposit-history.js';
 import { FinanceService } from '../finance/finance.service';
 import {
   depositBenefitMode,
@@ -201,7 +202,7 @@ export class DepositService {
     return items.sort((left, right) => String(left.occurredAt).localeCompare(String(right.occurredAt)));
   }
 
-  private dto(row: DepositRow, operations: any[]) {
+  private dto(row: DepositRow, operations: any[], asOf: Date | null = null) {
     const principalBalance = money(row.principalBalance);
     const benefitBalance = money(row.benefitBalance);
     const balance = money(row.balance);
@@ -220,6 +221,9 @@ export class DepositService {
       benefitBalance,
       refundableAmount: row.status === 'active' ? principalBalance : 0,
       balance,
+      ...(asOf ? { availableAt: depositTermActiveAt(terms, asOf) && row.fundedAt <= asOf
+        ? depositHistoricalLedger(operations, row.depositId, terms, asOf).available
+        : 0 } : {}),
       terms,
       benefitMode: mode,
       discountPercent: mode === 'discount' && row.status === 'active' && depositTermActiveAt(terms, new Date()) ? depositBenefitRate(terms) : 0,
@@ -231,12 +235,18 @@ export class DepositService {
     };
   }
 
-  async list(tenantId: string, personKeyValue = '') {
+  async list(tenantId: string, personKeyValue = '', asOfDateValue = '') {
+    const day = text(asOfDateValue);
+    if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('Некорректная дата визита');
+    const asOf = day ? new Date(day + 'T23:59:59.999Z') : null;
+    if (asOf && (!Number.isFinite(asOf.getTime()) || asOf.toISOString().slice(0, 10) !== day)) {
+      throw new BadRequestException('Некорректная дата визита');
+    }
     const [rows, operations] = await Promise.all([
       this.rows(tenantId, text(personKeyValue)),
       this.operations(tenantId),
     ]);
-    return rows.map((row) => this.dto(row as DepositRow, operations));
+    return rows.map((row) => this.dto(row as DepositRow, operations, asOf));
   }
 
   async get(tenantId: string, depositId: string) {
