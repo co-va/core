@@ -248,8 +248,19 @@ function effectiveDiscountForPerson(personValue: unknown, depositRows: any[], at
   const person = objectValue(personValue);
   const personKey = text(person.key || person.id);
   if (!personKey) return null;
+  // A newly issued deposit supersedes a Personal discount granted before it.
+  // Keep historical deposits in this read so the old manual percentage cannot
+  // silently return when the program expires. An explicit later manual grant
+  // has discountAssignedAt and is independent until the next deposit.
+  const assignedAt = Date.parse(text(person.discountAssignedAt));
+  const superseded = depositRows.some((row) => {
+    if (text(row.personKey) !== personKey) return false;
+    const fundedAt = row.fundedAt instanceof Date ? row.fundedAt.getTime() : Date.parse(text(row.fundedAt));
+    return !Number.isFinite(assignedAt) || !Number.isFinite(fundedAt) || fundedAt >= assignedAt;
+  });
+  const effectivePerson = superseded ? { ...person, discountPercent: 0, discount: 0 } : person;
   const condition = resolvePersonPriceCondition(
-    person, depositPriceSourcesFromRows(depositRows, personKey, at),
+    effectivePerson, depositPriceSourcesFromRows(depositRows, personKey, at),
   );
   if (condition.conflict || !condition.source || condition.percent <= 0) return null;
   const source = condition.source;
@@ -535,9 +546,9 @@ export class AccountContactsService {
         select: { tenantId: true, key: true, data: true },
       }),
       this.prisma.loyaltyDepositInstance.findMany({
-        where: { tenantId: { in: tenantIds }, status: 'active' },
+        where: { tenantId: { in: tenantIds } },
         select: {
-          tenantId: true, personKey: true, status: true, terms: true,
+          tenantId: true, personKey: true, status: true, fundedAt: true, terms: true,
           depositId: true, programId: true, programName: true,
         },
       }),

@@ -67,6 +67,10 @@ assert.match(record, /visitDatePriceMoment\(visitDate\)/,
   'Record must price by its actual service date');
 assert.match(record, /repriceUnpaidVisit/,
   'Rescheduling an unpaid Record must update the deposit condition');
+assert.match(record, /storedPayment.paid <= 0.009/,
+  'Unpaid Record display must follow newly issued/expired program terms');
+assert.match(record, /this.finance.repriceSettlement\(/,
+  'Record display must use the shared Settlement repricer');
 assert.match(payment, /visitDatePriceMoment\(record\.date\)/,
   'Record prepayment must use the canonical visit date');
 assert.match(payment, /source\.type === 'record'[\s\S]*?recordRow = await tx\.record\.findUnique/,
