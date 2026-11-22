@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { depositHistoricalLedger } from '../../../core/loyalty/deposit-history.js';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -231,6 +232,38 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
     });
     if (!row) throw new BadRequestException('Депозит не найден');
     if (expectedPersonKey && row.personKey !== expectedPersonKey) throw new BadRequestException('Депозит принадлежит другому человеку');
+    // A past visit can be settled after the deposit has expired today.
+    // Never reopen its zeroed materialized balance; reconstruct the dated
+    // spending capacity from FinanceOperation and ensure later payments
+    // cannot become overdrawn as a result of backfilled spending.
+    if (historical && ['expired', 'closed'].includes(row.status)
+      && occurredAt.getTime() < Date.now()
+      && depositTermActiveAt(row.terms, occurredAt)) {
+      const fundedAt = row.fundedAt instanceof Date ? row.fundedAt : new Date(row.fundedAt);
+      if (!Number.isFinite(fundedAt.getTime()) || occurredAt < fundedAt) {
+        throw new BadRequestException('Оплата раньше первого внесения депозита невозможна');
+      }
+      const operations = await db.financeOperation.findMany({
+        where: { tenantId, kind: { in: ['deposit-funding', 'deposit-withdrawal', 'payment', 'refund'] } },
+        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+      });
+      let historical;
+      try {
+        historical = depositHistoricalLedger(operations, row.depositId, row.terms, occurredAt, request.amount);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Недостаточно средств на дату визита');
+      }
+      const split = historical.allocation;
+      if (!split) throw new BadRequestException('Не удалось определить списание по депозиту');
+      result.push({
+        depositId: row.depositId,
+        name: request.name || (row.programName || 'Депозит') + ' · историческая оплата',
+        amount: split.amount,
+        principalAmount: split.principalAmount,
+        benefitAmount: split.benefitAmount,
+      });
+      continue;
+    }
     if (row.status !== 'active' || !depositTermActiveAt(row.terms, occurredAt)) {
       throw new BadRequestException(`Депозит «${row.programName || 'Депозит'}» недоступен для оплаты`);
     }
