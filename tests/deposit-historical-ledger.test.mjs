@@ -34,7 +34,7 @@ assert.equal(run('2024-04-02T14:00:00.000Z').available, 1200,
   'Both funding events and an earlier service payment affect as-of balance');
 assert.equal(run('2024-05-02T14:00:00.000Z').available, 1250,
   'Refund is recorded as a separate dated event');
-assert.deepEqual(run('2024-02-01T14:00:00.000Z', 750).allocation,
+assert.deepEqual(JSON.parse(JSON.stringify(run('2024-02-01T14:00:00.000Z', 750).allocation)),
   { amount: 750, principalAmount: 750, benefitAmount: 0 });
 assert.throws(() => run('2024-02-01T14:00:00.000Z', 1000.01),
   /Недостаточно средств/, 'Never spend money before it was funded');
@@ -46,7 +46,7 @@ assert.throws(() => run('2024-02-01T14:00:00.000Z', 100, [
 const accrual = { benefitType: 'accrual', benefitValue: 20 };
 const accrualOps = [op('deposit-funding', '2024-01-02T12:00:00.000Z', 1000)];
 assert.equal(run('2024-01-03T12:00:00.000Z', 0, accrualOps, accrual).available, 1200);
-assert.deepEqual(run('2024-01-03T12:00:00.000Z', 1100, accrualOps, accrual).allocation,
+assert.deepEqual(JSON.parse(JSON.stringify(run('2024-01-03T12:00:00.000Z', 1100, accrualOps, accrual).allocation)),
   { amount: 1100, principalAmount: 1000, benefitAmount: 100 },
   'Accompanying bonus cannot be mistaken for the actual principal');
 assert.equal(run('2024-02-01T12:00:00.000Z', 0, [
