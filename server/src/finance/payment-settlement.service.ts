@@ -7,7 +7,7 @@ import {
   consumeDepositAllocations,
   restoreDepositAllocations,
 } from '../loyalty/deposit-state';
-import { resolvePersonPricePercent } from '../loyalty/price-condition';
+import { resolvePersonPricePercent, resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import {
   applyPersonalAccountMovement,
   personalAccountMoney,
@@ -288,8 +288,22 @@ export class PaymentSettlementService {
     const operationId = randomUUID();
     let remainingDue = 0;
     await this.serializable(async (tx) => {
-      if (source.type === 'record') await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
-      const condition = await resolvePersonPricePercent(tx, tenantId, person, occurredAt);
+      let condition;
+      if (source.type === 'record') {
+        await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
+        const recordRow = await tx.record.findUnique({
+          where: { tenantId_recordId: { tenantId, recordId: source.id } },
+        });
+        if (!recordRow) throw new BadRequestException('Запись для оплаты не найдена');
+        const record = objectValue(recordRow.data);
+        // The visit, not the money transfer, determines the deposit percent.
+        condition = await resolveSelectedRecordProgramPricePercent(
+          tx, tenantId, objectValue(record.person), record.loyaltyProgram,
+          visitDatePriceMoment(record.date),
+        );
+      } else {
+        condition = await resolvePersonPricePercent(tx, tenantId, person, occurredAt);
+      }
       const settlement = canonicalSettlementInput(input.settlement, condition.percent);
       const paid = await this.serviceNet(tx, tenantId, source);
       const due = Math.max(0, money(settlement.planTotal - paid));

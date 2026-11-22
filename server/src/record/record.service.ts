@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
-import { resolveSelectedRecordProgramPricePercent } from '../loyalty/price-condition';
+import { resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import { ProcedureService } from '../procedure/procedure.service';
 import { TimeService } from '../time/time.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -124,8 +124,10 @@ export class RecordService {
     ];
   }
 
-  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown = null) {
-    return (await resolveSelectedRecordProgramPricePercent(this.prisma, tenantId, person, loyaltyProgram)).percent;
+  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown, visitDate: unknown) {
+    return (await resolveSelectedRecordProgramPricePercent(
+      this.prisma, tenantId, person, loyaltyProgram, visitDatePriceMoment(visitDate),
+    )).percent;
   }
 
   private async validateAvailability(
@@ -248,7 +250,7 @@ export class RecordService {
     const group = normalizeGroup(input.group, person, groupCapacityFromProcedures(procedureSnapshots));
     if (group?.participants?.length) person = clone(group.participants[0]);
     const loyaltyProgram = nullableObject(input.loyaltyProgram);
-    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
+    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram, date);
     const settlement = this.finance.calculateSettlement(this.settlementSources(procedureSnapshots, products), pricePercent);
 
     const now = new Date().toISOString();
@@ -467,7 +469,7 @@ export class RecordService {
       if (!directMatch && !groupMatch && !bookedByMatch) continue;
       const events = byRecord.get(text(record.id)) || [];
       const lifecycle = this.projectLifecycle(record, events);
-      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram);
+      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram, record.date);
       const fallbackSettlement = this.finance.calculateSettlement(
         this.settlementSources(
           arrayValue(record.procedures).map((item) => objectValue(item)),
@@ -615,7 +617,7 @@ export class RecordService {
     const loyaltyProgram = programChanged ? nullableObject(incoming.loyaltyProgram) : nullableObject(current.loyaltyProgram);
 
     const currentPerson = objectValue(current.person);
-    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram);
+    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram, current.date);
     const currentFallbackSettlement = this.finance.calculateSettlement(
       this.settlementSources(
         arrayValue(current.procedures).map((item) => objectValue(item)),
@@ -631,10 +633,14 @@ export class RecordService {
     ) || currentFallbackSettlement;
 
     const nextSettlementSources = this.settlementSources(procedures, products);
-    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
+    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram, date);
+    const visitPriceChanged = dateValue(current.date) !== date && nextPricePercent !== currentPricePercent;
+    // A moved, unpaid visit is re-priced; a paid calculation remains history.
+    const repriceUnpaidVisit = visitPriceChanged
+      && (await this.finance.recordSettlementPaymentState(tenantId, id, currentSettlement)).paid <= 0.009;
     const settlement = personChanged
       ? this.finance.calculateSettlement(nextSettlementSources, nextPricePercent)
-      : (refreshProcedures || productsChanged || programChanged)
+      : (refreshProcedures || productsChanged || programChanged || repriceUnpaidVisit)
         ? this.finance.repriceSettlement(nextSettlementSources, currentSettlement, nextPricePercent)
         : null;
 

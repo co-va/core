@@ -15,6 +15,17 @@ function text(value: unknown) {
   return String(value ?? '').trim();
 }
 
+// Deposit terms are calendar dates, not payment-operation timestamps.
+export function visitDatePriceMoment(value: unknown): Date {
+  const day = text(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('Некорректная дата визита');
+  const at = new Date(day + 'T12:00:00.000Z');
+  if (Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== day) {
+    throw new BadRequestException('Некорректная дата визита');
+  }
+  return at;
+}
+
 export async function resolvePersonPricePercent(
   db: Db,
   tenantId: string,
@@ -39,6 +50,9 @@ export async function resolveSelectedRecordProgramPricePercent(
   at = new Date(),
 ) {
   const selected = objectValue(selectedProgramValue);
+  // An assigned deposit is automatic unless an explicit different program
+  // selection overrides it. Only one active percentage source is permitted.
+  if (!text(selected.type)) return resolvePersonPricePercent(db, tenantId, personValue, at);
   if (text(selected.type) !== 'deposit') return resolvePersonPriceCondition(null, []);
   const personKey = depositPersonKey(personValue);
   const source = personKey
