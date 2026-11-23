@@ -170,7 +170,7 @@ export class RecordService {
         return id
           && id !== excludeRecordId
           && !cancelled.has(id)
-          && text(record?.historicalAction) !== 'Отменил'
+          && !['Отменил','Удалена'].includes(text(record?.historicalAction))
           && text(record?.workplaceId) === workplaceId
           && dateValue(record?.date) === date;
       })
@@ -325,7 +325,12 @@ export class RecordService {
     const visitName=text(input.visitStatus);
     const paymentName=text(input.paymentStatus);
     const actorName=text(input.bookedBy);
-    if (actionName && !['Записался','Перенёс','Отменил'].includes(actionName))
+    const importedSource=text(input.integrationSource);
+    const sourceName=({
+      'Онлайн-запись':'online-booking','Приложение':'account-journal',
+      'Журнал':'journal',
+    } as Record<string,string>)[importedSource] || importedSource;
+    if (actionName && !['Записался','Перенёс','Отменил','Удалена'].includes(actionName))
       throw new BadRequestException('Статус записи: выберите Записался, Перенёс или Отменил');
     if (visitName && !['Ожидает','Пришёл','Не пришёл'].includes(visitName))
       throw new BadRequestException('Посещение: выберите Ожидает, Пришёл или Не пришёл');
@@ -351,11 +356,31 @@ export class RecordService {
       from: input.from!==undefined?text(input.from):text(previous.from), to: input.to!==undefined?text(input.to):text(previous.to), person: clone(input.person), procedures,
       timePrecision: (input.from!==undefined?input.from:previous.from) ? 'minute' : 'date', historicalTransfer: true,
       ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
-      ...(actorName ? { source: actorName === 'Самостоятельно' ? 'online-booking' : 'journal' } : {}),
+      ...(input.creatorName ? { historicalCreatorName:text(input.creatorName) } : {}),
+      ...(input.createdDate ? { historicalCreatedDate:text(input.createdDate),
+        historicalCreatedTime:text(input.createdTime) } : {}),
+      ...(input.changedBy ? { historicalChangedBy:text(input.changedBy) } : {}),
+      ...(input.changedDate ? { historicalChangedDate:text(input.changedDate),
+        historicalChangedTime:text(input.changedTime) } : {}),
+      ...(input.quotedTotal !== undefined ? { historicalQuotedTotal:Number(input.quotedTotal) } : {}),
+      ...(input.comment ? { historicalComment:text(input.comment) } : {}),
+      ...(input.integrationSource ? { historicalIntegrationSource:text(input.integrationSource) } : {}),
+      ...(sourceName ? { source:sourceName } : actorName
+        ? { source:actorName==='Самостоятельно'?'online-booking':'journal' } : {}),
       ...(actionName ? { historicalAction: actionName } : {}),
       ...(visitName ? { historicalVisit: visitName } : {}),
       ...(paymentName ? { historicalPaymentStatus: paymentName } : {}),
     };
+    if (input.createdDate && input.createdTime && !input.createdAt) {
+      const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(input.workplaceId) } } });
+      const createdAt=zonedDateTimeToDate(text(input.createdDate)+'T'+text(input.createdTime),workplace?.timeZone);
+      if(!createdAt)throw new BadRequestException('Неверные дата или время создания записи');
+      record.createdAt=createdAt.toISOString();
+    }
+    if (!input.createdDate && input.createdTime)
+      throw new BadRequestException('Для времени создания укажите дату');
+    if (!input.changedDate && input.changedTime)
+      throw new BadRequestException('Для времени изменения укажите дату');
     if (input.from) {
       const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(input.workplaceId) } } });
       const occurredAt = zonedDateTimeToDate(`${input.date}T${input.from}`, workplace?.timeZone)?.toISOString();
@@ -402,7 +427,7 @@ export class RecordService {
       .map((row) => objectValue(row.data))
       .filter((record) => {
         const id = text(record.id);
-        return id && !cancelled.has(id) && text(record?.historicalAction) !== 'Отменил';
+        return id && !cancelled.has(id) && !['Отменил','Удалена'].includes(text(record?.historicalAction));
       })
       .map((record) => ({
         id: text(record.id),
@@ -416,7 +441,7 @@ export class RecordService {
   }
 
   private projectLifecycle(record: JsonObject, events: JsonObject[]) {
-    let status = text(record.historicalAction)==='Отменил' ? 'cancelled' : 'active';
+    let status = ['Отменил','Удалена'].includes(text(record.historicalAction)) ? 'cancelled' : 'active';
     let confirmed = false;
     let attendance = text(record.historicalVisit)==='Пришёл' ? 'arrived'
       : text(record.historicalVisit)==='Не пришёл' ? 'no-show' : '';

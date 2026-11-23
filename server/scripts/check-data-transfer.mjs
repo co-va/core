@@ -297,19 +297,43 @@ try {
   assert.equal(legacyCheck.transferred,1);
   console.log('PASS: grouping, contacts, secondary fields, short and full birthdays, gender and old file compatibility');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
-  // Journal Excel: one row is exactly one Record; horizontal services, no sales or finance facts.
+  // Journal: eight explicit groups, the same identity order as Contacts, and
+  // one booking per row regardless of the number of services.
   const jBook=new ExcelJS.Workbook();
   await jBook.xlsx.load(await service.workbook({domain:'records',template:true}));
   const jSheet=jBook.worksheets[0];
   assert.equal(jBook.worksheets.length,1);
   assert.equal(jSheet.name,'Записи');
-  assert.ok(jSheet.getRow(1).values.includes('Услуга 10'));
-  assert.ok(!jSheet.getRow(1).values.includes('Товар 1'));
-  jSheet.getRow(2).values=[
-    '', 'Анна','','79991234567','12','2014-06-15','10:00','11:00','BeautyToria',
-    'Самостоятельно','Записался','Не пришёл','Оплачено','',
-    'Стрижка','Укладка',
-  ];
+  assert.deepEqual([1,2,7,10,13,17,27,32].map(i=>jSheet.getCell(1,i).value),
+    ['Рабочее пространство','Клиент','Визит','Кто создал запись',
+      'История записи','Услуги','О записи','Источник интеграции']);
+  const jHeaders=jSheet.getRow(2).values;
+  assert.deepEqual(jHeaders.slice(2,7),['Код клиента','Имя','Фамилия','Телефон','Email']);
+  assert.ok(jHeaders.includes('Услуга 10'));
+  assert.ok(!jHeaders.includes('Товар 1'));
+  assert.ok(!jHeaders.includes('Кошелёк'));
+  assert.equal(jSheet.getColumn(jHeaders.indexOf('ID записи')).hidden,true);
+  const putJ=(sheet,row,values)=>{
+    const header=sheet.getRow(2).values;
+    for(const [label,value] of Object.entries(values)){
+      const col=header.indexOf(label);
+      assert.ok(col>0,'Missing Journal Excel column '+label);
+      sheet.getRow(row).getCell(col).value=value;
+    }
+  };
+  putJ(jSheet,3,{
+    'Рабочее пространство':'BeautyToria',
+    'Код клиента':'12','Имя':'Анна','Телефон':'79991234567','Email':'anna.booking@example.test',
+    'Дата визита':'2014-06-15','Время начала':'10:00',
+    'Кто создал':'Администратор','Дата создания':'2014-06-01',
+    'Время создания':'09:30','Статус записи':'Записался',
+    'Кто изменил':'Администратор','Дата изменения':'2014-06-02',
+    'Время изменения':'10:45',
+    'Услуга 1':'Стрижка','Услуга 2':'Укладка',
+    'Стоимость записи':3500,'Посещение':'Не пришёл',
+    'Статус оплаты':'Оплачено','Оплачено полностью':'Да',
+    'Комментарий':'Подтверждение по телефону','Источник интеграции':'Онлайн-запись',
+  });
   const jPayload={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jBook.xlsx.writeBuffer()).toString('base64')};
   const beforeJ=await db.record.count({where:{tenantId}});
@@ -325,32 +349,53 @@ try {
   assert.equal(jRecord.procedures.length,2);
   assert.equal(jRecord.procedures[0].name,'Стрижка');
   assert.equal(jRecord.procedures[1].name,'Укладка');
+  assert.equal(jRecord.to,'','Unknown departure time is allowed');
   assert.equal(jRecord.historicalVisit,'Не пришёл');
   assert.equal(jRecord.historicalPaymentStatus,'Оплачено');
-  assert.equal(jRecord.source,'online-booking');
-  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforePayments,'Paid status does not create payments');
+  assert.equal(jRecord.historicalAction,'Записался');
+  assert.equal(jRecord.historicalCreatorName,'Администратор');
+  assert.equal(jRecord.historicalCreatedDate,'2014-06-01');
+  assert.equal(jRecord.historicalCreatedTime,'09:30');
+  assert.equal(jRecord.historicalChangedBy,'Администратор');
+  assert.equal(jRecord.historicalChangedDate,'2014-06-02');
+  assert.equal(jRecord.historicalChangedTime,'10:45');
+  assert.equal(jRecord.historicalQuotedTotal,3500);
+  assert.equal(jRecord.historicalComment,'Подтверждение по телефону');
+  assert.equal(jRecord.person.email,'anna.booking@example.test');
+  assert.equal(jRecord.historicalIntegrationSource,'Онлайн-запись');
+  assert.equal(jRecord.source,'online-booking','Source meaning survives import');
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforePayments,
+    'Paid status and record price do not create money movements');
   result=await service.run(tenantId,accountId,jPayload,false);
   assert.equal(result.unchanged,1,'Repeat upload does not duplicate Record');
   assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
   const jExport=new ExcelJS.Workbook();
   await jExport.xlsx.load(await service.workbook({domain:'records',rows:[{
-    recordId:jId,name:'Анна',date:'2014-06-15',from:'10:00',to:'11:00',
-    workplace:'BeautyToria',bookedBy:'Самостоятельно',
-    services:[{name:'Стрижка',cost:2500,duration:45},{name:'Укладка',cost:1800,duration:30}],
+    recordId:jId,workplace:'BeautyToria',uei:'12',name:'Анна',
+    date:'2014-06-15',from:'10:00',creatorName:'Администратор',
+    actionStatus:'Записался',paymentStatus:'Оплачено',paidFull:'Да',quotedTotal:3500,
+    services:[{name:'Стрижка'},{name:'Укладка'}],
   }]}));
-  assert.equal(jExport.worksheets[0].rowCount,2);
-  assert.equal(jExport.worksheets[0].getCell(2,15).value,'Стрижка');
-  assert.equal(jExport.worksheets[0].getCell(2,16).value,'Укладка');
+  const jExportSheet=jExport.worksheets[0];
+  assert.equal(jExportSheet.rowCount,3);
+  assert.equal(jExportSheet.getCell(3,17).value,'Стрижка');
+  assert.equal(jExportSheet.getCell(3,18).value,'Укладка');
+  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('Стоимость записи')).value,3500);
+  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('ID записи')).value,jId);
   const jInvalid=new ExcelJS.Workbook();
   await jInvalid.xlsx.load(await service.workbook({domain:'records',template:true}));
-  jInvalid.worksheets[0].getRow(2).values=[
-    '', 'Анна','','79991234567','12','2013-03-12','09:00','10:00','BeautyToria',
-    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',
-  ];
-  jInvalid.worksheets[0].getRow(3).values=[
-    '', 'Несуществующий','','79999992200','','2013-03-13','10:00','11:00','BeautyToria',
-    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',
-  ];
+  putJ(jInvalid.worksheets[0],3,{
+    'Рабочее пространство':'BeautyToria','Код клиента':'12',
+    'Имя':'Анна','Телефон':'79991234567','Дата визита':'2013-03-12',
+    'Время начала':'09:00','Статус записи':'Записался',
+    'Посещение':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
+  });
+  putJ(jInvalid.worksheets[0],4,{
+    'Рабочее пространство':'BeautyToria','Имя':'Несуществующий',
+    'Телефон':'79999992200','Дата визита':'2013-03-13',
+    'Время начала':'10:00','Статус записи':'Записался',
+    'Посещение':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
+  });
   const jInvalidPayload={...jPayload,
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jInvalid.xlsx.writeBuffer()).toString('base64')};
   assert.equal((await service.run(tenantId,accountId,jInvalidPayload,true)).failed,1);
