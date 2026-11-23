@@ -16,6 +16,7 @@ import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { calendarDate, canonical, clock, decimal, DOMAINS, Fact, instant, LABELS, text } from './formats';
 import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook, peopleWorkbook } from './source';
+import { scopedExcelFacts, scopedExcelWorkbook } from './scoped-excel';
 
 type Tx = Prisma.TransactionClient;
 type Values = Record<string, any>;
@@ -42,6 +43,7 @@ export class DataTransferService {
   async workbook(input: any) {
     const rows = Array.isArray(input?.rows) ? input.rows : [];
     if (input?.domain === 'people') return peopleWorkbook(rows, input?.template === true);
+    if (input?.domain === 'records' || input?.domain === 'finance') return scopedExcelWorkbook(input.domain, rows, input?.template === true);
     return transferWorkbook(rows, input?.template === true);
   }
 
@@ -171,7 +173,13 @@ export class DataTransferService {
       if (!snapshots.length && (v.cost != null || v.price != null || v.discountPercent != null || v.discountMoney != null)) throw Error('Не указана процедура для цены или скидки');
       targetId = await this.records.importHistorical(tenantId, { date: v.date, from: v.from, to: v.to,
         workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
-        procedures: snapshots, appendProcedures:v.appendProcedures===true, ...(v.createdAt ? { createdAt: v.createdAt } : {}) }, target || text(v.recordId), tx);
+        procedures: snapshots, appendProcedures:v.appendProcedures===true,
+        ...(v.createdAt ? { createdAt: v.createdAt } : {}),
+        ...(input.expectedDomain === 'records' ? {
+          bookedBy: text(v.bookedBy),actionStatus:text(v.actionStatus),
+          visitStatus:text(v.visitStatus),paymentStatus:text(v.paymentStatus),
+        } : {}),
+      }, target || text(v.recordId), tx);
     } else if(['deposits','accounts','operations'].includes(fact.domain)) {
       const person=fact.domain!=='operations'?await this.people.resolveTransferPerson(tenantId,v,tx):null;
       if(person){v.person=person;v.personKey=person.key;}
@@ -224,10 +232,16 @@ export class DataTransferService {
         || parsed.sheets[0]?.name !== 'Люди'
         || !parsed.sheets[0]?.headers.includes('Имя')
       )) throw Error('Выберите заполненный шаблон Контактов');
-      facts = sourceFacts(parsed.sheets, parsed.fingerprint, input);
+      facts = input.expectedDomain === 'records' || input.expectedDomain === 'finance'
+        ? scopedExcelFacts(parsed.sheets, parsed.fingerprint, input.expectedDomain, text(input.source) || 'Excel')
+        : sourceFacts(parsed.sheets, parsed.fingerprint, input);
       if (input.expectedDomain === 'people' && facts.some(fact => fact.domain !== 'people')) {
         throw Error('В этом разделе загружаются только контакты');
       }
+      if (input.expectedDomain === 'records' && facts.some(fact => fact.domain !== 'records'))
+        throw Error('В этом разделе загружаются только записи');
+      if (input.expectedDomain === 'finance' && facts.some(fact => !['operations','payments'].includes(fact.domain)))
+        throw Error('В этом разделе загружаются только финансовые операции');
     }
     catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
     const access = await this.access.resolveTenantAccess(tenantId);
