@@ -400,6 +400,42 @@ try {
   assert.equal(result.transferred,1);
   result=await service.run(tenantId,accountId,csvInput,false);
   assert.equal(result.unchanged,1);
+  // Cancelled historical DDS facts create a genuine reversal, preserving zero cash effect.
+  const articleResult=await run('articles',[{
+    article:'Excel тест дохода',articleDirection:'Доход',articleEconomicType:'Прочий доход',
+  }]);
+  assert.equal(articleResult.failed,0,JSON.stringify(articleResult.rows));
+  const cancelBook=new ExcelJS.Workbook();
+  await cancelBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const cancelSheet=cancelBook.worksheets[0];
+  const position=(label)=>cancelSheet.getRow(1).values.indexOf(label);
+  const cancelLine=cancelSheet.getRow(2);
+  cancelLine.getCell(position('Дата операции')).value='2022-01-05T12:00:00Z';
+  cancelLine.getCell(position('Вид операции')).value='Доход';
+  cancelLine.getCell(position('Кошелёк')).value='Наличные';
+  cancelLine.getCell(position('Сумма')).value=100;
+  cancelLine.getCell(position('Статья')).value='Excel тест дохода';
+  cancelLine.getCell(position('Статус')).value='Отменена';
+  cancelLine.getCell(position('Дата отмены')).value='2022-01-07T10:00:00Z';
+  const cancelInput={filename:'Отменённые.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await cancelBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,cancelInput,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  result=await service.run(tenantId,accountId,cancelInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  const cancelledId=target(result,'operations').targetId;
+  const cancelled=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:cancelledId}},
+  });
+  assert.equal(cancelled.status,'cancelled');
+  const reversal=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:'cancel-'+cancelledId}},
+  });
+  assert.equal(reversal?.kind,'cancel');
+  result=await service.run(tenantId,accountId,cancelInput,false);
+  assert.equal(result.unchanged,1);
+  console.log('PASS: historical cancelled DDS operation and reversal');
   console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
   console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
