@@ -1032,10 +1032,35 @@ export class FinanceService {
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person?.key},tx);
       depositAllocations=await consumeDepositAllocations(tx,tenantId,[{depositId:deposit.depositId,amount}],text(input.person?.key),occurredAt,true);
     }
-    const allocations = fromDeposit ? [] : [{ walletId: text(input.walletId), walletName: text(input.walletName), amount }];
+    const tips=money(input.tips);
+    if(tips>amount || fromDeposit && tips>0)throw new BadRequestException('Чаевые превышают сумму оплаты');
+    const serviceAmount=money(amount-tips);
+    const requested=Array.isArray(input.allocations) && input.allocations.length
+      ? input.allocations : [{walletId:input.walletId,walletName:input.walletName,amount}];
+    const allocations:JsonObject[]=[];
+    if(!fromDeposit)for(const item of requested){
+      const wallet=await this.resolveTransferredWallet(tenantId,{
+        walletId:text(item.walletId),wallet:text(item.wallet || item.walletName),
+      },tx);
+      const allocationAmount=money(item.amount);
+      if(allocationAmount<=0)throw new BadRequestException('Сумма по кошельку должна быть больше нуля');
+      allocations.push({walletId:wallet.id,walletName:wallet.name,amount:allocationAmount});
+    }
+    if(!fromDeposit && Math.abs(money(allocations.reduce((sum,item)=>sum+item.amount,0))-amount)>0.009)
+      throw new BadRequestException('Сумма по кошелькам не совпадает с общей суммой оплаты');
     const data = { workplace: text(input.workplaceId), person: clone(objectValue(input.person)), allocations,
-      cashTotal: fromDeposit?0:amount, cashServiceAmount: fromDeposit?0:amount, total: amount, serviceAmount: amount, tips: 0, depositAllocations };
-    const entries = allocations.map(entry => ({ ...entry, component: 'service', direction: 'IN', economicType: 'SERVICE_REVENUE' }));
+      cashTotal: fromDeposit?0:amount,cashServiceAmount:fromDeposit?0:serviceAmount,
+      total: amount,serviceAmount,tips,depositAllocations };
+    let tipsLeft=tips;
+    const entries:JsonObject[]=[];
+    for(let i=allocations.length-1;i>=0;i--){
+      const entry=allocations[i];
+      const tipAmount=Math.min(tipsLeft,entry.amount);
+      tipsLeft=money(tipsLeft-tipAmount);
+      const paidService=money(entry.amount-tipAmount);
+      if(paidService>0)entries.unshift({...entry,amount:paidService,component:'service',direction:'IN',economicType:'SERVICE_REVENUE'});
+      if(tipAmount>0)entries.push({...entry,amount:tipAmount,component:'tips',direction:'IN',economicType:'TIPS'});
+    }
     const existing = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } });
     if (targetId && !existing && !fromDeposit) throw new NotFoundException('Перенесённая оплата не найдена');
     if (existing) {
