@@ -179,6 +179,16 @@ const context = {
     },
   },
   personalAccounts: { endUserSummary: async () => personalAccountView },
+  // Canonical DepositService already reconstructs balances of old expiries
+  // from FinanceOperation; account-facing cards reuse its result.
+  deposits: {
+    list: async (_tenantId, personKey) => assignedRows
+      .filter(row => row.personKey === personKey)
+      .map(row => ({
+        ...row, fundedAmount: row.initialAmount,
+        discountPercent: row.status === 'active' ? 20 : 0,
+      })),
+  },
 };
 context.visibleDepositSummaries = programRuntime.visibleDepositSummaries.bind(context);
 const assignedPrograms = () => programRuntime.programSummaries.call(
