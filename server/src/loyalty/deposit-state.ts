@@ -56,6 +56,24 @@ export function depositTermActiveAt(value: unknown, at: Date) {
   return day <= end;
 }
 
+// Historical visibility is based on effective date, not a present-day status.
+// Materialized balances/status may have been cleared by expiry after the visit.
+function depositWasFundedAt(row: { fundedAt?: Date | string }, at: Date) {
+  const funded = row.fundedAt && typeof (row.fundedAt as Date).toISOString === 'function'
+    ? (row.fundedAt as Date).toISOString() : text(row.fundedAt);
+  return !funded || funded.slice(0, 10) <= at.toISOString().slice(0, 10);
+}
+
+function depositPriceEligibleAt(row: { status: string; fundedAt?: Date | string; terms: unknown }, at: Date) {
+  const status = text(row.status);
+  // A previously expired deposit is valid for pricing a PAST visit inside
+  // its term, never for a visit today or in the future.
+  const historical = at.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
+  return (status === 'active' || (historical && status === 'expired'))
+    && depositWasFundedAt(row, at)
+    && depositTermActiveAt(row.terms, at);
+}
+
 export function depositPersonKey(value: unknown) {
   const person = objectValue(value);
   return text(person.key ?? person.personKey ?? person.id);
@@ -133,24 +151,6 @@ export async function createDepositInstance(db: Db, tenantId: string, input: {
       fundingOperationId: input.fundingOperationId,
     },
   });
-}
-
-// Historical visibility is based on effective date, not a present-day status.
-// Materialized balances/status may have been cleared by expiry after the visit.
-function depositWasFundedAt(row: { fundedAt?: Date | string }, at: Date) {
-  const funded = row.fundedAt && typeof (row.fundedAt as Date).toISOString === 'function'
-    ? (row.fundedAt as Date).toISOString() : text(row.fundedAt);
-  return !funded || funded.slice(0, 10) <= at.toISOString().slice(0, 10);
-}
-
-function depositPriceEligibleAt(row: { status: string; fundedAt?: Date | string; terms: unknown }, at: Date) {
-  const status = text(row.status);
-  // A previously expired deposit is valid for pricing a PAST visit inside
-  // its term, never for a visit today or in the future.
-  const historical = at.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
-  return (status === 'active' || (historical && status === 'expired'))
-    && depositWasFundedAt(row, at)
-    && depositTermActiveAt(row.terms, at);
 }
 
 // One canonical projection of an active deposit into its price-condition source.
