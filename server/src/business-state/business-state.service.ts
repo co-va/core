@@ -168,11 +168,23 @@ export class BusinessStateService {
     const normalizedKey = text(key);
     if (!normalizedKey) throw new BadRequestException('У Person отсутствует key');
     person.key = normalizedKey;
-    await withTenantHistoryActor(this.prisma, actor, tx => tx.person.upsert({
-      where: { tenantId_key: { tenantId, key: normalizedKey } },
-      create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
-      update: { position: positionValue(source.position), data: json(person) },
-    }));
+    await withTenantHistoryActor(this.prisma, actor, async tx => {
+      const stored = await tx.person.findUnique({ where: { tenantId_key: { tenantId, key: normalizedKey } } });
+      const savedSource = text(objectValue(stored?.data).creationSource);
+      // Contact origin belongs to the initial creation, not to subsequent
+      // edits, account linking, Excel matching or registration.
+      if (stored) {
+        if (savedSource) person.creationSource = savedSource;
+        else delete person.creationSource;
+      } else if (!['import', 'registration', 'manual'].includes(text(person.creationSource))) {
+        person.creationSource = 'manual';
+      }
+      return tx.person.upsert({
+        where: { tenantId_key: { tenantId, key: normalizedKey } },
+        create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
+        update: { position: positionValue(source.position), data: json(person) },
+      });
+    });
     return person;
   }
 
@@ -189,7 +201,11 @@ export class BusinessStateService {
     if (!text(input.name) && !resolved.person) throw new BadRequestException('Не указано имя');
     const previous = resolved.person;
     const key = previous?.key || randomUUID();
-    const person: JsonObject = { ...(previous || {}), key };
+    const person: JsonObject = {
+      ...(previous || {}), key,
+      // The importer must not relabel a contact that already existed.
+      ...(!previous ? { creationSource: 'import' } : {}),
+    };
     for (const field of ['name', 'surname', 'createdAt','birthDate','gender']) {
       if (input[field] === undefined) continue;
       const value = text(input[field]); const current = text(previous?.[field]);
