@@ -186,7 +186,9 @@ const context = {
       .filter(row => row.personKey === personKey)
       .map(row => ({
         ...row, fundedAmount: row.initialAmount,
-        discountPercent: row.status === 'active' ? 20 : 0,
+        discountPercent: row.status === 'active'
+          && (!row.terms.termEndDate || row.terms.termEndDate >= new Date().toISOString().slice(0, 10))
+          ? 20 : 0,
       })),
   },
 };
@@ -260,7 +262,7 @@ assignedRows = [{ ...assignedRows[0], status: 'closed', terms: program.terms }];
 assigned = await assignedPrograms();
 assert.equal(assigned[0].discountPercent, 0, 'Closed program cannot advertise an active percent');
 
-assert.match(service, /depositPriceSourcesFromRows\(rows, personKey, new Date\(\)\)/,
+assert.match(service, /this\.deposits\.list\(tenantId, personKey\)/,
   'Program discount and Person discount use one existing canonical source');
 
 
