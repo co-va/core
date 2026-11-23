@@ -325,6 +325,11 @@ export class RecordService {
     const visitName=text(input.visitStatus);
     const paymentName=text(input.paymentStatus);
     const actorName=text(input.bookedBy);
+    const importedSource=text(input.integrationSource);
+    const sourceName=({
+      'Онлайн-запись':'online-booking','Приложение':'account-journal',
+      'Журнал':'journal',
+    } as Record<string,string>)[importedSource] || importedSource;
     if (actionName && !['Записался','Перенёс','Отменил','Удалена'].includes(actionName))
       throw new BadRequestException('Статус записи: выберите Записался, Перенёс или Отменил');
     if (visitName && !['Ожидает','Пришёл','Не пришёл'].includes(visitName))
@@ -360,7 +365,8 @@ export class RecordService {
       ...(input.quotedTotal !== undefined ? { historicalQuotedTotal:Number(input.quotedTotal) } : {}),
       ...(input.comment ? { historicalComment:text(input.comment) } : {}),
       ...(input.integrationSource ? { historicalIntegrationSource:text(input.integrationSource) } : {}),
-      ...(actorName ? { source: actorName === 'Самостоятельно' ? 'online-booking' : 'journal' } : {}),
+      ...(sourceName ? { source:sourceName } : actorName
+        ? { source:actorName==='Самостоятельно'?'online-booking':'journal' } : {}),
       ...(actionName ? { historicalAction: actionName } : {}),
       ...(visitName ? { historicalVisit: visitName } : {}),
       ...(paymentName ? { historicalPaymentStatus: paymentName } : {}),
