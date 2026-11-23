@@ -42,7 +42,7 @@ export class DepositExcelService {
   }
   async apply(tenantId:string,body:unknown){
     const result=await this.prisma.$transaction(async(tx)=>{
-      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1)) AS lock',tenantId);
+      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))::text AS lock',tenantId);
       const result=await this.analyze(tenantId,body,tx);
       const {plan}=result;
       if(text(obj(body).batchId)&&text(obj(body).batchId)!==result.batchId)
