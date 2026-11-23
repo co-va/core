@@ -229,7 +229,16 @@ export async function selectedDepositPriceSource(
   };
 }
 
-export async function consumeDepositAllocations(db: Db, tenantId: string, values: unknown, expectedPersonKey: string, occurredAt: Date, historical = false) {
+export async function consumeDepositAllocations(
+  db: Db, tenantId: string, values: unknown, expectedPersonKey: string,
+  occurredAt: Date, historical = false, visitAt: Date | null = null,
+) {
+  // The visit controls entitlement; the operation date controls when the
+  // payment was actually recorded. These dates must not be conflated.
+  const eligibilityAt = visitAt || occurredAt;
+  const visitDay = eligibilityAt.toISOString().slice(0, 10);
+  const historicalVisit = visitDay < new Date().toISOString().slice(0, 10);
+  const historicalCutoff = new Date(visitDay + 'T23:59:59.999Z');
   const requested = normalizedDepositAllocations(values);
   const seen = new Set<string>();
   const result: DepositAllocation[] = [];
@@ -248,9 +257,8 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
     // from FinanceOperation and ensure later payments
     // cannot become overdrawn as a result of backfilled spending.
     if (historical && row.status === 'expired'
-      && depositPriceEligibleAt(row, occurredAt)) {
-      const fundedAt = row.fundedAt instanceof Date ? row.fundedAt : new Date(row.fundedAt);
-      if (!Number.isFinite(fundedAt.getTime()) || occurredAt < fundedAt) {
+      && depositPriceEligibleAt(row, eligibilityAt)) {
+      if (!depositWasFundedAt(row, eligibilityAt) || !depositWasFundedAt(row, occurredAt)) {
         throw new BadRequestException('Оплата раньше первого внесения депозита невозможна');
       }
       const operations = await db.financeOperation.findMany({
@@ -259,7 +267,7 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
       });
       let historical;
       try {
-        historical = depositHistoricalLedger(operations, row.depositId, row.terms, occurredAt, request.amount);
+        historical = depositHistoricalLedger(operations, row.depositId, row.terms, historicalCutoff, request.amount);
       } catch (error) {
         throw new BadRequestException(error instanceof Error ? error.message : 'Недостаточно средств на дату визита');
       }
@@ -274,16 +282,41 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
       });
       continue;
     }
-    if (row.status !== 'active' || !depositTermActiveAt(row.terms, occurredAt)) {
+    if (row.status !== 'active' || !depositPriceEligibleAt(row, eligibilityAt)
+      || !depositWasFundedAt(row, occurredAt)) {
       throw new BadRequestException(`Депозит «${row.programName || 'Депозит'}» недоступен для оплаты`);
     }
     const principal = depositMoney(row.principalBalance);
     const benefit = depositMoney(row.benefitBalance);
     const available = depositMoney(row.balance);
+    // An old visit cannot consume top-ups received after that date. Check
+    // the entire ledger, including subsequent payments, for negative balances.
+    let historicalSplit: { amount: number; principalAmount: number; benefitAmount: number } | null = null;
+    if (historicalVisit) {
+      const operations = await db.financeOperation.findMany({
+        where: { tenantId, kind: { in: ['deposit-funding', 'deposit-withdrawal', 'payment', 'refund'] } },
+        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+      });
+      try {
+        historicalSplit = depositHistoricalLedger(
+          operations, row.depositId, row.terms, historicalCutoff, request.amount,
+        ).allocation;
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Недостаточно средств на дату визита');
+      }
+      if (!historicalSplit) throw new BadRequestException('Не удалось определить историческое списание');
+    }
     if (request.amount > available + 0.009) throw new BadRequestException(`На депозите «${row.programName || 'Депозит'}» недостаточно средств`);
 
-    const principalAmount = Math.min(principal, request.amount);
-    const benefitAmount = Math.min(benefit, depositMoney(request.amount - principalAmount));
+    if (historicalSplit
+      && (historicalSplit.principalAmount > principal + 0.009
+        || historicalSplit.benefitAmount > benefit + 0.009)) {
+      throw new BadRequestException('Историческое списание превышает текущий остаток депозита');
+    }
+    const principalAmount = historicalSplit
+      ? historicalSplit.principalAmount : Math.min(principal, request.amount);
+    const benefitAmount = historicalSplit
+      ? historicalSplit.benefitAmount : Math.min(benefit, depositMoney(request.amount - principalAmount));
     const nextPrincipal = depositMoney(principal - principalAmount);
     const nextBenefit = depositMoney(benefit - benefitAmount);
     const nextBalance = depositMoney(nextPrincipal + nextBenefit);
