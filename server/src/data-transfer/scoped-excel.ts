@@ -133,7 +133,7 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         actionStatus:get('Статус записи'),changedBy:get('Кто изменил'),
         changedDate:at('Дата изменения')||undefined,
         changedTime:at('Время изменения')||undefined,
-        quotedTotal:at('Стоимость записи')||undefined,
+        quotedTotal:meaningful(at('Стоимость записи'))?at('Стоимость записи'):undefined,
         visitStatus:get('Посещение'),paymentStatus,
         comment:get('Комментарий'),integrationSource:get('Источник интеграции'),
         bookedBy:get('Кто записал'),procedures:JSON.stringify(procedures),
