@@ -333,10 +333,11 @@ export class PaymentSettlementService {
 
       const depositAllocations = await consumeDepositAllocations(
         tx, tenantId, requestedDepositAllocations, ownerKey,
-        // Date of visit determines eligibility even if payment is prepaid.
-        // Finance operation time still owns ledger ordering.
-        recordVisitAt && !historicalRecordPayment ? recordVisitAt : occurredAt,
+        // Keep the actual money-operation date separate from the visit date.
+        // An older visit must never use funding received after that visit.
+        occurredAt,
         historicalRecordPayment,
+        recordVisitAt,
       );
       if (personalAccountAmount > 0) {
         await applyPersonalAccountMovement(tx, {
