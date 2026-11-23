@@ -165,12 +165,16 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
     // different wallets or amounts remain different financial movements.
     const financeSource=get('Источник интеграции')||source;
     const sourceKey=newFinance
-      ? financeSource+':finance:'+JSON.stringify([
-          get('Номер документа'),get('Рабочее пространство'),get('Дата счёта'),
-          get('Время'),get('Код'),get('Имя / название'),
-          get('Назначение'),get('Наименование'),get('Движение'),
-          get('Оплачено'),get('Дата оплаты'),get('Кошелёк'),
-        ])
+      ? financeSource+':finance:'+JSON.stringify(get('Номер документа')
+          // A document number identifies a source invoice, not a single payment.
+          // Wallet + date + subject distinguish the payments under that invoice.
+          ?[get('Номер документа'),get('Дата оплаты'),get('Кошелёк'),
+            get('Наименование'),get('Движение')]
+          // Without a source ID the full economic fact is the only stable key.
+          :[get('Рабочее пространство'),get('Дата счёта'),
+            get('Время'),get('Код'),get('Имя / название'),
+            get('Назначение'),get('Наименование'),get('Движение'),
+            get('Оплачено'),get('Дата оплаты'),get('Кошелёк')])
       :external ? source+':'+domain+':'+external : (sheet.stableFingerprint || fingerprint)+':'+(n+2);
     if (domain === 'records') {
       const procedures: any[] = [];
