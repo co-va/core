@@ -222,4 +222,19 @@ await assert.rejects(
   'Backdated payment before the first real funding cannot consume a future visit',
 );
 
+// A genuine dated backfill is still possible while the deposit is active.
+activeHistory = [op('deposit-funding', '2026-11-01T12:00:00.000Z', 300)];
+active.principalBalance = 300;
+active.balance = 300;
+const backdated = await consumeDepositAllocations(activeTx, 'tenant-1',
+  [{ depositId: deposit, amount: 100 }], 'person-1',
+  new Date('2026-11-15T12:00:00.000Z'), true, oldVisitAt);
+assert.equal(backdated[0].amount, 100);
+assert.equal(activeWrites.at(-1).balance, 200,
+  'Dated backfill on an active program updates its current balance');
+const prepaid = await consumeDepositAllocations(activeTx, 'tenant-1',
+  [{ depositId: deposit, amount: 50 }], 'person-1', currentPaymentAt, false, futureVisitAt);
+assert.equal(prepaid[0].amount, 50,
+  'An eligible future appointment can be prepaid with money already received');
+
 console.log('Historical deposit ledger: PASS');
