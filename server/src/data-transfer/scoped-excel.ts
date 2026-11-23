@@ -86,7 +86,7 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
     && sheet.headers.includes('Визит') && (sheet.rows[0] || []).includes('Код клиента');
   const headers = grouped ? sheet.rows[0].map(text) : sheet.headers;
   const first = grouped ? 1 : 0;
-  if(domain==='records')for(const label of ['Рабочее пространство','Имя','Время начала','Услуга 1']){
+  if(domain==='records')for(const label of ['Рабочее пространство','Имя','Услуга 1']){
     if(headers.filter(h=>h===label).length!==1)
       throw Error('Отсутствует столбец «'+label+'». Скачайте шаблон Записей.');
   }
