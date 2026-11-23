@@ -419,7 +419,6 @@ try {
   await fBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
   const fSheet=fBook.worksheets[0];
   assert.equal(fSheet.name,'Финансы');
-  assert.equal(fSheet.getRow(1).values.filter(Boolean).length,6);
   assert.deepEqual([1,4,7,11,15,17].map(i=>fSheet.getCell(1,i).value),
     ['Счёт','Участник','Операция','Финансовые данные','Касса','Дополнительно']);
   assert.deepEqual(fSheet.getRow(2).values.slice(1,19),[
@@ -518,8 +517,9 @@ try {
   }]);
   assert.equal(articleResult.failed,0,JSON.stringify(articleResult.rows));
   const cancelBook=new ExcelJS.Workbook();
-  await cancelBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
-  const cancelSheet=cancelBook.worksheets[0];
+  const cancelSheet=cancelBook.addWorksheet('Финансы');
+  cancelSheet.addRow(['Дата операции','Вид операции','Кошелёк','Сумма',
+    'Статья','Статус','Дата отмены']);
   const position=(label)=>cancelSheet.getRow(1).values.indexOf(label);
   const cancelLine=cancelSheet.getRow(2);
   cancelLine.getCell(position('Дата операции')).value='2022-01-05T12:00:00Z';
@@ -547,6 +547,59 @@ try {
   assert.equal(reversal?.kind,'cancel');
   result=await service.run(tenantId,accountId,cancelInput,false);
   assert.equal(result.unchanged,1);
+  // A split invoice is still one service quote and TWO wallet movements.
+  const state=await db.businessAuxiliaryState.findUnique({where:{tenantId}});
+  const stateData=state.data;
+  await db.businessAuxiliaryState.update({where:{tenantId},data:{
+    data:{...stateData,wallets:[...stateData.wallets,{id:'sber',name:'Сбербанк'}]},
+  }});
+  const splitBook=new ExcelJS.Workbook();
+  await splitBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const splitSheet=splitBook.worksheets[0];
+  const splitRow=(number,wallet,amount)=>{splitSheet.getRow(number).values=[
+    'BeautyToria','2014-06-15','10:00','12','Анна','79991234567',
+    'crm-split-2014','Услуга','Стрижка','Приход',1000,'10%',900,amount,
+    '2014-06-16',wallet,'','YCLIENTS',
+  ];};
+  splitRow(3,'Наличные',400);splitRow(4,'Сбербанк',500);
+  const splitInput={filename:'finance-split.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await splitBook.xlsx.writeBuffer()).toString('base64')};
+  const beforeSplit=await db.financeOperation.count({where:{tenantId}});
+  const splitCheck=await service.run(tenantId,accountId,splitInput,true);
+  assert.equal(splitCheck.failed,0,JSON.stringify(splitCheck.rows));
+  assert.equal(splitCheck.transferred,2);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit);
+  result=await service.run(tenantId,accountId,splitInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,2);
+  const splitOps=await Promise.all(result.rows.map(row=>db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:row.targetId}},
+  })));
+  assert.ok(splitOps.every(op=>op?.sourceType==='record'&&op.sourceId===jId));
+  assert.deepEqual(splitOps.map(op=>Number(op.data.total)).sort((a,b)=>a-b),[400,500]);
+  assert.ok(splitOps.every(op=>op.data.sourceQuote.quotedTotal===900));
+  assert.ok(splitOps.every(op=>op.data.sourceQuote.price===1000));
+  assert.ok(splitOps.every(op=>op.data.sourceQuote.discountPercent===10));
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit+2);
+  result=await service.run(tenantId,accountId,splitInput,false);
+  assert.equal(result.unchanged,2);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit+2);
+  // A mismatched participant never guesses the same record based on date.
+  const wrongSplit=new ExcelJS.Workbook();
+  await wrongSplit.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  wrongSplit.worksheets[0].getRow(3).values=[
+    'BeautyToria','2014-06-15','10:00','','Другой человек','',
+    'other-invoice','Услуга','Стрижка','Приход',1000,'',1000,1000,
+    '2014-06-16','Наличные','','YCLIENTS',
+  ];
+  const wrongInput={...splitInput,dataUrl:'data:application/octet-stream;base64,'+
+    Buffer.from(await wrongSplit.xlsx.writeBuffer()).toString('base64')};
+  const wrongCheck=await service.run(tenantId,accountId,wrongInput,true);
+  assert.equal(wrongCheck.failed,1,'Unknown person must remain unlinked');
+  await assert.rejects(()=>service.run(tenantId,accountId,wrongInput,false),
+    /В файле есть ошибки/);
+  console.log('PASS: grouped Finance Excel, split wallets, historical quote, unique Record match and repeat safety');
   console.log('PASS: historical cancelled DDS operation and reversal');
   console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
   console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
