@@ -506,6 +506,7 @@ export class DepositService {
         where: { id: operation.id },
         data: {
           occurredAt: nextOccurredAt,
+          walletResolution: 'resolved',
           data: {
             ...clone(previous), amount: nextAmount, total: nextAmount,
             walletId: nextWalletId, walletName: nextWalletName,
