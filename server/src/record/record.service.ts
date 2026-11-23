@@ -170,6 +170,7 @@ export class RecordService {
         return id
           && id !== excludeRecordId
           && !cancelled.has(id)
+          && text(record?.historicalAction) !== 'Отменил'
           && text(record?.workplaceId) === workplaceId
           && dateValue(record?.date) === date;
       })
@@ -401,7 +402,7 @@ export class RecordService {
       .map((row) => objectValue(row.data))
       .filter((record) => {
         const id = text(record.id);
-        return id && !cancelled.has(id);
+        return id && !cancelled.has(id) && text(record?.historicalAction) !== 'Отменил';
       })
       .map((record) => ({
         id: text(record.id),
@@ -415,9 +416,10 @@ export class RecordService {
   }
 
   private projectLifecycle(record: JsonObject, events: JsonObject[]) {
-    let status = 'active';
+    let status = text(record.historicalAction)==='Отменил' ? 'cancelled' : 'active';
     let confirmed = false;
-    let attendance = '';
+    let attendance = text(record.historicalVisit)==='Пришёл' ? 'arrived'
+      : text(record.historicalVisit)==='Не пришёл' ? 'no-show' : '';
     let confirmedAt = '';
     let attendanceAt = '';
     let cancelledAt = '';
