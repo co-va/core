@@ -6,6 +6,7 @@ const source = readFileSync(new URL('../server/src/loyalty/deposit-history.ts', 
   .replaceAll('export ', '');
 const { depositHistoricalLedger } = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'strip' }) + '\n({ depositHistoricalLedger })',
+  { Error }, // Share the native Error constructor with the second VM context.
 );
 
 const deposit = 'deposit-2024';
@@ -64,7 +65,7 @@ const body = state.slice(state.indexOf('function objectValue('),
   state.indexOf('export async function restoreDepositAllocations(')).replaceAll('export ', '');
 const { consumeDepositAllocations, expireDepositInstances } = runInNewContext(
   stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ consumeDepositAllocations, expireDepositInstances })',
-  { depositHistoricalLedger, BadRequestException: class extends Error {} },
+  { depositHistoricalLedger, Error, BadRequestException: class extends Error {} },
 );
 let updates = 0;
 const autoExpiryWrites = [];
