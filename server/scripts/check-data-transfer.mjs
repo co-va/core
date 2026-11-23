@@ -380,7 +380,7 @@ try {
   assert.equal(jExportSheet.rowCount,3);
   assert.equal(jExportSheet.getCell(3,17).value,'Стрижка');
   assert.equal(jExportSheet.getCell(3,18).value,'Укладка');
-  assert.equal(jExportSheet.getCell(3,27).value,3500);
+  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('Стоимость записи')).value,3500);
   assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('ID записи')).value,jId);
   const jInvalid=new ExcelJS.Workbook();
   await jInvalid.xlsx.load(await service.workbook({domain:'records',template:true}));
