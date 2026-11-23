@@ -129,4 +129,20 @@ assert.match(currentViewSource, /row.status === 'expired'\s*\? depositHistorical
 const paySource = readFileSync(new URL('../server/src/finance/payment-settlement.service.ts', import.meta.url), 'utf8');
 assert.match(paySource, /recordVisitAt && !historicalRecordPayment \? recordVisitAt : occurredAt/,
   'Prepaid deposits must be validated against the visit date, not transaction date');
+const prematureTx = {
+  ...tx,
+  loyaltyDepositInstance: {
+    ...tx.loyaltyDepositInstance,
+    findUnique: async () => ({
+      ...expired, terms: { ...expired.terms, termEndDate: '2099-12-31' },
+    }),
+  },
+};
+await assert.rejects(
+  consumeDepositAllocations(prematureTx, 'tenant-1',
+    [{ depositId: deposit, amount: 100 }], 'person-1',
+    new Date('2024-03-15T14:00:00Z'), true),
+  /недоступен/,
+  'Manually ended assignment must not regain spendability through historical backfill',
+);
 console.log('Historical deposit ledger: PASS');
