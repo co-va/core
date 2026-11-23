@@ -336,7 +336,7 @@ try {
   putJ(jSheet,3,{
     'Рабочее пространство':'BeautyToria',
     'Код клиента':'12','Имя':'Анна','Телефон':'79991234567','Email':'anna.booking@example.test',
-    'Дата визита':'2014-06-15','Время начала':'10:00',
+    'Дата визита':'2014-06-15','Время визита':'10:00',
     'Создание записи/Имя':'Администратор','Создание записи/Дата':'2014-06-01',
     'Создание записи/Время':'09:30','История записи/Статус':'Записался',
     'История записи/Имя':'Администратор','История записи/Дата':'2014-06-02',
@@ -419,8 +419,21 @@ try {
   await fBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
   const fSheet=fBook.worksheets[0];
   assert.equal(fSheet.name,'Финансы');
-  fSheet.getRow(2).values=[
-    '', '2014-06-15T10:00:00Z','Оплата услуги','Наличные',750,'','',jId,
+  assert.equal(fSheet.getRow(1).values.filter(Boolean).length,6);
+  assert.deepEqual([1,4,7,11,15,17].map(i=>fSheet.getCell(1,i).value),
+    ['Счёт','Участник','Операция','Финансовые данные','Касса','Дополнительно']);
+  assert.deepEqual(fSheet.getRow(2).values.slice(1,19),[
+    'Рабочее пространство','Дата счёта','Время','Код','Имя / название',
+    'Телефон','Номер документа','Назначение','Наименование','Движение',
+    'Цена','Скидка','К оплате','Оплачено','Дата оплаты','Кошелёк',
+    'Комментарий','Источник интеграции',
+  ]);
+  assert.equal(fSheet.getCell(2,2).fill.fgColor.argb,'FF303238');
+  assert.equal(fSheet.getCell(2,2).font.color.argb,'FFFFFFFF');
+  fSheet.getRow(3).values=[
+    'BeautyToria','2014-06-15','10:00','12','Анна','79991234567',
+    'invoice-001','Услуга','Стрижка','Приход',750,'',750,750,
+    '2014-06-15','Наличные','','YCLIENTS',
   ];
   const fPayload={filename:'ДДС.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await fBook.xlsx.writeBuffer()).toString('base64')};
@@ -449,8 +462,11 @@ try {
   assert.ok(latestPaymentId);
   const fRoundtripBook=new ExcelJS.Workbook();
   await fRoundtripBook.xlsx.load(await service.workbook({domain:'finance',rows:[{
-    operationId:latestPaymentId,occurredAt:'2014-06-15T10:00:00Z',
-    kind:'Оплата услуги',wallet:'Наличные',amount:750,recordId:jId,
+    workplace:'BeautyToria',invoiceDate:'2014-06-15',invoiceTime:'10:00',
+    participantCode:'12',participant:'Анна',phone:'79991234567',
+    documentNumber:latestPaymentId,purpose:'Услуга',subject:'Стрижка',
+    direction:'Приход',price:750,quotedTotal:750,amount:750,
+    paymentDate:'2014-06-15',wallet:'Наличные',integrationSource:'YCLIENTS',
   }]}));
   const fRoundtrip={filename:'Финансы.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
     dataUrl:'data:application/octet-stream;base64,'+
@@ -461,8 +477,8 @@ try {
 
   // Cash refund correctly reduces the real payment; no deposit entry is invented.
   const refundBook=new ExcelJS.Workbook();
-  await refundBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
-  const refundSheet=refundBook.worksheets[0];
+  const refundSheet=refundBook.addWorksheet('Финансы');
+  refundSheet.addRow(['Дата операции','Вид операции','Кошелёк','Сумма','Исходная оплата']);
   const refundRow=refundSheet.getRow(2);
   const index=(label)=>refundSheet.getRow(1).values.indexOf(label);
   refundRow.getCell(index('Дата операции')).value='2014-06-20T10:00:00Z';
