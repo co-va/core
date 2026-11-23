@@ -82,6 +82,17 @@ const expiryDb = {
 await expireDepositInstances(expiryDb, 'tenant-1', deposit);
 assert.deepEqual(JSON.parse(JSON.stringify(autoExpiryWrites)), [{ status: 'expired' }],
   'On expiry Core must only change status, NEVER zero unused principal/benefit/balance');
+autoExpiryWrites.length = 0;
+await expireDepositInstances({
+  loyaltyDepositInstance: {
+    findMany: async () => [{
+      ...oldDeposit,
+      terms: { ...oldDeposit.terms, termStartDate: '2099-01-01', termEndDate: '2099-12-31' },
+    }],
+    update: async (value) => { autoExpiryWrites.push(value.data); },
+  },
+}, 'tenant-1', deposit);
+assert.equal(autoExpiryWrites.length, 0, 'A future start must not be confused with expiration');
 const expired = {
   id: deposit, depositId: deposit, personKey: 'person-1', status: 'expired',
   terms: { ...terms, termMode: 'dated', termStartDate: '2024-01-01', termEndDate: '2025-01-31' },
