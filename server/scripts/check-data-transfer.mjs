@@ -323,7 +323,7 @@ try {
   };
   putJ(jSheet,3,{
     'Рабочее пространство':'BeautyToria',
-    'Код клиента':'12','Имя':'Анна','Телефон':'79991234567',
+    'Код клиента':'12','Имя':'Анна','Телефон':'79991234567','Email':'anna.booking@example.test',
     'Дата визита':'2014-06-15','Время начала':'10:00',
     'Кто создал':'Администратор','Дата создания':'2014-06-01',
     'Время создания':'09:30','Статус записи':'Записался',
@@ -361,6 +361,7 @@ try {
   assert.equal(jRecord.historicalChangedTime,'10:45');
   assert.equal(jRecord.historicalQuotedTotal,3500);
   assert.equal(jRecord.historicalComment,'Подтверждение по телефону');
+  assert.equal(jRecord.person.email,'anna.booking@example.test');
   assert.equal(jRecord.historicalIntegrationSource,'Онлайн-запись');
   assert.equal(jRecord.source,'online-booking','Source meaning survives import');
   assert.equal(await db.financeOperation.count({where:{tenantId}}),beforePayments,
