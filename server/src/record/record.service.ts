@@ -396,8 +396,8 @@ export class RecordService {
   // creates an appointment, changes its price or guesses between candidates.
   async matchFinancialRecord(tenantId:string,input:JsonObject,tx:Prisma.TransactionClient) {
     const norm=(value:unknown)=>text(value).toLocaleLowerCase('ru-RU')
-      .replace(/ё/g,'е').replace(/\\s+/g,' ').trim();
-    const digits=(value:unknown)=>text(value).replace(/\\D/g,'').slice(-10);
+      .replace(/ё/g,'е').replace(/\s+/g,' ').trim();
+    const digits=(value:unknown)=>text(value).replace(/\D/g,'').slice(-10);
     const date=dateValue(input.date);
     const subject=norm(input.subject || input.procedure);
     const phone=digits(input.phone);
