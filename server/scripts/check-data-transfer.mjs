@@ -258,6 +258,186 @@ try {
   assert.equal(existingExport.worksheets[0].getCell(2,1).value,'Ксения');
   assert.equal(existingExport.worksheets[0].getCell(2,9).value,importedPerson.key);
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
+  // Journal Excel: one row is exactly one Record; horizontal services, no sales or finance facts.
+  const jBook=new ExcelJS.Workbook();
+  await jBook.xlsx.load(await service.workbook({domain:'records',template:true}));
+  const jSheet=jBook.worksheets[0];
+  assert.equal(jBook.worksheets.length,1);
+  assert.equal(jSheet.name,'Записи');
+  assert.ok(jSheet.getRow(1).values.includes('Услуга 10'));
+  assert.ok(!jSheet.getRow(1).values.includes('Товар 1'));
+  jSheet.getRow(2).values=[
+    '', 'Анна','','79991234567','12','2014-06-15','10:00','11:00','BeautyToria',
+    'Самостоятельно','Записался','Не пришёл','Оплачено','',
+    'Стрижка','Укладка',
+  ];
+  const jPayload={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jBook.xlsx.writeBuffer()).toString('base64')};
+  const beforeJ=await db.record.count({where:{tenantId}});
+  const beforePayments=await db.financeOperation.count({where:{tenantId}});
+  const jPreview=await service.run(tenantId,accountId,jPayload,true);
+  assert.equal(jPreview.failed,0,JSON.stringify(jPreview.rows));
+  assert.equal(jPreview.transferred,1);
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ);
+  result=await service.run(tenantId,accountId,jPayload,false);
+  assert.equal(result.transferred,1,JSON.stringify(result.rows));
+  const jId=target(result,'records').targetId;
+  const jRecord=(await db.record.findUnique({where:{tenantId_recordId:{tenantId,recordId:jId}}})).data;
+  assert.equal(jRecord.procedures.length,2);
+  assert.equal(jRecord.procedures[0].name,'Стрижка');
+  assert.equal(jRecord.procedures[1].name,'Укладка');
+  assert.equal(jRecord.historicalVisit,'Не пришёл');
+  assert.equal(jRecord.historicalPaymentStatus,'Оплачено');
+  assert.equal(jRecord.source,'online-booking');
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforePayments,'Paid status does not create payments');
+  result=await service.run(tenantId,accountId,jPayload,false);
+  assert.equal(result.unchanged,1,'Repeat upload does not duplicate Record');
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
+  const jExport=new ExcelJS.Workbook();
+  await jExport.xlsx.load(await service.workbook({domain:'records',rows:[{
+    recordId:jId,name:'Анна',date:'2014-06-15',from:'10:00',to:'11:00',
+    workplace:'BeautyToria',bookedBy:'Самостоятельно',
+    services:[{name:'Стрижка',cost:2500,duration:45},{name:'Укладка',cost:1800,duration:30}],
+  }]}));
+  assert.equal(jExport.worksheets[0].rowCount,2);
+  assert.equal(jExport.worksheets[0].getCell(2,15).value,'Стрижка');
+  assert.equal(jExport.worksheets[0].getCell(2,16).value,'Укладка');
+  const jInvalid=new ExcelJS.Workbook();
+  await jInvalid.xlsx.load(await service.workbook({domain:'records',template:true}));
+  jInvalid.worksheets[0].getRow(2).values=[
+    '', 'Анна','','79991234567','12','2013-03-12','09:00','10:00','BeautyToria',
+    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',
+  ];
+  jInvalid.worksheets[0].getRow(3).values=[
+    '', 'Несуществующий','','79999992200','','2013-03-13','10:00','11:00','BeautyToria',
+    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',
+  ];
+  const jInvalidPayload={...jPayload,
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jInvalid.xlsx.writeBuffer()).toString('base64')};
+  assert.equal((await service.run(tenantId,accountId,jInvalidPayload,true)).failed,1);
+  await assert.rejects(()=>service.run(tenantId,accountId,jInvalidPayload,false),/В файле есть ошибки/);
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1,'No partial Journal upload');
+
+  // DDS Excel: one operation per row, real imported payment bound to Record.
+  const fBook=new ExcelJS.Workbook();
+  await fBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const fSheet=fBook.worksheets[0];
+  assert.equal(fSheet.name,'Финансы');
+  fSheet.getRow(2).values=[
+    '', '2014-06-15T10:00:00Z','Оплата услуги','Наличные',750,'','',jId,
+  ];
+  const fPayload={filename:'ДДС.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await fBook.xlsx.writeBuffer()).toString('base64')};
+  const beforeF=await db.financeOperation.count({where:{tenantId}});
+  result=await service.run(tenantId,accountId,fPayload,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,1);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF);
+  result=await service.run(tenantId,accountId,fPayload,false);
+  assert.equal(result.transferred,1,JSON.stringify(result.rows));
+  const journalPaymentId=target(result,'payments').targetId;
+  assert.equal((await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:journalPaymentId}},
+  })).sourceId,jId);
+  result=await service.run(tenantId,accountId,fPayload,false);
+  assert.equal(result.unchanged,1,'Repeat finance upload never duplicates payment');
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF+1);
+  // Exported Record and Finance files can be uploaded again without duplication.
+  const jRoundtrip={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await jExport.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,jRoundtrip,false);
+  assert.equal(result.unchanged,1,JSON.stringify(result.rows));
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
+  const latestPaymentId=journalPaymentId;
+  assert.ok(latestPaymentId);
+  const fRoundtripBook=new ExcelJS.Workbook();
+  await fRoundtripBook.xlsx.load(await service.workbook({domain:'finance',rows:[{
+    operationId:latestPaymentId,occurredAt:'2014-06-15T10:00:00Z',
+    kind:'Оплата услуги',wallet:'Наличные',amount:750,recordId:jId,
+  }]}));
+  const fRoundtrip={filename:'Финансы.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await fRoundtripBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,fRoundtrip,false);
+  assert.equal(result.unchanged,1,JSON.stringify(result.rows));
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF+1);
+
+  // Cash refund correctly reduces the real payment; no deposit entry is invented.
+  const refundBook=new ExcelJS.Workbook();
+  await refundBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const refundSheet=refundBook.worksheets[0];
+  const refundRow=refundSheet.getRow(2);
+  const index=(label)=>refundSheet.getRow(1).values.indexOf(label);
+  refundRow.getCell(index('Дата операции')).value='2014-06-20T10:00:00Z';
+  refundRow.getCell(index('Вид операции')).value='Возврат оплаты';
+  refundRow.getCell(index('Кошелёк')).value='Наличные';
+  refundRow.getCell(index('Сумма')).value=200;
+  refundRow.getCell(index('Исходная оплата')).value=latestPaymentId;
+  const refundInput={filename:'Возвраты.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await refundBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,refundInput,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  result=await service.run(tenantId,accountId,refundInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  const refundId=target(result,'operations').targetId;
+  const refundOp=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:refundId}},
+  });
+  assert.equal(refundOp.kind,'refund');
+  assert.equal(refundOp.originalOperationId,latestPaymentId);
+  result=await service.run(tenantId,accountId,refundInput,false);
+  assert.equal(result.unchanged,1);
+
+  // CSV is not a fake export-only format: the same header imports as a Record.
+  const csvText='Имя;Телефон;Дата;Рабочее пространство;Статус записи;Посещение;Оплата;Услуга 1\n'
+    +'Анна;79991234567;2012-05-06;BeautyToria;Записался;Пришёл;Не оплачено;Стрижка\n';
+  const csvInput={filename:'Записи.csv',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:text/csv;base64,'+Buffer.from(csvText).toString('base64')};
+  result=await service.run(tenantId,accountId,csvInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,1);
+  result=await service.run(tenantId,accountId,csvInput,false);
+  assert.equal(result.unchanged,1);
+  // Cancelled historical DDS facts create a genuine reversal, preserving zero cash effect.
+  const articleResult=await run('articles',[{
+    article:'Excel тест дохода',articleDirection:'Доход',articleEconomicType:'Прочий доход',
+  }]);
+  assert.equal(articleResult.failed,0,JSON.stringify(articleResult.rows));
+  const cancelBook=new ExcelJS.Workbook();
+  await cancelBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const cancelSheet=cancelBook.worksheets[0];
+  const position=(label)=>cancelSheet.getRow(1).values.indexOf(label);
+  const cancelLine=cancelSheet.getRow(2);
+  cancelLine.getCell(position('Дата операции')).value='2022-01-05T12:00:00Z';
+  cancelLine.getCell(position('Вид операции')).value='Доход';
+  cancelLine.getCell(position('Кошелёк')).value='Наличные';
+  cancelLine.getCell(position('Сумма')).value=100;
+  cancelLine.getCell(position('Статья')).value='Excel тест дохода';
+  cancelLine.getCell(position('Статус')).value='Отменена';
+  cancelLine.getCell(position('Дата отмены')).value='2022-01-07T10:00:00Z';
+  const cancelInput={filename:'Отменённые.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await cancelBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,cancelInput,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  result=await service.run(tenantId,accountId,cancelInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  const cancelledId=target(result,'operations').targetId;
+  const cancelled=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:cancelledId}},
+  });
+  assert.equal(cancelled.status,'cancelled');
+  const reversal=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:'cancel-'+cancelledId}},
+  });
+  assert.equal(reversal?.kind,'cancel');
+  result=await service.run(tenantId,accountId,cancelInput,false);
+  assert.equal(result.unchanged,1);
+  console.log('PASS: historical cancelled DDS operation and reversal');
+  console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
+  console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {

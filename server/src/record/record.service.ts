@@ -170,6 +170,7 @@ export class RecordService {
         return id
           && id !== excludeRecordId
           && !cancelled.has(id)
+          && text(record?.historicalAction) !== 'Отменил'
           && text(record?.workplaceId) === workplaceId
           && dateValue(record?.date) === date;
       })
@@ -320,6 +321,18 @@ export class RecordService {
       if(matches.length===1){existing=matches[0];id=existing.recordId;}
     }
     const previous = objectValue(existing?.data);
+    const actionName=text(input.actionStatus);
+    const visitName=text(input.visitStatus);
+    const paymentName=text(input.paymentStatus);
+    const actorName=text(input.bookedBy);
+    if (actionName && !['Записался','Перенёс','Отменил'].includes(actionName))
+      throw new BadRequestException('Статус записи: выберите Записался, Перенёс или Отменил');
+    if (visitName && !['Ожидает','Пришёл','Не пришёл'].includes(visitName))
+      throw new BadRequestException('Посещение: выберите Ожидает, Пришёл или Не пришёл');
+    if (paymentName && !['Не оплачено','Частично','Оплачено'].includes(paymentName))
+      throw new BadRequestException('Оплата: выберите Не оплачено, Частично или Оплачено');
+    if (actorName && !['Самостоятельно','Профессионал'].includes(actorName))
+      throw new BadRequestException('Кто записал: выберите Самостоятельно или Профессионал');
     if (!targetId && !input.appendProcedures) {
       const rows = await tx.record.findMany({ where: { tenantId } });
       const matches = rows.map(row => objectValue(row.data)).filter(record => text(record.person?.key) === text(input.person?.key)
@@ -338,6 +351,10 @@ export class RecordService {
       from: input.from!==undefined?text(input.from):text(previous.from), to: input.to!==undefined?text(input.to):text(previous.to), person: clone(input.person), procedures,
       timePrecision: (input.from!==undefined?input.from:previous.from) ? 'minute' : 'date', historicalTransfer: true,
       ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
+      ...(actorName ? { source: actorName === 'Самостоятельно' ? 'online-booking' : 'journal' } : {}),
+      ...(actionName ? { historicalAction: actionName } : {}),
+      ...(visitName ? { historicalVisit: visitName } : {}),
+      ...(paymentName ? { historicalPaymentStatus: paymentName } : {}),
     };
     if (input.from) {
       const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(input.workplaceId) } } });
@@ -385,7 +402,7 @@ export class RecordService {
       .map((row) => objectValue(row.data))
       .filter((record) => {
         const id = text(record.id);
-        return id && !cancelled.has(id);
+        return id && !cancelled.has(id) && text(record?.historicalAction) !== 'Отменил';
       })
       .map((record) => ({
         id: text(record.id),
@@ -399,9 +416,10 @@ export class RecordService {
   }
 
   private projectLifecycle(record: JsonObject, events: JsonObject[]) {
-    let status = 'active';
+    let status = text(record.historicalAction)==='Отменил' ? 'cancelled' : 'active';
     let confirmed = false;
-    let attendance = '';
+    let attendance = text(record.historicalVisit)==='Пришёл' ? 'arrived'
+      : text(record.historicalVisit)==='Не пришёл' ? 'no-show' : '';
     let confirmedAt = '';
     let attendanceAt = '';
     let cancelledAt = '';

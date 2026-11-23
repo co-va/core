@@ -25,7 +25,7 @@ export const DOMAIN_FIELDS: Record<string, string[]> = {
   consumables: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','withoutProcedure','itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','occurredAt','workplace','workplaceKey'],
 };
 export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean; stableFingerprint?: string };
-export type SourceInput = { dataUrl?: string; filename?: string; source?: string; strict?: boolean; expectedDomain?: 'people'; withoutProcedureFacts?: string[]; sheets?: Record<string, { domain: string; columns?: Record<string, number> }> };
+export type SourceInput = { dataUrl?: string; filename?: string; source?: string; strict?: boolean; expectedDomain?: 'people' | 'records' | 'finance'; withoutProcedureFacts?: string[]; sheets?: Record<string, { domain: string; columns?: Record<string, number> }> };
 function cellValue(value: any): any {
   if (value == null || value instanceof Date || typeof value !== 'object') return value ?? '';
   // Do not execute formulas or accept stale cached formula results as source facts.

@@ -279,7 +279,72 @@ export class FinanceService {
     await createDepositInstance(tx,tenantId,{depositId:id,programId:program.id,programName:program.name,person:input.person,terms:clone(program),amount,occurredAt,fundingOperationId:id});
     await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-funding',source:{type:'deposit',id},occurredAt,data:{depositId:id,programId:program.id,programName:program.name,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName,terms:clone(program)},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'IN',economicType:'DEPOSIT_RECEIVED',amount,component:'deposit-funding'}]});return id;
   }
+  // Historical wallet refunds stay inside the same Finance transaction as
+  // their source payment. Deposit-funded refunds belong to Deposits Excel.
+  async cancelImportedFinanceOperation(tenantId:string,operationId:string,when:unknown,tx:Prisma.TransactionClient){
+    const current=await tx.financeOperation.findUnique({
+      where:{tenantId_operationId:{tenantId,operationId}},
+    });
+    if(!current)throw new BadRequestException('Операция для отмены не найдена');
+    if(current.status==='cancelled')return;
+    if(['deposit-funding','deposit-withdrawal'].includes(current.kind)
+      || depositAllocationsValue(objectValue(current.data).depositAllocations).length)
+      throw new BadRequestException('Отмену депозита выполните в разделе «Депозиты»');
+    const occurredAt=requiredOccurredAt(when);
+    if(occurredAt.getTime()<current.occurredAt.getTime())
+      throw new BadRequestException('Дата отмены не может быть раньше исходной операции');
+    await this.createReversalFor(tx,tenantId,operationId,'Отменено в исходной истории',occurredAt);
+    await tx.financeOperation.update({where:{id:current.id},data:{status:'cancelled'}});
+  }
+
+  async importHistoricalRefund(tenantId:string,input:JsonObject,targetId:string,tx:Prisma.TransactionClient){
+    const originalId=text(input.originalPayment);
+    if(!originalId)throw new BadRequestException('Для возврата укажите исходную оплату');
+    const payment=await tx.financeOperation.findUnique({
+      where:{tenantId_operationId:{tenantId,operationId:originalId}},
+    });
+    if(!payment||payment.kind!=='payment'||payment.status==='cancelled')
+      throw new BadRequestException('Исходная оплата не найдена или отменена');
+    const paid=objectValue(payment.data);
+    if(depositAllocationsValue(paid.depositAllocations).length)
+      throw new BadRequestException('Возврат депозита загрузите в разделе «Депозиты»');
+    const amount=money(input.financeAmount),tips=money(input.tips);
+    if(amount<=0||tips>amount)throw new BadRequestException('Проверьте сумму возврата и чаевые');
+    const prior=await tx.financeOperation.findMany({
+      where:{tenantId,kind:'refund',status:'completed',originalOperationId:originalId},
+    });
+    const refundedService=money(prior.reduce((total,row)=>total+money(objectValue(row.data).serviceAmount),0));
+    const refundedTips=money(prior.reduce((total,row)=>total+money(objectValue(row.data).tips),0));
+    const serviceAmount=money(amount-tips);
+    if(serviceAmount-money(paid.serviceAmount-refundedService)>0.009 ||
+      tips-money(paid.tips-refundedTips)>0.009)
+      throw new BadRequestException('Сумма возврата превышает не возвращённую часть оплаты');
+    const wallet=await this.resolveTransferredWallet(tenantId,input,tx);
+    const occurredAt=requiredOccurredAt(input.occurredAt);
+    if(targetId)throw new BadRequestException('Изменение связанного возврата выполняется через ДДС');
+    const id=randomUUID();
+    await this.createOperationWithEntries(tx,tenantId,{
+      operationId:id,kind:'refund',source:{type:payment.sourceType,id:payment.sourceId},
+      originalOperationId:payment.operationId,occurredAt,
+      data:{
+        workplace:text(paid.workplace),person:clone(objectValue(paid.person)),
+        walletId:wallet.id,walletName:wallet.name,total:amount,
+        cashTotal:amount,cashServiceAmount:serviceAmount,
+        serviceAmount,tips,depositAllocations:[],reason:text(input.note),
+      },
+      entries:[
+        ...(serviceAmount>0?[{walletId:wallet.id,walletName:wallet.name,amount:serviceAmount,
+          component:'service',direction:'OUT',economicType:'SERVICE_REFUND'}]:[]),
+        ...(tips>0?[{walletId:wallet.id,walletName:wallet.name,amount:tips,
+          component:'tips',direction:'OUT',economicType:'TIPS_REFUND'}]:[]),
+      ],
+    });
+    return id;
+  }
+
   async importFinancialOperation(tenantId:string,input:JsonObject,targetId:string,tx:Prisma.TransactionClient) {
+    if(text(input.financeKind)==='Возврат оплаты')
+      return this.importHistoricalRefund(tenantId,input,targetId,tx);
     const operationId=targetId || randomUUID();const amount=money(input.financeAmount);const occurredAt=requiredOccurredAt(input.occurredAt);
     if(amount<=0)throw new BadRequestException('Укажите сумму финансовой операции');
     if(!text(input.walletId))throw new BadRequestException('Укажите кошелёк финансовой операции');
@@ -1032,10 +1097,35 @@ export class FinanceService {
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person?.key},tx);
       depositAllocations=await consumeDepositAllocations(tx,tenantId,[{depositId:deposit.depositId,amount}],text(input.person?.key),occurredAt,true);
     }
-    const allocations = fromDeposit ? [] : [{ walletId: text(input.walletId), walletName: text(input.walletName), amount }];
+    const tips=money(input.tips);
+    if(tips>amount || fromDeposit && tips>0)throw new BadRequestException('Чаевые превышают сумму оплаты');
+    const serviceAmount=money(amount-tips);
+    const requested=Array.isArray(input.allocations) && input.allocations.length
+      ? input.allocations : [{walletId:input.walletId,walletName:input.walletName,amount}];
+    const allocations:JsonObject[]=[];
+    if(!fromDeposit)for(const item of requested){
+      const wallet=await this.resolveTransferredWallet(tenantId,{
+        walletId:text(item.walletId),wallet:text(item.wallet || item.walletName),
+      },tx);
+      const allocationAmount=money(item.amount);
+      if(allocationAmount<=0)throw new BadRequestException('Сумма по кошельку должна быть больше нуля');
+      allocations.push({walletId:wallet.id,walletName:wallet.name,amount:allocationAmount});
+    }
+    if(!fromDeposit && Math.abs(money(allocations.reduce((sum,item)=>sum+item.amount,0))-amount)>0.009)
+      throw new BadRequestException('Сумма по кошелькам не совпадает с общей суммой оплаты');
     const data = { workplace: text(input.workplaceId), person: clone(objectValue(input.person)), allocations,
-      cashTotal: fromDeposit?0:amount, cashServiceAmount: fromDeposit?0:amount, total: amount, serviceAmount: amount, tips: 0, depositAllocations };
-    const entries = allocations.map(entry => ({ ...entry, component: 'service', direction: 'IN', economicType: 'SERVICE_REVENUE' }));
+      cashTotal: fromDeposit?0:amount,cashServiceAmount:fromDeposit?0:serviceAmount,
+      total: amount,serviceAmount,tips,depositAllocations };
+    let tipsLeft=tips;
+    const entries:JsonObject[]=[];
+    for(let i=allocations.length-1;i>=0;i--){
+      const entry=allocations[i];
+      const tipAmount=Math.min(tipsLeft,entry.amount);
+      tipsLeft=money(tipsLeft-tipAmount);
+      const paidService=money(entry.amount-tipAmount);
+      if(paidService>0)entries.unshift({...entry,amount:paidService,component:'service',direction:'IN',economicType:'SERVICE_REVENUE'});
+      if(tipAmount>0)entries.push({...entry,amount:tipAmount,component:'tips',direction:'IN',economicType:'TIPS'});
+    }
     const existing = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } } });
     if (targetId && !existing && !fromDeposit) throw new NotFoundException('Перенесённая оплата не найдена');
     if (existing) {
