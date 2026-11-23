@@ -36,8 +36,8 @@ try {
   assert.equal(sheet.getCell(1,1).fill.fgColor.argb,'FFDEDFE0');
   assert.equal(sheet.getCell(2,1).fill.fgColor.argb,'FF303238');
   assert.equal(sheet.getCell(2,1).font.color.argb,'FFFFFFFF');
-  assert.match(sheet.getCell(2,9).note.texts.map(item=>item.text).join(''),/4 символа/);
-  assert.match(sheet.getCell(2,13).note.texts.map(item=>item.text).join(''),/8 символов/);
+  assert.match(String(sheet.getCell(2,9).note),/4 символа/);
+  assert.match(String(sheet.getCell(2,13).note),/8 символов/);
   sheet.getRow(3).values=pad(['Ромашка','Фиксированная',30000,'Период',
     '2024-01-01','2024-12-31','Нет',0,'','','Маша Иванова',
     '79990001122','','2024-02-15','Пополнение',15000,'','']);
