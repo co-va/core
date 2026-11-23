@@ -356,6 +356,7 @@ export class FinanceService {
       entries=[{walletId:input.walletId,direction:'OUT',economicType:'TRANSFER',amount},{walletId:to.id,direction:'IN',economicType:'TRANSFER',amount}];
       data={...data,fromWalletId:input.walletId,toWalletId:to.id};
     } else if(['Доход','Расход'].includes(kind)) {
+      await this.ensureDefaultArticles(tenantId,tx);
       const articles=await tx.financeArticle.findMany({where:{tenantId,name:text(input.article),archivedAt:null}});
       if(articles.length!==1)throw new BadRequestException('Не удалось однозначно определить статью');
       const direction=kind==='Доход'?'IN':'OUT';if(articles[0].direction!==direction || articles[0].economicType==='GROUP')throw new BadRequestException('Статья не соответствует операции');
