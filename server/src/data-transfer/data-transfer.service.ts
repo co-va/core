@@ -300,8 +300,21 @@ export class DataTransferService {
           const workplace=await this.profiles.resolveTransferWorkplace(tenantId,v,tx);
           workplaceId=workplace.key;
         }
+        let linkedRecordId='';
+        if(text(v.documentNumber)){
+          // The original CRM Record ID may live in an earlier import fact,
+          // while the canonical Record uses a different internal identifier.
+          const imported=await tx.dataTransferFact.findMany({where:{
+            tenantId,domain:'records',
+            sourceKey:{endsWith:':records:'+text(v.documentNumber)},
+          },select:{targetId:true}});
+          const candidates=[...new Set(imported.map(row=>row.targetId))];
+          if(candidates.length===1)linkedRecordId=candidates[0];
+          else if(candidates.length>1)
+            throw Error('Номер документа относится к нескольким исходным записям.');
+        }
         record=await this.records.matchFinancialRecord(tenantId,
-          {...v,personKey:person?.key,workplaceId},tx);
+          {...v,recordId:linkedRecordId,personKey:person?.key,workplaceId},tx);
         if(!person)person=record.person;
         if(!record?.id)throw Error('Не найден идентификатор записи для оплаты');
       }else if (v.recordId || v.date){
