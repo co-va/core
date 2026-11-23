@@ -249,7 +249,7 @@ try {
   assert.equal(importedPerson.data.gender,'female');
   assert.equal(importedPerson.data.birthDate,'1985-06-15');
   assert.equal(importedPerson.data.discountPercent,10);
-  assert.deepEqual(importedPerson.data.phones.slice().sort(),['79997771234','79997771235'].sort());
+  assert.deepEqual(importedPerson.data.phones.slice().sort(),['+79997771234','+79997771235'].sort());
   assert.deepEqual(importedPerson.data.emails.slice().sort(),['ksenia@example.test','ksenia.second@example.test'].sort());
   assert.deepEqual(importedPerson.data.telegrams.slice().sort(),['@ksenia_test','@ksenia_alt'].sort());
   const duplicate=await service.run(tenantId,accountId,contactPayload,false);
