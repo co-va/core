@@ -50,6 +50,9 @@ export function depositHistoricalLedger(
         bonus: accrual ? Math.round(value * rate) / 100 : 0 });
     } else if (kind === 'deposit-withdrawal' && own) {
       events.push({ occurred, kind: 'withdrawal' });
+    } else if (kind === 'deposit-import-spend' && own) {
+      const split = parts(data.depositAllocations, depositId);
+      if (split?.amount) events.push({ occurred, kind: 'payment', principal: split.principalAmount, bonus: split.benefitAmount });
     } else if (kind === 'payment' || kind === 'refund') {
       const split = parts(data.depositAllocations, depositId);
       if (split?.amount) events.push({ occurred, kind, principal: split.principalAmount, bonus: split.benefitAmount });
