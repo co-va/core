@@ -137,7 +137,12 @@ export async function planDepositExcel(db:any,tenantId:string,lines:DepositExcel
       const byCode=people.filter(p=>text(p.key)===line.personCode||personCode.length===4&&text(obj(identity.relations)['person:'+text(p.key)])===personCode);
       const byPhone=phone?people.filter(p=>Array.isArray(p.phones)&&p.phones.some((v:unknown)=>normalizePhone(v)===phone)):[];
       const byName=fullName?people.filter(p=>words([p.name,p.surname].filter(Boolean).join(' '))===words(fullName)):[];
-      const candidates=byCode.length||byPhone.length?[...new Set([...byCode,...byPhone])]:byName;
+      // A same-name contact with a DIFFERENT phone is never an identity match.
+      // Using a name-only fallback here would silently assign another person's
+      // imported deposit, violating financial ownership isolation.
+      const candidates=byCode.length||byPhone.length
+        ? [...new Set([...byCode,...byPhone])]
+        : (phone || personCode ? [] : byName);
       if(candidates.length>1)throw Error('Контакт неоднозначен: укажите телефон или код');
       let person=candidates[0];
       if(person&&first&&words(text(person.name))!==words(first))throw Error('Имя не совпадает с контактом');
