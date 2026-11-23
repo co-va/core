@@ -112,12 +112,9 @@ export async function expireDepositInstances(db: Db, tenantId: string, depositId
     if (depositTermActiveAt(row.terms, now)) continue;
     await db.loyaltyDepositInstance.update({
       where: { id: row.id },
-      data: {
-        principalBalance: 0,
-        benefitBalance: 0,
-        balance: 0,
-        status: 'expired',
-      },
+      // An ended term disables NEW use; it does not spend or erase the
+      // unconsumed balance. The amount remains an auditable financial fact.
+      data: { status: 'expired' },
     });
   }
 }
@@ -239,10 +236,10 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
     if (!row) throw new BadRequestException('Депозит не найден');
     if (expectedPersonKey && row.personKey !== expectedPersonKey) throw new BadRequestException('Депозит принадлежит другому человеку');
     // A past visit can be settled after the deposit has expired today.
-    // Never reopen its zeroed materialized balance; reconstruct the dated
-    // spending capacity from FinanceOperation and ensure later payments
+    // Never reopen its expired status; reconstruct dated spendable funds
+    // from FinanceOperation and ensure later payments
     // cannot become overdrawn as a result of backfilled spending.
-    if (historical && ['expired', 'closed'].includes(row.status)
+    if (historical && row.status === 'expired'
       && occurredAt.getTime() < Date.now()
       && depositTermActiveAt(row.terms, occurredAt)) {
       const fundedAt = row.fundedAt instanceof Date ? row.fundedAt : new Date(row.fundedAt);

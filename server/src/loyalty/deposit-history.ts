@@ -1,5 +1,5 @@
-// Historical financial reconstruction belongs to the server. Do not
-// resurrect materialized balances of expired deposits when backfilling.
+// Historical financial reconstruction belongs to the server. Expiration
+// is a spendability status, not a withdrawal or an erasure of balances.
 type Row = Record<string, any>;
 type Split = { amount: number; principalAmount: number; benefitAmount: number };
 type EventKind = 'funding' | 'withdrawal' | 'refund' | 'payment' | 'candidate';
@@ -29,7 +29,7 @@ function moment(value: unknown): number {
 
 export function depositHistoricalLedger(
   operations: unknown, depositIdValue: unknown, termsValue: unknown, at: Date, charge = 0,
-): { available: number; allocation: Split | null } {
+): { available: number; allocation: Split | null; remaining: number; remainingPrincipal: number; remainingBenefit: number } {
   const depositId = String(depositIdValue || '');
   const cutoff = moment(at);
   if (!depositId || !Number.isFinite(cutoff)) throw new Error('Не указаны депозит и дата операции');
@@ -91,5 +91,10 @@ export function depositHistoricalLedger(
     if (!captured && event.occurred <= cutoff) available = amount(principal + bonus);
   }
   if (!captured) available = amount(principal + bonus);
-  return { available, allocation };
+  return {
+    available, allocation,
+    remaining: amount(principal + bonus),
+    remainingPrincipal: amount(principal),
+    remainingBenefit: amount(bonus),
+  };
 }

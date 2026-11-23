@@ -290,6 +290,7 @@ export class PaymentSettlementService {
     await this.serializable(async (tx) => {
       let condition;
       let historicalRecordPayment = false;
+      let recordVisitAt: Date | null = null;
       if (source.type === 'record') {
         await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
         const recordRow = await tx.record.findUnique({
@@ -297,6 +298,7 @@ export class PaymentSettlementService {
         });
         if (!recordRow) throw new BadRequestException('Запись для оплаты не найдена');
         const record = objectValue(recordRow.data);
+        recordVisitAt = visitDatePriceMoment(record.date);
         const visitDay = text(record.date).slice(0, 10);
         const paymentDay = occurredAt.toISOString().slice(0, 10);
         const today = new Date().toISOString().slice(0, 10);
@@ -330,7 +332,11 @@ export class PaymentSettlementService {
       }
 
       const depositAllocations = await consumeDepositAllocations(
-        tx, tenantId, requestedDepositAllocations, ownerKey, occurredAt, historicalRecordPayment,
+        tx, tenantId, requestedDepositAllocations, ownerKey,
+        // Date of visit determines eligibility even if payment is prepaid.
+        // Finance operation time still owns ledger ordering.
+        recordVisitAt && !historicalRecordPayment ? recordVisitAt : occurredAt,
+        historicalRecordPayment,
       );
       if (personalAccountAmount > 0) {
         await applyPersonalAccountMovement(tx, {

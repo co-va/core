@@ -203,9 +203,15 @@ export class DepositService {
   }
 
   private dto(row: DepositRow, operations: any[], asOf: Date | null = null) {
-    const principalBalance = money(row.principalBalance);
-    const benefitBalance = money(row.benefitBalance);
-    const balance = money(row.balance);
+    // Older Core versions irreversibly wrote zero balances at expiry.
+    // Rebuild their displayed remainder from the canonical operation journal;
+    // new expirations leave stored balances untouched.
+    const history = row.status === 'expired'
+      ? depositHistoricalLedger(operations, row.depositId, row.terms, new Date())
+      : null;
+    const principalBalance = history ? history.remainingPrincipal : money(row.principalBalance);
+    const benefitBalance = history ? history.remainingBenefit : money(row.benefitBalance);
+    const balance = history ? history.remaining : money(row.balance);
     const terms = objectValue(row.terms);
     const mode = depositBenefitMode(terms);
     const presentation = objectValue(terms.presentation);
@@ -221,7 +227,11 @@ export class DepositService {
       benefitBalance,
       refundableAmount: row.status === 'active' ? principalBalance : 0,
       balance,
-      ...(asOf ? { availableAt: depositTermActiveAt(terms, asOf) && row.fundedAt <= asOf
+      // Expired funds are visible but can only be spent by a historic visit
+      // that was inside the original term and has a sufficient as-of balance.
+      expiredUnusedAmount: row.status === 'expired' ? balance : 0,
+      ...(asOf ? { availableAt: ['active', 'expired'].includes(row.status)
+        && depositTermActiveAt(terms, asOf) && row.fundedAt <= asOf
         ? depositHistoricalLedger(operations, row.depositId, terms, asOf).available
         : 0 } : {}),
       terms,
