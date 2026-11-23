@@ -225,12 +225,14 @@ try {
     'Телефон','Дополнительный телефон','Email','Дополнительный Email',
     'Telegram','Дополнительный Telegram',
   ]);
-  assert.equal(contactSheet.getColumn(13).hidden,true,'Internal key is not exposed to professionals');
-  assert.equal(contactSheet.getCell(2,13).value,'ID человека');
+  assert.equal(contactSheet.getCell(2,13).value,'Источник интеграции');
+  assert.equal(contactSheet.getCell(2,13).fill.fgColor.argb,'FF303238');
+  assert.equal(contactSheet.getColumn(14).hidden,true,'Internal key is not exposed to professionals');
+  assert.equal(contactSheet.getCell(2,14).value,'ID человека');
   contactSheet.getRow(3).values=[
     'A012','Ксения Примерная','','Ж','15/6/85',10,'79997771234',
     '79997771235','ksenia@example.test','ksenia.second@example.test',
-    '@ksenia_test','@ksenia_alt',
+    '@ksenia_test','@ksenia_alt','YCLIENTS',
   ];
   const contactPayload={filename:'contacts.xlsx',source:'Контакты',
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await emptyContacts.xlsx.writeBuffer()).toString('base64'),
@@ -245,6 +247,8 @@ try {
   assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
   const importedPerson=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Ксения'}}});
   assert.equal(importedPerson.data.contactStatus,'import');
+  const originFact=await db.dataTransferFact.findFirst({where:{tenantId,domain:'people',targetId:importedPerson.key}});
+  assert.equal(originFact?.input?.integrationSource,'YCLIENTS','Source is retained in import provenance');
   assert.equal(importedPerson.data.surname,'Примерная');
   assert.equal(importedPerson.data.gender,'female');
   assert.equal(importedPerson.data.birthDate,'1985-06-15');
@@ -272,7 +276,7 @@ try {
     email:'ksenia@example.test',personKey:importedPerson.key,
   }]}));
   assert.equal(existingExport.worksheets[0].getCell(3,2).value,'Ксения');
-  assert.equal(existingExport.worksheets[0].getCell(3,13).value,importedPerson.key);
+  assert.equal(existingExport.worksheets[0].getCell(3,14).value,importedPerson.key);
   const noYearBook=new ExcelJS.Workbook();
   await noYearBook.xlsx.load(await service.workbook({domain:'people',template:true}));
   noYearBook.worksheets[0].getRow(3).values=['','Алиса Сергеева','','М','15.06','','79997776655'];
@@ -297,7 +301,7 @@ try {
   assert.equal(legacyCheck.transferred,1);
   console.log('PASS: grouping, contacts, secondary fields, short and full birthdays, gender and old file compatibility');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
-  // Journal: eight explicit groups, the same identity order as Contacts, and
+  // Journal: six named groups plus standalone fields, same identity order as Contacts, and
   // one booking per row regardless of the number of services.
   const jBook=new ExcelJS.Workbook();
   await jBook.xlsx.load(await service.workbook({domain:'records',template:true}));
