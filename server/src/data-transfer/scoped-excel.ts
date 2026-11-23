@@ -139,11 +139,7 @@ function financeColumns(rows: any[], template: boolean) {
 function recordColumns(rows: any[], template: boolean) {
   const maximum=Math.max(template ? 10 : 1,...rows.map(row=>Array.isArray(row.services)?row.services.length:0));
   const cols:any[]=[...RECORD_BASE];
-  for(let i=1;i<=maximum;i++){
-    cols.push({key:'service'+i,label:'Услуга '+i});
-    cols.push({key:'cost'+i,label:'Цена услуги '+i});
-    cols.push({key:'duration'+i,label:'Длительность услуги '+i});
-  }
+  for(let i=1;i<=maximum;i++)cols.push({key:'service'+i,label:'Услуга '+i});
   return cols;
 }
 export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], template=false):Promise<Buffer> {
@@ -160,8 +156,6 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
     if(domain==='records')for(let i=0;i<(input.services||[]).length;i++){
       const item=input.services[i]||{};
       row['service'+(i+1)]=text(item.name);
-      row['cost'+(i+1)]=item.cost ?? '';
-      row['duration'+(i+1)]=item.duration ?? '';
     }
     if(domain==='finance')for(let i=0;i<(input.allocations||[]).length;i++){
       const item=input.allocations[i]||{};
