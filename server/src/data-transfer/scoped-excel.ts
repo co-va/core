@@ -126,10 +126,10 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         workplace:get('Рабочее пространство'),
         date:at('Дата визита')||at('Дата'),
         from:at('Время начала'),to:at('Время окончания'),
-        creatorName:get('Кто создал'),createdDate:at('Дата создания')||undefined,
+        creatorName:get('Кто создал'),
+        createdDate:headers.includes('Дата визита')?(at('Дата создания')||undefined):undefined,
         createdTime:at('Время создания')||undefined,
-        createdAt:at('Дата создания')&&!grouped&&!headers.includes('Дата визита')
-          ?at('Дата создания'):undefined,
+        createdAt:!headers.includes('Дата визита')?(at('Дата создания')||undefined):undefined,
         actionStatus:get('Статус записи'),changedBy:get('Кто изменил'),
         changedDate:at('Дата изменения')||undefined,
         changedTime:at('Время изменения')||undefined,
