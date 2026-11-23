@@ -74,7 +74,7 @@ export class DataTransferService {
     if (!DOMAINS.includes(fact.domain)) throw Error('Выберите тип данных для листа');
     for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
     for (const field of ['from', 'to','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
-    for (const field of ['occurredAt', 'createdAt']) if (v[field] != null) v[field] = instant(v[field]);
+    for (const field of ['occurredAt', 'createdAt', 'cancelledAt']) if (v[field] != null) v[field] = instant(v[field]);
     for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
@@ -229,6 +229,8 @@ export class DataTransferService {
       if(fact.domain==='accounts' && (v.recordId || v.date))v.recordId=(await this.records.resolveTransferredRecord(tenantId,v,tx)).id;
       if(v.wallet){const wallet=await this.finance.resolveTransferredWallet(tenantId,v,tx);v.walletId=wallet.id;v.walletName=wallet.name;}
       targetId=fact.domain==='deposits'?await this.finance.importDeposit(tenantId,v,target,tx):fact.domain==='accounts'?await this.personalAccounts.importHistorical(tenantId,v,target,tx):await this.finance.importFinancialOperation(tenantId,v,target,tx);
+      if(fact.domain==='operations'&&v.importCancelled===true)
+        await this.finance.cancelImportedFinanceOperation(tenantId,targetId,v.cancelledAt,tx);
     } else if (fact.domain === 'payments') {
       if (v.amount == null) throw Error('Сумма имеет неверный формат');
       if (!v.occurredAt) throw Error('Не указана дата оплаты');
@@ -240,6 +242,8 @@ export class DataTransferService {
       const wallet = !v.paymentSource || v.paymentSource==='Кошелёк' ? await this.finance.resolveTransferredWallet(tenantId, v, tx) : {id:'',name:''};
       if(v.paymentSource==='Личный счёт') targetId=await this.personalAccounts.importHistorical(tenantId,{...v,personKey:person?.key || record?.person?.key,recordId:record?.id,accountAction:'Оплата',accountAmount:v.amount},target,tx);
       else targetId = await this.finance.importPayment(tenantId, { ...v, recordId: record?.id, person: person || record?.person || {}, workplaceId: record?.workplaceId || '', walletId: wallet.id, walletName: wallet.name }, target, tx);
+      if(v.importCancelled===true)
+        await this.finance.cancelImportedFinanceOperation(tenantId,targetId,v.cancelledAt,tx);
     } else if(fact.domain==='offers') {
       targetId=await this.inventory.importOffer(tenantId,v,target,tx);
     } else if (fact.domain === 'items') {
