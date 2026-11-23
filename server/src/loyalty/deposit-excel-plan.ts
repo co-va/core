@@ -76,8 +76,34 @@ export async function planDepositExcel(db:any,tenantId:string,lines:DepositExcel
   const newPrograms:Row[]=[],newPeople:Row[]=[],events:ExcelEvent[]=[];
   const definitions=new Map<string,Row>();
   const seenIds=new Set<string>();
+  const invalidCodes=new Set<number>();
   let skipped=0,selected=0;
   for(const line of lines) {
+    if(line.legacy)continue;
+    try{
+      const code=String(line.programUei||'').trim().toUpperCase();
+      const client=String(line.personCode||'').trim().toUpperCase();
+      const card=String(line.cardKey||'').trim().toUpperCase();
+      const validCode=(x:string)=>/^[A-ZА-ЯЁ0-9]{4}$/.test(x)&&x!=='0000';
+      if(code&&!validCode(code))
+        throw Error('Код программы должен содержать ровно 4 буквы или цифры');
+      if(client&&!validCode(client))
+        throw Error('Код клиента должен содержать ровно 4 буквы или цифры');
+      if(card&&!/^[A-ZА-ЯЁ0-9]{8}$/.test(card))
+        throw Error('Номер карты должен содержать ровно 8 букв или цифр');
+      if(card&&((code&&code!==card.slice(0,4))||(client&&client!==card.slice(4))))
+        throw Error('Номер карты не совпадает с кодами программы и клиента');
+      // A known card number supplies missing program/client codes automatically.
+      line.programUei=code||(card?card.slice(0,4):'');
+      line.personCode=client||(card?card.slice(4):'');
+      line.cardKey=card;
+    }catch(e){
+      errors.push({row:line.row,message:(e as Error).message});
+      invalidCodes.add(line.row);
+    }
+  }
+  for(const line of lines) {
+    if(invalidCodes.has(line.row))continue;
     if(!line.programName)continue;
     try {
       const definition=conditions(line);
@@ -90,6 +116,7 @@ export async function planDepositExcel(db:any,tenantId:string,lines:DepositExcel
   }
   const active:Array<{line:DepositExcelRawRow;date:Date}>=[];
   for(const line of lines) {
+    if(invalidCodes.has(line.row))continue;
     if(!line.action&&!line.amount&&!line.occurredAt)continue;
     const dateKey=excelDay(line.occurredAt);
     if(!dateKey){errors.push({row:line.row,message:'Укажите правильную дату операции'});continue;}
@@ -167,7 +194,14 @@ export async function planDepositExcel(db:any,tenantId:string,lines:DepositExcel
       if(text(deposit.status)==='closed')throw Error('Депозит закрыт возвратом');
       if(!depositTermActiveAt(deposit.terms,date))throw Error('Дата вне срока действия депозита');
       const externalOperationId=line.externalOperationId||'auto:'+batchId+':'+line.row;
-      const operationId='excel-'+hash(tenantId+':deposit-excel:'+externalOperationId).slice(0,40);
+      // Export-only canonical IDs retain the identity of imported operations.
+      // Application-owned operations must NEVER be imported again as new cash.
+      const canonicalImport=/^excel-[a-f0-9]{40}$/.test(externalOperationId);
+      if(line.externalOperationId&&!canonicalImport&&existing.some(op=>
+        text(op.operationId)===line.externalOperationId&&op.origin!=='excel_import'))
+        throw Error('Эта системная операция уже существует. Её нельзя загружать повторно.');
+      const operationId=canonicalImport?externalOperationId
+        :'excel-'+hash(tenantId+':deposit-excel:'+externalOperationId).slice(0,40);
       if(seenIds.has(operationId))throw Error('В файле повторяется ID операции');
       seenIds.add(operationId);
       const prior=existing.find(o=>text(o.operationId)===operationId);
