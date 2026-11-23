@@ -64,8 +64,17 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
 export function defaultDomain(name: string) { return name === 'Данные' ? 'standard' : DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
 export function defaultColumns(headers: string[]) {
   const result: Record<string, number> = {};
+  // Historical branded labels remain readable, but are never written into new files.
+  const legacy: Record<string, string> = {
+    personKey: 'ID человека CO-VA',
+    workplaceKey: 'ID пространства CO-VA',
+    procedureId: 'ID процедуры CO-VA',
+    recordId: 'ID записи CO-VA',
+    walletId: 'ID кошелька CO-VA',
+    itemId: 'ID позиции CO-VA',
+  };
   for (const [field, label] of Object.entries(FIELDS)) {
-    const matches = headers.map((h, i) => h === field || h === label ? i : -1).filter(i => i >= 0);
+    const matches = headers.map((h, i) => h === field || h === label || h === legacy[field] ? i : -1).filter(i => i >= 0);
     if (matches.length === 1) result[field] = matches[0];
   }
   return result;
