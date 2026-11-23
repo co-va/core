@@ -68,8 +68,13 @@ function depositPriceEligibleAt(row: { status: string; fundedAt?: Date | string;
   const status = text(row.status);
   // A previously expired deposit is valid for pricing a PAST visit inside
   // its term, never for a visit today or in the future.
-  const historical = at.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
-  return (status === 'active' || (historical && status === 'expired'))
+  const today = new Date().toISOString().slice(0, 10);
+  const historical = at.toISOString().slice(0, 10) < today;
+  const end = text(objectValue(row.terms).termEndDate).slice(0, 10);
+  // A row expired before the end of its configured term is not a
+  // historically valid discount just because its visit date is in the past.
+  const naturallyExpired = /^\d{4}-\d{2}-\d{2}$/.test(end) && end < today;
+  return (status === 'active' || (historical && status === 'expired' && naturallyExpired))
     && depositWasFundedAt(row, at)
     && depositTermActiveAt(row.terms, at);
 }
