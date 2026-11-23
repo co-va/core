@@ -227,7 +227,7 @@ function cardMoney(value: unknown) {
 
 function depositCardStatus(value: unknown) {
   const status = text(value);
-  return status === 'expired' ? 'Срок завершён'
+  return status === 'expired' ? 'Списан'
     : status === 'closed' || status === 'ended' ? 'Закрыт' : 'Активен';
 }
 
@@ -248,8 +248,19 @@ function effectiveDiscountForPerson(personValue: unknown, depositRows: any[], at
   const person = objectValue(personValue);
   const personKey = text(person.key || person.id);
   if (!personKey) return null;
+  // A newly issued deposit supersedes a Personal discount granted before it.
+  // Keep historical deposits in this read so the old manual percentage cannot
+  // silently return when the program expires. An explicit later manual grant
+  // has discountAssignedAt and is independent until the next deposit.
+  const assignedAt = Date.parse(text(person.discountAssignedAt));
+  const superseded = depositRows.some((row) => {
+    if (text(row.personKey) !== personKey) return false;
+    const fundedAt = row.fundedAt instanceof Date ? row.fundedAt.getTime() : Date.parse(text(row.fundedAt));
+    return !Number.isFinite(assignedAt) || !Number.isFinite(fundedAt) || fundedAt >= assignedAt;
+  });
+  const effectivePerson = superseded ? { ...person, discountPercent: 0, discount: 0 } : person;
   const condition = resolvePersonPriceCondition(
-    person, depositPriceSourcesFromRows(depositRows, personKey, at),
+    effectivePerson, depositPriceSourcesFromRows(depositRows, personKey, at),
   );
   if (condition.conflict || !condition.source || condition.percent <= 0) return null;
   const source = condition.source;
@@ -430,18 +441,16 @@ export class AccountContactsService {
 
   private async visibleDepositSummaries(tenantId: string, personKey: string) {
     if (!personKey) return [];
-    await expireDepositInstances(this.prisma, tenantId);
     const [rows, programRows] = await Promise.all([
-      this.prisma.loyaltyDepositInstance.findMany({
-        where: { tenantId, personKey },
-        orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
-      }),
+      // DepositService owns the current/expired balance projection from the
+      // FinanceOperation ledger, including amounts zeroed by older Core.
+      this.deposits.list(tenantId, personKey),
       this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
     ]);
     const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
     // Price percentage comes from the same active-program source as the Person discount.
-    const activePrices = new Map(depositPriceSourcesFromRows(rows, personKey, new Date())
-      .map((source) => [text(source.depositId), source.percent]));
+    const activePrices = new Map(rows.filter((item) => item.status === 'active' && item.discountPercent > 0)
+      .map((item) => [text(item.depositId), item.discountPercent]));
     return rows.map((row) => {
       const terms = objectValue(row.terms);
       const presentation = objectValue(terms.presentation);
@@ -449,8 +458,9 @@ export class AccountContactsService {
         depositId: text(row.depositId),
         programId: text(row.programId),
         programName: text(row.programName),
-        fundedAmount: Number(row.initialAmount || 0),
+        fundedAmount: Number(row.fundedAmount || 0),
         balance: Number(row.balance || 0),
+        expiredUnusedAmount: Number(row.expiredUnusedAmount || 0),
         status: text(row.status),
         discountPercent: activePrices.get(text(row.depositId)) || 0,
         cardProgram: objectValue(programs.get(row.programId)),
@@ -535,9 +545,9 @@ export class AccountContactsService {
         select: { tenantId: true, key: true, data: true },
       }),
       this.prisma.loyaltyDepositInstance.findMany({
-        where: { tenantId: { in: tenantIds }, status: 'active' },
+        where: { tenantId: { in: tenantIds } },
         select: {
-          tenantId: true, personKey: true, status: true, terms: true,
+          tenantId: true, personKey: true, status: true, fundedAt: true, terms: true,
           depositId: true, programId: true, programName: true,
         },
       }),

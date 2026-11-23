@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { depositHistoricalLedger } from './deposit-history';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -55,6 +56,29 @@ export function depositTermActiveAt(value: unknown, at: Date) {
   return day <= end;
 }
 
+// Historical visibility is based on effective date, not a present-day status.
+// Materialized balances/status may have been cleared by expiry after the visit.
+function depositWasFundedAt(row: { fundedAt?: Date | string }, at: Date) {
+  const funded = row.fundedAt && typeof (row.fundedAt as Date).toISOString === 'function'
+    ? (row.fundedAt as Date).toISOString() : text(row.fundedAt);
+  return !funded || funded.slice(0, 10) <= at.toISOString().slice(0, 10);
+}
+
+function depositPriceEligibleAt(row: { status: string; fundedAt?: Date | string; terms: unknown }, at: Date) {
+  const status = text(row.status);
+  // A previously expired deposit is valid for pricing a PAST visit inside
+  // its term, never for a visit today or in the future.
+  const today = new Date().toISOString().slice(0, 10);
+  const historical = at.toISOString().slice(0, 10) < today;
+  const end = text(objectValue(row.terms).termEndDate).slice(0, 10);
+  // A row expired before the end of its configured term is not a
+  // historically valid discount just because its visit date is in the past.
+  const naturallyExpired = /^\d{4}-\d{2}-\d{2}$/.test(end) && end < today;
+  return (status === 'active' || (historical && status === 'expired' && naturallyExpired))
+    && depositWasFundedAt(row, at)
+    && depositTermActiveAt(row.terms, at);
+}
+
 export function depositPersonKey(value: unknown) {
   const person = objectValue(value);
   return text(person.key ?? person.personKey ?? person.id);
@@ -85,15 +109,20 @@ export async function expireDepositInstances(db: Db, tenantId: string, depositId
   });
   const now = new Date();
   for (const row of rows) {
-    if (depositTermActiveAt(row.terms, now)) continue;
+    const terms = objectValue(row.terms);
+    const mode = text(terms.termMode).toLowerCase();
+    const end = text(terms.termEndDate).slice(0, 10);
+    const today = now.toISOString().slice(0, 10);
+    // A future start is NOT expiry. "По" is inclusive: expire only
+    // after its last day; keep money untouched and block use until start.
+    if (!['dated', 'fixed'].includes(mode)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(end)
+      || today <= end) continue;
     await db.loyaltyDepositInstance.update({
       where: { id: row.id },
-      data: {
-        principalBalance: 0,
-        benefitBalance: 0,
-        balance: 0,
-        status: 'expired',
-      },
+      // An ended term disables NEW use; it does not spend or erase the
+      // unconsumed balance. The amount remains an auditable financial fact.
+      data: { status: 'expired' },
     });
   }
 }
@@ -138,15 +167,14 @@ export async function createDepositInstance(db: Db, tenantId: string, input: {
 // Shared by settlement and batched /account/contacts reads; never use visibility
 // flags here because a price condition is independent of deposit-card visibility.
 export function depositPriceSourcesFromRows(
-  rows: Array<{ personKey: string; status: string; terms: unknown; depositId: string; programId: string; programName: string }>,
+  rows: Array<{ personKey: string; status: string; fundedAt?: Date | string; terms: unknown; depositId: string; programId: string; programName: string }>,
   personKey: string,
   at: Date,
 ) {
   if (!personKey) return [];
   return rows
     .filter((row) => row.personKey === personKey
-      && row.status === 'active'
-      && depositTermActiveAt(row.terms, at)
+      && depositPriceEligibleAt(row, at)
       && depositBenefitMode(row.terms) === 'discount'
       && depositBenefitRate(row.terms) > 0)
     .map((row) => ({
@@ -162,8 +190,9 @@ export function depositPriceSourcesFromRows(
 export async function activeDepositPriceSources(db: Db, tenantId: string, personKey: string, at: Date) {
   if (!personKey) return [];
   await expireDepositInstances(db, tenantId);
+  const historical = at.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
   const rows = await db.loyaltyDepositInstance.findMany({
-    where: { tenantId, personKey, status: 'active' },
+    where: { tenantId, personKey, status: historical ? { in: ['active', 'expired'] } : 'active' },
     orderBy: [{ fundedAt: 'asc' }, { createdAt: 'asc' }],
   });
   return depositPriceSourcesFromRows(rows, personKey, at);
@@ -184,7 +213,7 @@ export async function selectedDepositPriceSource(
   });
   if (!row) throw new BadRequestException('Выбранный депозит не найден');
   if (personKey && row.personKey !== personKey) throw new BadRequestException('Выбранный депозит принадлежит другому человеку');
-  if (row.status !== 'active' || !depositTermActiveAt(row.terms, at)) {
+  if (!depositPriceEligibleAt(row, at)) {
     throw new BadRequestException(`Депозит «${row.programName || 'Депозит'}» недоступен`);
   }
   if (depositBenefitMode(row.terms) !== 'discount') return null;
@@ -214,6 +243,37 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
     });
     if (!row) throw new BadRequestException('Депозит не найден');
     if (expectedPersonKey && row.personKey !== expectedPersonKey) throw new BadRequestException('Депозит принадлежит другому человеку');
+    // A past visit can be settled after the deposit has expired today.
+    // Never reopen its expired status; reconstruct dated spendable funds
+    // from FinanceOperation and ensure later payments
+    // cannot become overdrawn as a result of backfilled spending.
+    if (historical && row.status === 'expired'
+      && depositPriceEligibleAt(row, occurredAt)) {
+      const fundedAt = row.fundedAt instanceof Date ? row.fundedAt : new Date(row.fundedAt);
+      if (!Number.isFinite(fundedAt.getTime()) || occurredAt < fundedAt) {
+        throw new BadRequestException('Оплата раньше первого внесения депозита невозможна');
+      }
+      const operations = await db.financeOperation.findMany({
+        where: { tenantId, kind: { in: ['deposit-funding', 'deposit-withdrawal', 'payment', 'refund'] } },
+        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+      });
+      let historical;
+      try {
+        historical = depositHistoricalLedger(operations, row.depositId, row.terms, occurredAt, request.amount);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Недостаточно средств на дату визита');
+      }
+      const split = historical.allocation;
+      if (!split) throw new BadRequestException('Не удалось определить списание по депозиту');
+      result.push({
+        depositId: row.depositId,
+        name: request.name || (row.programName || 'Депозит') + ' · историческая оплата',
+        amount: split.amount,
+        principalAmount: split.principalAmount,
+        benefitAmount: split.benefitAmount,
+      });
+      continue;
+    }
     if (row.status !== 'active' || !depositTermActiveAt(row.terms, occurredAt)) {
       throw new BadRequestException(`Депозит «${row.programName || 'Депозит'}» недоступен для оплаты`);
     }

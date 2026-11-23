@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { depositHistoricalLedger } from './deposit-history';
 import { FinanceService } from '../finance/finance.service';
 import {
   depositBenefitMode,
@@ -201,10 +202,16 @@ export class DepositService {
     return items.sort((left, right) => String(left.occurredAt).localeCompare(String(right.occurredAt)));
   }
 
-  private dto(row: DepositRow, operations: any[]) {
-    const principalBalance = money(row.principalBalance);
-    const benefitBalance = money(row.benefitBalance);
-    const balance = money(row.balance);
+  private dto(row: DepositRow, operations: any[], asOf: Date | null = null) {
+    // Older Core versions irreversibly wrote zero balances at expiry.
+    // Rebuild their displayed remainder from the canonical operation journal;
+    // new expirations leave stored balances untouched.
+    const history = row.status === 'expired'
+      ? depositHistoricalLedger(operations, row.depositId, row.terms, new Date())
+      : null;
+    const principalBalance = history ? history.remainingPrincipal : money(row.principalBalance);
+    const benefitBalance = history ? history.remainingBenefit : money(row.benefitBalance);
+    const balance = history ? history.remaining : money(row.balance);
     const terms = objectValue(row.terms);
     const mode = depositBenefitMode(terms);
     const presentation = objectValue(terms.presentation);
@@ -220,6 +227,13 @@ export class DepositService {
       benefitBalance,
       refundableAmount: row.status === 'active' ? principalBalance : 0,
       balance,
+      // Expired funds are visible but can only be spent by a historic visit
+      // that was inside the original term and has a sufficient as-of balance.
+      expiredUnusedAmount: row.status === 'expired' ? balance : 0,
+      ...(asOf ? { availableAt: ['active', 'expired'].includes(row.status)
+        && depositTermActiveAt(terms, asOf) && row.fundedAt <= asOf
+        ? depositHistoricalLedger(operations, row.depositId, terms, asOf).available
+        : 0 } : {}),
       terms,
       benefitMode: mode,
       discountPercent: mode === 'discount' && row.status === 'active' && depositTermActiveAt(terms, new Date()) ? depositBenefitRate(terms) : 0,
@@ -231,12 +245,18 @@ export class DepositService {
     };
   }
 
-  async list(tenantId: string, personKeyValue = '') {
+  async list(tenantId: string, personKeyValue = '', asOfDateValue = '') {
+    const day = text(asOfDateValue);
+    if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('Некорректная дата визита');
+    const asOf = day ? new Date(day + 'T23:59:59.999Z') : null;
+    if (asOf && (!Number.isFinite(asOf.getTime()) || asOf.toISOString().slice(0, 10) !== day)) {
+      throw new BadRequestException('Некорректная дата визита');
+    }
     const [rows, operations] = await Promise.all([
       this.rows(tenantId, text(personKeyValue)),
       this.operations(tenantId),
     ]);
-    return rows.map((row) => this.dto(row as DepositRow, operations));
+    return rows.map((row) => this.dto(row as DepositRow, operations, asOf));
   }
 
   async get(tenantId: string, depositId: string) {
@@ -352,8 +372,12 @@ export class DepositService {
         where: { tenantId_depositId: { tenantId, depositId: id } },
       }) as DepositRow | null;
       if (!row) throw new NotFoundException('Депозит не найден');
-      if (row.status !== 'active' || !depositTermActiveAt(row.terms, occurredAt)) {
-        throw new BadRequestException('Этот депозит сейчас нельзя пополнить');
+      const historicTopUp = row.status === 'expired'
+        && occurredAt.getTime() < Date.now()
+        && depositTermActiveAt(row.terms, occurredAt)
+        && occurredAt >= row.fundedAt;
+      if ((!historicTopUp && row.status !== 'active') || !depositTermActiveAt(row.terms, occurredAt)) {
+        throw new BadRequestException('Этот депозит нельзя пополнить на указанную дату');
       }
       const nextFunded = money(money(row.initialAmount) + amount);
       this.assertFundingTarget(row, nextFunded);
@@ -361,13 +385,17 @@ export class DepositService {
       const benefit = this.fundingBenefit(terms, amount);
       await tx.loyaltyDepositInstance.update({
         where: { id: row.id },
-        data: {
-          initialAmount: nextFunded,
-          principalBalance: money(money(row.principalBalance) + amount),
-          benefitBalance: money(money(row.benefitBalance) + benefit),
-          balance: money(money(row.balance) + amount + benefit),
-          status: 'active',
-        },
+        data: historicTopUp
+          // Historic receipt is written to FinanceOperation. The deposit's
+          // current zeroed/expired balance is NOT reopened in 2026.
+          ? { initialAmount: nextFunded }
+          : {
+              initialAmount: nextFunded,
+              principalBalance: money(money(row.principalBalance) + amount),
+              benefitBalance: money(money(row.benefitBalance) + benefit),
+              balance: money(money(row.balance) + amount + benefit),
+              status: 'active',
+            },
       });
       await this.createFundingOperation(tx, tenantId, row, operationId, amount, walletId, walletName, occurredAt);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
-import { resolveSelectedRecordProgramPricePercent } from '../loyalty/price-condition';
+import { resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import { ProcedureService } from '../procedure/procedure.service';
 import { TimeService } from '../time/time.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -124,8 +124,10 @@ export class RecordService {
     ];
   }
 
-  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown = null) {
-    return (await resolveSelectedRecordProgramPricePercent(this.prisma, tenantId, person, loyaltyProgram)).percent;
+  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown, visitDate: unknown) {
+    return (await resolveSelectedRecordProgramPricePercent(
+      this.prisma, tenantId, person, loyaltyProgram, visitDatePriceMoment(visitDate),
+    )).percent;
   }
 
   private async validateAvailability(
@@ -241,14 +243,19 @@ export class RecordService {
       ? this.time.minutesToTime(startMinutes + totalDuration)
       : '';
     const to = derivedTo || text(input.to);
-    await this.validateAvailability(tenantId, { date, workplaceId, from, to }, { excludeRequestId: sourceRequestId });
+    // Professional Journal may recreate historical visits without today's
+    // working schedule. Public booking still follows ordinary availability.
+    const historicalOwnerEntry = !publicBooking && date < new Date().toISOString().slice(0, 10);
+    if (!historicalOwnerEntry) {
+      await this.validateAvailability(tenantId, { date, workplaceId, from, to }, { excludeRequestId: sourceRequestId });
+    }
 
     const products = arrayValue(input.products).map((item) => clone(objectValue(item)));
     let person = clone(objectValue(input.person));
     const group = normalizeGroup(input.group, person, groupCapacityFromProcedures(procedureSnapshots));
     if (group?.participants?.length) person = clone(group.participants[0]);
     const loyaltyProgram = nullableObject(input.loyaltyProgram);
-    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
+    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram, date);
     const settlement = this.finance.calculateSettlement(this.settlementSources(procedureSnapshots, products), pricePercent);
 
     const now = new Date().toISOString();
@@ -467,7 +474,7 @@ export class RecordService {
       if (!directMatch && !groupMatch && !bookedByMatch) continue;
       const events = byRecord.get(text(record.id)) || [];
       const lifecycle = this.projectLifecycle(record, events);
-      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram);
+      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram, record.date);
       const fallbackSettlement = this.finance.calculateSettlement(
         this.settlementSources(
           arrayValue(record.procedures).map((item) => objectValue(item)),
@@ -476,12 +483,28 @@ export class RecordService {
         pricePercent,
       );
       const unknownPrice = record.historicalTransfer && (!arrayValue(record.procedures).length || arrayValue(record.procedures).some(item => item.cost == null || item.cost === ''));
-      const settlement = unknownPrice ? null : await this.finance.settlementForSource(
+      const storedSettlement = unknownPrice ? null : await this.finance.settlementForSource(
         tenantId,
         'record',
         text(record.id),
         fallbackSettlement,
       ) || fallbackSettlement;
+      // Project unpaid bookings from the deposit terms valid at their visit
+      // date. A newly funded deposit must appear, and an ended one must not
+      // remain on a future booking. Never rewrite a paid historical snapshot.
+      const storedPayment = await this.finance.recordSettlementPaymentState(
+        tenantId, text(record.id), storedSettlement,
+      );
+      const settlement = storedSettlement && storedPayment.paid <= 0.009
+        ? this.finance.repriceSettlement(
+            this.settlementSources(
+              arrayValue(record.procedures).map((item) => objectValue(item)),
+              arrayValue(record.products).map((item) => objectValue(item)),
+            ),
+            storedSettlement,
+            pricePercent,
+          )
+        : storedSettlement;
       const payment = await this.finance.recordSettlementPaymentState(tenantId, text(record.id), settlement);
       result.push({
         ...record,
@@ -592,12 +615,16 @@ export class RecordService {
       || text(current.from) !== from
       || text(current.to) !== to;
     if (scheduleChanged) {
-      await this.validateAvailability(tenantId, {
-        date,
-        workplaceId: incomingWorkplaceId,
-        from,
-        to,
-      }, { excludeRecordId: id });
+      const publicBooking = ['online-booking', 'account-journal'].includes(text(current.source));
+      const historicalOwnerEntry = !publicBooking && date < new Date().toISOString().slice(0, 10);
+      if (!historicalOwnerEntry) {
+        await this.validateAvailability(tenantId, {
+          date,
+          workplaceId: incomingWorkplaceId,
+          from,
+          to,
+        }, { excludeRecordId: id });
+      }
     }
 
     const products = productsChanged
@@ -615,7 +642,7 @@ export class RecordService {
     const loyaltyProgram = programChanged ? nullableObject(incoming.loyaltyProgram) : nullableObject(current.loyaltyProgram);
 
     const currentPerson = objectValue(current.person);
-    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram);
+    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram, current.date);
     const currentFallbackSettlement = this.finance.calculateSettlement(
       this.settlementSources(
         arrayValue(current.procedures).map((item) => objectValue(item)),
@@ -631,10 +658,14 @@ export class RecordService {
     ) || currentFallbackSettlement;
 
     const nextSettlementSources = this.settlementSources(procedures, products);
-    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
+    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram, date);
+    const visitPriceChanged = dateValue(current.date) !== date && nextPricePercent !== currentPricePercent;
+    // A moved, unpaid visit is re-priced; a paid calculation remains history.
+    const repriceUnpaidVisit = visitPriceChanged
+      && (await this.finance.recordSettlementPaymentState(tenantId, id, currentSettlement)).paid <= 0.009;
     const settlement = personChanged
       ? this.finance.calculateSettlement(nextSettlementSources, nextPricePercent)
-      : (refreshProcedures || productsChanged || programChanged)
+      : (refreshProcedures || productsChanged || programChanged || repriceUnpaidVisit)
         ? this.finance.repriceSettlement(nextSettlementSources, currentSettlement, nextPricePercent)
         : null;
 
