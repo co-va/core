@@ -92,7 +92,7 @@ export async function depositWorkbook(rows: Array<Array<string | number | Date |
     // Range-scoped validation must not instantiate 2000 empty worksheet rows:
     // addRow() otherwise appends the export after the phantom rows.
     const letter = sheet.getColumn(column).letter;
-    sheet.dataValidations.add(letter + '3:' + letter + '2000', {
+    (sheet as any).dataValidations.add(letter + '3:' + letter + '2000', {
       type: 'list', allowBlank: true, formulae,
     });
   };
