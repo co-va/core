@@ -220,10 +220,9 @@ try {
   assert.equal(contactSheet.rowCount,1,'Template is empty but ready for input');
   assert.equal(contactSheet.getCell(1,1).value,'Имя');
   assert.equal(contactSheet.getColumn(9).hidden,true,'Internal key is not exposed to professionals');
-  contactSheet.addRow({
-    name:'Ксения',surname:'Примерная',phone:'79997771234',
-    email:'ksenia@example.test',birthday:'1990-06-15',gender:'Женский',
-  });
+  contactSheet.getRow(2).values=[
+    'Ксения','Примерная','79997771234','','ksenia@example.test','1990-06-15','Женский','',
+  ];
   const contactPayload={filename:'contacts.xlsx',source:'Контакты',
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await emptyContacts.xlsx.writeBuffer()).toString('base64'),
     strict:true,expectedDomain:'people',sheets:{'Люди':{domain:'people'}}};
@@ -242,8 +241,8 @@ try {
   assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
   const wrongContacts=new ExcelJS.Workbook();
   await wrongContacts.xlsx.load(await service.workbook({domain:'people',template:true}));
-  wrongContacts.worksheets[0].addRow({name:'Ирина',phone:'79993332211'});
-  wrongContacts.worksheets[0].addRow({name:'Неверный',phone:'bad-phone'});
+  wrongContacts.worksheets[0].getRow(2).values=['Ирина','','79993332211'];
+  wrongContacts.worksheets[0].getRow(3).values=['Неверный','','bad-phone'];
   const badPayload={...contactPayload,
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await wrongContacts.xlsx.writeBuffer()).toString('base64')};
   const badChecked=await service.run(tenantId,accountId,badPayload,true);
