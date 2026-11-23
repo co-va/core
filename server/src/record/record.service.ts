@@ -392,6 +392,53 @@ export class RecordService {
     return id;
   }
 
+  // Finance Excel links a payment to one existing appointment; it never
+  // creates an appointment, changes its price or guesses between candidates.
+  async matchFinancialRecord(tenantId:string,input:JsonObject,tx:Prisma.TransactionClient) {
+    const norm=(value:unknown)=>text(value).toLocaleLowerCase('ru-RU')
+      .replace(/ё/g,'е').replace(/\\s+/g,' ').trim();
+    const digits=(value:unknown)=>text(value).replace(/\\D/g,'').slice(-10);
+    const date=dateValue(input.date);
+    const subject=norm(input.subject || input.procedure);
+    const phone=digits(input.phone);
+    const code=norm(input.uei);
+    const participant=norm(input.participant || input.name);
+    const personId=text(input.personKey);
+    const workplaceId=text(input.workplaceId);
+    const time=text(input.from);
+    const sourceDoc=text(input.documentNumber);
+    if(!date || !subject || ![personId,phone,code,participant].some(Boolean))
+      throw new ConflictException('Для сопоставления записи нужны дата счёта, услуга и участник');
+    const rows=await tx.record.findMany({where:{tenantId}});
+    const relevant=rows.map(row=>({id:row.recordId,record:objectValue(row.data)}))
+      .filter(({id,record})=>{
+        if(['Отменил','Удалена'].includes(text(record.historicalAction)))return false;
+        if(dateValue(record.date)!==date)return false;
+        if(workplaceId && text(record.workplaceId)!==workplaceId)return false;
+        if(time && text(record.from)!==time)return false;
+        const person=objectValue(record.person);
+        if(personId && text(person.key)!==personId)return false;
+        if(phone && digits(person.phone)!==phone)return false;
+        if(code && norm(person.uei)!==code && !personId)return false;
+        if(participant){
+          const full=norm([person.name,person.surname].filter(Boolean).join(' '));
+          if(full!==participant && norm(person.name)!==participant)return false;
+        }
+        const services=arrayValue(record.procedures).map(p=>norm(p?.name)).filter(Boolean);
+        const products=arrayValue(record.products).map(p=>norm(p?.name)).filter(Boolean);
+        const claimed=subject.split(/[,;+]/).map(part=>part.trim()).filter(Boolean);
+        return claimed.length>0 && claimed.every(name=>[...services,...products].includes(name));
+      });
+    // An imported CRM document number may be an invoice, not a Record ID.
+    // Only use it as a hard anchor when it actually matches the Record ID.
+    const exact=sourceDoc?relevant.filter(item=>item.id===sourceDoc):[];
+    const matches=exact.length?exact:relevant;
+    if(matches.length!==1)throw new ConflictException(matches.length
+      ? 'Найдено несколько записей. Уточните время или код клиента.'
+      : 'Запись для оплаты не найдена. Проверьте участника, дату, услугу и рабочее пространство.');
+    return matches[0].record;
+  }
+
   async resolveTransferredRecord(tenantId: string, input: JsonObject, tx: Prisma.TransactionClient) {
     const rows = await tx.record.findMany({ where: { tenantId } });
     if (text(input.recordId)) {
