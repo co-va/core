@@ -138,7 +138,8 @@ export async function createDepositInstance(db: Db, tenantId: string, input: {
 // Historical visibility is based on effective date, not a present-day status.
 // Materialized balances/status may have been cleared by expiry after the visit.
 function depositWasFundedAt(row: { fundedAt?: Date | string }, at: Date) {
-  const funded = row.fundedAt instanceof Date ? row.fundedAt.toISOString() : text(row.fundedAt);
+  const funded = row.fundedAt && typeof (row.fundedAt as Date).toISOString === 'function'
+    ? (row.fundedAt as Date).toISOString() : text(row.fundedAt);
   return !funded || funded.slice(0, 10) <= at.toISOString().slice(0, 10);
 }
 
