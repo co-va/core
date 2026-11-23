@@ -21,6 +21,7 @@ try {
   await workbook.xlsx.load(template);
   assert.equal(workbook.worksheets.length,1,'Only one sheet in the template');
   const sheet=workbook.worksheets[0];
+  assert.equal(sheet.rowCount,2,'Empty template must not contain phantom data rows');
   assert.equal(sheet.getCell(2,1).value,'Депозит');
   assert.equal(sheet.getCell(2,16).value,'Действие');
   sheet.getRow(3).values=pad(['Ромашка','Фиксированная',30000,'Период',
@@ -76,6 +77,7 @@ try {
   assert.equal(output.worksheets[0].getCell(2,21).value,'Остаток');
   assert.equal(output.worksheets[0].getCell(2,23).value,'Источник');
   assert.equal(output.worksheets[0].getCell(5,21).value,25000);
+  assert.equal(output.worksheets[0].rowCount,5,'Export data rows must start immediately after the header');
   console.log('PASS: deposit Excel one-sheet template, preview, atomic funding/spending, wallet unknown, expiry, repeat import, wallet correction, export');
 } finally {
   if(created) {
