@@ -34,6 +34,10 @@ assert.equal(run('2024-04-02T14:00:00.000Z').available, 1200,
   'Both funding events and an earlier service payment affect as-of balance');
 assert.equal(run('2024-05-02T14:00:00.000Z').available, 1250,
   'Refund is recorded as a separate dated event');
+assert.equal(run('2026-11-23T14:00:00.000Z').remaining, 1250,
+  'Expiry retains the financial remainder instead of treating it as spent');
+assert.equal(run('2026-11-23T14:00:00.000Z').remainingPrincipal, 1250,
+  'Historical principal remains auditable after the deposit term');
 assert.deepEqual(JSON.parse(JSON.stringify(run('2024-02-01T14:00:00.000Z', 750).allocation)),
   { amount: 750, principalAmount: 750, benefitAmount: 0 });
 assert.throws(() => run('2024-02-01T14:00:00.000Z', 1000.01),
@@ -58,11 +62,26 @@ assert.equal(run('2024-02-01T12:00:00.000Z', 0, [
 const state = readFileSync(new URL('../server/src/loyalty/deposit-state.ts', import.meta.url), 'utf8');
 const body = state.slice(state.indexOf('function objectValue('),
   state.indexOf('export async function restoreDepositAllocations(')).replaceAll('export ', '');
-const { consumeDepositAllocations } = runInNewContext(
-  stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ consumeDepositAllocations })',
+const { consumeDepositAllocations, expireDepositInstances } = runInNewContext(
+  stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ consumeDepositAllocations, expireDepositInstances })',
   { depositHistoricalLedger, BadRequestException: class extends Error {} },
 );
 let updates = 0;
+const autoExpiryWrites = [];
+const oldDeposit = {
+  id: deposit, depositId: deposit, status: 'active',
+  terms: { ...terms, termMode: 'dated', termStartDate: '2024-01-01', termEndDate: '2025-01-31' },
+  balance: 1250, principalBalance: 1250, benefitBalance: 0,
+};
+const expiryDb = {
+  loyaltyDepositInstance: {
+    findMany: async () => [oldDeposit],
+    update: async (value) => { autoExpiryWrites.push(value.data); },
+  },
+};
+await expireDepositInstances(expiryDb, 'tenant-1', deposit);
+assert.deepEqual(JSON.parse(JSON.stringify(autoExpiryWrites)), [{ status: 'expired' }],
+  'On expiry Core must only change status, NEVER zero unused principal/benefit/balance');
 const expired = {
   id: deposit, depositId: deposit, personKey: 'person-1', status: 'expired',
   terms: { ...terms, termMode: 'dated', termStartDate: '2024-01-01', termEndDate: '2025-01-31' },
@@ -81,7 +100,7 @@ const receipt = await consumeDepositAllocations(tx, 'tenant-1',
 assert.equal(receipt.length, 1);
 assert.equal(receipt[0].amount, 200);
 assert.equal(receipt[0].principalAmount, 200);
-assert.equal(updates, 0, 'Backfill never changes the current expired balance');
+assert.equal(updates, 0, 'Backfill never changes the expired status or materialized financial facts');
 await assert.rejects(
   consumeDepositAllocations(tx, 'tenant-1', [{ depositId: deposit, amount: 100 }],
     'person-OTHER', new Date('2024-03-15T14:00:00Z'), true),
@@ -93,4 +112,10 @@ await assert.rejects(
   /недоступен/,
 );
 
+const currentViewSource = readFileSync(new URL('../server/src/loyalty/deposit.service.ts', import.meta.url), 'utf8');
+assert.match(currentViewSource, /row.status === 'expired'\s*\? depositHistoricalLedger/,
+  'Already-zeroed deposits must display their actual unused balance from FinanceOperation');
+const paySource = readFileSync(new URL('../server/src/finance/payment-settlement.service.ts', import.meta.url), 'utf8');
+assert.match(paySource, /recordVisitAt && !historicalRecordPayment \? recordVisitAt : occurredAt/,
+  'Prepaid deposits must be validated against the visit date, not transaction date');
 console.log('Historical deposit ledger: PASS');
