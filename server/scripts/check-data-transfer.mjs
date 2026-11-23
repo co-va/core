@@ -548,10 +548,10 @@ try {
   result=await service.run(tenantId,accountId,cancelInput,false);
   assert.equal(result.unchanged,1);
   // A split invoice is still one service quote and TWO wallet movements.
-  const state=await db.businessAuxiliaryState.findUnique({where:{tenantId}});
-  const stateData=state.data;
+  const walletState=await db.businessAuxiliaryState.findUnique({where:{tenantId}});
+  const walletData=walletState.data;
   await db.businessAuxiliaryState.update({where:{tenantId},data:{
-    data:{...stateData,wallets:[...stateData.wallets,{id:'sber',name:'Сбербанк'}]},
+    data:{...walletData,wallets:[...walletData.wallets,{id:'sber',name:'Сбербанк'}]},
   }});
   const splitBook=new ExcelJS.Workbook();
   await splitBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
