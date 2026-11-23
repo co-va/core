@@ -3,6 +3,7 @@ import { normalizeUEI as normalizeUEIValue } from '../../../core/uei-format.js';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { randomUUID } from 'node:crypto';
 import { resolveTransferredPerson } from './person-transfer';
+import { activeDepositPriceSources } from '../loyalty/deposit-state';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -196,7 +197,14 @@ export class BusinessStateService {
 
   async importPerson(tenantId: string, input: JsonObject, targetId: string, tx: Prisma.TransactionClient, ownership: JsonObject = {}) {
     input={...input,...(input.birthday!==undefined?{birthDate:input.birthday}:{})};
-    if(input.gender){const genders:JsonObject={'Мужской':'male','Женский':'female',male:'male',female:'female'};if(!genders[input.gender])throw new BadRequestException('Не удалось определить пол');input.gender=genders[input.gender];}
+    if(input.gender){
+      const genders:JsonObject={'М':'male','м':'male','Мужской':'male','мужской':'male',
+        'Ж':'female','ж':'female','Женский':'female','женский':'female',
+        male:'male',female:'female'};
+      const mapped=genders[text(input.gender)];
+      if(!mapped)throw new BadRequestException('Пол: укажите М, Ж, Мужской или Женский');
+      input.gender=mapped;
+    }
     const rows = await tx.person.findMany({ where: { tenantId } });
     const identityRow = await tx.ueiState.findUnique({ where: { tenantId } });
     const identity = normalizeUEI(identityRow?.data || {});
@@ -232,6 +240,45 @@ export class BusinessStateService {
       if (value && !independent) retained.push(value);
       person[collection] = retained;
       if (value && !independent) ownership[field] = value; else delete ownership[field];
+    }
+    // Secondary contacts use the same arrays as the Q editor. The upload
+    // only adds its own values, preserving independently entered contacts.
+    for(const [field,collection] of [
+      ['additionalEmail','emails'],['telegram','telegrams'],
+      ['additionalTelegram','telegrams'],
+    ] as const){
+      if(input[field]===undefined)continue;
+      const incoming=text(input[field]);
+      if(!incoming)continue;
+      if(collection==='emails' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(incoming))
+        throw new BadRequestException('Проверьте Email');
+      const values=Array.isArray(person[collection])?[...person[collection]]:[];
+      const own=text(ownership[field]);
+      const next=values.filter((entry:unknown)=>!own||text(entry)!==own);
+      if(!next.some((entry:unknown)=>text(entry)===incoming)){
+        next.push(incoming);
+        ownership[field]=incoming;
+      }else delete ownership[field];
+      person[collection]=next;
+    }
+    if(input.discountPercent!==undefined){
+      const percent=Number(input.discountPercent);
+      if(!Number.isFinite(percent)||percent<0||percent>100)
+        throw new BadRequestException('Скидка должна быть от 0 до 100%');
+      const existing=Number(previous?.discountPercent||0);
+      const owns=ownership.discountPercent!==undefined && Number(ownership.discountPercent)===existing;
+      if(previous && existing!==percent && existing>0 && !owns)
+        throw new ConflictException('У человека уже есть личная скидка. Измените её в карточке.');
+      if(percent>0 && existing!==percent){
+        const sources=await activeDepositPriceSources(tx,tenantId,key,new Date());
+        if(sources.length)
+          throw new ConflictException('Личная скидка пересекается со скидкой программы. Проверьте условия в карточке.');
+      }
+      person.discountPercent=percent;
+      if(existing!==percent){
+        person.discountAssignedAt=percent>0?new Date().toISOString():'';
+      }
+      ownership.discountPercent=percent;
     }
     if (mayCorrectUei && input.uei !== undefined) {
       const next = text(input.uei) ? normalizeUEIValue(input.uei) : '';
