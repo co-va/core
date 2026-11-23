@@ -304,19 +304,27 @@ try {
   const jSheet=jBook.worksheets[0];
   assert.equal(jBook.worksheets.length,1);
   assert.equal(jSheet.name,'Записи');
-  assert.deepEqual([1,2,7,10,13,17,27,32].map(i=>jSheet.getCell(1,i).value),
-    ['Рабочее пространство','Клиент','Визит','Кто создал запись',
-      'История записи','Услуги','О записи','Источник интеграции']);
+  assert.deepEqual([2,7,10,13,17,21].map(i=>jSheet.getCell(1,i).value),
+    ['Клиент','Визит','Создание записи','История записи','Услуги','Статусы']);
+  assert.equal(jSheet.getCell(1,1).value,null);
+  assert.equal(jSheet.getCell(1,20).value,null);
+  assert.equal(jSheet.getCell(1,23).value,null);
+  assert.equal(jSheet.getCell(2,2).fill.fgColor.argb,'FF303238');
+  assert.equal(jSheet.getCell(2,2).font.color.argb,'FFFFFFFF');
   const jHeaders=jSheet.getRow(2).values;
   assert.deepEqual(jHeaders.slice(2,7),['Код клиента','Имя','Фамилия','Телефон','Email']);
-  assert.ok(jHeaders.includes('Услуга 10'));
+  assert.ok(jHeaders.includes('Услуга 3'));
+  assert.ok(!jHeaders.includes('Услуга 4'));
+  assert.ok(!jHeaders.includes('Оплачено полностью'));
   assert.ok(!jHeaders.includes('Товар 1'));
   assert.ok(!jHeaders.includes('Кошелёк'));
   assert.equal(jSheet.getColumn(jHeaders.indexOf('ID записи')).hidden,true);
   const putJ=(sheet,row,values)=>{
     const header=sheet.getRow(2).values;
     for(const [label,value] of Object.entries(values)){
-      const col=header.indexOf(label);
+      const [group,field]=label.includes('/')?label.split('/'):[null,label];
+      const groupStart=group?sheet.getRow(1).values.indexOf(group):0;
+      const col=group?header.findIndex((title,i)=>i>=groupStart&&i<groupStart+5&&title===field):header.indexOf(field);
       assert.ok(col>0,'Missing Journal Excel column '+label);
       sheet.getRow(row).getCell(col).value=value;
     }
@@ -325,13 +333,13 @@ try {
     'Рабочее пространство':'BeautyToria',
     'Код клиента':'12','Имя':'Анна','Телефон':'79991234567','Email':'anna.booking@example.test',
     'Дата визита':'2014-06-15','Время начала':'10:00',
-    'Кто создал':'Администратор','Дата создания':'2014-06-01',
-    'Время создания':'09:30','Статус записи':'Записался',
-    'Кто изменил':'Администратор','Дата изменения':'2014-06-02',
-    'Время изменения':'10:45',
+    'Создание записи/Имя':'Администратор','Создание записи/Дата':'2014-06-01',
+    'Создание записи/Время':'09:30','История записи/Статус':'Записался',
+    'История записи/Имя':'Администратор','История записи/Дата':'2014-06-02',
+    'История записи/Время':'10:45',
     'Услуга 1':'Стрижка','Услуга 2':'Укладка',
-    'Стоимость записи':3500,'Посещение':'Не пришёл',
-    'Статус оплаты':'Оплачено','Оплачено полностью':'Да',
+    'Стоимость':3500,'Статус посещения':'Не пришёл',
+    'Статус оплаты':'Оплачено',
     'Комментарий':'Подтверждение по телефону','Источник интеграции':'Онлайн-запись',
   });
   const jPayload={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
@@ -380,21 +388,21 @@ try {
   assert.equal(jExportSheet.rowCount,3);
   assert.equal(jExportSheet.getCell(3,17).value,'Стрижка');
   assert.equal(jExportSheet.getCell(3,18).value,'Укладка');
-  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('Стоимость записи')).value,3500);
+  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('Стоимость')).value,3500);
   assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('ID записи')).value,jId);
   const jInvalid=new ExcelJS.Workbook();
   await jInvalid.xlsx.load(await service.workbook({domain:'records',template:true}));
   putJ(jInvalid.worksheets[0],3,{
     'Рабочее пространство':'BeautyToria','Код клиента':'12',
     'Имя':'Анна','Телефон':'79991234567','Дата визита':'2013-03-12',
-    'Время начала':'09:00','Статус записи':'Записался',
-    'Посещение':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
+    'Время визита':'09:00','История записи/Статус':'Записался',
+    'Статус посещения':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
   });
   putJ(jInvalid.worksheets[0],4,{
     'Рабочее пространство':'BeautyToria','Имя':'Несуществующий',
     'Телефон':'79999992200','Дата визита':'2013-03-13',
-    'Время начала':'10:00','Статус записи':'Записался',
-    'Посещение':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
+    'Время визита':'10:00','История записи/Статус':'Записался',
+    'Статус посещения':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
   });
   const jInvalidPayload={...jPayload,
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jInvalid.xlsx.writeBuffer()).toString('base64')};
