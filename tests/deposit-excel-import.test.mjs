@@ -101,4 +101,10 @@ const collision=await planDepositExcel(emptyDb(),'tenant-test',[
 ],'batch-duplicate','','');
 assert.ok(collision.errors.some(e=>/повторяется ID/i.test(e.message)),
   'Duplicate external operation ID in a file rejected');
-console.log('Deposit Excel import plan: all six domain regressions PASS');
+const distinctNames=await planDepositExcel(emptyDb(),'tenant-test',[
+  template[0],row(4,'2024-02-20','Пополнение',10000,{phone:'+79998887766'}),
+],'batch-distinct','','');
+assert.equal(distinctNames.errors.length,0,JSON.stringify(distinctNames.errors));
+assert.equal(distinctNames.people.length,2,'Same name with different phone must never be merged');
+assert.notEqual(distinctNames.events[0].personKey,distinctNames.events[1].personKey);
+console.log('Deposit Excel import plan: seven domain regressions PASS');
