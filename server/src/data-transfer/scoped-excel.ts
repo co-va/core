@@ -202,7 +202,7 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
   if(domain==='records'){
     sheet.columns=cols.map(col=>({key:col.key,width:Math.max(17,col.label.length+4),
       hidden:!!col.hidden,numFmt:'@'}));
-    const servicesCount=cols.filter(col=>/^Услуга \\d+$/.test(col.label)).length;
+    const servicesCount=cols.filter(col=>/^Услуга \d+$/.test(col.label)).length;
     const sections=[
       ['Рабочее пространство',1,1],['Клиент',2,6],['Визит',7,9],
       ['Кто создал запись',10,12],['История записи',13,16],
