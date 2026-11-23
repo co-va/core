@@ -212,7 +212,10 @@ export class DepositService {
       if (item.kind === 'deposit-funding') {
         principal = money(principal + amount);
         funded = money(funded + amount);
-        if (mode === 'accrual') bonus = money(bonus + amount * rate / 100);
+      } else if (item.kind === 'deposit-benefit') {
+        // The separate benefit line owns this increment, not the preceding
+        // funding row: preserve the true balance after *each* history line.
+        bonus = money(bonus + amount);
       } else if (item.kind === 'deposit-withdrawal') {
         principal = 0;
         bonus = 0;
