@@ -217,11 +217,20 @@ try {
   const contactSheet = emptyContacts.worksheets[0];
   assert.equal(emptyContacts.worksheets.length,1);
   assert.equal(contactSheet.name,'Люди');
-  assert.equal(contactSheet.rowCount,1,'Template is empty but ready for input');
-  assert.equal(contactSheet.getCell(1,1).value,'Имя');
-  assert.equal(contactSheet.getColumn(9).hidden,true,'Internal key is not exposed to professionals');
-  contactSheet.getRow(2).values=[
-    'Ксения','Примерная','79997771234','','ksenia@example.test','1990-06-15','Женский','',
+  assert.equal(contactSheet.rowCount,2,'Template has group and field headers, no people');
+  assert.equal(contactSheet.getCell(1,1).value,'Личные данные');
+  assert.equal(contactSheet.getCell(1,7).value,'Контактные данные');
+  assert.deepEqual(contactSheet.getRow(2).values.slice(1,13),[
+    'Код клиента','Имя','Фамилия','Пол','Дата рождения','Скидка, %',
+    'Телефон','Дополнительный телефон','Email','Дополнительный Email',
+    'Telegram','Дополнительный Telegram',
+  ]);
+  assert.equal(contactSheet.getColumn(13).hidden,true,'Internal key is not exposed to professionals');
+  assert.equal(contactSheet.getCell(2,13).value,'ID человека');
+  contactSheet.getRow(3).values=[
+    'A012','Ксения Примерная','','Ж','15/6/85',10,'79997771234',
+    '79997771235','ksenia@example.test','ksenia.second@example.test',
+    '@ksenia_test','@ksenia_alt',
   ];
   const contactPayload={filename:'contacts.xlsx',source:'Контакты',
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await emptyContacts.xlsx.writeBuffer()).toString('base64'),
@@ -236,13 +245,20 @@ try {
   assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
   const importedPerson=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Ксения'}}});
   assert.equal(importedPerson.data.contactStatus,'import');
+  assert.equal(importedPerson.data.surname,'Примерная');
+  assert.equal(importedPerson.data.gender,'female');
+  assert.equal(importedPerson.data.birthDate,'1985-06-15');
+  assert.equal(importedPerson.data.discountPercent,10);
+  assert.deepEqual(importedPerson.data.phones.slice().sort(),['+79997771234','+79997771235'].sort());
+  assert.deepEqual(importedPerson.data.emails.slice().sort(),['ksenia@example.test','ksenia.second@example.test'].sort());
+  assert.deepEqual(importedPerson.data.telegrams.slice().sort(),['@ksenia_test','@ksenia_alt'].sort());
   const duplicate=await service.run(tenantId,accountId,contactPayload,false);
   assert.equal(duplicate.unchanged,1,'Re-upload never duplicates');
   assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
   const wrongContacts=new ExcelJS.Workbook();
   await wrongContacts.xlsx.load(await service.workbook({domain:'people',template:true}));
-  wrongContacts.worksheets[0].getRow(2).values=['Ирина','','79993332211'];
-  wrongContacts.worksheets[0].getRow(3).values=['Неверный','','bad-phone'];
+  wrongContacts.worksheets[0].getRow(3).values=['','Ирина','','М','15.06','','79993332211'];
+  wrongContacts.worksheets[0].getRow(4).values=['','Неверный','','М','15.06','','bad-phone'];
   const badPayload={...contactPayload,
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await wrongContacts.xlsx.writeBuffer()).toString('base64')};
   const badChecked=await service.run(tenantId,accountId,badPayload,true);
@@ -255,8 +271,31 @@ try {
     name:'Ксения',surname:'Примерная',phone:'79997771234',
     email:'ksenia@example.test',personKey:importedPerson.key,
   }]}));
-  assert.equal(existingExport.worksheets[0].getCell(2,1).value,'Ксения');
-  assert.equal(existingExport.worksheets[0].getCell(2,9).value,importedPerson.key);
+  assert.equal(existingExport.worksheets[0].getCell(3,2).value,'Ксения');
+  assert.equal(existingExport.worksheets[0].getCell(3,13).value,importedPerson.key);
+  const noYearBook=new ExcelJS.Workbook();
+  await noYearBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  noYearBook.worksheets[0].getRow(3).values=['','Алиса Сергеева','','М','15.06','','79997776655'];
+  const noYearInput={...contactPayload,dataUrl:'data:application/octet-stream;base64,'+
+    Buffer.from(await noYearBook.xlsx.writeBuffer()).toString('base64')};
+  const noYearPreview=await service.run(tenantId,accountId,noYearInput,true);
+  assert.equal(noYearPreview.failed,0,JSON.stringify(noYearPreview.rows));
+  const noYearCommit=await service.run(tenantId,accountId,noYearInput,false);
+  assert.equal(noYearCommit.transferred,1);
+  const noYearPerson=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Алиса'}}});
+  assert.equal(noYearPerson?.data.surname,'Сергеева');
+  assert.equal(noYearPerson?.data.birthDate,'06-15','Birthday without year must not synthesize a year');
+  assert.equal(noYearPerson?.data.gender,'male');
+  const legacyContact=new ExcelJS.Workbook();
+  const legacySheet=legacyContact.addWorksheet('Люди');
+  legacySheet.addRow(['Имя','Фамилия','Телефон','Дополнительный телефон','Email','Дата рождения','Пол','UEI','ID человека']);
+  legacySheet.addRow(['Ольга','Л.', '79996663344','','olga@example.test','15.06.1985','Женский','']);
+  const legacyInput={...contactPayload,dataUrl:'data:application/octet-stream;base64,'+
+    Buffer.from(await legacyContact.xlsx.writeBuffer()).toString('base64')};
+  const legacyCheck=await service.run(tenantId,accountId,legacyInput,true);
+  assert.equal(legacyCheck.failed,0,JSON.stringify(legacyCheck.rows));
+  assert.equal(legacyCheck.transferred,1);
+  console.log('PASS: grouping, contacts, secondary fields, short and full birthdays, gender and old file compatibility');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
   // Journal Excel: one row is exactly one Record; horizontal services, no sales or finance facts.
   const jBook=new ExcelJS.Workbook();

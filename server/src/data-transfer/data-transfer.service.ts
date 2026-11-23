@@ -17,6 +17,7 @@ import { SaasAccessService } from '../saas-access/saas-access.service';
 import { calendarDate, canonical, clock, decimal, DOMAINS, Fact, instant, LABELS, text } from './formats';
 import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook, peopleWorkbook } from './source';
 import { scopedExcelFacts, scopedExcelWorkbook } from './scoped-excel';
+import { peopleExcelFacts } from './contacts-excel';
 
 type Tx = Prisma.TransactionClient;
 type Values = Record<string, any>;
@@ -283,12 +284,9 @@ export class DataTransferService {
     let facts: Fact[];
     try {
       const parsed = await readSource(input);
-      if (input.expectedDomain === 'people' && (
-        parsed.sheets.length !== 1
-        || parsed.sheets[0]?.name !== 'Люди'
-        || !parsed.sheets[0]?.headers.includes('Имя')
-      )) throw Error('Выберите заполненный шаблон Контактов');
-      facts = input.expectedDomain === 'records' || input.expectedDomain === 'finance'
+      facts = input.expectedDomain === 'people'
+        ? peopleExcelFacts(parsed.sheets, parsed.fingerprint, text(input.source) || 'Контакты')
+        : input.expectedDomain === 'records' || input.expectedDomain === 'finance'
         ? scopedExcelFacts(parsed.sheets, parsed.fingerprint, input.expectedDomain, text(input.source) || 'Excel')
         : sourceFacts(parsed.sheets, parsed.fingerprint, input);
       if (input.expectedDomain === 'people' && facts.some(fact => fact.domain !== 'people')) {

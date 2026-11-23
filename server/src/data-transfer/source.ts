@@ -3,15 +3,16 @@ import { standardFacts } from './standard-facts';
 import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
 import { DOMAINS, LABELS, Fact, parseCsv, text } from './formats';
+export { peopleWorkbook } from './contacts-excel';
 
 export const FIELDS: Record<string, string> = { ...STANDARD_LABELS,
   transferId: 'ID переноса', externalId: 'ID источника', sourceKey: 'Ключ строки', name: 'Имя', surname: 'Фамилия', phone: 'Телефон', email: 'Email', uei: 'UEI',
   city: 'Город', address: 'Адрес', currency: 'Валюта', timeZone: 'Часовой пояс', about: 'Описание',
-  personKey: 'ID человека CO-VA', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства CO-VA', procedure: 'Процедура', procedures: 'Процедуры (JSON)', procedureId: 'ID процедуры CO-VA',
+  personKey: 'ID человека', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства', procedure: 'Процедура', procedures: 'Процедуры (JSON)', procedureId: 'ID услуги',
   date: 'Дата обслуживания', from: 'Время обслуживания', to: 'Окончание обслуживания', createdAt: 'Дата создания в источнике', occurredAt: 'Дата факта',
-  recordId: 'ID записи CO-VA', recordTransferId: 'ID переноса записи', personTransferId: 'ID переноса человека', workplaceTransferId: 'ID переноса пространства',
+  recordId: 'ID записи', recordTransferId: 'ID переноса записи', personTransferId: 'ID переноса человека', workplaceTransferId: 'ID переноса пространства',
   price: 'Исторический прайс', cost: 'Цена работы', discountPercent: 'Скидка %', discountMoney: 'Скидка суммой', duration: 'Длительность',
-  amount: 'Сумма оплаты', walletId: 'ID кошелька CO-VA', wallet: 'Кошелёк', material: 'Расходник', itemId: 'ID позиции CO-VA', itemTransferId: 'ID переноса позиции',
+  amount: 'Сумма оплаты', walletId: 'ID кошелька', wallet: 'Кошелёк', material: 'Расходник', itemId: 'ID позиции', itemTransferId: 'ID переноса позиции',
   manufacturer: 'Производитель', unit: 'Единица', quantity: 'Количество', unitCost: 'Себестоимость единицы', kind: 'Тип движения', note: 'Примечание', withoutProcedure: 'Без процедуры',
 };
 export const DOMAIN_FIELDS: Record<string, string[]> = {
@@ -63,8 +64,17 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
 export function defaultDomain(name: string) { return name === 'Данные' ? 'standard' : DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
 export function defaultColumns(headers: string[]) {
   const result: Record<string, number> = {};
+  // Historical branded labels remain readable, but are never written into new files.
+  const legacy: Record<string, string> = {
+    personKey: 'ID человека CO-VA',
+    workplaceKey: 'ID пространства CO-VA',
+    procedureId: 'ID процедуры CO-VA',
+    recordId: 'ID записи CO-VA',
+    walletId: 'ID кошелька CO-VA',
+    itemId: 'ID позиции CO-VA',
+  };
   for (const [field, label] of Object.entries(FIELDS)) {
-    const matches = headers.map((h, i) => h === field || h === label ? i : -1).filter(i => i >= 0);
+    const matches = headers.map((h, i) => h === field || h === label || h === legacy[field] ? i : -1).filter(i => i >= 0);
     if (matches.length === 1) result[field] = matches[0];
   }
   return result;
@@ -124,57 +134,6 @@ export function sourceFacts(sheets: Sheet[], fingerprint: string, input: SourceI
   facts.length = 0; facts.push(...expanded);
   return facts.sort((a, b) => DOMAINS.indexOf(a.domain) - DOMAINS.indexOf(b.domain));
 }
-// The Contacts worksheet is deliberately small and nontechnical. The hidden
-// key in a downloaded export enables safe round-trip editing without
-// presenting database identifiers to professionals.
-const PERSON_COLUMNS = [
-  { key: 'name', label: 'Имя', width: 23 },
-  { key: 'surname', label: 'Фамилия', width: 24 },
-  { key: 'phone', label: 'Телефон', width: 24 },
-  { key: 'additionalPhone', label: 'Дополнительный телефон', width: 27 },
-  { key: 'email', label: 'Email', width: 35 },
-  { key: 'birthday', label: 'Дата рождения', width: 20 },
-  { key: 'gender', label: 'Пол', width: 16 },
-  { key: 'uei', label: 'UEI', width: 14 },
-  { key: 'personKey', label: 'ID человека CO-VA', width: 16, hidden: true },
-] as const;
-export async function peopleWorkbook(rows: any[], template = false) {
-  if (!Array.isArray(rows) || rows.length > 20000) throw Error('За один раз допускается не более 20 000 контактов');
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'VA Tools';
-  const sheet = workbook.addWorksheet('Люди', { views: [{state:'frozen',ySplit:1}] });
-  sheet.columns = PERSON_COLUMNS.map(col => ({
-    header: col.label, key: col.key, width: col.width,
-    hidden: col.key === 'personKey',
-  }));
-  sheet.getRow(1).height = 32;
-  sheet.getRow(1).eachCell(cell => {
-    cell.font = { bold: true, color: {argb:'FFFFFFFF'}, size:11 };
-    cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF303238'} };
-    cell.alignment = { vertical:'middle', horizontal:'left', indent:1 };
-  });
-  // These are entry hints only, not additional fields or a second sheet.
-  sheet.getCell('A1').note = 'Заполните имя человека.';
-  sheet.getCell('C1').note = 'Телефон или UEI помогают найти существующую карточку без создания дубликата.';
-  sheet.getCell('F1').note = 'Например: 15.06.1985';
-  sheet.getCell('G1').note = 'Мужской или Женский.';
-  // List validation is range-scoped; do not create phantom rows.
-  (sheet as any).dataValidations.add('G2:G20001', {
-    type:'list', allowBlank:true, formulae:['"Мужской,Женский"'],
-  });
-  if(!template) for (const row of rows) {
-    const input = row && typeof row === 'object' ? row : {};
-    sheet.addRow(Object.fromEntries(PERSON_COLUMNS.map(col=>[
-      col.key,
-      col.key === 'personKey' ? String(input.personKey || '') :
-      col.key === 'birthday' ? String(input.birthday || '') :
-      String(input[col.key] ?? ''),
-    ])));
-  }
-  sheet.autoFilter = {from:{row:1,column:1},to:{row:Math.max(1,sheet.rowCount),column:8}};
-  return Buffer.from(await workbook.xlsx.writeBuffer());
-}
-
 export async function transferWorkbook(rows: any[], template = false) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Данные');

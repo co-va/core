@@ -148,7 +148,6 @@ function recordColumns(rows: any[], template: boolean) {
 export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], template=false):Promise<Buffer> {
   if (!Array.isArray(rows) || rows.length>20000)throw Error('Выгрузка допускает не более 20 000 строк за один раз');
   const book=new ExcelJS.Workbook();
-  book.creator='VA Tools';
   const cols:any[]=domain==='records'?recordColumns(rows,template):financeColumns(rows,template);
   const sheet=book.addWorksheet(domain==='records'?'Записи':'Финансы',{views:[{state:'frozen',ySplit:1,xSplit:1}]});
   sheet.columns=cols.map(col=>({key:col.key,header:col.label,width:col.label.length>24?28:22,hidden:!!col.hidden}));
