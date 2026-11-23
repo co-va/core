@@ -362,6 +362,7 @@ try {
   assert.equal(jRecord.historicalQuotedTotal,3500);
   assert.equal(jRecord.historicalComment,'Подтверждение по телефону');
   assert.equal(jRecord.historicalIntegrationSource,'Онлайн-запись');
+  assert.equal(jRecord.source,'online-booking','Source meaning survives import');
   assert.equal(await db.financeOperation.count({where:{tenantId}}),beforePayments,
     'Paid status and record price do not create money movements');
   result=await service.run(tenantId,accountId,jPayload,false);
