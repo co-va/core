@@ -170,15 +170,21 @@ export class BusinessStateService {
     person.key = normalizedKey;
     await withTenantHistoryActor(this.prisma, actor, async tx => {
       const stored = await tx.person.findUnique({ where: { tenantId_key: { tenantId, key: normalizedKey } } });
-      const savedSource = text(objectValue(stored?.data).creationSource);
-      // Contact origin belongs to the initial creation, not to subsequent
-      // edits, account linking, Excel matching or registration.
-      if (stored) {
-        if (savedSource) person.creationSource = savedSource;
-        else delete person.creationSource;
-      } else if (!['import', 'registration', 'manual'].includes(text(person.creationSource))) {
-        person.creationSource = 'manual';
-      }
+      const previous = objectValue(stored?.data);
+      const legacy = { import: 'import', manual: 'added', registration: 'registered' };
+      const previousStatus = text(previous.contactStatus)
+        || legacy[text(previous.creationSource) as keyof typeof legacy] || '';
+      const requested = text(person.contactStatus)
+        || legacy[text(person.creationSource) as keyof typeof legacy] || '';
+      const linked = (Array.isArray(person.accounts) && person.accounts.some(Boolean))
+        || (Array.isArray(previous.accounts) && previous.accounts.some(Boolean));
+      // Registration upgrades both imported and added contacts. Subsequent
+      // edits or imports cannot downgrade a registered person.
+      person.contactStatus = linked || previousStatus === 'registered'
+        ? 'registered'
+        : stored ? (previousStatus || 'added')
+          : requested === 'import' ? 'import' : 'added';
+      delete person.creationSource;
       return tx.person.upsert({
         where: { tenantId_key: { tenantId, key: normalizedKey } },
         create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
@@ -203,8 +209,8 @@ export class BusinessStateService {
     const key = previous?.key || randomUUID();
     const person: JsonObject = {
       ...(previous || {}), key,
-      // The importer must not relabel a contact that already existed.
-      ...(!previous ? { creationSource: 'import' } : {}),
+      // Import only labels a NEW contact; existing contact status is preserved.
+      ...(!previous ? { contactStatus: 'import' } : {}),
     };
     for (const field of ['name', 'surname', 'createdAt','birthDate','gender']) {
       if (input[field] === undefined) continue;
