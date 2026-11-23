@@ -6,6 +6,7 @@ const source = readFileSync(new URL('../server/src/loyalty/deposit-history.ts', 
   .replaceAll('export ', '');
 const { depositHistoricalLedger } = runInNewContext(
   stripTypeScriptTypes(source, { mode: 'strip' }) + '\n({ depositHistoricalLedger })',
+  { Error }, // Share the native Error constructor with the second VM context.
 );
 
 const deposit = 'deposit-2024';
@@ -64,7 +65,7 @@ const body = state.slice(state.indexOf('function objectValue('),
   state.indexOf('export async function restoreDepositAllocations(')).replaceAll('export ', '');
 const { consumeDepositAllocations, expireDepositInstances } = runInNewContext(
   stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ consumeDepositAllocations, expireDepositInstances })',
-  { depositHistoricalLedger, BadRequestException: class extends Error {} },
+  { depositHistoricalLedger, Error, BadRequestException: class extends Error {} },
 );
 let updates = 0;
 const autoExpiryWrites = [];
@@ -127,8 +128,8 @@ const currentViewSource = readFileSync(new URL('../server/src/loyalty/deposit.se
 assert.match(currentViewSource, /row.status === 'expired'\s*\? depositHistoricalLedger/,
   'Already-zeroed deposits must display their actual unused balance from FinanceOperation');
 const paySource = readFileSync(new URL('../server/src/finance/payment-settlement.service.ts', import.meta.url), 'utf8');
-assert.match(paySource, /recordVisitAt && !historicalRecordPayment \? recordVisitAt : occurredAt/,
-  'Prepaid deposits must be validated against the visit date, not transaction date');
+assert.match(paySource, /occurredAt,\s*historicalRecordPayment,\s*recordVisitAt/,
+  'Keep the actual payment date and visit-date entitlement separate');
 const prematureTx = {
   ...tx,
   loyaltyDepositInstance: {
@@ -145,4 +146,96 @@ await assert.rejects(
   /недоступен/,
   'Manually ended assignment must not regain spendability through historical backfill',
 );
+
+ // An active deposit must not spend funding posted after an old service date,
+ // even when the payment itself is entered later and today's balance is positive.
+const activeTerms = {
+  benefitType: 'discount', benefitValue: 20,
+  termMode: 'dated', termStartDate: '2026-11-01', termEndDate: '2026-12-31',
+};
+const currentPaymentAt = new Date('2026-11-23T12:00:00.000Z');
+const oldVisitAt = new Date('2026-11-10T12:00:00.000Z');
+const futureVisitAt = new Date('2026-12-01T12:00:00.000Z');
+const active = {
+  ...expired, status: 'active', terms: activeTerms,
+  fundedAt: new Date('2026-11-01T12:00:00.000Z'),
+  principalBalance: 400, benefitBalance: 0, balance: 400,
+};
+const activeWrites = [];
+let activeHistory = [
+  op('deposit-funding', '2026-11-01T12:00:00.000Z', 100),
+  op('deposit-funding', '2026-11-20T12:00:00.000Z', 300),
+];
+const activeTx = {
+  loyaltyDepositInstance: {
+    findMany: async () => [],
+    findUnique: async () => active,
+    update: async (entry) => { activeWrites.push(entry.data); },
+  },
+  financeOperation: { findMany: async () => activeHistory },
+};
+await assert.rejects(
+  consumeDepositAllocations(activeTx, 'tenant-1',
+    [{ depositId: deposit, amount: 200 }], 'person-1', currentPaymentAt, false, oldVisitAt),
+  /Недостаточно средств/,
+  'The Nov 20 top-up cannot fund the Nov 10 visit, even if payment is made Nov 23',
+);
+assert.equal(activeWrites.length, 0, 'Rejected later funding must not change the deposit');
+activeHistory = [op('deposit-funding', '2026-11-20T12:00:00.000Z', 400)];
+active.fundedAt = new Date('2026-11-20T12:00:00.000Z');
+await assert.rejects(
+  consumeDepositAllocations(activeTx, 'tenant-1',
+    [{ depositId: deposit, amount: 50 }], 'person-1', currentPaymentAt, false, oldVisitAt),
+  /недоступен|первого внесения/,
+  'Initial funding after the visit is forbidden at Core, not only hidden by Professional',
+);
+active.fundedAt = new Date('2026-11-01T12:00:00.000Z');
+activeHistory = [
+  op('deposit-funding', '2026-11-01T12:00:00.000Z', 300),
+  op('payment', '2026-11-20T12:00:00.000Z', 250, used(250)),
+];
+await assert.rejects(
+  consumeDepositAllocations(activeTx, 'tenant-1',
+    [{ depositId: deposit, amount: 100 }], 'person-1', currentPaymentAt, false, oldVisitAt),
+  /последующих операций/,
+  'A dated payment must not overdraw the deposit after a later confirmed payment',
+);
+activeHistory = [op('deposit-funding', '2026-11-01T12:00:00.000Z', 300)];
+active.balance = 300;
+active.principalBalance = 300;
+const correct = await consumeDepositAllocations(activeTx, 'tenant-1',
+  [{ depositId: deposit, amount: 100 }], 'person-1', currentPaymentAt, false, oldVisitAt);
+assert.equal(correct[0].principalAmount, 100);
+assert.equal(activeWrites.at(-1).balance, 200,
+  'A valid old-visit payment reduces the present-day active materialized balance');
+await assert.rejects(
+  consumeDepositAllocations(activeTx, 'tenant-1',
+    [{ depositId: deposit, amount: 100 }], 'person-1', currentPaymentAt, false,
+    new Date('2027-01-01T12:00:00.000Z')),
+  /недоступен/,
+  'A future appointment after the end date cannot be prepaid from this deposit',
+);
+await assert.rejects(
+  consumeDepositAllocations(activeTx, 'tenant-1',
+    [{ depositId: deposit, amount: 50 }], 'person-1',
+    new Date('2026-10-20T12:00:00.000Z'), true, futureVisitAt),
+  /недоступен/,
+  'Backdated payment before the first real funding cannot consume a future visit',
+);
+
+// A genuine dated backfill is still possible while the deposit is active.
+activeHistory = [op('deposit-funding', '2026-11-01T12:00:00.000Z', 300)];
+active.principalBalance = 300;
+active.balance = 300;
+const backdated = await consumeDepositAllocations(activeTx, 'tenant-1',
+  [{ depositId: deposit, amount: 100 }], 'person-1',
+  new Date('2026-11-15T12:00:00.000Z'), true, oldVisitAt);
+assert.equal(backdated[0].amount, 100);
+assert.equal(activeWrites.at(-1).balance, 200,
+  'Dated backfill on an active program updates its current balance');
+const prepaid = await consumeDepositAllocations(activeTx, 'tenant-1',
+  [{ depositId: deposit, amount: 50 }], 'person-1', currentPaymentAt, false, futureVisitAt);
+assert.equal(prepaid[0].amount, 50,
+  'An eligible future appointment can be prepaid with money already received');
+
 console.log('Historical deposit ledger: PASS');
