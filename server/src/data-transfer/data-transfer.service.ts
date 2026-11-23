@@ -130,6 +130,38 @@ export class DataTransferService {
     const previous = byId || byKey;
     const input = { ...normalized }; delete input.transferId; delete input.sourceKey;
     if (previous && canonical(previous.input) === canonical(input)) return { transferId: previous.id, targetId: previous.targetId, status: 'unchanged' };
+    // Exported files contain hidden original identifiers. Re-importing them
+    // cannot create a second Record or FinanceOperation or silently replace
+    // an independently edited fact.
+    if(!previous && fact.domain==='records' && text(normalized.recordId)){
+      const current=await tx.record.findUnique({where:{tenantId_recordId:{tenantId,recordId:text(normalized.recordId)}}});
+      if(current){
+        const stored=current.data as Values;
+        const names=(Array.isArray(stored.procedures)?stored.procedures:[]).map((p:Values)=>text(p?.name));
+        const incoming=(Array.isArray(normalized.procedures)?normalized.procedures:[]).map((p:Values)=>text(p?.name));
+        if(text(stored.date)!==text(normalized.date)||text(stored.from)!==text(normalized.from)
+          ||text(stored.to)!==text(normalized.to)||text(stored.person?.name)!==text(normalized.name)
+          ||canonical(names)!==canonical(incoming))
+          throw Error('Эта запись уже существует и отличается от файла. Для изменения откройте запись в Журнале.');
+        return {transferId:'',targetId:current.recordId,status:'unchanged'};
+      }
+    }
+    if(!previous && ['payments','operations'].includes(fact.domain) && text(normalized.canonicalOperationId)){
+      const current=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{tenantId,operationId:text(normalized.canonicalOperationId)}},
+      });
+      if(current){
+        const facts=current.data as Values;
+        const requested=Number(normalized.financeAmount ?? normalized.amount);
+        const saved=Number(facts?.total);
+        if(!Number.isFinite(requested)||Math.abs(requested-saved)>0.009)
+          throw Error('Эта финансовая операция уже существует и отличается от файла.');
+        if(fact.domain==='payments' && text(normalized.recordId)
+          && (current.sourceType!=='record'||current.sourceId!==text(normalized.recordId)))
+          throw Error('Указанная операция относится к другой записи.');
+        return {transferId:'',targetId:current.operationId,status:'unchanged'};
+      }
+    }
     const id = previous?.id || randomUUID();
     const provenance = { type: 'import', label: 'Импорт', transferId: id, source, sessionId, revision: (previous?.revision || 0) + 1 };
     await tx.$queryRaw`SELECT set_config('co_va.transfer_provenance', ${JSON.stringify(provenance)}, true)`;
