@@ -429,8 +429,16 @@ export class RecordService {
         const claimed=subject.split(/[,;+]/).map(part=>part.trim()).filter(Boolean);
         return claimed.length>0 && claimed.every(name=>[...services,...products].includes(name));
       });
-    // An imported CRM document number may be an invoice, not a Record ID.
-    // Only use it as a hard anchor when it actually matches the Record ID.
+    // An explicit, previously verified import mapping is authoritative.
+    // Do not ignore a contradictory date, person or service and match by guess.
+    const linkedId=text(input.recordId);
+    if(linkedId){
+      const linked=relevant.filter(item=>item.id===linkedId);
+      if(linked.length!==1)
+        throw new ConflictException('Номер исходной записи найден, но дата, участник или услуга не совпадают.');
+      return linked[0].record;
+    }
+    // An imported CRM invoice is not automatically a Record ID.
     const exact=sourceDoc?relevant.filter(item=>item.id===sourceDoc):[];
     const matches=exact.length?exact:relevant;
     if(matches.length!==1)throw new ConflictException(matches.length
