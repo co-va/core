@@ -152,6 +152,8 @@ export class DataTransferService {
       });
       if(current){
         const facts=current.data as Values;
+        if(Boolean(normalized.importCancelled)!==(current.status==='cancelled'))
+          throw Error('Статус существующей операции отличается от файла. Измените операцию в ДДС.');
         const requested=Number(normalized.financeAmount ?? normalized.amount);
         const saved=Number(facts?.total);
         if(!Number.isFinite(requested)||Math.abs(requested-saved)>0.009)
