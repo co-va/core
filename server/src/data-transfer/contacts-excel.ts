@@ -16,6 +16,7 @@ export const CONTACT_COLUMNS:Column[]=[
   {key:'additionalEmail',label:'Дополнительный Email',width:34},
   {key:'telegram',label:'Telegram',width:26},
   {key:'additionalTelegram',label:'Дополнительный Telegram',width:30},
+  {key:'integrationSource',label:'Источник интеграции',width:30},
   {key:'personKey',label:'ID человека',width:16,hidden:true},
 ];
 
@@ -102,7 +103,8 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
   const headers=grouped?(sheet.rows[0]||[]).map(text):sheet.headers;
   const first=grouped?1:0;
   const offset=2;
-  const required=CONTACT_COLUMNS.filter(c=>!c.hidden).map(c=>c.label);
+  // Earlier grouped templates did not include the optional provenance column.
+  const required=CONTACT_COLUMNS.filter(c=>!c.hidden&&c.key!=='integrationSource').map(c=>c.label);
   const legacy=headers.includes('UEI')&&headers.includes('Имя')&&!grouped;
   if(!legacy && required.some(label=>headers.filter(h=>h===label).length!==1))
     throw Error('В таблице отсутствуют необходимые столбцы. Скачайте актуальный шаблон.');
@@ -118,6 +120,8 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
     if(!n.name)throw Error('Строка '+(i+offset)+': укажите имя');
     const values:Record<string,any>={name:n.name,...(n.surname?{surname:n.surname}:{})};
     if(nonempty(code))values.uei=text(code);
+    const originalSource=cell(row,'Источник интеграции');
+    if(nonempty(originalSource))values.integrationSource=text(originalSource);
     for(const [key,label] of [
       ['phone','Телефон'],['additionalPhone','Дополнительный телефон'],
       ['email','Email'],['additionalEmail','Дополнительный Email'],
@@ -161,13 +165,22 @@ export async function peopleWorkbook(rows:any[],template=false):Promise<Buffer>{
     cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF303238'}};
     cell.alignment={vertical:'middle',horizontal:'left',indent:1};
   }
+  // Uniform light group row, with an unnamed band above the source column.
+  for(let c=1;c<=CONTACT_COLUMNS.length;c++)sheet.getCell(1,c).fill=
+    {type:'pattern',pattern:'solid',fgColor:{argb:'FFDEDFE0'}};
+  for(const key of ['A1','G1']){
+    const cell=sheet.getCell(key);
+    cell.font={bold:true,color:{argb:'FF25272B'},size:12};
+    cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDEDFE0'}};
+    cell.alignment={vertical:'middle',horizontal:'center'};
+  }
   sheet.getRow(1).height=30;
   sheet.getRow(2).height=34;
   CONTACT_COLUMNS.forEach((col,index)=>{
     const cell=sheet.getCell(2,index+1);
     cell.value=col.label;
-    cell.font={bold:true,color:{argb:'FF25272B'},size:11};
-    cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEDEEF0'}};
+    cell.font={bold:true,color:{argb:'FFFFFFFF'},size:11};
+    cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF303238'}};
     cell.alignment={vertical:'middle',horizontal:'left',indent:1};
   });
   sheet.getCell('A2').note='Код клиента необязателен. Не более четырёх букв или цифр.';
@@ -176,6 +189,7 @@ export async function peopleWorkbook(rows:any[],template=false):Promise<Buffer>{
   sheet.getCell('E2').note='День и месяц, например 15.06 или 15/6. Год необязателен; если известен, добавьте его.';
   sheet.getCell('F2').note='Личная скидка в процентах. Если нет — оставьте пустым.';
   sheet.getCell('G2').note='Телефон или код клиента помогают найти уже существующую карточку.';
+  sheet.getCell('M2').note='Укажите исходную CRM или другой источник, из которого перенесён контакт.';
   if(!template)for(const input of rows){
     const item=input&&typeof input==='object'?input:{};
     const row=sheet.addRow(Object.fromEntries(CONTACT_COLUMNS.map(col=>[
@@ -186,6 +200,6 @@ export async function peopleWorkbook(rows:any[],template=false):Promise<Buffer>{
     ])));
     for(let i=1;i<=CONTACT_COLUMNS.length;i++)row.getCell(i).numFmt='@';
   }
-  sheet.autoFilter={from:{row:2,column:1},to:{row:Math.max(2,sheet.rowCount),column:12}};
+  sheet.autoFilter={from:{row:2,column:1},to:{row:Math.max(2,sheet.rowCount),column:13}};
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
