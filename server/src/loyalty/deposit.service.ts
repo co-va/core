@@ -133,7 +133,7 @@ export class DepositService {
     });
   }
 
-  private history(row: DepositRow, operations: any[]) {
+  private history(row: DepositRow, operations: any[]): JsonObject[] {
     const id = row.depositId;
     const terms = objectValue(row.terms);
     const mode = depositBenefitMode(terms);
