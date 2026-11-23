@@ -73,7 +73,7 @@ export class DataTransferService {
       if (value && typeof value === 'object' && !(value instanceof Date)) throw Error(`${FIELDS[field] || field}: ${value.invalid || 'неверный тип значения'}`);
     }
     if (!DOMAINS.includes(fact.domain)) throw Error('Выберите тип данных для листа');
-    for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
+    for(const field of ['date','invoiceDate','birthday','scheduleDate','termStartDate','termEndDate','expiresAt','endDate'])if(v[field]!=null)v[field]=calendarDate(v[field]);
     for (const field of ['from', 'to','createdTime','changedTime','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
     for (const field of ['occurredAt', 'createdAt', 'cancelledAt']) if (v[field] != null) v[field] = instant(v[field]);
     for (const field of ['quotedTotal','price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
@@ -256,14 +256,41 @@ export class DataTransferService {
     } else if (fact.domain === 'payments') {
       if (v.amount == null) throw Error('Сумма имеет неверный формат');
       if (!v.occurredAt) throw Error('Не указана дата оплаты');
+      const compactFinance=Boolean(v.purpose && v.invoiceDate);
       let person: Values | undefined;
-      if (v.personKey || v.phone || v.uei) person = await this.people.resolveTransferPerson(tenantId, v, tx);
+      if (v.personKey || v.phone || v.uei) {
+        // The finance participant can contain full first+last name; identity
+        // still comes from code or telephone, not exact first-name formatting.
+        person = await this.people.resolveTransferPerson(tenantId,
+          compactFinance ? {...v,name:''} : v, tx);
+      }
       let record: Values | undefined;
-      if (v.recordId || v.date) record = await this.records.resolveTransferredRecord(tenantId, { ...v, personKey: person?.key }, tx);
-      if(v.paymentSource && !['Кошелёк','Депозит','Личный счёт'].includes(v.paymentSource))throw Error('Уточните источник оплаты');
-      const wallet = !v.paymentSource || v.paymentSource==='Кошелёк' ? await this.finance.resolveTransferredWallet(tenantId, v, tx) : {id:'',name:''};
-      if(v.paymentSource==='Личный счёт') targetId=await this.personalAccounts.importHistorical(tenantId,{...v,personKey:person?.key || record?.person?.key,recordId:record?.id,accountAction:'Оплата',accountAmount:v.amount},target,tx);
-      else targetId = await this.finance.importPayment(tenantId, { ...v, recordId: record?.id, person: person || record?.person || {}, workplaceId: record?.workplaceId || '', walletId: wallet.id, walletName: wallet.name }, target, tx);
+      if(compactFinance){
+        let workplaceId='';
+        if(v.workplace){
+          const workplace=await this.profiles.resolveTransferWorkplace(tenantId,v,tx);
+          workplaceId=workplace.key;
+        }
+        record=await this.records.matchFinancialRecord(tenantId,
+          {...v,personKey:person?.key,workplaceId},tx);
+        if(!person)person=record.person;
+        if(!record?.id)throw Error('Не найден идентификатор записи для оплаты');
+      }else if (v.recordId || v.date){
+        record=await this.records.resolveTransferredRecord(tenantId,
+          { ...v, personKey: person?.key }, tx);
+      }
+      if(v.paymentSource && !['Кошелёк','Депозит','Личный счёт'].includes(v.paymentSource))
+        throw Error('Уточните источник оплаты');
+      const wallet = !v.paymentSource || v.paymentSource==='Кошелёк'
+        ? await this.finance.resolveTransferredWallet(tenantId, v, tx)
+        : {id:'',name:''};
+      const withLink={...v,recordId:record?.id,person:person || record?.person || {},
+        workplaceId:record?.workplaceId || '',walletId:wallet.id,walletName:wallet.name};
+      if(v.paymentSource==='Личный счёт')
+        targetId=await this.personalAccounts.importHistorical(tenantId,
+          {...withLink,personKey:person?.key || record?.person?.key,
+            accountAction:'Оплата',accountAmount:v.amount},target,tx);
+      else targetId = await this.finance.importPayment(tenantId,withLink,target,tx);
       if(v.importCancelled===true)
         await this.finance.cancelImportedFinanceOperation(tenantId,targetId,v.cancelledAt,tx);
     } else if(fact.domain==='offers') {
