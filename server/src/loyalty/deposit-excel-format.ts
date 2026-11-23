@@ -73,17 +73,17 @@ export async function depositWorkbook(rows: Array<Array<string | number | Date |
     sheet.mergeCells(1, start, 1, end);
     const cell = sheet.getCell(1, start);
     cell.value = title;
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B2E33' } };
-    cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
-    cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDEDFE0' } };
+    cell.font = { color: { argb: 'FF25272B' }, bold: true, size: 12 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
     for (let c = start + 1; c <= end; c++) sheet.getCell(1, c).fill = cell.fill;
   }
   sheet.getRow(1).height = 28;
   sheet.getRow(2).values = headers;
   sheet.getRow(2).height = 30;
   sheet.getRow(2).eachCell(cell => {
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECF0' } };
-    cell.font = { bold: true, size: 10, color: { argb: 'FF22252A' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF303238' } };
+    cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
   });
   sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: headers.length } };
