@@ -23,6 +23,13 @@ export class InventoryController {
     return this.inventory.snapshot(request.auth!.tenantId);
   }
 
+  // Historical recipes may point at archived stock items. Resolve only
+  // requested, tenant-owned names without adding archived stock to the picker.
+  @Post('items/resolve-references')
+  resolveItemReferences(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    return this.inventory.resolveItemReferences(request.auth!.tenantId, body);
+  }
+
   @Post('criteria/recovery/preview')
   previewClassificationRecovery(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
     return this.recovery.preview(request.auth!.tenantId, body);
