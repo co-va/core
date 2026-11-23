@@ -374,7 +374,12 @@ export class DataTransferService {
     const seen = new Map<string, string>();
     for (const fact of facts) {
       const key = `${fact.domain}:${fact.sourceKey}`; const value = canonical(fact.values);
-      if (seen.has(key) && seen.get(key) !== value) conflicts.set(key, 'Один ID источника указан для разных фактов в файле. Проверьте данные.');
+      if (seen.has(key)) {
+        if(fact.values.invoiceDate)
+          conflicts.set(key,'В файле несколько платежей с одинаковыми реквизитами. Для разных оплат уточните номер документа, кошелёк или дату оплаты.');
+        else if(seen.get(key)!==value)
+          conflicts.set(key,'Один ID источника указан для разных фактов в файле. Проверьте данные.');
+      }
       seen.set(key, value);
     }
     const sessionId=randomUUID();
