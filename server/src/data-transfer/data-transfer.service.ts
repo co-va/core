@@ -229,7 +229,7 @@ export class DataTransferService {
         workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '',
           phone:text(v.phone)||person.phones?.[0]||'',
           email:text(v.email)||person.emails?.[0]||'',
-          uei:text(v.uei)||person.uei||'' },
+          uei:person.uei||text(v.uei)||'' },
         procedures: snapshots, appendProcedures:v.appendProcedures===true,
         ...(v.createdAt ? { createdAt: v.createdAt } : {}),
         ...(v.createdDate ? { createdDate:v.createdDate,createdTime:v.createdTime } : {}),
