@@ -109,6 +109,7 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         occurredAt:at('Дата операции'),wallet:get('Кошелёк')||allocations[0]?.wallet||'',article:get('Статья'),
         toWallet:get('Кошелёк назначения'),loan:get('Займ'),
         investment:get('Инвестиция'),note:get('Примечание'),
+        originalPayment:get('Исходная оплата'),tips:at('Чаевые')||undefined,
         ...(external?{canonicalOperationId:external}:{}),
       };
       if (kind==='Оплата услуги') {
