@@ -186,7 +186,7 @@ export class DataTransferService {
         workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
         procedures: snapshots, appendProcedures:v.appendProcedures===true,
         ...(v.createdAt ? { createdAt: v.createdAt } : {}),
-        ...(input.expectedDomain === 'records' ? {
+        ...((v.bookedBy || v.actionStatus || v.visitStatus || v.paymentStatus) ? {
           bookedBy: text(v.bookedBy),actionStatus:text(v.actionStatus),
           visitStatus:text(v.visitStatus),paymentStatus:text(v.paymentStatus),
         } : {}),
