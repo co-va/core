@@ -23,14 +23,28 @@ try {
   const sheet=workbook.worksheets[0];
   assert.equal(sheet.rowCount,2,'Empty template must not contain phantom data rows');
   assert.equal(sheet.getCell(2,1).value,'Депозит');
-  assert.equal(sheet.getCell(2,16).value,'Действие');
+  assert.deepEqual([1,10,14].map(c=>sheet.getCell(1,c).value),
+    ['Данные депозита','Данные клиента','Данные операции']);
+  assert.deepEqual(sheet.getRow(2).values.slice(1,19),[
+    'Депозит','Вид суммы','Номинал','Срок','С','По','Выгода','Выгода, %',
+    'Код программы','Код клиента','Имя','Телефон','Номер карты',
+    'Дата операции','Действие','Сумма','Кошелёк','Комментарий',
+  ]);
+  assert.equal(sheet.getCell(2,15).value,'Действие');
+  assert.equal(sheet.views[0].ySplit,2);
+  assert.ok(!sheet.views[0].xSplit,'The first column must NOT be frozen');
+  assert.equal(sheet.getCell(1,1).fill.fgColor.argb,'FFDEDFE0');
+  assert.equal(sheet.getCell(2,1).fill.fgColor.argb,'FF303238');
+  assert.equal(sheet.getCell(2,1).font.color.argb,'FFFFFFFF');
+  assert.match(String(sheet.getCell(2,9).note),/4 символа/);
+  assert.match(String(sheet.getCell(2,13).note),/8 символов/);
   sheet.getRow(3).values=pad(['Ромашка','Фиксированная',30000,'Период',
-    '2024-01-01','2024-12-31','Нет',0,'','','Маша Иванова','79990001122',
-    '','','2024-02-15','Пополнение',15000,'','','ext-funding-1']);
+    '2024-01-01','2024-12-31','Нет',0,'','','Маша Иванова',
+    '79990001122','','2024-02-15','Пополнение',15000,'','']);
   sheet.getRow(4).values=pad(['Ромашка','','','','','','','','','',
-    'Маша Иванова','79990001122','','','2024-02-20','Пополнение',15000,'','','ext-funding-2']);
+    'Маша Иванова','79990001122','','2024-02-20','Пополнение',15000,'','']);
   sheet.getRow(5).values=pad(['Ромашка','','','','','','','','','',
-    'Маша Иванова','79990001122','','','2024-02-25','Списание',5000,'','Услуги','ext-spend-1']);
+    'Маша Иванова','79990001122','','2024-02-25','Списание',5000,'','Услуги']);
   const payload={file:Buffer.from(await workbook.xlsx.writeBuffer()).toString('base64')};
   const preview=await excel.preview(tenantId,payload);
   assert.equal(preview.ready,true,JSON.stringify(preview.errors));
@@ -60,7 +74,7 @@ try {
   assert.equal(repeat.imported,0,'Repeated file never creates new financial events');
   assert.equal(repeat.skipped,3);
   assert.equal(await prisma.financeOperation.count({where:{tenantId}}),3);
-  const funds=await prisma.financeOperation.findFirst({where:{tenantId,externalOperationId:'ext-funding-1'}});
+  const funds=await prisma.financeOperation.findFirst({where:{tenantId,sourceRow:3,origin:'excel_import'}});
   assert.equal(funds.walletResolution,'unknown');
   await deposits.correctFunding(tenantId,issued.depositId,funds.operationId,{
     amount:15000,walletId:'cashless',walletName:'Безналичные',occurredAt:funds.occurredAt.toISOString(),
@@ -74,10 +88,23 @@ try {
   const output=new ExcelJS.Workbook();
   await output.xlsx.load(exported);
   assert.equal(output.worksheets.length,1);
-  assert.equal(output.worksheets[0].getCell(2,21).value,'Остаток');
-  assert.equal(output.worksheets[0].getCell(2,23).value,'Источник');
-  assert.equal(output.worksheets[0].getCell(5,21).value,25000);
-  assert.equal(output.worksheets[0].rowCount,5,'Export data rows must start immediately after the header');
+  assert.equal(output.worksheets[0].getCell(2,19).value,'Остаток');
+  assert.equal(output.worksheets[0].getCell(2,21).value,'Источник');
+  assert.equal(output.worksheets[0].getCell(2,26).value,'ID операции');
+  assert.equal(output.worksheets[0].getCell(5,19).value,25000);
+  assert.equal(output.worksheets[0].rowCount,5,'Export rows must start after the headers');
+  const ex=output.worksheets[0];
+  const code=String(ex.getCell(3,9).value),client=String(ex.getCell(3,10).value);
+  assert.equal(code.length,4);assert.equal(client.length,4);
+  assert.equal(ex.getCell(3,13).value,code+client,'Card = program code + client code');
+  assert.ok(String(ex.getCell(3,26).value).startsWith('excel-'));
+  const reimportFile={file:Buffer.from(await output.xlsx.writeBuffer()).toString('base64')};
+  const roundTrip=await excel.preview(tenantId,reimportFile);
+  assert.equal(roundTrip.ready,true,JSON.stringify(roundTrip.errors));
+  assert.equal(roundTrip.skipped,3,'Reimport of canonical export must not create operations');
+  const reapplied=await excel.apply(tenantId,{...reimportFile,batchId:roundTrip.batchId});
+  assert.equal(reapplied.imported,0);
+  assert.equal(await prisma.loyaltyDepositInstance.count({where:{tenantId}}),1);
   console.log('PASS: deposit Excel one-sheet template, preview, atomic funding/spending, wallet unknown, expiry, repeat import, wallet correction, export');
 } finally {
   if(created) {

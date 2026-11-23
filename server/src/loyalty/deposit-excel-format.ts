@@ -4,23 +4,29 @@ import ExcelJS from 'exceljs';
 export const DEPOSIT_XLSX_MAX_ROWS = 3000;
 export const DEPOSIT_XLSX_MAX_BYTES = 4 * 1024 * 1024;
 
-// First twenty columns are the editable one-sheet contract. The rest are read-only export projections.
+// Visible template has 18 editable columns in three clearly separated groups.
+// Technical operation IDs are assigned by Core and only shown in the export.
 export const DEPOSIT_INPUT_COLUMNS = [
   'Депозит', 'Вид суммы', 'Номинал', 'Срок', 'С', 'По', 'Выгода', 'Выгода, %',
-  'Условия', 'UEI программы',
-  'Человек', 'Телефон', 'Код контакта', 'Номер карты',
+  'Код программы',
+  'Код клиента', 'Имя', 'Телефон', 'Номер карты',
+  'Дата операции', 'Действие', 'Сумма', 'Кошелёк', 'Комментарий',
+];
+const LEGACY_DEPOSIT_INPUT_COLUMNS = [
+  'Депозит', 'Вид суммы', 'Номинал', 'Срок', 'С', 'По', 'Выгода', 'Выгода, %',
+  'Условия', 'UEI программы', 'Человек', 'Телефон', 'Код контакта', 'Номер карты',
   'Дата операции', 'Действие', 'Сумма', 'Кошелёк', 'Описание', 'ID операции',
 ];
 export const DEPOSIT_EXPORT_COLUMNS = [
   'Остаток', 'К оплате', 'Источник', 'Кошелёк определён',
-  'Связь с Журналом', 'Дата регистрации', 'ID записи',
+  'Связь с Журналом', 'Дата регистрации', 'ID записи', 'ID операции',
 ];
 export type DepositExcelRawRow = {
   row: number; programName: string; amountMode: string; nominal: string; termMode: string;
   termStartDate: string; termEndDate: string; benefitType: string; benefitPercent: string;
   description: string; programUei: string; personName: string; phone: string;
   personCode: string; cardKey: string; occurredAt: string; action: string;
-  amount: string; wallet: string; note: string; externalOperationId: string;
+  amount: string; wallet: string; note: string; externalOperationId: string; legacy?: boolean;
 };
 
 function plain(value: unknown): string {
@@ -57,18 +63,21 @@ export function excelDay(raw: unknown): string {
 }
 
 function widths(index: number): number {
-  return [24, 20, 16, 18, 13, 13, 22, 16, 31, 18, 24, 20, 18, 20,
-    20, 17, 15, 20, 31, 24, 17, 17, 17, 22, 22, 22, 24][index] || 18;
+  return [24, 20, 16, 18, 13, 13, 22, 16, 18, 18, 24, 20, 20,
+    20, 17, 15, 20, 31, 17, 17, 17, 22, 22, 22, 24, 24][index] || 18;
 }
 
 export async function depositWorkbook(rows: Array<Array<string | number | Date | null>> = [], includeExport = false): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'VA Tools';
-  const sheet = workbook.addWorksheet('Депозиты', { views: [{ state: 'frozen', ySplit: 2, xSplit: 1 }] });
+  const sheet = workbook.addWorksheet('Депозиты', { views: [{ state: 'frozen', ySplit: 2 }] });
   const headers = includeExport ? [...DEPOSIT_INPUT_COLUMNS, ...DEPOSIT_EXPORT_COLUMNS] : DEPOSIT_INPUT_COLUMNS;
   for (let c = 1; c <= headers.length; c++) sheet.getColumn(c).width = widths(c - 1);
-  const groups: Array<[number, number, string]> = [[1, 10, 'ДЕПОЗИТ'], [11, 14, 'ЧЕЛОВЕК'], [15, 20, 'ОПЕРАЦИЯ']];
-  if (includeExport) groups.push([21, 27, 'РЕЗУЛЬТАТ · ТОЛЬКО ДЛЯ ПРОСМОТРА']);
+  const groups: Array<[number, number, string]> = [
+    [1, 9, 'Данные депозита'], [10, 13, 'Данные клиента'],
+    [14, 18, 'Данные операции'],
+  ];
+  if (includeExport) groups.push([19, 26, 'Результат · только для просмотра']);
   for (const [start, end, title] of groups) {
     sheet.mergeCells(1, start, 1, end);
     const cell = sheet.getCell(1, start);
@@ -86,6 +95,12 @@ export async function depositWorkbook(rows: Array<Array<string | number | Date |
     cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
   });
+  // These are user-entered identifiers, not numbers. Preserve leading zeroes.
+  for (const column of [9, 10, 12, 13]) sheet.getColumn(column).numFmt = '@';
+  sheet.getCell(2, 9).note = 'Ровно 4 символа (буквы или цифры). Необязательно: Core присвоит код автоматически.';
+  sheet.getCell(2, 10).note = 'Ровно 4 символа, как в Контактах. Необязательно.';
+  sheet.getCell(2, 13).note = 'Ровно 8 символов: код программы (4) + код клиента (4). Если известен.';
+  sheet.getCell(2, 18).note = 'Один комментарий к операции. Условия депозитной программы задаются её полями.';
   sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: headers.length } };
   const listValidation = (column: number, values: string[]) => {
     const formulae = ['"' + values.join(',') + '"'];
@@ -99,15 +114,15 @@ export async function depositWorkbook(rows: Array<Array<string | number | Date |
   listValidation(2, ['Фиксированная', 'Свободная']);
   listValidation(4, ['Бессрочно', 'Период']);
   listValidation(7, ['Нет', 'На обслуживание', 'Начисление сразу']);
-  listValidation(16, ['Пополнение', 'Списание']);
+  listValidation(15, ['Пополнение', 'Списание']);
   for (const row of rows) sheet.addRow(row);
   for (let r = 3; r < Math.min(rows.length + 3, 2001); r++) {
     sheet.getCell(r, 3).numFmt = '#,##0.00';
     sheet.getCell(r, 8).numFmt = '0.##';
-    sheet.getCell(r, 17).numFmt = '#,##0.00';
+    sheet.getCell(r, 16).numFmt = '#,##0.00';
     sheet.getCell(r, 5).numFmt = 'dd.mm.yyyy';
     sheet.getCell(r, 6).numFmt = 'dd.mm.yyyy';
-    sheet.getCell(r, 15).numFmt = 'dd.mm.yyyy';
+    sheet.getCell(r, 14).numFmt = 'dd.mm.yyyy';
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
@@ -126,20 +141,32 @@ export async function parseDepositWorkbook(base64: unknown): Promise<{ raw: Depo
   if (workbook.worksheets.length !== 1) throw new BadRequestException('Шаблон должен содержать ровно один лист');
   const sheet = workbook.worksheets[0];
   if (sheet.rowCount > DEPOSIT_XLSX_MAX_ROWS + 2) throw new BadRequestException('За один раз допускается до 3000 строк');
-  for (let i = 0; i < DEPOSIT_INPUT_COLUMNS.length; i++) {
-    if (plain(sheet.getCell(2, i + 1).value) !== DEPOSIT_INPUT_COLUMNS[i]) {
-      throw new BadRequestException('Столбцы Excel не соответствуют шаблону приложения (первое несовпадение: ' + DEPOSIT_INPUT_COLUMNS[i] + ')');
-    }
-  }
+  const header=(columns:readonly string[])=>columns.every((label,i)=>
+    plain(sheet.getCell(2,i+1).value)===label);
+  const legacy=header(LEGACY_DEPOSIT_INPUT_COLUMNS);
+  if(!legacy&&!header(DEPOSIT_INPUT_COLUMNS))
+    throw new BadRequestException('Столбцы Excel не соответствуют шаблону приложения. Скачайте новый шаблон.');
   const raw: DepositExcelRawRow[] = [];
   for (let r = 3; r <= sheet.rowCount; r++) {
-    const cols = Array.from({ length: 20 }, (_, i) => plain(sheet.getCell(r, i + 1).value));
-    if (!cols.some(Boolean)) continue;
-    if (!cols[0] && !cols[15] && !cols[16]) continue;
-    const [programName,amountMode,nominal,termMode,termStartDate,termEndDate,benefitType,benefitPercent,
-      description,programUei,personName,phone,personCode,cardKey,occurredAt,action,amount,wallet,note,externalOperationId] = cols;
-    raw.push({ row:r, programName,amountMode,nominal,termMode,termStartDate,termEndDate,benefitType,benefitPercent,
-      description,programUei,personName,phone,personCode,cardKey,occurredAt,action,amount,wallet,note,externalOperationId });
+    const cols=Array.from({length:legacy?20:18},(_,i)=>plain(sheet.getCell(r,i+1).value));
+    if(!cols.some(Boolean))continue;
+    if(!cols[0] && !(legacy?cols[15]:cols[14]) && !(legacy?cols[16]:cols[15]))continue;
+    let programName='',amountMode='',nominal='',termMode='',termStartDate='',termEndDate='',
+      benefitType='',benefitPercent='',description='',programUei='',personName='',
+      phone='',personCode='',cardKey='',occurredAt='',action='',amount='',wallet='',note='',externalOperationId='';
+    if(legacy) {
+      [programName,amountMode,nominal,termMode,termStartDate,termEndDate,benefitType,benefitPercent,
+        description,programUei,personName,phone,personCode,cardKey,occurredAt,action,amount,wallet,
+        note,externalOperationId]=cols;
+    } else {
+      [programName,amountMode,nominal,termMode,termStartDate,termEndDate,benefitType,benefitPercent,
+        programUei,personCode,personName,phone,cardKey,occurredAt,action,amount,wallet,note]=cols;
+      // Output-only system operation ID is used solely for idempotent round-trip.
+      if(plain(sheet.getCell(2,26).value)==='ID операции')
+        externalOperationId=plain(sheet.getCell(r,26).value);
+    }
+    raw.push({row:r,programName,amountMode,nominal,termMode,termStartDate,termEndDate,benefitType,benefitPercent,
+      description,programUei,personName,phone,personCode,cardKey,occurredAt,action,amount,wallet,note,externalOperationId,legacy});
   }
   return { raw, buffer };
 }
