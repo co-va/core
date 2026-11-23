@@ -49,7 +49,7 @@ function value(row: any[], headers: string[], label: string): string {
   return text(cell(row, headers, label));
 }
 function ensureSheet(sheets: Sheet[], name: string, required: string[]) {
-  if (sheets.length !== 1 || sheets[0]?.name !== name) throw Error('Выберите файл из шаблона этого раздела');
+  if (sheets.length !== 1 || (sheets[0]?.name !== name && sheets[0]?.name !== 'Данные')) throw Error('Выберите файл из шаблона этого раздела');
   const sheet = sheets[0];
   for (const label of required) {
     if (sheet.headers.filter(h => h === label).length !== 1) {
