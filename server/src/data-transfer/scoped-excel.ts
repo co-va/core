@@ -106,7 +106,7 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         allocations.push({wallet:text(row[column]),amount:at('Сумма кошелька '+number)});
       }
       const data={
-        occurredAt:at('Дата операции'),wallet:get('Кошелёк'),article:get('Статья'),
+        occurredAt:at('Дата операции'),wallet:get('Кошелёк')||allocations[0]?.wallet||'',article:get('Статья'),
         toWallet:get('Кошелёк назначения'),loan:get('Займ'),
         investment:get('Инвестиция'),note:get('Примечание'),
         ...(external?{externalId:external}:{}),
