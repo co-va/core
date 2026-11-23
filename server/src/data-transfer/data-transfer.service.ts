@@ -173,6 +173,35 @@ export class DataTransferService {
         return {transferId:'',targetId:current.operationId,status:'unchanged'};
       }
     }
+    // If the application exported a canonical operation ID as the document
+    // number, identify each wallet movement of that existing operation. An
+    // arbitrary CRM invoice number is never treated as a Record identifier.
+    if(!previous && ['payments','operations'].includes(fact.domain)
+      && text(normalized.documentNumber) && text(normalized.invoiceDate)){
+      const current=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{
+          tenantId,operationId:text(normalized.documentNumber),
+        }},
+      });
+      if(current){
+        if(current.status==='cancelled')throw Error('Исходная операция отменена.');
+        const data=current.data as Values;
+        const wallet=text(normalized.wallet);
+        const amount=Number(normalized.financeAmount ?? normalized.amount);
+        const allocations=Array.isArray(data.allocations)?data.allocations:[];
+        const matchingWallet=allocations.length
+          ?allocations.some((item:Values)=>text(item.walletName)===wallet
+            && Math.abs(Number(item.amount)-amount)<0.009)
+          :text(data.walletName)===wallet
+            && Math.abs(Number(data.total)-amount)<0.009;
+        const quote=data.sourceQuote as Values | undefined;
+        if(!matchingWallet || fact.domain==='payments'&&current.sourceType!=='record'
+          ||quote?.subject && text(normalized.subject)!==text(quote.subject)
+          ||quote?.invoiceDate && text(normalized.invoiceDate)!==text(quote.invoiceDate))
+          throw Error('Номер документа принадлежит другой финансовой операции. Проверьте оплату.');
+        return {transferId:'',targetId:current.operationId,status:'unchanged'};
+      }
+    }
     const id = previous?.id || randomUUID();
     const provenance = { type: 'import', label: 'Импорт', transferId: id, source, sessionId, revision: (previous?.revision || 0) + 1 };
     await tx.$queryRaw`SELECT set_config('co_va.transfer_provenance', ${JSON.stringify(provenance)}, true)`;
