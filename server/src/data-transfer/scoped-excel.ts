@@ -35,6 +35,7 @@ const FINANCE_BASE = [
   { key: 'investment', label: 'Инвестиция' },
   { key: 'note', label: 'Примечание' },
   { key: 'status', label: 'Статус' },
+  { key: 'cancelledAt', label: 'Дата отмены' },
   { key: 'tips', label: 'Чаевые' },
   { key: 'originalPayment', label: 'Исходная оплата', hidden: true },
 ] as const;
@@ -96,8 +97,8 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
       const status=get('Статус');
       if(status && !['Активна','Отменена'].includes(status))
         throw Error('Статус операции: выберите Активна или Отменена');
-      if(status==='Отменена')
-        throw Error('Отменённые операции требуют отдельной истории отмены. Переносите исходную операцию без изменения её статуса.');
+      if(status==='Отменена' && !meaningful(at('Дата отмены')))
+        throw Error('Укажите фактическую дату отмены операции');
       const allocations:any[]=[];
       for(const [column,label] of sheet.headers.entries()){
         const match=/^Кошелёк ([1-9]\d*)$/.exec(label);
@@ -110,6 +111,7 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         toWallet:get('Кошелёк назначения'),loan:get('Займ'),
         investment:get('Инвестиция'),note:get('Примечание'),
         originalPayment:get('Исходная оплата'),tips:at('Чаевые')||undefined,
+        ...(status==='Отменена'?{importCancelled:true,cancelledAt:at('Дата отмены')}:{}),
         ...(external?{canonicalOperationId:external}:{}),
       };
       if (kind==='Оплата услуги') {
