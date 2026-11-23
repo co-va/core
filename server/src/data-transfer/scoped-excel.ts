@@ -112,12 +112,14 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         const duration=at('Длительность услуги '+number);
         procedures.push({name,...(meaningful(cost)?{cost}:{}),...(meaningful(duration)?{duration}:{})});
       }
-      const paidFull=get('Оплачено полностью');
-      if(paidFull && !['Да','Нет','да','нет'].includes(paidFull))
+      const paidFull=get('Оплачено полностью').toLowerCase();
+      const paidYes=['да','1','true','оплачено'].includes(paidFull);
+      const paidNo=['нет','0','false','не оплачено'].includes(paidFull);
+      if(paidFull && !paidYes && !paidNo)
         throw Error('Строка '+(n+2)+': «Оплачено полностью» — укажите Да или Нет');
       const declaredPayment=get('Статус оплаты')||get('Оплата');
-      const paymentStatus=declaredPayment||(paidFull.toLowerCase()==='да'?'Оплачено':'');
-      if(paidFull && declaredPayment && (paidFull.toLowerCase()==='да')!==(declaredPayment==='Оплачено'))
+      const paymentStatus=declaredPayment||(paidYes?'Оплачено':paidNo?'Не оплачено':'');
+      if(paidFull && declaredPayment && paidYes!==(declaredPayment==='Оплачено'))
         throw Error('Строка '+(n+2)+': статус оплаты противоречит отметке «Оплачено полностью»');
       facts.push({domain:'records',sheet:sheet.name,row:n+2,sourceKey,values:{
         ...(external?{recordId:external}:{}),
@@ -230,7 +232,7 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
     sheet.getCell(2,9).note='Время окончания можно не указывать, если неизвестно.';
     sheet.getCell(2,17).note='Одна запись занимает одну строку. Добавляйте новые столбцы «Услуга 11» и дальше, если нужно.';
     sheet.getCell(2,17+servicesCount).note='Стоимость записи — цена визита, а не факт поступления денег.';
-    sheet.getCell(2,19+servicesCount).note='Отметка статуса не создаёт финансовую операцию.';
+    sheet.getCell(2,20+servicesCount).note='Да или Нет. Это статус, не платёжная операция.';
   } else {
     sheet.columns=cols.map(col=>({key:col.key,header:col.label,width:col.label.length>24?28:22,hidden:!!col.hidden}));
     sheet.getRow(1).height=32;
