@@ -26,7 +26,7 @@ export type DepositExcelRawRow = {
   termStartDate: string; termEndDate: string; benefitType: string; benefitPercent: string;
   description: string; programUei: string; personName: string; phone: string;
   personCode: string; cardKey: string; occurredAt: string; action: string;
-  amount: string; wallet: string; note: string; externalOperationId: string;
+  amount: string; wallet: string; note: string; externalOperationId: string; legacy?: boolean;
 };
 
 function plain(value: unknown): string {
@@ -166,7 +166,7 @@ export async function parseDepositWorkbook(base64: unknown): Promise<{ raw: Depo
         externalOperationId=plain(sheet.getCell(r,26).value);
     }
     raw.push({row:r,programName,amountMode,nominal,termMode,termStartDate,termEndDate,benefitType,benefitPercent,
-      description,programUei,personName,phone,personCode,cardKey,occurredAt,action,amount,wallet,note,externalOperationId});
+      description,programUei,personName,phone,personCode,cardKey,occurredAt,action,amount,wallet,note,externalOperationId,legacy});
   }
   return { raw, buffer };
 }
