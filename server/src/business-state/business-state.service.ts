@@ -168,11 +168,29 @@ export class BusinessStateService {
     const normalizedKey = text(key);
     if (!normalizedKey) throw new BadRequestException('У Person отсутствует key');
     person.key = normalizedKey;
-    await withTenantHistoryActor(this.prisma, actor, tx => tx.person.upsert({
-      where: { tenantId_key: { tenantId, key: normalizedKey } },
-      create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
-      update: { position: positionValue(source.position), data: json(person) },
-    }));
+    await withTenantHistoryActor(this.prisma, actor, async tx => {
+      const stored = await tx.person.findUnique({ where: { tenantId_key: { tenantId, key: normalizedKey } } });
+      const previous = objectValue(stored?.data);
+      const legacy = { import: 'import', manual: 'added', registration: 'registered' };
+      const previousStatus = text(previous.contactStatus)
+        || legacy[text(previous.creationSource) as keyof typeof legacy] || '';
+      const requested = text(person.contactStatus)
+        || legacy[text(person.creationSource) as keyof typeof legacy] || '';
+      const linked = (Array.isArray(person.accounts) && person.accounts.some(Boolean))
+        || (Array.isArray(previous.accounts) && previous.accounts.some(Boolean));
+      // Registration upgrades both imported and added contacts. Subsequent
+      // edits or imports cannot downgrade a registered person.
+      person.contactStatus = linked || previousStatus === 'registered'
+        ? 'registered'
+        : stored ? (previousStatus || 'added')
+          : requested === 'import' ? 'import' : 'added';
+      delete person.creationSource;
+      return tx.person.upsert({
+        where: { tenantId_key: { tenantId, key: normalizedKey } },
+        create: { tenantId, key: normalizedKey, position: positionValue(source.position), data: json(person) },
+        update: { position: positionValue(source.position), data: json(person) },
+      });
+    });
     return person;
   }
 
@@ -189,7 +207,11 @@ export class BusinessStateService {
     if (!text(input.name) && !resolved.person) throw new BadRequestException('Не указано имя');
     const previous = resolved.person;
     const key = previous?.key || randomUUID();
-    const person: JsonObject = { ...(previous || {}), key };
+    const person: JsonObject = {
+      ...(previous || {}), key,
+      // Import only labels a NEW contact; existing contact status is preserved.
+      ...(!previous ? { contactStatus: 'import' } : {}),
+    };
     for (const field of ['name', 'surname', 'createdAt','birthDate','gender']) {
       if (input[field] === undefined) continue;
       const value = text(input[field]); const current = text(previous?.[field]);

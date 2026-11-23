@@ -48,6 +48,20 @@ assert.throws(() => run('2024-02-01T14:00:00.000Z', 100, [
   op('payment', '2024-04-01T14:00:00.000Z', 950, used(950)),
 ]), /последующих операций/,
 'A new backdated payment cannot make a later confirmed service go negative');
+const importedSpend = {
+  kind: 'deposit-import-spend', status: 'completed',
+  sourceType: 'deposit', sourceId: deposit,
+  occurredAt: '2024-06-01T12:00:00.000Z',
+  data: { amount: 200, depositAllocations: used(200) },
+};
+assert.equal(run('2026-11-23T14:00:00.000Z', 0, [...ops, importedSpend]).remaining, 1050,
+  'Imported spending without a Journal Record must reduce the same canonical deposit ledger');
+assert.throws(() => run('2024-02-01T14:00:00.000Z', 100, [
+  op('deposit-funding', '2024-01-02T12:00:00.000Z', 1000),
+  { ...importedSpend, occurredAt: '2024-04-01T14:00:00.000Z',
+    data: { amount: 950, depositAllocations: used(950) } },
+]), /последующих операций/,
+  'A backdated spend must not overdraw a later imported spending event');
 const accrual = { benefitType: 'accrual', benefitValue: 20 };
 const accrualOps = [op('deposit-funding', '2024-01-02T12:00:00.000Z', 1000)];
 assert.equal(run('2024-01-03T12:00:00.000Z', 0, accrualOps, accrual).available, 1200);

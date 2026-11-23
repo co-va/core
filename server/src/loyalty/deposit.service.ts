@@ -128,78 +128,116 @@ export class DepositService {
 
   private async operations(tenantId: string) {
     return this.prisma.financeOperation.findMany({
-      where: { tenantId, kind: { in: ['deposit-funding', 'deposit-withdrawal', 'payment', 'refund'] } },
+      where: { tenantId, kind: { in: ['deposit-funding', 'deposit-withdrawal', 'payment', 'refund', 'deposit-import-spend'] } },
       orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
-  private history(row: DepositRow, operations: any[]) {
+  private history(row: DepositRow, operations: any[]): JsonObject[] {
     const id = row.depositId;
     const terms = objectValue(row.terms);
     const mode = depositBenefitMode(terms);
     const rate = depositBenefitRate(terms);
     const items: JsonObject[] = [];
-
     for (const operation of operations) {
       if (!operation || operation.status !== 'completed') continue;
       const data = objectValue(operation.data);
       const occurredAt = operation.occurredAt instanceof Date ? operation.occurredAt : new Date(operation.occurredAt);
-
+      const meta = {
+        occurredAt: occurredAt.toISOString(),
+        recordedAt: operation.createdAt instanceof Date ? operation.createdAt.toISOString() : '',
+        status: operation.status,
+        origin: text(operation.origin) || 'application',
+        importBatchId: text(operation.importBatchId),
+        externalOperationId: text(operation.externalOperationId),
+        sourceRow: Number(operation.sourceRow || 0),
+        walletResolution: text(operation.walletResolution) || 'resolved',
+        reconciliationStatus: text(operation.reconciliationStatus) || 'not_applicable',
+        recordId: text(operation.linkedRecordId) ||
+          (operation.sourceType === 'record' ? text(operation.sourceId) : ''),
+        description: text(data.description || data.note),
+        source: { type: operation.sourceType, id: operation.sourceId },
+      };
       if (operation.kind === 'deposit-funding' && operation.sourceType === 'deposit' && operation.sourceId === id) {
         const amount = money(data.amount ?? data.total);
-        if (amount > 0) items.push({
-          operationId: operation.operationId,
+        if (amount > 0) items.push({ ...meta, operationId: operation.operationId,
           kind: 'deposit-funding', amount, direction: 'IN',
-          occurredAt: occurredAt.toISOString(), status: operation.status,
           walletId: text(data.walletId), walletName: text(data.walletName),
-          source: { type: operation.sourceType, id: operation.sourceId },
         });
         if (mode === 'accrual' && rate > 0) {
           const gain = money(amount * rate / 100);
-          if (gain > 0) items.push({
-            operationId: `${operation.operationId}:benefit`,
+          if (gain > 0) items.push({ ...meta, operationId: operation.operationId + ':benefit',
             kind: 'deposit-benefit', amount: gain, direction: 'IN',
-            occurredAt: occurredAt.toISOString(), status: operation.status,
-            source: { type: 'deposit', id },
           });
         }
         continue;
       }
-
       if (operation.kind === 'deposit-withdrawal' && operation.sourceType === 'deposit' && operation.sourceId === id) {
         const amount = money(data.amount ?? data.total);
-        if (amount > 0) items.push({
-          operationId: operation.operationId,
+        if (amount > 0) items.push({ ...meta, operationId: operation.operationId,
           kind: 'deposit-withdrawal', amount, direction: 'OUT',
-          occurredAt: occurredAt.toISOString(), status: operation.status,
-          source: { type: operation.sourceType, id: operation.sourceId },
+          walletId: text(data.walletId), walletName: text(data.walletName),
         });
         continue;
       }
-
-      if (operation.kind === 'payment') {
-        const used = allocationFor(data.depositAllocations, id);
-        if (used > 0) items.push({
-          operationId: operation.operationId,
-          kind: 'payment', amount: used, direction: 'OUT',
-          occurredAt: occurredAt.toISOString(), status: operation.status,
-          source: { type: operation.sourceType, id: operation.sourceId },
+      if (operation.kind === 'deposit-import-spend' && operation.sourceType === 'deposit' && operation.sourceId === id) {
+        const amount = allocationFor(data.depositAllocations, id);
+        if (amount > 0) items.push({ ...meta, operationId: operation.operationId,
+          kind: 'deposit-import-spend', amount, direction: 'OUT',
         });
         continue;
       }
-
-      if (operation.kind === 'refund') {
-        const restored = allocationFor(data.depositAllocations, id);
-        if (restored > 0) items.push({
-          operationId: operation.operationId,
-          kind: 'refund', amount: restored, direction: 'IN',
-          occurredAt: occurredAt.toISOString(), status: operation.status,
-          source: { type: operation.sourceType, id: operation.sourceId },
+      if (operation.kind === 'payment' || operation.kind === 'refund') {
+        const amount = allocationFor(data.depositAllocations, id);
+        if (amount > 0) items.push({ ...meta, operationId: operation.operationId,
+          kind: operation.kind, amount, direction: operation.kind === 'refund' ? 'IN' : 'OUT',
         });
       }
     }
 
-    return items.sort((left, right) => String(left.occurredAt).localeCompare(String(right.occurredAt)));
+    // Display balances are derived from the canonical stream. Storing an immutable
+    // "balance after" column would go stale when an earlier payment is imported.
+    items.sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)));
+    const byOperation = new Map(operations.map(op => [text(op.operationId), op]));
+    let principal = 0, bonus = 0, funded = 0;
+    const nominal = money(terms.amount);
+    const fixed = text(terms.amountMode) === 'fixed' && nominal > 0;
+    return items.map(item => {
+      const amount = money(item.amount);
+      const operation = byOperation.get(text(item.operationId).replace(/:benefit$/, ''));
+      const data = objectValue(operation?.data);
+      const components = arrayValue(data.depositAllocations)
+        .map(entry => objectValue(entry))
+        .find(entry => text(entry.depositId ?? entry.sourceId ?? entry.id) === id);
+      if (item.kind === 'deposit-funding') {
+        principal = money(principal + amount);
+        funded = money(funded + amount);
+      } else if (item.kind === 'deposit-benefit') {
+        // The separate benefit line owns this increment, not the preceding
+        // funding row: preserve the true balance after *each* history line.
+        bonus = money(bonus + amount);
+      } else if (item.kind === 'deposit-withdrawal') {
+        principal = 0;
+        bonus = 0;
+      } else if (item.kind === 'refund') {
+        const p = components?.principalAmount == null ? amount : money(components.principalAmount);
+        const b = components?.benefitAmount == null ? money(amount - p) : money(components.benefitAmount);
+        principal = money(principal + p);
+        bonus = money(bonus + b);
+      } else if (item.kind === 'payment' || item.kind === 'deposit-import-spend') {
+        const p = components?.principalAmount == null ? Math.min(principal, amount) : money(components.principalAmount);
+        const b = components?.benefitAmount == null ? money(amount - p) : money(components.benefitAmount);
+        principal = Math.max(0, money(principal - p));
+        bonus = Math.max(0, money(bonus - b));
+      }
+      return { ...item,
+        principalAfter: principal,
+        benefitAfter: bonus,
+        balanceAfter: money(principal + bonus),
+        fundedTotal: funded,
+        dueToFund: fixed ? Math.max(0, money(nominal - funded)) : null,
+      };
+    });
   }
 
   private dto(row: DepositRow, operations: any[], asOf: Date | null = null) {
@@ -471,6 +509,7 @@ export class DepositService {
         where: { id: operation.id },
         data: {
           occurredAt: nextOccurredAt,
+          walletResolution: 'resolved',
           data: {
             ...clone(previous), amount: nextAmount, total: nextAmount,
             walletId: nextWalletId, walletName: nextWalletName,

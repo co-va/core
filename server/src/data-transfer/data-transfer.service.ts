@@ -15,7 +15,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { calendarDate, canonical, clock, decimal, DOMAINS, Fact, instant, LABELS, text } from './formats';
-import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook } from './source';
+import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook, peopleWorkbook } from './source';
 
 type Tx = Prisma.TransactionClient;
 type Values = Record<string, any>;
@@ -39,7 +39,11 @@ export class DataTransferService {
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
   }
 
-  async workbook(input: any) { return transferWorkbook(Array.isArray(input?.rows) ? input.rows : [], input?.template === true); }
+  async workbook(input: any) {
+    const rows = Array.isArray(input?.rows) ? input.rows : [];
+    if (input?.domain === 'people') return peopleWorkbook(rows, input?.template === true);
+    return transferWorkbook(rows, input?.template === true);
+  }
 
   private async reference(tx: Tx, tenantId: string, domain: string, value: unknown, source: string) {
     const key = text(value); if (!key) return '';
@@ -213,7 +217,18 @@ export class DataTransferService {
 
   async run(tenantId: string, accountId: string, input: SourceInput, preview: boolean) {
     let facts: Fact[];
-    try { const parsed = await readSource(input); facts = sourceFacts(parsed.sheets, parsed.fingerprint, input); }
+    try {
+      const parsed = await readSource(input);
+      if (input.expectedDomain === 'people' && (
+        parsed.sheets.length !== 1
+        || parsed.sheets[0]?.name !== 'Люди'
+        || !parsed.sheets[0]?.headers.includes('Имя')
+      )) throw Error('Выберите заполненный шаблон Контактов');
+      facts = sourceFacts(parsed.sheets, parsed.fingerprint, input);
+      if (input.expectedDomain === 'people' && facts.some(fact => fact.domain !== 'people')) {
+        throw Error('В этом разделе загружаются только контакты');
+      }
+    }
     catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
     const access = await this.access.resolveTenantAccess(tenantId);
     const workplaceLimit = await this.access.resolveCapability(tenantId, 'workplaces.max');
@@ -255,6 +270,11 @@ export class DataTransferService {
             await tx.$executeRawUnsafe('SAVEPOINT transfer_fact');
             try{add(fact,await perform(tx,fact));await tx.$executeRawUnsafe('RELEASE SAVEPOINT transfer_fact');}
             catch(error){await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT transfer_fact');await tx.$executeRawUnsafe('RELEASE SAVEPOINT transfer_fact');add(fact,null,reason(error));}
+          }
+          // Dedicated Excel flows must never save a partial file. On any row
+          // error the transaction rolls back all people, history and IDs.
+          if (!preview && input.strict === true && result.failed > 0) {
+            throw new BadRequestException('В файле есть ошибки. Ничего не загружено.');
           }
           await this.finance.finishHistoricalDeposits(tx,tenantId,result.rows.filter((row:any)=>row.domain==='deposits'&&!row.reason).map((row:any)=>row.targetId));
           if(preview)throw new PreviewRollback(result);

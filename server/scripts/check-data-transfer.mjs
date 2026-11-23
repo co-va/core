@@ -211,6 +211,53 @@ try {
   assert.equal(await db.dataTransferFact.count({where:{tenantId}}),before);
   // A corrected bad row complements the successful original row.
   result=await run('people',[{externalId:'bad',name:'Мария',phone:'79991112233'}]);assert.equal(result.failed,0);
+  // Real one-sheet Contacts Excel, with no service metadata in visible columns.
+  const emptyContacts = new ExcelJS.Workbook();
+  await emptyContacts.xlsx.load(await service.workbook({ domain:'people',template:true }));
+  const contactSheet = emptyContacts.worksheets[0];
+  assert.equal(emptyContacts.worksheets.length,1);
+  assert.equal(contactSheet.name,'Люди');
+  assert.equal(contactSheet.rowCount,1,'Template is empty but ready for input');
+  assert.equal(contactSheet.getCell(1,1).value,'Имя');
+  assert.equal(contactSheet.getColumn(9).hidden,true,'Internal key is not exposed to professionals');
+  contactSheet.getRow(2).values=[
+    'Ксения','Примерная','79997771234','','ksenia@example.test','1990-06-15','Женский','',
+  ];
+  const contactPayload={filename:'contacts.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await emptyContacts.xlsx.writeBuffer()).toString('base64'),
+    strict:true,expectedDomain:'people',sheets:{'Люди':{domain:'people'}}};
+  const beforeContacts=await db.person.count({where:{tenantId}});
+  const inspected=await service.run(tenantId,accountId,contactPayload,true);
+  assert.equal(inspected.failed,0,JSON.stringify(inspected.rows));
+  assert.equal(inspected.transferred,1);
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts,'Preview never writes people');
+  const committed=await service.run(tenantId,accountId,contactPayload,false);
+  assert.equal(committed.transferred,1);
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
+  const importedPerson=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Ксения'}}});
+  assert.equal(importedPerson.data.contactStatus,'import');
+  const duplicate=await service.run(tenantId,accountId,contactPayload,false);
+  assert.equal(duplicate.unchanged,1,'Re-upload never duplicates');
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
+  const wrongContacts=new ExcelJS.Workbook();
+  await wrongContacts.xlsx.load(await service.workbook({domain:'people',template:true}));
+  wrongContacts.worksheets[0].getRow(2).values=['Ирина','','79993332211'];
+  wrongContacts.worksheets[0].getRow(3).values=['Неверный','','bad-phone'];
+  const badPayload={...contactPayload,
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await wrongContacts.xlsx.writeBuffer()).toString('base64')};
+  const badChecked=await service.run(tenantId,accountId,badPayload,true);
+  assert.ok(badChecked.failed>0,'User must be shown invalid lines before import');
+  await assert.rejects(()=>service.run(tenantId,accountId,badPayload,false),
+    /В файле есть ошибки/,'Strict import aborts the entire batch');
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1,'No partial contacts saved');
+  const existingExport=new ExcelJS.Workbook();
+  await existingExport.xlsx.load(await service.workbook({domain:'people',rows:[{
+    name:'Ксения',surname:'Примерная',phone:'79997771234',
+    email:'ksenia@example.test',personKey:importedPerson.key,
+  }]}));
+  assert.equal(existingExport.worksheets[0].getCell(2,1).value,'Ксения');
+  assert.equal(existingExport.worksheets[0].getCell(2,9).value,importedPerson.key);
+  console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {

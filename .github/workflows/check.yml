@@ -891,6 +891,8 @@ jobs:
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-service-email-outbox.mjs
       - name: Verify canonical data transfer with PostgreSQL
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-data-transfer.mjs
+      - name: Verify canonical Deposit Excel import with real PostgreSQL
+        run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-deposit-excel.mjs
       - name: Verify owner-scoped History with PostgreSQL
         run: docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-history.mjs
       - name: Stop isolated Core environment

@@ -205,6 +205,7 @@ export class PersonIdentityService {
       totalSpent: 0,
       lastVisit: '',
       programs: [],
+      creationSource: 'registration',
       createdAt: now,
     };
 
