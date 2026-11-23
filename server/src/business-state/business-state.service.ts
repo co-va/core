@@ -302,7 +302,13 @@ export class BusinessStateService {
     }
     if(input.additionalPhone!==undefined) {
       const additional=normalizePhone(input.additionalPhone);if(!additional)throw new BadRequestException('Неверный формат дополнительного телефона');
-      resolveTransferredPerson(rows.map(row=>objectValue(row.data)),identity,{phone:input.additionalPhone},key);
+      const existingRows=rows.map(row=>objectValue(row.data));
+      if(previous){
+        resolveTransferredPerson(existingRows,identity,{phone:input.additionalPhone},key);
+      }else if(existingRows.some(item=>(Array.isArray(item.phones)?item.phones:[])
+        .some((phone:unknown)=>normalizePhone(phone)===additional))){
+        throw new ConflictException('Дополнительный телефон уже принадлежит другому человеку');
+      }
       const values=Array.isArray(person.phones)?person.phones:[];const previousAdditional=text(ownership.additionalPhone);
       const phones=values.filter((value:unknown)=>!previousAdditional || normalizePhone(value)!==previousAdditional);
       if(!phones.some((value:unknown)=>normalizePhone(value)===additional)){phones.push(additional);ownership.additionalPhone=additional;}else delete ownership.additionalPhone;
