@@ -148,7 +148,7 @@ export async function planDepositExcel(db:any,tenantId:string,lines:DepositExcel
       if(person&&first&&words(text(person.name))!==words(first))throw Error('Имя не совпадает с контактом');
       if(!person) {
         if(!first)throw Error('Укажите человека');
-        person={key:randomUUID(),name:first,surname:last,phones:phone?[phone]:[],createdAt:new Date().toISOString()};
+        person={key:randomUUID(),name:first,surname:last,phones:phone?[phone]:[],creationSource:'import',createdAt:new Date().toISOString()};
         people.push(person);newPeople.push(person);
         assignCode(identity,'person',text(person.key),personCode.length===4?personCode:'');
       }
