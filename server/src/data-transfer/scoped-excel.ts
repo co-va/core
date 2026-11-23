@@ -27,13 +27,16 @@ const FINANCE_BASE = [
   { key: 'amount', label: 'Сумма' },
   { key: 'article', label: 'Статья' },
   { key: 'toWallet', label: 'Кошелёк назначения' },
-  { key: 'recordId', label: 'Запись' },
+  { key: 'recordId', label: 'Запись', hidden: true },
   { key: 'phone', label: 'Телефон человека' },
   { key: 'recordDate', label: 'Дата записи' },
   { key: 'recordFrom', label: 'Время записи' },
   { key: 'loan', label: 'Займ' },
   { key: 'investment', label: 'Инвестиция' },
   { key: 'note', label: 'Примечание' },
+  { key: 'status', label: 'Статус' },
+  { key: 'tips', label: 'Чаевые' },
+  { key: 'originalPayment', label: 'Исходная оплата', hidden: true },
 ] as const;
 function meaningful(v: unknown): boolean {
   return v !== null && v !== undefined && text(v) !== '';
@@ -90,6 +93,18 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
       }});
     } else {
       const kind=get('Вид операции');
+      const status=get('Статус');
+      if(status && !['Активна','Отменена'].includes(status))
+        throw Error('Статус операции: выберите Активна или Отменена');
+      if(status==='Отменена')
+        throw Error('Отменённые операции требуют отдельной истории отмены. Переносите исходную операцию без изменения её статуса.');
+      const allocations:any[]=[];
+      for(const [column,label] of sheet.headers.entries()){
+        const match=/^Кошелёк ([1-9]\d*)$/.exec(label);
+        if(!match || !meaningful(row[column]))continue;
+        const number=match[1];
+        allocations.push({wallet:text(row[column]),amount:at('Сумма кошелька '+number)});
+      }
       const data={
         occurredAt:at('Дата операции'),wallet:get('Кошелёк'),article:get('Статья'),
         toWallet:get('Кошелёк назначения'),loan:get('Займ'),
@@ -100,6 +115,8 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         facts.push({domain:'payments',sheet:sheet.name,row:n+2,sourceKey,values:{
           ...data,amount:at('Сумма'),recordId:get('Запись'),phone:get('Телефон человека'),
           date:at('Дата записи')||undefined,from:at('Время записи')||undefined,
+          tips:at('Чаевые')||undefined,
+          ...(allocations.length?{allocations:JSON.stringify(allocations)}:{}),
         }});
       } else {
         facts.push({domain:'operations',sheet:sheet.name,row:n+2,sourceKey,values:{
@@ -109,6 +126,15 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
     }
   }
   return facts;
+}
+function financeColumns(rows: any[], template: boolean) {
+  const maximum=Math.max(template?3:1,...rows.map(r=>Array.isArray(r.allocations)?r.allocations.length:0));
+  const cols:any[]=[...FINANCE_BASE];
+  for(let i=1;i<=maximum;i++){
+    cols.push({key:'wallet'+i,label:'Кошелёк '+i});
+    cols.push({key:'walletAmount'+i,label:'Сумма кошелька '+i});
+  }
+  return cols;
 }
 function recordColumns(rows: any[], template: boolean) {
   const maximum=Math.max(template ? 10 : 1,...rows.map(row=>Array.isArray(row.services)?row.services.length:0));
@@ -124,7 +150,7 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
   if (!Array.isArray(rows) || rows.length>20000)throw Error('Выгрузка допускает не более 20 000 строк за один раз');
   const book=new ExcelJS.Workbook();
   book.creator='VA Tools';
-  const cols:any[]=domain==='records'?recordColumns(rows,template):[...FINANCE_BASE];
+  const cols:any[]=domain==='records'?recordColumns(rows,template):financeColumns(rows,template);
   const sheet=book.addWorksheet(domain==='records'?'Записи':'Финансы',{views:[{state:'frozen',ySplit:1,xSplit:1}]});
   sheet.columns=cols.map(col=>({key:col.key,header:col.label,width:col.label.length>24?28:22,hidden:!!col.hidden}));
   sheet.getRow(1).height=32;
@@ -136,6 +162,11 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
       row['service'+(i+1)]=text(item.name);
       row['cost'+(i+1)]=item.cost ?? '';
       row['duration'+(i+1)]=item.duration ?? '';
+    }
+    if(domain==='finance')for(let i=0;i<(input.allocations||[]).length;i++){
+      const item=input.allocations[i]||{};
+      row['wallet'+(i+1)]=text(item.wallet);
+      row['walletAmount'+(i+1)]=item.amount ?? '';
     }
     sheet.addRow(row);
   }
