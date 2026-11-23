@@ -281,6 +281,22 @@ export class FinanceService {
   }
   // Historical wallet refunds stay inside the same Finance transaction as
   // their source payment. Deposit-funded refunds belong to Deposits Excel.
+  async cancelImportedFinanceOperation(tenantId:string,operationId:string,when:unknown,tx:Prisma.TransactionClient){
+    const current=await tx.financeOperation.findUnique({
+      where:{tenantId_operationId:{tenantId,operationId}},
+    });
+    if(!current)throw new BadRequestException('Операция для отмены не найдена');
+    if(current.status==='cancelled')return;
+    if(['deposit-funding','deposit-withdrawal'].includes(current.kind)
+      || depositAllocationsValue(objectValue(current.data).depositAllocations).length)
+      throw new BadRequestException('Отмену депозита выполните в разделе «Депозиты»');
+    const occurredAt=requiredOccurredAt(when);
+    if(occurredAt.getTime()<current.occurredAt.getTime())
+      throw new BadRequestException('Дата отмены не может быть раньше исходной операции');
+    await this.createReversalFor(tx,tenantId,operationId,'Отменено в исходной истории',occurredAt);
+    await tx.financeOperation.update({where:{id:current.id},data:{status:'cancelled'}});
+  }
+
   async importHistoricalRefund(tenantId:string,input:JsonObject,targetId:string,tx:Prisma.TransactionClient){
     const originalId=text(input.originalPayment);
     if(!originalId)throw new BadRequestException('Для возврата укажите исходную оплату');
