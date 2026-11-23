@@ -248,8 +248,7 @@ export async function consumeDepositAllocations(db: Db, tenantId: string, values
     // from FinanceOperation and ensure later payments
     // cannot become overdrawn as a result of backfilled spending.
     if (historical && row.status === 'expired'
-      && occurredAt.getTime() < Date.now()
-      && depositTermActiveAt(row.terms, occurredAt)) {
+      && depositPriceEligibleAt(row, occurredAt)) {
       const fundedAt = row.fundedAt instanceof Date ? row.fundedAt : new Date(row.fundedAt);
       if (!Number.isFinite(fundedAt.getTime()) || occurredAt < fundedAt) {
         throw new BadRequestException('Оплата раньше первого внесения депозита невозможна');
