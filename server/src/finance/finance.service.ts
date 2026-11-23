@@ -1113,9 +1113,20 @@ export class FinanceService {
     }
     if(!fromDeposit && Math.abs(money(allocations.reduce((sum,item)=>sum+item.amount,0))-amount)>0.009)
       throw new BadRequestException('Сумма по кошелькам не совпадает с общей суммой оплаты');
+    // Invoice quotation is a historical source fact. It is NOT current
+    // catalog pricing and must not be multiplied by split wallet movements.
+    const sourceQuote = input.purpose && input.invoiceDate ? {
+      documentNumber:text(input.documentNumber),
+      invoiceDate:text(input.invoiceDate),invoiceTime:text(input.invoiceTime),
+      purpose:text(input.purpose),subject:text(input.subject),
+      price:input.price ?? null,discountPercent:input.discountPercent ?? null,
+      discountMoney:input.discountMoney ?? null,quotedTotal:input.quotedTotal ?? null,
+      integrationSource:text(input.integrationSource),
+    } : null;
     const data = { workplace: text(input.workplaceId), person: clone(objectValue(input.person)), allocations,
       cashTotal: fromDeposit?0:amount,cashServiceAmount:fromDeposit?0:serviceAmount,
-      total: amount,serviceAmount,tips,depositAllocations };
+      total: amount,serviceAmount,tips,depositAllocations,
+      ...(sourceQuote ? {sourceQuote} : {}) };
     let tipsLeft=tips;
     const entries:JsonObject[]=[];
     for(let i=allocations.length-1;i>=0;i--){
