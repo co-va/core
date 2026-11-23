@@ -73,7 +73,7 @@ export class DataTransferService {
       if (value && typeof value === 'object' && !(value instanceof Date)) throw Error(`${FIELDS[field] || field}: ${value.invalid || 'неверный тип значения'}`);
     }
     if (!DOMAINS.includes(fact.domain)) throw Error('Выберите тип данных для листа');
-    for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
+    for(const field of ['date','invoiceDate','birthday','scheduleDate','termStartDate','termEndDate','expiresAt','endDate'])if(v[field]!=null)v[field]=calendarDate(v[field]);
     for (const field of ['from', 'to','createdTime','changedTime','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
     for (const field of ['occurredAt', 'createdAt', 'cancelledAt']) if (v[field] != null) v[field] = instant(v[field]);
     for (const field of ['quotedTotal','price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
@@ -173,6 +173,35 @@ export class DataTransferService {
         return {transferId:'',targetId:current.operationId,status:'unchanged'};
       }
     }
+    // If the application exported a canonical operation ID as the document
+    // number, identify each wallet movement of that existing operation. An
+    // arbitrary CRM invoice number is never treated as a Record identifier.
+    if(!previous && ['payments','operations'].includes(fact.domain)
+      && text(normalized.documentNumber) && text(normalized.invoiceDate)){
+      const current=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{
+          tenantId,operationId:text(normalized.documentNumber),
+        }},
+      });
+      if(current){
+        if(current.status==='cancelled')throw Error('Исходная операция отменена.');
+        const data=current.data as Values;
+        const wallet=text(normalized.wallet);
+        const amount=Number(normalized.financeAmount ?? normalized.amount);
+        const allocations=Array.isArray(data.allocations)?data.allocations:[];
+        const matchingWallet=allocations.length
+          ?allocations.some((item:Values)=>text(item.walletName)===wallet
+            && Math.abs(Number(item.amount)-amount)<0.009)
+          :text(data.walletName)===wallet
+            && Math.abs(Number(data.total)-amount)<0.009;
+        const quote=data.sourceQuote as Values | undefined;
+        if(!matchingWallet || fact.domain==='payments'&&current.sourceType!=='record'
+          ||quote?.subject && text(normalized.subject)!==text(quote.subject)
+          ||quote?.invoiceDate && text(normalized.invoiceDate)!==text(quote.invoiceDate))
+          throw Error('Номер документа принадлежит другой финансовой операции. Проверьте оплату.');
+        return {transferId:'',targetId:current.operationId,status:'unchanged'};
+      }
+    }
     const id = previous?.id || randomUUID();
     const provenance = { type: 'import', label: 'Импорт', transferId: id, source, sessionId, revision: (previous?.revision || 0) + 1 };
     await tx.$queryRaw`SELECT set_config('co_va.transfer_provenance', ${JSON.stringify(provenance)}, true)`;
@@ -256,14 +285,54 @@ export class DataTransferService {
     } else if (fact.domain === 'payments') {
       if (v.amount == null) throw Error('Сумма имеет неверный формат');
       if (!v.occurredAt) throw Error('Не указана дата оплаты');
+      const compactFinance=Boolean(v.purpose && v.invoiceDate);
       let person: Values | undefined;
-      if (v.personKey || v.phone || v.uei) person = await this.people.resolveTransferPerson(tenantId, v, tx);
+      if (v.personKey || v.phone || v.uei) {
+        // The finance participant can contain full first+last name; identity
+        // still comes from code or telephone, not exact first-name formatting.
+        person = await this.people.resolveTransferPerson(tenantId,
+          compactFinance ? {...v,name:''} : v, tx);
+      }
       let record: Values | undefined;
-      if (v.recordId || v.date) record = await this.records.resolveTransferredRecord(tenantId, { ...v, personKey: person?.key }, tx);
-      if(v.paymentSource && !['Кошелёк','Депозит','Личный счёт'].includes(v.paymentSource))throw Error('Уточните источник оплаты');
-      const wallet = !v.paymentSource || v.paymentSource==='Кошелёк' ? await this.finance.resolveTransferredWallet(tenantId, v, tx) : {id:'',name:''};
-      if(v.paymentSource==='Личный счёт') targetId=await this.personalAccounts.importHistorical(tenantId,{...v,personKey:person?.key || record?.person?.key,recordId:record?.id,accountAction:'Оплата',accountAmount:v.amount},target,tx);
-      else targetId = await this.finance.importPayment(tenantId, { ...v, recordId: record?.id, person: person || record?.person || {}, workplaceId: record?.workplaceId || '', walletId: wallet.id, walletName: wallet.name }, target, tx);
+      if(compactFinance){
+        let workplaceId='';
+        if(v.workplace){
+          const workplace=await this.profiles.resolveTransferWorkplace(tenantId,v,tx);
+          workplaceId=workplace.key;
+        }
+        let linkedRecordId='';
+        if(text(v.documentNumber)){
+          // The original CRM Record ID may live in an earlier import fact,
+          // while the canonical Record uses a different internal identifier.
+          const imported=await tx.dataTransferFact.findMany({where:{
+            tenantId,domain:'records',
+            sourceKey:{endsWith:':records:'+text(v.documentNumber)},
+          },select:{targetId:true}});
+          const candidates=[...new Set(imported.map(row=>row.targetId))];
+          if(candidates.length===1)linkedRecordId=candidates[0];
+          else if(candidates.length>1)
+            throw Error('Номер документа относится к нескольким исходным записям.');
+        }
+        record=await this.records.matchFinancialRecord(tenantId,
+          {...v,recordId:linkedRecordId,personKey:person?.key,workplaceId},tx);
+        if(!person)person=record.person;
+        if(!record?.id)throw Error('Не найден идентификатор записи для оплаты');
+      }else if (v.recordId || v.date){
+        record=await this.records.resolveTransferredRecord(tenantId,
+          { ...v, personKey: person?.key }, tx);
+      }
+      if(v.paymentSource && !['Кошелёк','Депозит','Личный счёт'].includes(v.paymentSource))
+        throw Error('Уточните источник оплаты');
+      const wallet = !v.paymentSource || v.paymentSource==='Кошелёк'
+        ? await this.finance.resolveTransferredWallet(tenantId, v, tx)
+        : {id:'',name:''};
+      const withLink={...v,recordId:record?.id,person:person || record?.person || {},
+        workplaceId:record?.workplaceId || '',walletId:wallet.id,walletName:wallet.name};
+      if(v.paymentSource==='Личный счёт')
+        targetId=await this.personalAccounts.importHistorical(tenantId,
+          {...withLink,personKey:person?.key || record?.person?.key,
+            accountAction:'Оплата',accountAmount:v.amount},target,tx);
+      else targetId = await this.finance.importPayment(tenantId,withLink,target,tx);
       if(v.importCancelled===true)
         await this.finance.cancelImportedFinanceOperation(tenantId,targetId,v.cancelledAt,tx);
     } else if(fact.domain==='offers') {
@@ -318,7 +387,12 @@ export class DataTransferService {
     const seen = new Map<string, string>();
     for (const fact of facts) {
       const key = `${fact.domain}:${fact.sourceKey}`; const value = canonical(fact.values);
-      if (seen.has(key) && seen.get(key) !== value) conflicts.set(key, 'Один ID источника указан для разных фактов в файле. Проверьте данные.');
+      if (seen.has(key)) {
+        if(fact.values.invoiceDate)
+          conflicts.set(key,'В файле несколько платежей с одинаковыми реквизитами. Для разных оплат уточните номер документа, кошелёк или дату оплаты.');
+        else if(seen.get(key)!==value)
+          conflicts.set(key,'Один ID источника указан для разных фактов в файле. Проверьте данные.');
+      }
       seen.set(key, value);
     }
     const sessionId=randomUUID();
