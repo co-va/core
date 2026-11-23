@@ -148,7 +148,7 @@ export class DepositExcelService {
       text(p.amountMode)==='fixed'?money(p.amount):'',text(p.termMode)==='dated'?'Период':'Бессрочно',
       text(p.termStartDate),text(p.termEndDate),
       text(p.benefitType)==='discount'?'На обслуживание':text(p.benefitType)==='accrual'?'Начисление сразу':'Нет',
-      money(p.benefitValue),text(p.description),text(codes['loyalty-deposit-program:'+text(p.id)]),
+      money(p.benefitValue),text(codes['loyalty-deposit-program:'+text(p.id)]),
     ];
     for(const dep of issued){
       const p=programs.get(dep.programId)||obj(dep.terms);
@@ -161,16 +161,21 @@ export class DepositExcelService {
         const action=e.kind==='deposit-funding'?'Пополнение':
           ['payment','deposit-import-spend'].includes(e.kind)?'Списание':'';
         if(!action)continue;
-        rows.push([...preface(p),name,
+        const programCode=text(codes['loyalty-deposit-program:'+text(p.id)]);
+        const clientCode=text(codes['person:'+text(person.key)]);
+        const cardKey=text(obj(dep.terms).importCardKey)
+          ||(programCode.length===4&&clientCode.length===4?programCode+clientCode:'');
+        rows.push([...preface(p),
+          clientCode,name,
           text((Array.isArray(person.phones)?person.phones:[])[0]||person.phone),
-          text(codes['person:'+text(person.key)]),text(obj(dep.terms).importCardKey),
-          date,action,money(e.amount),text(e.walletName),text(e.description),text(e.externalOperationId),
+          cardKey,
+          date,action,money(e.amount),text(e.walletName),text(e.description),
           money(e.balanceAfter),e.dueToFund==null?'':money(e.dueToFund),
           e.origin==='excel_import'?'Excel':'Приложение',
           e.walletResolution==='unknown'?'Нет':'Да',
           e.reconciliationStatus==='unmatched'?'Не сопоставлена':
             e.reconciliationStatus==='matched'?'Сопоставлена':'—',
-          text(e.recordedAt),text(e.recordId),
+          text(e.recordedAt),text(e.recordId),text(e.operationId),
         ]);
       }
     }
