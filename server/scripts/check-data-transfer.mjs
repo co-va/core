@@ -585,6 +585,34 @@ try {
   result=await service.run(tenantId,accountId,splitInput,false);
   assert.equal(result.unchanged,2);
   assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit+2);
+  // A supplier has neither Client code nor phone. Two payments still mean
+  // ONE historical purchase quote and TWO cash expenses.
+  const vendorBook=new ExcelJS.Workbook();
+  await vendorBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const vendorSheet=vendorBook.worksheets[0];
+  const vendorRow=(n,wallet)=>{vendorSheet.getRow(n).values=[
+    'BeautyToria','2013-05-10','','','Wildberries','',
+    'WB-2013-05','Закупка','Перчатки','Расход',10000,'',10000,5000,
+    '2013-05-12',wallet,'','Excel',
+  ];};
+  vendorRow(3,'Наличные');vendorRow(4,'Сбербанк');
+  const vendorInput={filename:'supplier.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await vendorBook.xlsx.writeBuffer()).toString('base64')};
+  const vendorPreview=await service.run(tenantId,accountId,vendorInput,true);
+  assert.equal(vendorPreview.failed,0,JSON.stringify(vendorPreview.rows));
+  assert.equal(vendorPreview.transferred,2);
+  result=await service.run(tenantId,accountId,vendorInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,2);
+  const vendorOps=await Promise.all(result.rows.map(row=>db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:row.targetId}},
+  })));
+  assert.ok(vendorOps.every(op=>op.kind==='manual-expense'));
+  assert.ok(vendorOps.every(op=>Number(op.data.quotedTotal)===10000));
+  assert.equal(vendorOps.reduce((sum,op)=>sum+Number(op.data.total),0),10000);
+  result=await service.run(tenantId,accountId,vendorInput,false);
+  assert.equal(result.unchanged,2);
   // A mismatched participant never guesses the same record based on date.
   const wrongSplit=new ExcelJS.Workbook();
   await wrongSplit.xlsx.load(await service.workbook({domain:'finance',template:true}));
