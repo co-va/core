@@ -231,14 +231,12 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
     sheet.getCell(2,17).note='Одна запись занимает одну строку. Добавляйте новые столбцы «Услуга 11» и дальше, если нужно.';
     sheet.getCell(2,17+servicesCount).note='Стоимость записи — цена визита, а не факт поступления денег.';
     sheet.getCell(2,19+servicesCount).note='Отметка статуса не создаёт финансовую операцию.';
-    sheet.autoFilter={from:{row:2,column:1},to:{row:Math.max(2,sheet.rowCount),column:cols.length-1}};
   } else {
     sheet.columns=cols.map(col=>({key:col.key,header:col.label,width:col.label.length>24?28:22,hidden:!!col.hidden}));
     sheet.getRow(1).height=32;
     sheet.getRow(1).eachCell(c=>{c.font={bold:true,color:{argb:'FFFFFFFF'}};
       c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF303238'}};
       c.alignment={vertical:'middle'};});
-    sheet.autoFilter={from:{row:1,column:1},to:{row:Math.max(1,sheet.rowCount),column:cols.length}};
   }
   if(!template)for(const input of rows) {
     const row:any={...input};
@@ -253,5 +251,7 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
     }
     sheet.addRow(row);
   }
+  const headerRow=domain==='records'?2:1;
+  sheet.autoFilter={from:{row:headerRow,column:1},to:{row:Math.max(headerRow,sheet.rowCount),column:cols.length-(domain==='records'?1:0)}};
   return Buffer.from(await book.xlsx.writeBuffer());
 }
