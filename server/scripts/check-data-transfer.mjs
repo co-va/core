@@ -335,8 +335,9 @@ try {
   assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF);
   result=await service.run(tenantId,accountId,fPayload,false);
   assert.equal(result.transferred,1,JSON.stringify(result.rows));
+  const journalPaymentId=target(result,'payments').targetId;
   assert.equal((await db.financeOperation.findUnique({
-    where:{tenantId_operationId:{tenantId,operationId:target(result,'payments').targetId}},
+    where:{tenantId_operationId:{tenantId,operationId:journalPaymentId}},
   })).sourceId,jId);
   result=await service.run(tenantId,accountId,fPayload,false);
   assert.equal(result.unchanged,1,'Repeat finance upload never duplicates payment');
@@ -348,8 +349,7 @@ try {
   result=await service.run(tenantId,accountId,jRoundtrip,false);
   assert.equal(result.unchanged,1,JSON.stringify(result.rows));
   assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
-  const latestPaymentId=(await db.financeOperation.findMany({where:{tenantId,kind:'payment'},
-    orderBy:{createdAt:'desc'},take:1}))[0]?.operationId;
+  const latestPaymentId=journalPaymentId;
   assert.ok(latestPaymentId);
   const fRoundtripBook=new ExcelJS.Workbook();
   await fRoundtripBook.xlsx.load(await service.workbook({domain:'finance',rows:[{
