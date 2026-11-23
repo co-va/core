@@ -74,9 +74,9 @@ export class DataTransferService {
     }
     if (!DOMAINS.includes(fact.domain)) throw Error('Выберите тип данных для листа');
     for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
-    for (const field of ['from', 'to','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
+    for (const field of ['from', 'to','createdTime','changedTime','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
     for (const field of ['occurredAt', 'createdAt', 'cancelledAt']) if (v[field] != null) v[field] = instant(v[field]);
-    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
+    for (const field of ['quotedTotal','price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
     if(v.discount!==undefined) {
@@ -112,6 +112,7 @@ export class DataTransferService {
       });
       if (v.procedure) throw Error('Укажите либо одну процедуру, либо список процедур');
     }
+    for(const field of ['createdDate','changedDate'])if(v[field]!==undefined && v[field]!==null && v[field]!=='')v[field]=calendarDate(v[field]);
     for(const field of ['spendLimitPercent','benefitValue','interestRate','supplierDiscount'])if(v[field]>100)throw Error(`${FIELDS[field]}: значение больше 100`);
     if (v.discountPercent > 100) throw Error('Скидка %: значение больше 100');
     if (v.discountPercent != null && v.discountMoney != null) throw Error('Указаны два вида скидки. Оставьте один явно заданный вид.');
@@ -228,6 +229,14 @@ export class DataTransferService {
         workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
         procedures: snapshots, appendProcedures:v.appendProcedures===true,
         ...(v.createdAt ? { createdAt: v.createdAt } : {}),
+        ...(v.createdDate ? { createdDate:v.createdDate,createdTime:v.createdTime } : {}),
+        ...(v.creatorName ? { creatorName:text(v.creatorName) } : {}),
+        ...(v.changedBy || v.changedDate || v.changedTime ? {
+          changedBy:text(v.changedBy),changedDate:v.changedDate,changedTime:v.changedTime,
+        } : {}),
+        ...(v.quotedTotal !== undefined ? { quotedTotal:v.quotedTotal } : {}),
+        ...(v.comment ? { comment:text(v.comment) } : {}),
+        ...(v.integrationSource ? { integrationSource:text(v.integrationSource) } : {}),
         ...((v.bookedBy || v.actionStatus || v.visitStatus || v.paymentStatus) ? {
           bookedBy: text(v.bookedBy),actionStatus:text(v.actionStatus),
           visitStatus:text(v.visitStatus),paymentStatus:text(v.paymentStatus),
