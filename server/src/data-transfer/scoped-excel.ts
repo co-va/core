@@ -12,21 +12,20 @@ const RECORD_BASE = [
   { key: 'phone', label: 'Телефон' },
   { key: 'email', label: 'Email' },
   { key: 'date', label: 'Дата визита' },
-  { key: 'from', label: 'Время начала' },
+  { key: 'from', label: 'Время визита' },
   { key: 'to', label: 'Время окончания' },
-  { key: 'creatorName', label: 'Кто создал' },
-  { key: 'createdDate', label: 'Дата создания' },
-  { key: 'createdTime', label: 'Время создания' },
-  { key: 'actionStatus', label: 'Статус записи' },
-  { key: 'changedBy', label: 'Кто изменил' },
-  { key: 'changedDate', label: 'Дата изменения' },
-  { key: 'changedTime', label: 'Время изменения' },
+  { key: 'creatorName', label: 'Имя' },
+  { key: 'createdDate', label: 'Дата' },
+  { key: 'createdTime', label: 'Время' },
+  { key: 'actionStatus', label: 'Статус' },
+  { key: 'changedBy', label: 'Имя' },
+  { key: 'changedDate', label: 'Дата' },
+  { key: 'changedTime', label: 'Время' },
 ] as const;
 const RECORD_AFTER_SERVICES = [
-  { key: 'quotedTotal', label: 'Стоимость записи' },
-  { key: 'visitStatus', label: 'Посещение' },
+  { key: 'quotedTotal', label: 'Стоимость' },
+  { key: 'visitStatus', label: 'Статус посещения' },
   { key: 'paymentStatus', label: 'Статус оплаты' },
-  { key: 'paidFull', label: 'Оплачено полностью' },
   { key: 'comment', label: 'Комментарий' },
   { key: 'integrationSource', label: 'Источник интеграции' },
   // Kept for round-trip identity; the professional never needs to enter it.
@@ -98,6 +97,18 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
     if (!row.some(meaningful)) continue;
     const at = (label: string) => cell(row,headers,label);
     const get = (label: string) => value(row,headers,label);
+    // Short repeated labels are read relative to their group.
+    // The one-row CSV variant uses fixed anchors instead.
+    const groupField=(group:string,offset:number,legacyLabel:string):any=>{
+      const start=grouped?sheet.headers.indexOf(group):-1;
+      if(start>=0)return row[start+offset];
+      if(headers.includes('Статус')&&headers.includes('Стоимость')){
+        const i=group==='Создание записи'
+          ?headers.indexOf('Время окончания')+1:headers.indexOf('Статус');
+        if(i>=0)return row[i+offset];
+      }
+      return cell(row,headers,legacyLabel);
+    };
     const external = domain==='records' ? get('ID записи')||get('Запись') : get('Операция');
     const sourceKey=external ? source+':'+domain+':'+external : (sheet.stableFingerprint || fingerprint)+':'+(n+2);
     if (domain === 'records') {
@@ -127,16 +138,19 @@ export function scopedExcelFacts(sheets: Sheet[], fingerprint: string, domain: S
         email:get('Email'),uei:get('Код клиента')||get('UEI'),
         workplace:get('Рабочее пространство'),
         date:at('Дата визита')||at('Дата'),
-        from:at('Время начала'),to:at('Время окончания'),
-        creatorName:get('Кто создал'),
-        createdDate:headers.includes('Дата визита')?(at('Дата создания')||undefined):undefined,
-        createdTime:at('Время создания')||undefined,
+        from:at('Время визита')||at('Время начала'),to:at('Время окончания'),
+        creatorName:text(groupField('Создание записи',0,'Кто создал')),
+        createdDate:headers.includes('Дата визита')
+          ?(groupField('Создание записи',1,'Дата создания')||undefined):undefined,
+        createdTime:groupField('Создание записи',2,'Время создания')||undefined,
         createdAt:!headers.includes('Дата визита')?(at('Дата создания')||undefined):undefined,
-        actionStatus:get('Статус записи'),changedBy:get('Кто изменил'),
-        changedDate:at('Дата изменения')||undefined,
-        changedTime:at('Время изменения')||undefined,
-        quotedTotal:meaningful(at('Стоимость записи'))?at('Стоимость записи'):undefined,
-        visitStatus:get('Посещение'),paymentStatus,
+        actionStatus:text(groupField('История записи',0,'Статус записи')),
+        changedBy:text(groupField('История записи',1,'Кто изменил')),
+        changedDate:groupField('История записи',2,'Дата изменения')||undefined,
+        changedTime:groupField('История записи',3,'Время изменения')||undefined,
+        quotedTotal:meaningful(at('Стоимость'))?at('Стоимость')
+          :meaningful(at('Стоимость записи'))?at('Стоимость записи'):undefined,
+        visitStatus:get('Статус посещения')||get('Посещение'),paymentStatus,
         comment:get('Комментарий'),integrationSource:get('Источник интеграции'),
         bookedBy:get('Кто записал'),procedures:JSON.stringify(procedures),
       }});
@@ -188,7 +202,7 @@ function financeColumns(rows: any[], template: boolean) {
   return cols;
 }
 function recordColumns(rows: any[], template: boolean) {
-  const maximum=Math.max(template?10:1,...rows.map(row=>Array.isArray(row.services)?row.services.length:0));
+  const maximum=Math.max(template?3:1,...rows.map(row=>Array.isArray(row.services)?row.services.length:0));
   const cols:any[]=[...RECORD_BASE];
   for(let i=1;i<=maximum;i++)cols.push({key:'service'+i,label:'Услуга '+i});
   return [...cols,...RECORD_AFTER_SERVICES];
@@ -204,10 +218,10 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
       hidden:!!col.hidden,numFmt:'@'}));
     const servicesCount=cols.filter(col=>/^Услуга \d+$/.test(col.label)).length;
     const sections=[
-      ['Рабочее пространство',1,1],['Клиент',2,6],['Визит',7,9],
-      ['Кто создал запись',10,12],['История записи',13,16],
-      ['Услуги',17,16+servicesCount],['О записи',17+servicesCount,21+servicesCount],
-      ['Источник интеграции',22+servicesCount,22+servicesCount],
+      ['Клиент',2,6],['Визит',7,9],
+      ['Создание записи',10,12],['История записи',13,16],
+      ['Услуги',17,16+servicesCount],
+      ['Статусы',18+servicesCount,19+servicesCount],
     ] as const;
     for(const [label,first,last] of sections){
       if(last>first)sheet.mergeCells(1,first,1,last);
@@ -219,20 +233,22 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
       for(let c=first;c<=last;c++)sheet.getCell(1,c).fill=
         {type:'pattern',pattern:'solid',fgColor:{argb:'FFDEDFE0'}};
     }
+    // Unnamed first-row cells are intentional for standalone columns.
+    for(let c=1;c<=cols.length;c++)sheet.getCell(1,c).fill=
+      {type:'pattern',pattern:'solid',fgColor:{argb:'FFDEDFE0'}};
     sheet.getRow(1).height=30;
     sheet.getRow(2).height=34;
     cols.forEach((col,i)=>{
       const cell=sheet.getCell(2,i+1);
       cell.value=col.label;
-      cell.font={bold:true,color:{argb:'FF25272B'},size:11};
-      cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF5F5F3'}};
+      cell.font={bold:true,color:{argb:'FFFFFFFF'},size:11};
+      cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF303238'}};
       cell.alignment={vertical:'middle'};
     });
     sheet.getCell(2,2).note='Код клиента необязателен. То же значение, что в Контактах.';
     sheet.getCell(2,9).note='Время окончания можно не указывать, если неизвестно.';
-    sheet.getCell(2,17).note='Одна запись занимает одну строку. Добавляйте новые столбцы «Услуга 11» и дальше, если нужно.';
+    sheet.getCell(2,17).note='Одна запись занимает одну строку. Если услуг больше трёх, добавьте «Услуга 4», «Услуга 5» и далее.';
     sheet.getCell(2,17+servicesCount).note='Стоимость записи — цена визита, а не факт поступления денег.';
-    sheet.getCell(2,20+servicesCount).note='Да или Нет. Это статус, не платёжная операция.';
   } else {
     sheet.columns=cols.map(col=>({key:col.key,header:col.label,width:col.label.length>24?28:22,hidden:!!col.hidden}));
     sheet.getRow(1).height=32;
