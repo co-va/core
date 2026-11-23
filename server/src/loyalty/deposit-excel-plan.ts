@@ -181,7 +181,14 @@ export async function planDepositExcel(db:any,tenantId:string,lines:DepositExcel
       }
       const cardKey=line.cardKey.trim();
       let candidatesDeposits=deposits.filter(d=>text(d.programId)===text(program!.id)&&text(d.personKey)===text(person!.key));
-      if(cardKey)candidatesDeposits=candidatesDeposits.filter(d=>text(obj(d.terms).importCardKey)===cardKey||text(d.depositId)===cardKey);
+      if(cardKey)candidatesDeposits=candidatesDeposits.filter(d=>
+        text(obj(d.terms).importCardKey).toUpperCase()===cardKey
+        ||text(d.depositId)===cardKey
+        // A canonical 4+4 card is derivable even for older deposits without
+        // a stored card key. Never manufacture another deposit on re-import.
+        ||(!text(obj(d.terms).importCardKey)
+          &&text(obj(identity.relations)['loyalty-deposit-program:'+text(program!.id)])+
+            text(obj(identity.relations)['person:'+text(person!.key)])===cardKey));
       if(candidatesDeposits.length>1)throw Error('Несколько депозитов человека: укажите номер карты');
       let deposit=candidatesDeposits[0];
       if(!deposit) {
