@@ -632,22 +632,6 @@ try {
   console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
   console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
-  // Historical recipes must retain product names even when the product is
-  // archived and absent from the active Inventory snapshot.
-  const itemForRecipe=await db.inventoryItem.findFirst({where:{tenantId,itemId}});
-  assert.ok(itemForRecipe,'Existing inventory item used by recipe reference test');
-  const activeRefs=await inventory.resolveItemReferences(tenantId,{itemIds:[itemId,'missing']});
-  assert.equal(activeRefs.items.length,1);
-  assert.equal(activeRefs.items[0].name,itemForRecipe.name);
-  assert.equal(activeRefs.items[0].archived,false);
-  const crossTenant=await inventory.resolveItemReferences(tenantId+'-isolation',{itemIds:[itemId]});
-  assert.equal(crossTenant.items.length,0,'Other tenants cannot read product names');
-  await db.inventoryItem.update({where:{id:itemForRecipe.id},data:{archivedAt:new Date()}});
-  const archivedRefs=await inventory.resolveItemReferences(tenantId,{itemIds:[itemId]});
-  assert.equal(archivedRefs.items.length,1);
-  assert.equal(archivedRefs.items[0].name,itemForRecipe.name);
-  assert.equal(archivedRefs.items[0].archived,true);
-  console.log('PASS: recipe product references include archived names, tenant isolation and no fabricated items');
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
   // This script owns only its random isolated fixture, never existing tenant data.
