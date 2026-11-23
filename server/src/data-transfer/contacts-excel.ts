@@ -61,6 +61,10 @@ export function contactBirthday(value:unknown,date1904=false):string {
       }
     }else throw Error('Дата рождения: укажите день и месяц, год необязателен');
   }
+  // Excel may silently interpret "85" as 2085; a future birth year is not
+  // valid here. Preserve the intended twentieth-century year instead.
+  if(year!==undefined && year>new Date().getUTCFullYear() && year>=2000 && year<2100)
+    year-=100;
   if(month<1||month>12||day<1||day>31)throw Error('Неверная дата рождения');
   const checkYear=year===undefined?2000:year;
   if(checkYear<1900||checkYear>new Date().getUTCFullYear())throw Error('Неверный год рождения');
