@@ -341,6 +341,66 @@ try {
   result=await service.run(tenantId,accountId,fPayload,false);
   assert.equal(result.unchanged,1,'Repeat finance upload never duplicates payment');
   assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF+1);
+  // Exported Record and Finance files can be uploaded again without duplication.
+  const jRoundtrip={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await jExport.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,jRoundtrip,false);
+  assert.equal(result.unchanged,1,JSON.stringify(result.rows));
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
+  const latestPaymentId=(await db.financeOperation.findMany({where:{tenantId,kind:'payment'},
+    orderBy:{createdAt:'desc'},take:1}))[0]?.operationId;
+  assert.ok(latestPaymentId);
+  const fRoundtripBook=new ExcelJS.Workbook();
+  await fRoundtripBook.xlsx.load(await service.workbook({domain:'finance',rows:[{
+    operationId:latestPaymentId,occurredAt:'2014-06-15T10:00:00Z',
+    kind:'Оплата услуги',wallet:'Наличные',amount:750,recordId:jId,
+  }]}));
+  const fRoundtrip={filename:'Финансы.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await fRoundtripBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,fRoundtrip,false);
+  assert.equal(result.unchanged,1,JSON.stringify(result.rows));
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF+1);
+
+  // Cash refund correctly reduces the real payment; no deposit entry is invented.
+  const refundBook=new ExcelJS.Workbook();
+  await refundBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const refundSheet=refundBook.worksheets[0];
+  const refundRow=refundSheet.getRow(2);
+  const index=(label)=>refundSheet.getRow(1).values.indexOf(label);
+  refundRow.getCell(index('Дата операции')).value='2014-06-20T10:00:00Z';
+  refundRow.getCell(index('Вид операции')).value='Возврат оплаты';
+  refundRow.getCell(index('Кошелёк')).value='Наличные';
+  refundRow.getCell(index('Сумма')).value=200;
+  refundRow.getCell(index('Исходная оплата')).value=latestPaymentId;
+  const refundInput={filename:'Возвраты.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await refundBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,refundInput,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  result=await service.run(tenantId,accountId,refundInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  const refundId=target(result,'operations').targetId;
+  const refundOp=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:refundId}},
+  });
+  assert.equal(refundOp.kind,'refund');
+  assert.equal(refundOp.originalOperationId,latestPaymentId);
+  result=await service.run(tenantId,accountId,refundInput,false);
+  assert.equal(result.unchanged,1);
+
+  // CSV is not a fake export-only format: the same header imports as a Record.
+  const csvText='Имя;Телефон;Дата;Рабочее пространство;Статус записи;Посещение;Оплата;Услуга 1\n'
+    +'Анна;79991234567;2012-05-06;BeautyToria;Записался;Пришёл;Не оплачено;Стрижка\n';
+  const csvInput={filename:'Записи.csv',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:text/csv;base64,'+Buffer.from(csvText).toString('base64')};
+  result=await service.run(tenantId,accountId,csvInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,1);
+  result=await service.run(tenantId,accountId,csvInput,false);
+  assert.equal(result.unchanged,1);
+  console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
   console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
