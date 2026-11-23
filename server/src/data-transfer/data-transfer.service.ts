@@ -130,6 +130,13 @@ export class DataTransferService {
     const previous = byId || byKey;
     const input = { ...normalized }; delete input.transferId; delete input.sourceKey;
     if (previous && canonical(previous.input) === canonical(input)) return { transferId: previous.id, targetId: previous.targetId, status: 'unchanged' };
+    if(previous && ['payments','operations'].includes(fact.domain)){
+      const saved=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{tenantId,operationId:previous.targetId}},
+      });
+      if(saved?.status==='cancelled')
+        throw Error('Отменённую операцию нельзя изменять через загрузку Excel.');
+    }
     // Exported files contain hidden original identifiers. Re-importing them
     // cannot create a second Record or FinanceOperation or silently replace
     // an independently edited fact.
