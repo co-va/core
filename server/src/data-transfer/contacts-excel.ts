@@ -16,7 +16,7 @@ export const CONTACT_COLUMNS:Column[]=[
   {key:'additionalEmail',label:'Дополнительный Email',width:34},
   {key:'telegram',label:'Telegram',width:26},
   {key:'additionalTelegram',label:'Дополнительный Telegram',width:30},
-  {key:'personKey',label:'ID человека CO-VA',width:16,hidden:true},
+  {key:'personKey',label:'ID человека',width:16,hidden:true},
 ];
 
 const pad=(n:number)=>String(n).padStart(2,'0');
@@ -97,7 +97,7 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
   const grouped=sheet.headers[0]==='Личные данные'&&sheet.headers[6]==='Контактные данные';
   const headers=grouped?(sheet.rows[0]||[]).map(text):sheet.headers;
   const first=grouped?1:0;
-  const offset=grouped?3:2;
+  const offset=2;
   const required=CONTACT_COLUMNS.filter(c=>!c.hidden).map(c=>c.label);
   const legacy=headers.includes('UEI')&&headers.includes('Имя')&&!grouped;
   if(!legacy && required.some(label=>headers.filter(h=>h===label).length!==1))
@@ -109,7 +109,6 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
   for(let i=first;i<sheet.rows.length;i++){
     const row=sheet.rows[i];
     if(!row.some(nonempty))continue;
-    const old=(key:string,label:string)=>cell(row,legacy?key:label);
     const code=legacy?cell(row,'UEI'):cell(row,'Код клиента');
     const n=splitName(cell(row,'Имя'),cell(row,'Фамилия'));
     if(!n.name)throw Error('Строка '+(i+offset)+': укажите имя');
@@ -131,7 +130,7 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
         throw Error('Строка '+(i+offset)+': скидка должна быть от 0 до 100%');
       values.discountPercent=rate;
     }
-    const key=cell(row,'ID человека CO-VA');
+    const key=cell(row,'ID человека');
     if(nonempty(key))values.personKey=text(key);
     const sourceKey=values.personKey?source+':people:'+values.personKey
       :(sheet.stableFingerprint||sourceFingerprint)+':'+(i+offset);
@@ -142,7 +141,6 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
 export async function peopleWorkbook(rows:any[],template=false):Promise<Buffer>{
   if(!Array.isArray(rows)||rows.length>20000)throw Error('За один раз допускается до 20 000 контактов');
   const workbook=new ExcelJS.Workbook();
-  workbook.creator='VA Tools';
   const sheet=workbook.addWorksheet('Люди',{views:[{state:'frozen',ySplit:2}]});
   sheet.columns=CONTACT_COLUMNS.map(col=>({
     key:col.key,width:col.width,hidden:!!col.hidden,
