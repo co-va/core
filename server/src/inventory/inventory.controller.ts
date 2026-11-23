@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
@@ -21,14 +21,6 @@ export class InventoryController {
   @Get()
   snapshot(@Req() request: AuthenticatedRequest) {
     return this.inventory.snapshot(request.auth!.tenantId);
-  }
-
-  // Historical recipes may point at archived stock items. Resolve only
-  // requested, tenant-owned names without adding archived stock to the picker.
-  @Get('items/references')
-  resolveItemReferences(@Req() request: AuthenticatedRequest, @Query('ids') ids = '') {
-    const itemIds = String(ids).split(',').filter(Boolean);
-    return this.inventory.resolveItemReferences(request.auth!.tenantId, { itemIds });
   }
 
   @Post('criteria/recovery/preview')
