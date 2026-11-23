@@ -89,9 +89,12 @@ export async function depositWorkbook(rows: Array<Array<string | number | Date |
   sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: headers.length } };
   const listValidation = (column: number, values: string[]) => {
     const formulae = ['"' + values.join(',') + '"'];
-    for (let r = 3; r <= 2000; r++) {
-      sheet.getCell(r, column).dataValidation = { type: 'list', allowBlank: true, formulae };
-    }
+    // Range-scoped validation must not instantiate 2000 empty worksheet rows:
+    // addRow() otherwise appends the export after the phantom rows.
+    const letter = sheet.getColumn(column).letter;
+    sheet.dataValidations.add(letter + '3:' + letter + '2000', {
+      type: 'list', allowBlank: true, formulae,
+    });
   };
   listValidation(2, ['Фиксированная', 'Свободная']);
   listValidation(4, ['Бессрочно', 'Период']);
