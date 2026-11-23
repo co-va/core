@@ -227,7 +227,7 @@ function cardMoney(value: unknown) {
 
 function depositCardStatus(value: unknown) {
   const status = text(value);
-  return status === 'expired' ? 'Срок завершён'
+  return status === 'expired' ? 'Списан'
     : status === 'closed' || status === 'ended' ? 'Закрыт' : 'Активен';
 }
 
@@ -441,18 +441,16 @@ export class AccountContactsService {
 
   private async visibleDepositSummaries(tenantId: string, personKey: string) {
     if (!personKey) return [];
-    await expireDepositInstances(this.prisma, tenantId);
     const [rows, programRows] = await Promise.all([
-      this.prisma.loyaltyDepositInstance.findMany({
-        where: { tenantId, personKey },
-        orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
-      }),
+      // DepositService owns the current/expired balance projection from the
+      // FinanceOperation ledger, including amounts zeroed by older Core.
+      this.deposits.list(tenantId, personKey),
       this.prisma.loyaltyDepositProgram.findMany({ where: { tenantId } }),
     ]);
     const programs = new Map(programRows.map((row) => [row.programId, objectValue(row.data)]));
     // Price percentage comes from the same active-program source as the Person discount.
-    const activePrices = new Map(depositPriceSourcesFromRows(rows, personKey, new Date())
-      .map((source) => [text(source.depositId), source.percent]));
+    const activePrices = new Map(rows.filter((item) => item.status === 'active' && item.discountPercent > 0)
+      .map((item) => [text(item.depositId), item.discountPercent]));
     return rows.map((row) => {
       const terms = objectValue(row.terms);
       const presentation = objectValue(terms.presentation);
@@ -460,8 +458,9 @@ export class AccountContactsService {
         depositId: text(row.depositId),
         programId: text(row.programId),
         programName: text(row.programName),
-        fundedAmount: Number(row.initialAmount || 0),
+        fundedAmount: Number(row.fundedAmount || 0),
         balance: Number(row.balance || 0),
+        expiredUnusedAmount: Number(row.expiredUnusedAmount || 0),
         status: text(row.status),
         discountPercent: activePrices.get(text(row.depositId)) || 0,
         cardProgram: objectValue(programs.get(row.programId)),
