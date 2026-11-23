@@ -5,12 +5,14 @@ import { NotificationModule } from '../notification/notification.module';
 import { PrismaService } from '../prisma.service';
 import { DepositService } from './deposit.service';
 import { LoyaltyController } from './loyalty.controller';
+import { DepositExcelService } from './deposit-excel.service';
+import { DepositExcelController } from './deposit-excel.controller';
 import { PersonalAccountService } from './personal-account.service';
 
 @Module({
   imports: [AuthModule, FinanceModule, NotificationModule],
-  controllers: [LoyaltyController],
-  providers: [DepositService, PersonalAccountService, PrismaService],
+  controllers: [LoyaltyController, DepositExcelController],
+  providers: [DepositService, DepositExcelService, PersonalAccountService, PrismaService],
   exports: [DepositService, PersonalAccountService],
 })
 export class LoyaltyModule {}
