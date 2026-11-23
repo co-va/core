@@ -397,6 +397,29 @@ export class InventoryService {
     return this.listClassificationGroups(tenantId);
   }
 
+  // Read-only display references for Record recipes, including archived
+  // inventory items. Never expose another tenant's catalog or unarchive items.
+  async resolveItemReferences(tenantId: string, body: unknown) {
+    const input = objectValue(body);
+    const requested = input.itemIds;
+    if (!Array.isArray(requested) || requested.length > 300)
+      throw new BadRequestException('Передайте не более 300 складских позиций.');
+    const itemIds = [...new Set(requested.map((value: unknown) => text(value)))];
+    if (itemIds.some(id => !id || id.length > 128))
+      throw new BadRequestException('Некорректный идентификатор складской позиции.');
+    if (!itemIds.length) return { items: [] };
+    const rows = await this.prisma.inventoryItem.findMany({
+      where: { tenantId, itemId: { in: itemIds } },
+      select: { itemId: true, name: true, manufacturer: true, unit: true,
+        consumeUnit: true, archivedAt: true },
+    });
+    return { items: rows.map(row => ({
+      itemId: row.itemId, name: row.name, manufacturer: row.manufacturer,
+      unit: row.unit, consumeUnit: row.consumeUnit,
+      archived: Boolean(row.archivedAt),
+    })) };
+  }
+
   async snapshot(tenantId: string) {
     const [items, lots, movements, movementTotals, supplierOffers, orders, storageLocations, resourceProgress, resourceEvents, classificationGroups, locationTargets, supplierClaims, claimSettlements] = await Promise.all([
       this.prisma.inventoryItem.findMany({
@@ -2001,6 +2024,11 @@ export class InventoryService {
     if (catalog.length !== ids.length) throw new BadRequestException('Складская позиция расхода не найдена.');
     for (const item of catalog) await tx.$queryRaw`SELECT id FROM "InventoryItem" WHERE id = ${item.id} FOR UPDATE`;
     const byId = new Map<string, AnyRecord>(catalog.map((item: AnyRecord) => [text(item.itemId), item]));
+    // Persist the canonical product name alongside the ID for historical
+    // recipe display. It never changes the Inventory link or amount.
+    // Ignore any client-provided name: only the tenant-owned catalog is trusted.
+    for (const template of templates) for (const group of template.groups)
+      for (const row of group.items) row.name = text(byId.get(row.itemId)?.name);
     const keyOf = (procedureId: string, itemId: string) => JSON.stringify([procedureId, itemId]);
     const desired = new Map<string, { procedureId: string; itemId: string; amount: number }>();
     for (const row of requested) {
