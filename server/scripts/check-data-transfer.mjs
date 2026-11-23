@@ -269,7 +269,7 @@ try {
   jSheet.getRow(2).values=[
     '', 'Анна','','79991234567','12','2014-06-15','10:00','11:00','BeautyToria',
     'Самостоятельно','Записался','Не пришёл','Оплачено','',
-    'Стрижка',2500,45,'Укладка',1800,30,
+    'Стрижка','Укладка',
   ];
   const jPayload={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jBook.xlsx.writeBuffer()).toString('base64')};
@@ -301,16 +301,16 @@ try {
   }]}));
   assert.equal(jExport.worksheets[0].rowCount,2);
   assert.equal(jExport.worksheets[0].getCell(2,15).value,'Стрижка');
-  assert.equal(jExport.worksheets[0].getCell(2,18).value,'Укладка');
+  assert.equal(jExport.worksheets[0].getCell(2,16).value,'Укладка');
   const jInvalid=new ExcelJS.Workbook();
   await jInvalid.xlsx.load(await service.workbook({domain:'records',template:true}));
   jInvalid.worksheets[0].getRow(2).values=[
     '', 'Анна','','79991234567','12','2013-03-12','09:00','10:00','BeautyToria',
-    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',1500,30,
+    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',
   ];
   jInvalid.worksheets[0].getRow(3).values=[
     '', 'Несуществующий','','79999992200','','2013-03-13','10:00','11:00','BeautyToria',
-    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',1500,30,
+    'Профессионал','Записался','Пришёл','Не оплачено','','Стрижка',
   ];
   const jInvalidPayload={...jPayload,
     dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jInvalid.xlsx.writeBuffer()).toString('base64')};
