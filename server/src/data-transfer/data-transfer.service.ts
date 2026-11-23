@@ -75,7 +75,7 @@ export class DataTransferService {
     for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
     for (const field of ['from', 'to','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
     for (const field of ['occurredAt', 'createdAt']) if (v[field] != null) v[field] = instant(v[field]);
-    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
+    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
     if(v.discount!==undefined) {
@@ -86,6 +86,17 @@ export class DataTransferService {
     for(const field of ['trackLots','canConsume','canSell','visibleToEndUser'])if(v[field]!==undefined){
       if(![true,false,'Да','Нет','да','нет'].includes(v[field]))throw Error(`${FIELDS[field]}: укажите Да или Нет`);
       v[field]=[true,'Да','да'].includes(v[field]);
+    }
+    if(v.allocations!==undefined){
+      let parsed:any;
+      try{parsed=JSON.parse(text(v.allocations));}
+      catch{throw Error('Кошельки оплаты: проверьте суммы');}
+      if(!Array.isArray(parsed)||!parsed.length)throw Error('Укажите кошельки оплаты');
+      v.allocations=parsed.map((row:any)=>{
+        if(!row||typeof row!=='object'||Array.isArray(row)||!text(row.wallet))
+          throw Error('Укажите название каждого кошелька');
+        return {wallet:text(row.wallet),amount:decimal(row.amount,'Сумма кошелька')};
+      });
     }
     if (v.procedures != null) {
       let list: any;
