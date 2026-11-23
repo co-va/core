@@ -109,7 +109,15 @@ export async function expireDepositInstances(db: Db, tenantId: string, depositId
   });
   const now = new Date();
   for (const row of rows) {
-    if (depositTermActiveAt(row.terms, now)) continue;
+    const terms = objectValue(row.terms);
+    const mode = text(terms.termMode).toLowerCase();
+    const end = text(terms.termEndDate).slice(0, 10);
+    const today = now.toISOString().slice(0, 10);
+    // A future start is NOT expiry. "По" is inclusive: expire only
+    // after its last day; keep money untouched and block use until start.
+    if (!['dated', 'fixed'].includes(mode)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(end)
+      || today <= end) continue;
     await db.loyaltyDepositInstance.update({
       where: { id: row.id },
       // An ended term disables NEW use; it does not spend or erase the
