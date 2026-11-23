@@ -118,7 +118,7 @@ export async function parseDepositWorkbook(base64: unknown): Promise<{ raw: Depo
     throw new BadRequestException('Нужен файл XLSX размером до 4 МБ');
   }
   const workbook = new ExcelJS.Workbook();
-  try { await workbook.xlsx.load(buffer); }
+  try { await workbook.xlsx.load(buffer as any); }
   catch { throw new BadRequestException('Не удалось прочитать XLSX. Скачайте шаблон приложения'); }
   if (workbook.worksheets.length !== 1) throw new BadRequestException('Шаблон должен содержать ровно один лист');
   const sheet = workbook.worksheets[0];
