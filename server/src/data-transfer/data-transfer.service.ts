@@ -217,7 +217,18 @@ export class DataTransferService {
 
   async run(tenantId: string, accountId: string, input: SourceInput, preview: boolean) {
     let facts: Fact[];
-    try { const parsed = await readSource(input); facts = sourceFacts(parsed.sheets, parsed.fingerprint, input); }
+    try {
+      const parsed = await readSource(input);
+      if (input.expectedDomain === 'people' && (
+        parsed.sheets.length !== 1
+        || parsed.sheets[0]?.name !== 'Люди'
+        || !parsed.sheets[0]?.headers.includes('Имя')
+      )) throw Error('Выберите заполненный шаблон Контактов');
+      facts = sourceFacts(parsed.sheets, parsed.fingerprint, input);
+      if (input.expectedDomain === 'people' && facts.some(fact => fact.domain !== 'people')) {
+        throw Error('В этом разделе загружаются только контакты');
+      }
+    }
     catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
     const access = await this.access.resolveTenantAccess(tenantId);
     const workplaceLimit = await this.access.resolveCapability(tenantId, 'workplaces.max');
