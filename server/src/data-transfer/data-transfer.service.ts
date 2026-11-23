@@ -226,7 +226,10 @@ export class DataTransferService {
       }));
       if (!snapshots.length && (v.cost != null || v.price != null || v.discountPercent != null || v.discountMoney != null)) throw Error('Не указана процедура для цены или скидки');
       targetId = await this.records.importHistorical(tenantId, { date: v.date, from: v.from, to: v.to,
-        workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
+        workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '',
+          phone:text(v.phone)||person.phones?.[0]||'',
+          email:text(v.email)||person.emails?.[0]||'',
+          uei:text(v.uei)||person.uei||'' },
         procedures: snapshots, appendProcedures:v.appendProcedures===true,
         ...(v.createdAt ? { createdAt: v.createdAt } : {}),
         ...(v.createdDate ? { createdDate:v.createdDate,createdTime:v.createdTime } : {}),
