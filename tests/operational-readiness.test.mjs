@@ -43,7 +43,7 @@ assert.equal(overview.split('data-overview-section="operational-readiness"').len
 // Core evidence is independent from owner acceptance, validated against exact SHA and successful named steps.
 const run={id:42,head_sha:sha,path:'.github/workflows/check.yml'};
 const pkg={scripts:{test:CORE_SCENARIOS.filter(s=>s.test).map(s=>'node '+s.test).join(' && ')}};
-const workflow=[...new Map(CORE_SCENARIOS.map(s=>[s.step,'- name: '+s.step+'\\n  run: '+s.command])).values()].join('\\n');
+const workflow=[...new Map(CORE_SCENARIOS.map(s=>[s.step,'- name: '+s.step+'\n  run: '+s.command])).values()].join('\n');
 const jobs=['check','staging-smoke'].map((name,i)=>({id:i+1,name,head_sha:sha,conclusion:'success',steps:[...new Set(CORE_SCENARIOS.filter(s=>s.job===name).map(s=>s.step))].map(name=>({name,conclusion:'success'}))}));
 const core=coreAuditSnapshot(sha,run,jobs,pkg,workflow);
 assert.equal(core.passed,CORE_SCENARIOS.length);
