@@ -112,15 +112,22 @@ export function criterionView(c,snapshot,audits=[]){
   const resolution=events.filter(x=>x.kind==='disputed'||x.kind==='accepted'&&x.ownerConfirmed===true&&proved(x)&&x.remaining===''||x.kind==='regression'&&x.environment==='deployed'&&proved(x)&&x.remaining.trim()).at(-1);
   const latest=events.at(-1);
   const candidate=events.filter((x,i)=>['candidate','implemented'].includes(x.kind)&&(!resolution||i>events.indexOf(resolution))).at(-1);
-  const checks=audits.flatMap(x=>x?.scenarios||[]).filter(x=>x.criteria?.includes(c.key));
-  let status=c.work?.state==='finish'?'unfinished':c.work?.state==='verify'?'pending':'unknown';
+  const sources=[...audits,snapshot?.professionalAudit].filter(Boolean);
+  const checks=sources.flatMap(x=>x.scenarios||[]).filter(x=>x.criteria?.includes(c.key));
+  // An audit recommendation is not evidence that an existing operation fails.
+  let status=['finish','verify'].includes(c.work?.state)?'pending':'unknown';
+  if(checks.some(x=>['passed','historical'].includes(x.state)))status='partial';
   let next=c.work?.next||'Сопоставить требование с существующей реализацией и проверить рабочий сценарий.';
   if(row?.state==='accepted'){status='ready';next='Принято. Не повторять проверку без основания.';}
   else if(row?.accepted){status='partial';next='Прежняя приёмка сохранена; проверить влияние изменений.';}
-  if(historic){status=c.key==='catalog.prof'?'disputed':'partial';next=historic[1];}
+  if(historic&&(status!=='ready'||c.key==='catalog.prof')){status=c.key==='catalog.prof'?'disputed':'partial';next=historic[1];}
   if(confirmed.length&&status!=='ready'&&status!=='disputed'){status='partial';next=latest?.remaining||next;}
   if(candidate&&status!=='ready'&&status!=='disputed'){status='pending';next=candidate.remaining||next;}
-  if(checks.some(x=>x.state==='failed')&&status!=='ready'&&status!=='disputed'){status='unfinished';}
+  // A failed batch can contain many tests. Only a specifically attributed failure
+  // is a defect of this criterion; a batch failure requires investigation.
+  const failed=checks.filter(x=>x.state==='failed');
+  const specificFailure=failed.some(x=>x.step&&sources.some(a=>a.scenarios?.includes(x)&&a.scenarios.filter(s=>s.step===x.step&&s.job===x.job).length===1)&&!['Domain regression tests','Local UI browser smoke','Verify canonical data transfer with PostgreSQL'].includes(x.step));
+  if(failed.length&&status!=='ready'&&status!=='disputed'){status=specificFailure?'unfinished':'pending';next=specificFailure?'Не пройдена проверка: '+failed.find(x=>x.step)?.title+'. '+next:'Не пройден общий пакет проверок; определить конкретный сбой. '+next;}
   if(resolution?.kind==='accepted'){status='ready';next='Вопрос принят. Проверять только затронутые изменения.';}
   if(resolution?.kind==='disputed'){status='disputed';next=resolution.remaining||'Уточнить приёмку.';}
   if(resolution?.kind==='regression'){status='unfinished';next=resolution.remaining;}
@@ -128,7 +135,7 @@ export function criterionView(c,snapshot,audits=[]){
   if(candidate&&resolution?.kind==='accepted'&&status==='ready'){status='pending';next=candidate.remaining||next;}
   const notStarted=latest?.kind==='not-started'&&latest.ownerConfirmed===true&&status==='unknown';
   if(notStarted)status='notStarted';
-  return {key:c.key,status,found:latest?.result||found,next,history:[...(historic?[historic[0]]:[]),...confirmed.map(x=>x.date+': '+x.result)],candidate:status==='ready'?candidate?.result:null,deferred:priority?.kind==='deferred'};
+  return {key:c.key,status,found:latest?.result||found,next,history:[...(historic?[historic[0]]:[]),...confirmed.map(x=>x.date+': '+x.result)],candidate:status==='ready'?candidate?.result:null,deferred:priority?.kind==='deferred',evidence:[...new Map(checks.filter(x=>['passed','historical','failed'].includes(x.state)).map(x=>[x.id,x])).values()].map(x=>({title:x.title,state:x.state}))};
 }
 // Percent is the fraction of distinct, currently accepted criteria, not an estimate of code completion.
 export function developmentProgress(views,sourceAvailable=true){
@@ -139,8 +146,8 @@ export function developmentProgress(views,sourceAvailable=true){
   const accepted=unique.filter(v=>v.status==='ready').length;
   const allReady=accepted===unique.length;
   const allNotStarted=unique.every(v=>v.status==='notStarted');
-  const unfinished=active.some(v=>v.status==='unfinished');
-  const working=active.some(v=>['ready','partial','pending','disputed'].includes(v.status));
+  const unfinished=active.some(v=>v.status==='unfinished'&&v.blocking!==false);
+  const working=active.some(v=>['ready','partial','pending','disputed'].includes(v.status)||v.status==='unfinished'&&v.blocking===false);
   const status=allReady?'ready':unfinished?'unfinished':working?'working':allNotStarted?'notStarted':null;
   const percent=allReady?100:allNotStarted?0:accepted>0?Math.min(99,Math.round(100*accepted/unique.length)):null;
   return {status,percent};
@@ -172,7 +179,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     if(!members.length)return '';
     const groupId='group:'+keys[0];
     const expanded=open.has(groupId);
-    const groupStatus=developmentProgress(members.flatMap(m=>m.criteria.map(c=>criterionView(c,snapshot,audits))),!!snapshot);
+    const groupStatus=developmentProgress(members.flatMap(m=>m.criteria.map(c=>({...criterionView(c,snapshot,audits),blocking:m.applicability==='Основной'}))),!!snapshot);
     return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,members.length+' '+(members.length===1?'механизм':members.length<5?'механизма':'механизмов'),groupStatus,'<span class="development-disclosure" aria-hidden="true">'+(expanded?'▾':'▸')+'</span>',e)+'</button>'+
       (expanded?'<div class="development-mechanisms">'+scopeGroups.map(([heading,applicability])=>{
         const rows=members.filter(m=>m.applicability===applicability);
@@ -180,7 +187,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
         return '<div class="development-applicability"><h4>'+e(heading)+'</h4>'+rows.map(m=>{
           const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=developmentProgress(views,!!snapshot);const key='mechanism:'+m.id;const show=open.has(key);
           return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority+' · '+activityLabel(m.id),status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
-            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(developmentProgress([v],!!snapshot),e)+'</div>'+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
+            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(developmentProgress([v],!!snapshot),e)+'</div>'+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+v.evidence.map(x=>'<p>'+e(x.state==='passed'?'Проверено: ':x.state==='historical'?'Ранее проверено: ':'Пакет проверки не пройден: ')+e(x.title)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
         }).join('')+'</div>';
       }).join('')+'</div>':'')+'</section>';
   }).join('');

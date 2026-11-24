@@ -22,3 +22,17 @@ const markup=developmentMarkup({activity:'services',open:new Set(['group:workspa
 assert.match(markup,/development-progress-track/);
 assert.doesNotMatch(markup,/Частично готово|Уточнить приёмку<\/span>|Отложено по решению владельца/);
 console.log('Development readiness progress: PASS');
+
+// Additional checks: an audit finding is not a proven failure; optional failures do not label the whole group red.
+const preliminary={key:'example',title:'Example',work:{state:'finish',finding:'Existing implementation; not fully verified',next:'Verify'}};
+assert.equal(criterionView(preliminary,snapshot([])).status,'pending');
+assert.equal(criterionView(c,snapshot([]),[{scenarios:[{id:'pass',criteria:['example'],state:'passed',title:'Functional check'}]}]).status,'partial');
+assert.equal(criterionView(c,snapshot([]),[{scenarios:[{id:'batch',criteria:['example'],state:'failed',step:'Domain regression tests',title:'Batch'}]}]).status,'pending');
+assert.equal(criterionView(c,snapshot([]),[{scenarios:[{id:'specific',criteria:['example'],state:'failed',step:'Specific functional check',title:'Specific failure'}]}]).status,'unfinished');
+assert.deepEqual(developmentProgress([row('a','ready'),{...row('b','unfinished'),blocking:false}]),{status:'working',percent:50});
+assert.deepEqual(developmentProgress([row('a','unknown'),{...row('b','unfinished'),blocking:false}]),{status:'working',percent:null});
+const previouslyAccepted={...snapshot([]),mechanisms:[{rows:[{key:'records.prof',state:'accepted'}]}]};
+assert.equal(criterionView({key:'records.prof',title:'Journal'},previouslyAccepted).status,'ready');
+const unverifiedMarkup=developmentMarkup({activity:'services',snapshot:snapshot([])},String);
+assert.doesNotMatch(unverifiedMarkup,/Требует доработки/);
+console.log('Development readiness evidence classification: PASS');
