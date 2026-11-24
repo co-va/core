@@ -393,15 +393,16 @@ export function readinessMarkup(snapshot, escapeHtml, selected='') {
     return '<button type="button" class="admin-overview-person" data-operational-mechanism="'+e(m.id)+'" aria-expanded="'+open+'"><span><strong>'+String(i+1).padStart(2,'0')+' · '+e(m.label)+'</strong></span><span class="admin-overview-person-status">'+(m.percent===null?'—':m.percent+'%')+' '+(open?'−':'+')+'</span></button>'+
       (open?'<div class="admin-overview-detail"><div class="admin-overview-detail-heading"><strong>'+e(m.location)+'</strong></div><div class="admin-overview-detail-list">'+m.rows.map(c=>'<div class="admin-overview-person"><span><strong>'+e(c.title)+'</strong><small>'+e(stateLabel[c.state])+(c.baselineSha?' · '+e(c.baselineSha.slice(0,12)):'')+'</small>'+(c.ref?'<small><a href="https://github.com/co-va/professional/blob/'+(snapshot?.sha||'staging')+'/RELEASE_CLOSURE_REGISTRY.json" target="_blank" rel="noopener noreferrer">'+e(c.ref)+'</a></small>':'')+(c.approvedAt?'<small>Приёмка: '+e(c.approvedAt)+'</small>':'')+(c.changed?.length?'<small>'+e(c.changed.join(', '))+'</small>':'')+'</span></div>').join('')+'</div></div>':'');
   }).join('');
-  return '<div class="admin-overview"><div class="admin-heading"><h2>Операционная готовность</h2></div><section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Услуги и продажи</h3><button type="button" class="admin-overview-inline-link" data-operational-refresh>Обновить</button></div>'+summary+'<p class="admin-overview-empty">Карта '+COVERAGE_VERSION+' · 18 механизмов. Core, User и сквозные сценарии без доказательств пока не подтверждены. Процент не управляет доступом к инструментам.</p><div class="admin-overview-detail-list">'+rows+'</div></section></div>';
+  return '<div class="admin-overview"><div class="admin-heading"><h2>Операционная готовность</h2></div><section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Услуги и продажи</h3><div class="admin-overview-period"><button type="button" data-operational-back>Обзор</button><button type="button" data-operational-refresh>Обновить</button></div></div>'+summary+'<p class="admin-overview-empty">Карта '+COVERAGE_VERSION+' · 18 механизмов. Core, User и сквозные сценарии без доказательств пока не подтверждены. Процент не управляет доступом к инструментам.</p><div class="admin-overview-detail-list">'+rows+'</div></section></div>';
 }
-export function renderOperationalReadiness(content, {escapeHtml,isCurrent,load=loadOperationalReadiness}) {
+export function renderOperationalReadiness(content, {escapeHtml,isCurrent,onBack,load=loadOperationalReadiness}) {
   if (!content) return;
   let selected='', snapshot=null, request=0;
   const render=()=>{
     if(!isCurrent()) return;
     content.innerHTML=readinessMarkup(snapshot,escapeHtml,selected);
     content.querySelector('[data-operational-refresh]')?.addEventListener('click',refresh);
+    content.querySelector('[data-operational-back]')?.addEventListener('click',()=>onBack?.());
     content.querySelectorAll('[data-operational-mechanism]').forEach(button=>button.addEventListener('click',()=>{
       selected=selected===button.dataset.operationalMechanism?'':button.dataset.operationalMechanism;
       render();

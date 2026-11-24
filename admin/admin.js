@@ -348,7 +348,6 @@ async function refreshData() {
 
 const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
-  { id: 'operational-readiness', label: 'Готовность', icon: 'settings' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
   { id: 'tariffs', label: 'Тарифы', icon: 'tags' },
@@ -357,6 +356,7 @@ const ADMIN_SECTIONS = [
 ];
 
 function adminSectionLabel() {
+  if (state.section === 'operational-readiness') return 'Готовность';
   return ADMIN_SECTIONS.find((item) => item.id === state.section)?.label || 'Пользователи';
 }
 
@@ -394,7 +394,7 @@ function bindAdminSessionControls() {
 }
 
 function renderMobileShell() {
-  const deck = v2CardDeck(ADMIN_SECTIONS, { active: state.section, data: 'data-section' })
+  const deck = v2CardDeck(ADMIN_SECTIONS, { active: state.section === 'operational-readiness' ? 'overview' : state.section, data: 'data-section' })
     + '<div class="admin-mobile-deck-footer"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
     + adminSessionIcon('push')
     + adminSessionIcon('logout') + '</div>';
@@ -422,7 +422,7 @@ function renderMobileShell() {
     }
   };
   const stopNavigation = initV2WorkspaceInteraction(root, {
-    activeId: state.section,
+    activeId: state.section === 'operational-readiness' ? 'overview' : state.section,
     onRootSelect: (id) => {
       if (!ADMIN_SECTIONS.some((item) => item.id === id)) return;
       toggleDeck(false);
@@ -476,7 +476,7 @@ function setActiveSection(title) {
   const titleNode = app.querySelector('[data-toolbar-title], .admin-mobile-app .v2-header__title-label');
   if (titleNode) titleNode.textContent = title;
   app.querySelectorAll('[data-section]').forEach((button) => {
-    button.classList.toggle('is-active', button.dataset.section === state.section);
+    button.classList.toggle('is-active', button.dataset.section === (state.section === 'operational-readiness' ? 'overview' : state.section));
   });
 }
 
@@ -488,7 +488,7 @@ function renderCurrentSection() {
     const token = Symbol('operational-readiness');
     if (!content) return;
     content.operationalReadinessToken = token;
-    return renderOperationalReadiness(content, { escapeHtml, isCurrent: () => Boolean(state.admin) && state.section === 'operational-readiness' && content.isConnected && content.operationalReadinessToken === token });
+    return renderOperationalReadiness(content, { escapeHtml, onBack: () => { state.section = 'overview'; renderCurrentSection(); }, isCurrent: () => Boolean(state.admin) && state.section === 'operational-readiness' && content.isConnected && content.operationalReadinessToken === token });
   }
   if (state.section === 'document-registry') {
     return renderDocumentRegistry(app.querySelector('[data-content]'), {
@@ -1128,6 +1128,10 @@ function renderOverview() {
             <span class="admin-overview-metric-hint">С входом за 30 дней</span>
           </div>
         </div>
+      </section>
+      <section class="admin-overview-panel">
+        <div class="admin-overview-panel-head"><h3>Операционная готовность</h3></div>
+        <button type="button" class="admin-overview-panel-link" data-overview-section="operational-readiness">Открыть карту готовности <span aria-hidden="true">↗</span></button>
       </section>
       <section class="admin-overview-tools-section">
         <div class="admin-overview-app-head">
