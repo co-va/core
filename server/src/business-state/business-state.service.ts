@@ -220,11 +220,11 @@ export class BusinessStateService {
       // Import only labels a NEW contact; existing contact status is preserved.
       ...(!previous ? { contactStatus: 'import' } : {}),
     };
-    for (const field of ['name', 'surname', 'createdAt','birthDate','gender']) {
+    for (const field of ['name', 'surname', 'createdAt','birthDate','gender','note']) {
       if (input[field] === undefined) continue;
       const value = text(input[field]); const current = text(previous?.[field]);
       const ownsCurrent = ownership[field] !== undefined && ownership[field] === current;
-      if (previous && current && current !== value && !ownsCurrent) throw new ConflictException(`Нельзя изменить ${field === 'name' ? 'имя' : field === 'surname' ? 'фамилию' : 'дату создания'}: значение не принадлежит этому переносу. Проверьте данные.`);
+      if (previous && current && current !== value && !ownsCurrent) throw new ConflictException(`Нельзя изменить ${field === 'name' ? 'имя' : field === 'surname' ? 'фамилию' : field === 'note' ? 'примечание' : 'поле'}: значение не принадлежит этому переносу. Проверьте данные.`);
       person[field] = value;
       if (!previous || !current || ownsCurrent) ownership[field] = value;
       else delete ownership[field];
