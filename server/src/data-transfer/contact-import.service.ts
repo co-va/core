@@ -194,7 +194,7 @@ export class ContactImportService {
   async create(tenantId:string,accountId:string,input:SourceInput){
     const file=await readSource(input);
     const existing=await this.prisma.contactImportBatch.findFirst({
-      where:{tenantId,fingerprint:file.fingerprint,status:'review'},
+      where:{tenantId,fingerprint:file.fingerprint},
       orderBy:{createdAt:'desc'},
     });
     if(existing)return this.detail(tenantId,existing.id);
