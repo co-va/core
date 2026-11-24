@@ -25,8 +25,11 @@ CREATE TABLE "ContactImportRow" (
  CONSTRAINT "ContactImportRow_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "ContactImportBatch_tenantId_createdAt_idx" ON "ContactImportBatch" ("tenantId","createdAt");
-CREATE INDEX "ContactImportBatch_tenantId_fingerprint_idx" ON "ContactImportBatch" ("tenantId","fingerprint");
+CREATE UNIQUE INDEX "ContactImportBatch_tenantId_fingerprint_key" ON "ContactImportBatch" ("tenantId","fingerprint");
 CREATE UNIQUE INDEX "ContactImportRow_batchId_rowNumber_key" ON "ContactImportRow" ("batchId","rowNumber");
 CREATE INDEX "ContactImportRow_tenantId_status_idx" ON "ContactImportRow" ("tenantId","status");
 ALTER TABLE "ContactImportRow" ADD CONSTRAINT "ContactImportRow_batchId_fkey"
  FOREIGN KEY ("batchId") REFERENCES "ContactImportBatch" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "ContactImportBatch" ADD CONSTRAINT "ContactImportBatch_tenantId_fkey"
+ FOREIGN KEY ("tenantId") REFERENCES "Tenant" ("id") ON DELETE CASCADE ON UPDATE CASCADE;
