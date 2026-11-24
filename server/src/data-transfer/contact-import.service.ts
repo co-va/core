@@ -5,17 +5,16 @@ import { PrismaService } from '../prisma.service';
 import { BusinessStateService } from '../business-state/business-state.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { peopleExcelFacts, contactBirthday } from './contacts-excel';
+import { inspectContactRow } from './contact-review-inspect';
+import type { ReviewIssue } from './contact-review-inspect';
+import { contactIdentityFields, findContactCandidates } from './contact-identity';
 import { readSource, SourceInput, Sheet } from './source';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { normalizeUEI } from '../../../core/uei-format.js';
 
 type Obj = Record<string, any>;
 type Tx = Prisma.TransactionClient;
-type Issue = {
-  field: string; label: string; system: string; excel: string;
-  owners: Array<{ key: string; code: string; name: string }>;
-  decision?: { mode: 'keep' | 'replace' | 'remove' | 'add'; value: string };
-};
+type Issue = ReviewIssue;
 type Row = { id: string; rowNumber: number; values: Prisma.JsonValue; issues: Prisma.JsonValue;
   status: string; personKey: string; error: string };
 const text = (v:unknown)=>String(v??'').trim();
@@ -30,10 +29,8 @@ const labels:Record<string,string>={
   email:'Email',additionalEmail:'Дополнительный Email',name:'Имя',
   surname:'Фамилия',birthDate:'Дата рождения',gender:'Пол',
   discountPercent:'Скидка',telegram:'Telegram',additionalTelegram:'Дополнительный Telegram',
-  note:'Примечание',format:'Данные строки',
+  note:'Примечание',format:'Данные строки',identity:'Совпадение контакта',
 };
-const primaryFields=['uei','phone','name','surname','email','additionalPhone',
-  'additionalEmail','birthDate','gender','discountPercent','telegram','additionalTelegram','note'];
 const fieldNorm=(field:string,value:unknown)=>{
   if(field==='uei')return code(value);
   if(field==='phone'||field==='additionalPhone')return phone(value);
@@ -41,109 +38,10 @@ const fieldNorm=(field:string,value:unknown)=>{
   if(field==='discountPercent')return text(value).replace(',','.');
   return norm(value);
 };
-const relevant=(v:Obj,field:string)=>text(v[field])!=='';
-const ownerLabel=(person:Obj,identity:Obj)=>({
-  key:text(person.key),
-  code:text(obj(identity.relations)['person:'+text(person.key)]||person.uei),
-  name:[text(person.name),text(person.surname)].filter(Boolean).join(' '),
-});
-const existingField=(person:Obj,identity:Obj,field:string):string=>{
-  if(field==='uei')return text(obj(identity.relations)['person:'+text(person.key)]||person.uei);
-  const map:Record<string,string>={email:'emails',additionalEmail:'emails',
-    phone:'phones',additionalPhone:'phones',telegram:'telegrams',additionalTelegram:'telegrams'};
-  if(map[field])return text(Array.isArray(person[map[field]])
-    ?person[map[field]][field.startsWith('additional')?1:0]:'');
-  return text(person[field]);
-};
-const present=(person:Obj,field:string,value:unknown):boolean=>{
-  const map:Record<string,string>={email:'emails',additionalEmail:'emails',
-    phone:'phones',additionalPhone:'phones',telegram:'telegrams',additionalTelegram:'telegrams'};
-  if(map[field])return (Array.isArray(person[map[field]])?person[map[field]]:[])
-    .some((candidate:unknown)=>fieldNorm(field,candidate)===fieldNorm(field,value));
-  return fieldNorm(field,person[field])===fieldNorm(field,value);
-};
 function issue(field:string,existing:unknown,incoming:unknown,owners:Issue['owners']=[]):Issue{
   return {field,label:labels[field]||field,system:text(existing),excel:text(incoming),owners};
 }
-function matches(people:Obj[],identity:Obj,values:Obj){
-  const p=phone(values.phone),u=code(values.uei);
-  const byPhone=p?people.filter(person=>[...(Array.isArray(person.phones)?person.phones:[])].some((v:unknown)=>phone(v)===p)):[];
-  const byCode=u?people.filter(person=>code(obj(identity.relations)['person:'+text(person.key)]||person.uei)===u):[];
-  const found=byPhone.length===1?byPhone[0]:byCode.length===1?byCode[0]:null;
-  return {found,byPhone,byCode};
-}
-function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:number,originalIssues:Issue[]=[]){
-  const {found,byPhone,byCode}=matches(people,identity,values);
-  const issues=new Map<string,Issue>();
-  const add=(field:string,system:unknown,excelValue:unknown,owners:Issue['owners']=[])=>
-    issues.set(field,issue(field,system,excelValue,owners));
-  if(byPhone.length>1)add('phone',byPhone.map(p=>ownerLabel(p,identity).name).join('; '),values.phone,byPhone.map(p=>ownerLabel(p,identity)));
-  if(byCode.length>1)add('uei',byCode.map(p=>ownerLabel(p,identity).name).join('; '),values.uei,byCode.map(p=>ownerLabel(p,identity)));
-  if(byPhone.length===1 && byCode.length===1 && byPhone[0].key!==byCode[0].key)
-    add('uei',existingField(byPhone[0],identity,'uei'),values.uei,[ownerLabel(byCode[0],identity)]);
-  if(found){
-    for(const field of primaryFields){
-      if(!relevant(values,field))continue;
-      const current=existingField(found,identity,field);
-      if(field==='uei' && byCode.length===1 && byCode[0].key!==found.key)continue;
-      if(field==='phone'||field==='additionalPhone'||field==='email'
-        ||field==='additionalEmail'||field==='telegram'||field==='additionalTelegram'){
-        if(current&&!present(found,field,values[field]))add(field,current,values[field]);
-      }else if(current&&fieldNorm(field,current)!==fieldNorm(field,values[field])){
-        add(field,current,values[field]);
-      }
-    }
-  }else if(!phone(values.phone)&&!code(values.uei)){
-    add('phone','',values.phone||'Укажите телефон или код клиента');
-  }
-  // A source file must not silently assign the same phone, code or email to
-  // two different rows. Each row is resolved independently.
-  for(const [field,normalizer] of [['phone',phone],['uei',code],['email',email]] as const){
-    const current=normalizer(values[field]);
-    if(!current)continue;
-    const overlapping=file.filter(row=>row.row!==rowNumber
-      && normalizer(obj(row.values)[field])===current);
-    if(overlapping.length && overlapping.some(row=>
-      primaryFields.some(key=>fieldNorm(key,obj(row.values)[key])
-        !==fieldNorm(key,values[key])))){
-      const owners=overlapping.map(row=>({
-        key:'excel:'+row.row,code:text(obj(row.values).uei),
-        name:[text(obj(row.values).name),text(obj(row.values).surname)].filter(Boolean).join(' '),
-      }));
-      add(field,existingField(found||{},identity,field)||'Повтор в Excel',values[field],owners);
-    }
-  }
-  // Email collisions across existing contacts must also be explicitly
-  // acknowledged, regardless of whether shared addresses are legitimate.
-  for(const field of ['email','additionalEmail']){
-    if(!relevant(values,field))continue;
-    const owners=people.filter(p=>p.key!==found?.key && present(p,'email',values[field]));
-    if(owners.length)add(field,existingField(found||{},identity,field)||'Email занят',
-      values[field],owners.map(p=>ownerLabel(p,identity)));
-  }
-  for(const field of ['phone','additionalPhone']){
-    if(!relevant(values,field))continue;
-    const owners=people.filter(p=>p.key!==found?.key && present(p,'phone',values[field]));
-    if(owners.length)add(field,existingField(found||{},identity,field)||'Телефон занят',
-      values[field],owners.map(p=>ownerLabel(p,identity)));
-  }
-  // CRM exports often encode 20% as 0.2. Treat values 0..1 as
-  // ambiguous instead of silently storing the wrong personal discount.
-  const rate=Number(text(values.discountPercent).replace(',','.'));
-  if(relevant(values,'discountPercent') && rate>0 && rate<=1)
-    add('discountPercent','Уточните: 1% или 100% (доля)',values.discountPercent);
-  if(values.uei && !code(values.uei))add('uei','',values.uei);
-  if(values.phone && !phone(values.phone))add('phone','Неверный формат',values.phone);
-  if(values.additionalPhone && !phone(values.additionalPhone))
-    add('additionalPhone','Неверный формат',values.additionalPhone);
-  for(const field of ['email','additionalEmail']){
-    if(values[field]&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(values[field])))
-      add(field,'Неверный формат',values[field]);
-  }
-  for(const previous of originalIssues)
-    add(previous.field,previous.system,previous.excel,previous.owners||[]);
-  return {person:found,issues:[...issues.values()]};
-}
+const inspect=inspectContactRow;
 @Injectable()
 export class ContactImportService {
   constructor(private readonly prisma:PrismaService,private readonly people:BusinessStateService,
