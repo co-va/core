@@ -17,6 +17,7 @@ export const CONTACT_COLUMNS:Column[]=[
   {key:'telegram',label:'Telegram',width:26},
   {key:'additionalTelegram',label:'Дополнительный Telegram',width:30},
   {key:'integrationSource',label:'Источник интеграции',width:30},
+  {key:'note',label:'Примечание',width:38},
   {key:'personKey',label:'ID человека',width:16,hidden:true},
 ];
 
@@ -104,7 +105,7 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
   const first=grouped?1:0;
   const offset=2;
   // Earlier grouped templates did not include the optional provenance column.
-  const required=CONTACT_COLUMNS.filter(c=>!c.hidden&&c.key!=='integrationSource').map(c=>c.label);
+  const required=CONTACT_COLUMNS.filter(c=>!c.hidden&&c.key!=='integrationSource'&&c.key!=='note').map(c=>c.label);
   const legacy=headers.includes('UEI')&&headers.includes('Имя')&&!grouped;
   if(!legacy && required.some(label=>headers.filter(h=>h===label).length!==1))
     throw Error('В таблице отсутствуют необходимые столбцы. Скачайте актуальный шаблон.');
@@ -120,6 +121,8 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
     if(!n.name)throw Error('Строка '+(i+offset)+': укажите имя');
     const values:Record<string,any>={name:n.name,...(n.surname?{surname:n.surname}:{})};
     if(nonempty(code))values.uei=text(code);
+    const note=cell(row,'Примечание');
+    if(nonempty(note))values.note=text(note);
     const originalSource=cell(row,'Источник интеграции');
     if(nonempty(originalSource))values.integrationSource=text(originalSource);
     for(const [key,label] of [
@@ -190,6 +193,7 @@ export async function peopleWorkbook(rows:any[],template=false):Promise<Buffer>{
   sheet.getCell('F2').note='Личная скидка в процентах. Если нет — оставьте пустым.';
   sheet.getCell('G2').note='Телефон или код клиента помогают найти уже существующую карточку.';
   sheet.getCell('M2').note='Укажите исходную CRM или другой источник, из которого перенесён контакт.';
+  sheet.getCell('N2').note='Свободное примечание к карточке контакта. Для группировки ярлыки не используются.';
   if(!template)for(const input of rows){
     const item=input&&typeof input==='object'?input:{};
     const row=sheet.addRow(Object.fromEntries(CONTACT_COLUMNS.map(col=>[
@@ -200,6 +204,6 @@ export async function peopleWorkbook(rows:any[],template=false):Promise<Buffer>{
     ])));
     for(let i=1;i<=CONTACT_COLUMNS.length;i++)row.getCell(i).numFmt='@';
   }
-  sheet.autoFilter={from:{row:2,column:1},to:{row:Math.max(2,sheet.rowCount),column:13}};
+  sheet.autoFilter={from:{row:2,column:1},to:{row:Math.max(2,sheet.rowCount),column:14}};
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const { PrismaClient } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const { DataTransferService } = require('../dist/data-transfer/data-transfer.service.js');
+const { ContactImportService } = require('../dist/data-transfer/contact-import.service.js');
 const { BusinessStateService } = require('../dist/business-state/business-state.service.js');
 const { ProfileService } = require('../dist/profile/profile.service.js');
 const { RecordService } = require('../dist/record/record.service.js');
@@ -227,8 +228,9 @@ try {
   ]);
   assert.equal(contactSheet.getCell(2,13).value,'Источник интеграции');
   assert.equal(contactSheet.getCell(2,13).fill.fgColor.argb,'FF303238');
-  assert.equal(contactSheet.getColumn(14).hidden,true,'Internal key is not exposed to professionals');
-  assert.equal(contactSheet.getCell(2,14).value,'ID человека');
+  assert.equal(contactSheet.getCell(2,14).value,'Примечание');
+  assert.equal(contactSheet.getColumn(15).hidden,true,'Internal key is not exposed to professionals');
+  assert.equal(contactSheet.getCell(2,15).value,'ID человека');
   contactSheet.getRow(3).values=[
     'A012','Ксения Примерная','','Ж','15/6/85',10,'79997771234',
     '79997771235','ksenia@example.test','ksenia.second@example.test',
@@ -276,7 +278,7 @@ try {
     email:'ksenia@example.test',personKey:importedPerson.key,
   }]}));
   assert.equal(existingExport.worksheets[0].getCell(3,2).value,'Ксения');
-  assert.equal(existingExport.worksheets[0].getCell(3,14).value,importedPerson.key);
+  assert.equal(existingExport.worksheets[0].getCell(3,15).value,importedPerson.key);
   const noYearBook=new ExcelJS.Workbook();
   await noYearBook.xlsx.load(await service.workbook({domain:'people',template:true}));
   noYearBook.worksheets[0].getRow(3).values=['','Алиса Сергеева','','М','15.06','','79997776655'];
@@ -300,6 +302,106 @@ try {
   assert.equal(legacyCheck.failed,0,JSON.stringify(legacyCheck.rows));
   assert.equal(legacyCheck.transferred,1);
   console.log('PASS: grouping, contacts, secondary fields, short and full birthdays, gender and old file compatibility');
+  // Durable contact-import queue: safe contacts immediately enter the
+  // canonical Person table; conflicting contacts remain in their file until
+  // every independently grouped field is decided.
+  const reviewer=new ContactImportService(db,people,access);
+  const reviewBook=new ExcelJS.Workbook();
+  await reviewBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  const reviewSheet=reviewBook.worksheets[0];
+  reviewSheet.getRow(3).values=['','Лада','','Ж','','','79997774501','','lada.unique@example.test','','','','Excel','Примечание Лады'];
+  reviewSheet.getRow(4).values=['A012','Ксения','Неверная','','','','79997771234','','other.ksenia@example.test','','','','Excel',''];
+  reviewSheet.getRow(5).values=['','Саша','','М','','','79997774502','','shared.import@example.test','','','','Excel',''];
+  reviewSheet.getRow(6).values=['','Марина','','Ж','','','79997774503','','shared.import@example.test','','','','Excel',''];
+  const reviewInput={filename:'new-contact-review.xlsx',source:'Контакты',strict:true,expectedDomain:'people',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await reviewBook.xlsx.writeBuffer()).toString('base64')};
+  const batch=await reviewer.create(tenantId,accountId,reviewInput);
+  assert.equal(batch.total,4);
+  assert.equal(batch.done,1,'Unambiguous contact must be imported immediately');
+  assert.equal(batch.pending,3,'Three rows need separate operator decisions');
+  assert.equal(batch.groupCount,2,'Surname and Email are independent groups');
+  const lada=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Лада'}}});
+  assert.equal(lada?.data.note,'Примечание Лады','Imported note is preserved');
+  const kseniaBefore=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.equal(kseniaBefore.data.surname,'Примерная');
+  let review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'surname',mode:'keep'});
+  assert.equal(review.done,1,'Resolving one field does not save the whole contact');
+  assert.equal(review.pending,3);
+  assert.ok(review.issues.some(i=>i.rowNumber===4&&i.field==='email'));
+  assert.ok(!review.issues.some(i=>i.rowNumber===4&&i.field==='surname'));
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'email',mode:'keep'});
+  assert.equal(review.done,2,'Contact is committed only after all its differences are processed');
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'email',mode:'replace',value:'shared.import@example.test'});
+  assert.equal(review.done,3);
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'email',mode:'keep'});
+  assert.equal(review.done,4);
+  assert.equal(review.pending,0);
+  assert.equal(review.status,'completed');
+  const uploadedPeople=await db.person.findMany({where:{tenantId}});
+  const shared=uploadedPeople.filter(x=>(x.data.emails||[]).includes('shared.import@example.test'));
+  assert.equal(shared.length,1,'Operator can remove duplicate Email from one imported contact');
+  assert.equal(shared[0].data.name,'Саша');
+  const kseniaAfter=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.equal(kseniaAfter.data.surname,'Примерная');
+  assert.deepEqual(kseniaAfter.data.emails,kseniaBefore.data.emails,'Unresolved Email never overwrites saved contact');
+  const completed=await reviewer.detail(tenantId,batch.id);
+  assert.equal(completed.done,4);
+  const repeat=await reviewer.create(tenantId,accountId,reviewInput);
+  assert.equal(repeat.id,batch.id,'Exact same file reopens existing permanent review');
+  assert.equal(repeat.done,4,'Reupload cannot duplicate people');
+  // A mismatched source code must not overwrite the canonical client code.
+  const codeBook=new ExcelJS.Workbook();
+  await codeBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  codeBook.worksheets[0].getRow(3).values=[
+    'A099','Ксения','Примерная','','','','79997771234','','ksenia@example.test',
+  ];
+  const codeInput={filename:'contact-code-conflict.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await codeBook.xlsx.writeBuffer()).toString('base64')};
+  let codeBatch=await reviewer.create(tenantId,accountId,codeInput);
+  assert.equal(codeBatch.done,0);
+  assert.ok(codeBatch.groups.some(x=>x.field==='uei'));
+  codeBatch=await reviewer.decide(tenantId,codeBatch.id,{rowNumber:3,field:'uei',mode:'keep'});
+  assert.equal(codeBatch.done,1);
+  const codeState=await db.ueiState.findUnique({where:{tenantId}});
+  assert.equal(codeState.data.relations['person:'+importedPerson.key],'A012');
+  // An explicitly approved new Email may be added without deleting the old.
+  const moreEmail=new ExcelJS.Workbook();
+  await moreEmail.xlsx.load(await service.workbook({domain:'people',template:true}));
+  moreEmail.worksheets[0].getRow(3).values=[
+    'A012','Ксения','Примерная','','','','79997771234','','ksenia.extra@example.test',
+  ];
+  const emailInput={filename:'contact-more-email.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await moreEmail.xlsx.writeBuffer()).toString('base64')};
+  let emailBatch=await reviewer.create(tenantId,accountId,emailInput);
+  assert.equal(emailBatch.done,0);
+  assert.ok(emailBatch.groups.some(x=>x.field==='email'));
+  emailBatch=await reviewer.decide(tenantId,emailBatch.id,{rowNumber:3,field:'email',
+    mode:'add',value:'ksenia.extra@example.test'});
+  assert.equal(emailBatch.done,1);
+  const withExtra=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.ok(withExtra.data.emails.includes('ksenia@example.test'));
+  assert.ok(withExtra.data.emails.includes('ksenia.extra@example.test'));
+  const discountBook=new ExcelJS.Workbook();
+  await discountBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  discountBook.worksheets[0].getRow(3).values=[
+    '','Татьяна','','Ж','',0.2,'79997774504',
+  ];
+  const discountInput={filename:'fractional-discount-review.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await discountBook.xlsx.writeBuffer()).toString('base64')};
+  let discountBatch=await reviewer.create(tenantId,accountId,discountInput);
+  assert.equal(discountBatch.done,0,'Ambiguous 0.2 discount requires confirmation');
+  assert.ok(discountBatch.groups.some(x=>x.field==='discountPercent'));
+  discountBatch=await reviewer.decide(tenantId,discountBatch.id,{
+    rowNumber:3,field:'discountPercent',mode:'replace',value:'20',
+  });
+  assert.equal(discountBatch.done,1);
+  const tanya=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Татьяна'}}});
+  assert.equal(Number(tanya.data.discountPercent),20);
+  console.log('PASS: durable Contacts review, field groups, note, safe-first import, no duplicates and completed progress');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
   // Journal: six named groups plus standalone fields, same identity order as Contacts, and
   // one booking per row regardless of the number of services.
