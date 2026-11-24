@@ -209,6 +209,12 @@ export class ContactImportService {
     if(file.sheets.length!==1 || !['Люди','Данные'].includes(sheet?.name))
       throw new BadRequestException('Выберите Excel из раздела Контакты');
     const grouped=sheet.headers[0]==='Личные данные';
+    try{
+      peopleExcelFacts([{...sheet,rows:grouped?[sheet.rows[0]]:[]}],
+        file.fingerprint,text(input.source)||'Контакты');
+    }catch(error){
+      throw new BadRequestException(text((error as Error).message));
+    }
     const rows:Obj[]=[];
     for(let i=grouped?1:0;i<sheet.rows.length;i++){
       const row=sheet.rows[i];
