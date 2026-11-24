@@ -350,6 +350,40 @@ try {
   const repeat=await reviewer.create(tenantId,accountId,reviewInput);
   assert.equal(repeat.id,batch.id,'Exact same file reopens existing permanent review');
   assert.equal(repeat.done,4,'Reupload cannot duplicate people');
+  // A mismatched source code must not overwrite the canonical client code.
+  const codeBook=new ExcelJS.Workbook();
+  await codeBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  codeBook.worksheets[0].getRow(3).values=[
+    'A099','Ксения','Примерная','','','','79997771234','','ksenia@example.test',
+  ];
+  const codeInput={filename:'contact-code-conflict.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await codeBook.xlsx.writeBuffer()).toString('base64')};
+  let codeBatch=await reviewer.create(tenantId,accountId,codeInput);
+  assert.equal(codeBatch.done,0);
+  assert.ok(codeBatch.groups.some(x=>x.field==='uei'));
+  codeBatch=await reviewer.decide(tenantId,codeBatch.id,{rowNumber:3,field:'uei',mode:'keep'});
+  assert.equal(codeBatch.done,1);
+  const codeState=await db.ueiState.findUnique({where:{tenantId}});
+  assert.equal(codeState.data.relations['person:'+importedPerson.key],'A012');
+  // An explicitly approved new Email may be added without deleting the old.
+  const moreEmail=new ExcelJS.Workbook();
+  await moreEmail.xlsx.load(await service.workbook({domain:'people',template:true}));
+  moreEmail.worksheets[0].getRow(3).values=[
+    'A012','Ксения','Примерная','','','','79997771234','','ksenia.extra@example.test',
+  ];
+  const emailInput={filename:'contact-more-email.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await moreEmail.xlsx.writeBuffer()).toString('base64')};
+  let emailBatch=await reviewer.create(tenantId,accountId,emailInput);
+  assert.equal(emailBatch.done,0);
+  assert.ok(emailBatch.groups.some(x=>x.field==='email'));
+  emailBatch=await reviewer.decide(tenantId,emailBatch.id,{rowNumber:3,field:'email',
+    mode:'add',value:'ksenia.extra@example.test'});
+  assert.equal(emailBatch.done,1);
+  const withExtra=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.ok(withExtra.data.emails.includes('ksenia@example.test'));
+  assert.ok(withExtra.data.emails.includes('ksenia.extra@example.test'));
   console.log('PASS: durable Contacts review, field groups, note, safe-first import, no duplicates and completed progress');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
   // Journal: six named groups plus standalone fields, same identity order as Contacts, and
