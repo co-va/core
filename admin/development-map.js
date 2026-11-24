@@ -144,23 +144,22 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     own.map((name,i)=>{const active=a.id===activity&&mode===i;
       return '<button type="button" class="admin-overview-person development-mode" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'" aria-expanded="'+active+'"'+(active?' aria-controls="development-scenario"':'')+'>'+row(name,active?'Выбрано':'',null,'<span class="development-disclosure" aria-hidden="true">'+(active?'▾':'▸')+'</span>',e)+'</button>';
     }).join('')+'</section>').join('');
-  const list=scopeGroups.map(([heading,applicability])=>{
-    const members=scenario.filter(m=>m.applicability===applicability);
+  const list=sections.map(([section,keys])=>{
+    const members=scenario.filter(m=>m.section===section);
     if(!members.length)return '';
-    return '<section class="development-scope"><div class="admin-overview-app-head"><h3>'+e(heading)+'</h3></div>'+
-      sections.map(([section])=>{
-        const rows=members.filter(m=>m.section===section);
+    const groupId='group:'+keys[0];
+    const expanded=open.has(groupId);
+    const groupStatus=aggregate(members.flatMap(m=>m.criteria.map(c=>criterionView(c,snapshot,audits))));
+    return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,members.length+' '+(members.length===1?'механизм':members.length<5?'механизма':'механизмов'),groupStatus,'<span class="development-disclosure" aria-hidden="true">'+(expanded?'▾':'▸')+'</span>',e)+'</button>'+
+      (expanded?'<div class="development-mechanisms">'+scopeGroups.map(([heading,applicability])=>{
+        const rows=members.filter(m=>m.applicability===applicability);
         if(!rows.length)return '';
-        const groupId=applicability+':'+section;
-        const expanded=open.has(groupId);
-        const groupStatus=aggregate(rows.flatMap(m=>m.criteria.map(c=>criterionView(c,snapshot,audits))));
-        return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,rows.length+' '+(rows.length===1?'механизм':rows.length<5?'механизма':'механизмов'),groupStatus,'<span class="development-disclosure" aria-hidden="true">'+(expanded?'▾':'▸')+'</span>',e)+'</button>'+
-          (expanded?'<div class="development-mechanisms">'+rows.map(m=>{
-            const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=aggregate(views);const key=groupId+':'+m.id;const show=open.has(key);
-            return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority,status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
-              (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(v.status,e)+'</div>'+(v.deferred?'<p>Отложено по решению владельца</p>':'')+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
-          }).join('')+'</div>':'')+'</section>';
-      }).join('')+'</section>';
+        return '<div class="development-applicability"><h4>'+e(heading)+'</h4>'+rows.map(m=>{
+          const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=aggregate(views);const key='mechanism:'+m.id;const show=open.has(key);
+          return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority,status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
+            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(v.status,e)+'</div>'+(v.deferred?'<p>Отложено по решению владельца</p>':'')+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
+        }).join('')+'</div>';
+      }).join('')+'</div>':'')+'</section>';
   }).join('');
   const context=contexts[mode]||contexts[0];
   return '<div class="admin-overview development-map"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Что необходимо для работы, что уже реализовано и что осталось.</p></div></div>'+
@@ -168,7 +167,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     '<div class="development-activities">'+graph+'</div>'+
     (loading?'<p class="development-message" role="status">Загрузка данных готовности…</p>':stale?'<p class="development-message" role="status">Не все сведения о готовности получены. Прежние подтверждения сохранены.</p>':'')+
     (selected?'<section id="development-scenario" class="development-scenario"><div class="admin-overview-app-head development-scenario-head"><h3>'+e(selected.name)+' <span class="admin-overview-head-suffix">/ '+e(own[mode])+'</span></h3><button class="admin-overview-close" type="button" data-dm-close aria-label="Свернуть подробности">×</button></div>'+
-      '<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Условия работы</h3></div><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></section>'+list+'</section>':'')+'</div>';
+      '<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Описание условий работы</h3></div><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></section>'+list+'</section>':'')+'</div>';
 }
 export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}){
   if(!content)return;
