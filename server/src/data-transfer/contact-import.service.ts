@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { BusinessStateService } from '../business-state/business-state.service';
+import { SaasAccessService } from '../saas-access/saas-access.service';
 import { peopleExcelFacts, contactBirthday } from './contacts-excel';
 import { readSource, SourceInput, Sheet } from './source';
 import { normalizePhone } from '../../../core/phone/index.js';
@@ -136,7 +137,13 @@ function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:numbe
 }
 @Injectable()
 export class ContactImportService {
-  constructor(private readonly prisma:PrismaService,private readonly people:BusinessStateService){}
+  constructor(private readonly prisma:PrismaService,private readonly people:BusinessStateService,
+    private readonly access:SaasAccessService){}
+  private async assertAccess(tenantId:string){
+    const access=await this.access.resolveTenantAccess(tenantId);
+    if(access.status!=='ACTIVE'||access.commercialMode!=='LIVE')
+      throw new BadRequestException('Загрузка реальных контактов доступна только в рабочем режиме');
+  }
 
   private async getBatch(tenantId:string,batchId:string,tx:PrismaService|Tx=this.prisma){
     const batch=await tx.contactImportBatch.findFirst({where:{id:batchId,tenantId}});
@@ -191,6 +198,7 @@ export class ContactImportService {
     return this.summary(batch,batch.rows,true);
   }
   async create(tenantId:string,accountId:string,input:SourceInput){
+    await this.assertAccess(tenantId);
     const file=await readSource(input);
     const existing=await this.prisma.contactImportBatch.findFirst({
       where:{tenantId,fingerprint:file.fingerprint},
@@ -253,6 +261,7 @@ export class ContactImportService {
     return this.detail(tenantId,id);
   }
   async advance(tenantId:string,batchId:string,limit=30){
+    await this.assertAccess(tenantId);
     await this.getBatch(tenantId,batchId);
     const size=Math.min(100,Math.max(1,Number(limit)||30));
     const work=await this.prisma.contactImportRow.findMany({
@@ -341,6 +350,7 @@ export class ContactImportService {
     return this.people.importPerson(tenantId,payload,targetId,tx,ownership);
   }
   async decide(tenantId:string,batchId:string,body:unknown){
+    await this.assertAccess(tenantId);
     const action=obj(body),rowNumber=Number(action.rowNumber);
     const field=text(action.field),mode=text(action.mode),value=text(action.value);
     if(!Number.isInteger(rowNumber)||rowNumber<1||!labels[field]
