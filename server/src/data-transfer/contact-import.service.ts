@@ -158,7 +158,7 @@ export class ContactImportService {
     const done=rows.filter(r=>r.status==='done').length;
     const pending=rows.filter(r=>r.status!=='done').length;
     const issues=rows.filter(r=>r.status!=='done').flatMap(row=>
-      (Array.isArray(row.issues)?row.issues:[]).filter((i:Issue)=>!i.decision)
+      (Array.isArray(row.issues)?row.issues:[]).filter((i:any)=>!i.decision||Boolean(row.error))
         .map((i:Issue)=>({...i,rowNumber:row.rowNumber,rowId:row.id,
           personKey:row.personKey,contact:[
             text(obj(row.values).uei),text(obj(row.values).name),
@@ -255,7 +255,7 @@ export class ContactImportService {
           row:item.rowNumber,values:obj(item.values),
         }));
         const checked=inspect(obj(latest.values),people,identity,all,latest.rowNumber,
-          arr(latest.issues) as Issue[]);
+          arr(latest.issues) as unknown as Issue[]);
         if(checked.issues.length){
           await tx.contactImportRow.update({where:{id:latest.id},data:{
             status:'review',personKey:text(checked.person?.key),
@@ -292,6 +292,7 @@ export class ContactImportService {
   private async safeImport(tx:Tx,tenantId:string,values:Obj,targetId:string,decisions:Issue[]){
     const payload={...values};const ownership:Obj={};
     const existing=targetId?await tx.person.findFirst({where:{tenantId,key:targetId}}):null;
+    if(targetId&&!existing)throw new ConflictException('Контакт изменён или удалён. Требуется повторная проверка.');
     const previous=obj(existing?.data);
     const identity=targetId?await tx.ueiState.findUnique({where:{tenantId}}):null;
     const savedCode=text(obj(obj(identity?.data).relations)['person:'+targetId]||previous.uei);
@@ -336,7 +337,7 @@ export class ContactImportService {
       if(!row||row.tenantId!==tenantId)throw new NotFoundException('Строка загрузки не найдена');
       if(row.status==='done')return this.summary(await this.getBatch(tenantId,batchId,tx),
         await this.fileRows(tx,batchId),true);
-      let issues=arr(row.issues) as Issue[];
+      let issues=arr(row.issues) as unknown as Issue[];
       const changed=issues.find(item=>item.field===field);
       if(!changed)throw new BadRequestException('Различие уже устранено');
       if(mode==='replace'){
@@ -350,7 +351,7 @@ export class ContactImportService {
           && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
           throw new BadRequestException('Неверный Email');
       }
-      changed.decision={mode:mode as Issue['decision']['mode'],value};
+      changed.decision={mode:mode as 'keep' | 'replace' | 'remove',value};
       const stillPending=issues.some(item=>!item.decision);
       if(stillPending){
         await tx.contactImportRow.update({where:{id:row.id},
