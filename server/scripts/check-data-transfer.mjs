@@ -5,6 +5,9 @@ const require = createRequire(import.meta.url);
 const { PrismaClient } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const { DataTransferService } = require('../dist/data-transfer/data-transfer.service.js');
+const { ContactImportService } = require('../dist/data-transfer/contact-import.service.js');
+const { inspectContactRow } = require('../dist/data-transfer/contact-review-inspect.js');
+const { PersonIdentityService } = require('../dist/online-booking/person-identity.service.js');
 const { BusinessStateService } = require('../dist/business-state/business-state.service.js');
 const { ProfileService } = require('../dist/profile/profile.service.js');
 const { RecordService } = require('../dist/record/record.service.js');
@@ -212,6 +215,63 @@ try {
   // A corrected bad row complements the successful original row.
   result=await run('people',[{externalId:'bad',name:'Мария',phone:'79991112233'}]);assert.equal(result.failed,0);
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
+  // Persistent Excel reconciliation: Email-only is a candidate, not a
+  // license to silently attach a new phone to another person.
+  const reviewer=new ContactImportService(db,people,access);
+  const makeReviewFile=async(filename,rows)=>{
+    const wb=new ExcelJS.Workbook();
+    await wb.xlsx.load(await service.workbook({domain:'people',template:true}));
+    rows.forEach((row,index)=>{wb.worksheets[0].getRow(index+3).values=row;});
+    return {filename,source:'Контакты',strict:true,expectedDomain:'people',
+      dataUrl:'data:application/octet-stream;base64,'+
+        Buffer.from(await wb.xlsx.writeBuffer()).toString('base64')};
+  };
+  const identityFile=await makeReviewFile('identity-confirm.xlsx',[
+    ['','Тестовая','','','','','79991116701','','verified@example.test'],
+    ['','Анна','','','','','79991116702','','keep@example.test'],
+  ]);
+  let batch=await reviewer.create(tenantId,accountId,identityFile);
+  assert.equal(batch.total,2);
+  assert.equal(batch.done,1,'Unique person is imported directly');
+  assert.equal(batch.pending,1,'Email-only match is not silently merged');
+  const identityIssue=batch.issues.find(row=>row.rowNumber===4&&row.field==='identity');
+  assert.ok(identityIssue,'Identity review must be presented');
+  assert.ok(identityIssue.owners.some(o=>o.key===personId&&o.matchedBy.includes('email')));
+  batch=await reviewer.decide(tenantId,batch.id,{
+    rowNumber:4,field:'identity',mode:'same',value:personId,
+  });
+  assert.equal(batch.done,1,'Identity decision does not resolve other field conflicts');
+  assert.ok(batch.issues.some(x=>x.rowNumber===4&&x.field==='phone'));
+  batch=await reviewer.decide(tenantId,batch.id,{
+    rowNumber:4,field:'phone',mode:'add',value:'79991116702',
+  });
+  assert.equal(batch.done,2);
+  const updatedAnna=await db.person.findFirst({where:{tenantId,key:personId}});
+  assert.ok(updatedAnna.data.phones.some(p=>p.replace(/\\D/g,'')==='79991116702'));
+  assert.ok(updatedAnna.data.emails.includes('keep@example.test'));
+
+  // Same Email in separate source rows, with different names and phones,
+  // creates both an Email conflict and a person-identity review.
+  const independentRows=[
+    {row:3,values:{name:'Олег',phone:'79991118801',email:'shared@example.test'}},
+    {row:4,values:{name:'Лина',phone:'79991118802',additionalEmail:'shared@example.test'}},
+  ];
+  const inspected=inspectContactRow(independentRows[0].values,[],{},independentRows,3);
+  assert.ok(inspected.issues.some(x=>x.field==='email'));
+  assert.ok(inspected.issues.some(x=>x.field==='identity'));
+  assert.ok(inspected.issues.find(x=>x.field==='identity').owners
+    .some(o=>o.key==='excel:4'));
+
+  // A self-supplied verified Email always precedes an older CRM Email.
+  const identityService=new PersonIdentityService(people,db);
+  const preferred=identityService.enrichPerson({
+    emails:['crm-old@example.test'],phones:['+79991119901'],accounts:[],
+  },'verified-user',{
+    emails:['verified-user@example.test'],phones:['+79991119901'],
+    telegrams:[],profilePhoto:'',primaryVerifiedEmail:'verified-user@example.test',
+  });
+  assert.deepEqual(preferred.emails,['verified-user@example.test','crm-old@example.test']);
+  console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
   // This script owns only its random isolated fixture, never existing tenant data.

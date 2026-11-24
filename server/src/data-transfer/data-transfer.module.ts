@@ -12,6 +12,7 @@ import { SaasAccessModule } from '../saas-access/saas-access.module';
 import { PrismaService } from '../prisma.service';
 import { DataTransferController } from './data-transfer.controller';
 import { DataTransferService } from './data-transfer.service';
+import { ContactImportService } from './contact-import.service';
 @Module({ imports: [HistoryModule, AuxiliaryStateModule, AuthModule, BusinessStateModule, ProfileModule, RecordModule, FinanceModule, InventoryModule, ProcedureModule, SaasAccessModule],
-  controllers: [DataTransferController], providers: [DataTransferService, PrismaService] })
+  controllers: [DataTransferController], providers: [DataTransferService, ContactImportService, PrismaService] })
 export class DataTransferModule {}

@@ -15,7 +15,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { calendarDate, canonical, clock, decimal, DOMAINS, Fact, instant, LABELS, text } from './formats';
-import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook } from './source';
+import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook, peopleWorkbook } from './source';
 
 type Tx = Prisma.TransactionClient;
 type Values = Record<string, any>;
@@ -39,7 +39,11 @@ export class DataTransferService {
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
   }
 
-  async workbook(input: any) { return transferWorkbook(Array.isArray(input?.rows) ? input.rows : [], input?.template === true); }
+  async workbook(input: any) {
+    const rows=Array.isArray(input?.rows)?input.rows:[];
+    if (input?.domain==='people') return peopleWorkbook(rows,input?.template===true);
+    return transferWorkbook(rows,input?.template===true);
+  }
 
   private async reference(tx: Tx, tenantId: string, domain: string, value: unknown, source: string) {
     const key = text(value); if (!key) return '';
