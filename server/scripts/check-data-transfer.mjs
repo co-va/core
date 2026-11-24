@@ -247,7 +247,7 @@ try {
   });
   assert.equal(batch.done,2);
   const updatedAnna=await db.person.findFirst({where:{tenantId,key:personId}});
-  assert.ok(updatedAnna.data.phones.some(p=>p.replace(/\\D/g,'')==='79991116702'));
+  assert.ok(updatedAnna.data.phones.some(p=>p.replace(/\D/g,'')==='79991116702'));
   assert.ok(updatedAnna.data.emails.includes('keep@example.test'));
 
   // Same Email in separate source rows, with different names and phones,
