@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { MECHANISMS, coverageSnapshot, closureEvidence, loadOperationalReadiness, readinessMarkup, CORE_SCENARIOS, coreAuditSnapshot, loadCoreAudit } from '../admin/operational-readiness.js';
+import { MECHANISMS, coverageSnapshot, closureEvidence, loadOperationalReadiness, readinessMarkup, CORE_SCENARIOS, coreAuditSnapshot, loadCoreAudit, USER_SCENARIOS, userAuditSnapshot, professionalAuditSnapshot, evidenceCoverage, loadUserAudit } from '../admin/operational-readiness.js';
 const sha='a'.repeat(40);
 const item={id:'start.service',paths:['core/service/**'],requires:[],external:[],acceptance:{visual:'approved',data:'approved'},closure:{state:'locked',baselineSha:sha,approvedBy:'owner',approvedAt:'2026-11-22',evidence:['test']}};
 const registry={schemaVersion:1,repository:'co-va/professional',branch:'staging',items:[item]};
@@ -59,3 +59,25 @@ assert.match(readinessMarkup(loaded,String,'contacts',core),/Импорт кон
 const loadedCore=await loadCoreAudit(async url=>({ok:true,json:async()=>url.includes('/git/ref/')?{object:{sha}}:url.includes('/check-runs')?{check_runs:[{id:1,name:'check',head_sha:sha,app:{slug:'github-actions'},details_url:'https://github.com/co-va/core/actions/runs/42/job/1'}]}:url.includes('/jobs?')?{jobs}:url.endsWith('/package.json')?pkg:run,text:async()=>workflow}));
 assert.equal(loadedCore.passed,CORE_SCENARIOS.length);
 console.log('Core CI evidence projection: PASS');
+
+// User: the exact released tree, named workflow and actual step are required.
+const userWorkflow=[...new Map(USER_SCENARIOS.map(s=>[s.step,'- name: '+s.step+'\n  run: node '+s.script])).values()].join('\n');
+const userJobs=[{id:2,name:'check',head_sha:sha,conclusion:'success',steps:[...new Set(USER_SCENARIOS.map(s=>s.step))].map(name=>({name,conclusion:'success'}))}];
+const user=userAuditSnapshot(sha,run,userJobs,userWorkflow);
+assert.equal(user.passed,USER_SCENARIOS.length);
+assert.equal(userAuditSnapshot(sha,run,userJobs,'').passed,0);
+assert.throws(()=>userAuditSnapshot(sha,{...run,head_sha:'b'.repeat(40)},userJobs,userWorkflow));
+const prof=professionalAuditSnapshot(registry,sha,a);
+assert.equal(prof.passed,1);
+assert.equal(prof.historical,0);
+const historical=professionalAuditSnapshot({...registry,items:[...registry.items,{id:'journal.graph',closure:{state:'verifying',evidence:['Historical test']}}]},sha,a);
+assert.equal(historical.historical,1);
+const evidence=evidenceCoverage(a,core,user,historical);
+assert.equal(evidence.total,44);
+assert.ok(evidence.supported>1 && evidence.supported<44);
+assert.equal(evidenceCoverage(a,core,user,historical,historical).supported,evidence.supported);
+assert.match(readinessMarkup(loaded,String,'records',core,user),/User\/main: 4 \/ 4/);
+assert.match(readinessMarkup(loaded,String,'records',core,user),/Критерии с доказательствами/);
+const userLoaded=await loadUserAudit(async url=>({ok:true,json:async()=>url.includes('/git/ref/')?{object:{sha}}:url.includes('/actions/runs?')?{workflow_runs:[run]}:{jobs:userJobs},text:async()=>userWorkflow}));
+assert.equal(userLoaded.passed,4);
+console.log('Cross-repository evidence projection: PASS');

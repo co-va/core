@@ -382,7 +382,8 @@ export async function loadOperationalReadiness(fetcher=fetch) {
     try {return [base,await readJson(API+'/compare/'+base+'...'+sha,fetcher)];}
     catch {return [base,null];}
   })));
-  return {sha,...coverageSnapshot(registry,comparisons)};
+  const coverage=coverageSnapshot(registry,comparisons);
+  return {sha,...coverage,professionalAudit:professionalAuditSnapshot(registry,sha,coverage)};
 }
 
 /* #942: exact, narrowly scoped evidence from existing Core CI; never equate a
@@ -643,29 +644,180 @@ export async function loadCoreAudit(fetcher=fetch) {
   ]);
   return coreAuditSnapshot(sha,run,jobs.jobs,pkg,workflow);
 }
+
+/* Existing User CI and Professional acceptance records. No new workflow,
+ * no second closure registry, no promotion of historical evidence to current PASS. */
+export const USER_SCENARIOS = [
+  {
+    "id": "user.record.contract",
+    "criteria": [
+      "records.user"
+    ],
+    "title": "User: единый Account API и последовательность шагов записи",
+    "step": "Record contract",
+    "script": "scripts/ci/guard-record.mjs"
+  },
+  {
+    "id": "user.record.journal",
+    "criteria": [
+      "records.user"
+    ],
+    "title": "User: браузерный сценарий Журнала, мини-карта, повтор записи и сброс уведомлений (fixture)",
+    "step": "Local UI browser smoke",
+    "script": "scripts/ci/user-journal-record-smoke.mjs"
+  },
+  {
+    "id": "user.account.isolation",
+    "criteria": [
+      "permissions.enforcement"
+    ],
+    "title": "User: изоляция состояния при смене аккаунта, события и заметки",
+    "step": "Account-scoped state and duplicate-load contract",
+    "script": "scripts/ci/user-account-session-smoke.mjs"
+  },
+  {
+    "id": "user.profile.contract",
+    "criteria": [
+      "contacts.core"
+    ],
+    "title": "User: единый редактор персональных данных и маршрут сохранения Account",
+    "step": "Profile contract",
+    "script": "scripts/ci/guard-profile.mjs"
+  }
+];
+const PROF_SCENARIOS = [
+  {
+    "id": "prof.journal.owner",
+    "criteria": [
+      "records.prof"
+    ],
+    "ref": "start.journal",
+    "title": "Professional: ранее принятая владельцем функциональность Журнала; отдельный E2E не подтверждён"
+  },
+  {
+    "id": "prof.schedule",
+    "criteria": [
+      "time.schedule"
+    ],
+    "ref": "journal.graph",
+    "title": "Professional: ранее выполненные изолированные сценарии графика"
+  },
+  {
+    "id": "prof.payment",
+    "criteria": [
+      "finance.prof",
+      "services.execution"
+    ],
+    "ref": "journal.payment",
+    "title": "Professional: ранее выполненные изолированные сценарии оплаты и возврата"
+  },
+  {
+    "id": "prof.record.model",
+    "criteria": [
+      "records.prof"
+    ],
+    "ref": "start.journal",
+    "title": "Professional: ранее выполненные модельные проверки Журнала"
+  },
+  {
+    "id": "prof.service.acceptance",
+    "criteria": [
+      "catalog.prof"
+    ],
+    "ref": "start.service",
+    "title": "Professional: принятый каталог услуг и товаров"
+  }
+];
+const USER_API='https://api.github.com/repos/co-va/user';
+const USER_RAW='https://raw.githubusercontent.com/co-va/user';
+export function userAuditSnapshot(sha,run,jobs,workflow) {
+  if(!validSha(sha)||run?.head_sha!==sha||run.path!=='.github/workflows/check.yml'||
+    !Array.isArray(jobs)||typeof workflow!=='string') throw Error('Нет доказательств для данной версии User');
+  const lines=workflow.split(/\r?\n/);
+  const job=jobs.filter(j=>j.name==='check'&&j.head_sha===sha).sort((a,b)=>b.id-a.id)[0];
+  const scenarios=USER_SCENARIOS.map(s=>{
+    const start=lines.findIndex(l=>l.trim()==='- name: '+s.step);
+    const end=lines.findIndex((l,i)=>i>start&&/^\s*- (name:|uses:)/.test(l));
+    const block=start<0?[]:lines.slice(start,end<0?undefined:end);
+    const registered=block.some(l=>['run: node '+s.script,'node '+s.script].includes(l.trim()));
+    const step=job?.steps?.find(x=>x.name===s.step);
+    return {...s,state:!registered?'unknown':step?.conclusion==='failure'?'failed':
+      job?.conclusion==='success'&&step?.conclusion==='success'?'passed':'unknown',
+      url:'https://github.com/co-va/user/actions/runs/'+Number(run.id)+(job?'/job/'+Number(job.id):'')};
+  });
+  return {sha,runId:run.id,scenarios,passed:scenarios.filter(s=>s.state==='passed').length,total:scenarios.length,
+    failed:scenarios.filter(s=>s.state==='failed').length};
+}
+export async function loadUserAudit(fetcher=fetch) {
+  const head=await readJson(USER_API+'/git/ref/heads/main',fetcher);
+  const sha=head?.object?.sha;
+  if(!validSha(sha)) throw Error('Версия User не определена');
+  const runs=await readJson(USER_API+'/actions/runs?head_sha='+sha+'&per_page=100',fetcher);
+  const run=(runs.workflow_runs||[]).filter(r=>r.head_sha===sha&&r.path==='.github/workflows/check.yml')
+    .sort((a,b)=>b.id-a.id)[0];
+  if(!run) throw Error('Проверки User не найдены');
+  const [jobs,workflow]=await Promise.all([
+    readJson(USER_API+'/actions/runs/'+Number(run.id)+'/jobs?per_page=100',fetcher),
+    readCoreText(USER_RAW+'/'+sha+'/.github/workflows/check.yml',fetcher)
+  ]);
+  return userAuditSnapshot(sha,run,jobs.jobs,workflow);
+}
+export function professionalAuditSnapshot(registry,sha,coverage) {
+  if(!validSha(sha)||registry?.repository!=='co-va/professional'||registry.branch!=='staging'||
+    !Array.isArray(registry.items)) throw Error('Нет реестра Professional');
+  const items=new Map(registry.items.map(i=>[i.id,i]));
+  const current=new Map(coverage.mechanisms.flatMap(m=>m.rows).map(c=>[c.key,c]));
+  const scenarios=PROF_SCENARIOS.map(s=>{
+    const item=items.get(s.ref);
+    const evidence=item?.closure?.evidence;
+    const recorded=Array.isArray(evidence)&&evidence.some(v=>typeof v==='string'&&v.trim());
+    const accepted=s.criteria.every(k=>current.get(k)?.state==='accepted');
+    return {...s,state:!recorded?'unknown':accepted?'passed':'historical',
+      url:'https://github.com/co-va/professional/blob/'+sha+'/RELEASE_CLOSURE_REGISTRY.json'};
+  });
+  return {sha,scenarios,total:scenarios.length,passed:scenarios.filter(s=>s.state==='passed').length,
+    historical:scenarios.filter(s=>s.state==='historical').length,failed:0};
+}
+export function evidenceCoverage(snapshot,...audits) {
+  const keys=new Set(MECHANISMS.flatMap(m=>m[3].map(c=>c[0])));
+  const supported=new Set((snapshot?.mechanisms||[]).flatMap(m=>m.rows.filter(c=>c.accepted).map(c=>c.key)));
+  for(const audit of audits) for(const s of audit?.scenarios||[]) {
+    if(s.state==='passed'||s.state==='historical') for(const key of s.criteria) if(keys.has(key)) supported.add(key);
+  }
+  return {supported:supported.size,total:keys.size,unknown:keys.size-supported.size};
+}
+const auditStateLabel={passed:'PASS',failed:'FAIL',historical:'Ранее проверено · актуальность требует сверки',unknown:'Не подтверждено'};
+
 const auditFor = (audit,keys) => (audit?.scenarios||[]).filter(s=>s.criteria.some(k=>keys.includes(k)));
 
 const stateLabel = {accepted:'Принято',changed:'Изменено · нужна проверка',unverified:'Актуальность не подтверждена',checking:'В проверке',unknown:'Не подтверждено'};
-export function readinessMarkup(snapshot, escapeHtml, selected='', coreAudit=null) {
+export function readinessMarkup(snapshot, escapeHtml, selected='', coreAudit=null, userAudit=null) {
   const e=escapeHtml;
+  const profAudit=snapshot?.professionalAudit;
+  const evidence=evidenceCoverage(snapshot,coreAudit,userAudit,profAudit);
+  const allAudits={scenarios:[...(coreAudit?.scenarios||[]),...(userAudit?.scenarios||[]),...(profAudit?.scenarios||[])]};
+  const evidenceSummary='<div class="admin-overview-chart-summary"><strong>'+evidence.supported+' / '+evidence.total+'</strong><span>Критерии с доказательствами выполнения или частичной проверки</span></div><p class="admin-overview-empty">Остальные '+evidence.unknown+' требуют аудита. Это охват доказательствами, не процент завершённости продукта.</p>';
+  const userSummary=userAudit?'<p class="admin-overview-empty">User/main: '+userAudit.passed+' / '+userAudit.total+' автопроверок · '+e(userAudit.sha.slice(0,12))+' · <a href="https://github.com/co-va/user/actions/runs/'+Number(userAudit.runId)+'" target="_blank" rel="noopener noreferrer">Результаты CI</a></p>':'<p class="admin-overview-empty">User: данные автопроверок не получены.</p>';
+  const profSummary=profAudit?'<p class="admin-overview-empty">Professional/staging: '+profAudit.passed+' принято, '+profAudit.historical+' ранее проверенных сценария. Автоматического CI Professional пока нет; прежние доказательства не считаются проверкой новой версии.</p>':'<p class="admin-overview-empty">Professional: реестр не получен.</p>';
   const coreSummary=coreAudit ? '<div class="admin-overview-chart-summary"><strong>'+coreAudit.passed+' / '+coreAudit.total+'</strong><span>Подключённые сценарии Core: автоматические проверки пройдены</span></div><p class="admin-overview-empty">Core/main: '+e(coreAudit.sha.slice(0,12))+' · ошибок проверки: '+coreAudit.failed+' · <a href="https://github.com/co-va/core/actions/runs/'+Number(coreAudit.runId)+'" target="_blank" rel="noopener noreferrer">Результаты CI</a>. Это проверенные части критериев, не готовность всей платформы.</p>' : '<p class="admin-overview-empty">Автопроверки Core: данные не получены.</p>';
   const summary=snapshot ? '<div class="admin-overview-chart-summary"><strong>'+snapshot.confirmed+' / '+snapshot.total+'</strong><span>Полная приёмка критериев ('+snapshot.percent+'%)</span></div><p class="admin-overview-empty">Professional/staging: '+e(snapshot.sha.slice(0,12))+' · актуальность подтверждена: '+snapshot.currentConfirmed+' · изменено: '+snapshot.changed+' · актуальность не проверена: '+snapshot.unverified+'. Не является процентом готовности действующего релиза.</p>' : '<p class="admin-overview-empty">Данные технического реестра недоступны. Проценты не определены.</p>';
   const rows=(snapshot?.mechanisms || MECHANISMS.map(([id,label,location,criteria])=>({id,label,location,rows:criteria.map(([key,title,ref])=>({key,title,ref,state:'unknown'})),percent:null}))).map((m,i)=>{
     const open=selected===m.id;
-    const checks=auditFor(coreAudit,m.rows.map(c=>c.key));
+    const checks=auditFor(allAudits,m.rows.map(c=>c.key));
     const count=checks.filter(s=>s.state==='passed').length;
-    const checked=checks.length?' · '+count+'/'+checks.length+' автопроверок':'';
+    const history=checks.filter(s=>s.state==='historical').length;
+    const checked=checks.length?' · '+count+' проверено'+(history?' / '+history+' ранее':''):'';
     return '<button type="button" class="admin-overview-person" data-operational-mechanism="'+e(m.id)+'" aria-expanded="'+open+'"><span><strong>'+String(i+1).padStart(2,'0')+' · '+e(m.label)+'</strong></span><span class="admin-overview-person-status">'+(m.percent===null?'—':m.confirmed+'/'+m.total+' принято')+checked+' '+(open?'−':'+')+'</span></button>'+
-      (open?'<div class="admin-overview-detail"><div class="admin-overview-detail-heading"><strong>'+e(m.location)+'</strong></div><div class="admin-overview-detail-list">'+m.rows.map(c=>'<div class="admin-overview-person"><span><strong>'+e(c.title)+'</strong><small>'+e(stateLabel[c.state])+(c.baselineSha?' · '+e(c.baselineSha.slice(0,12)):'')+'</small>'+(c.ref?'<small><a href="https://github.com/co-va/professional/blob/'+(snapshot?.sha||'staging')+'/RELEASE_CLOSURE_REGISTRY.json" target="_blank" rel="noopener noreferrer">'+e(c.ref)+'</a></small>':'')+(c.approvedAt?'<small>Приёмка: '+e(c.approvedAt)+'</small>':'')+(c.changed?.length?'<small>'+e(c.changed.join(', '))+'</small>':'')+auditFor(coreAudit,[c.key]).map(s=>'<small><a href="'+e(s.url)+'" target="_blank" rel="noopener noreferrer">'+e(s.title)+'</a> · '+(s.state==='passed'?'PASS':s.state==='failed'?'FAIL':'Не подтверждено')+'</small>').join('')+'</span></div>').join('')+'</div></div>':'');
+      (open?'<div class="admin-overview-detail"><div class="admin-overview-detail-heading"><strong>'+e(m.location)+'</strong></div><div class="admin-overview-detail-list">'+m.rows.map(c=>'<div class="admin-overview-person"><span><strong>'+e(c.title)+'</strong><small>'+e(stateLabel[c.state])+(c.baselineSha?' · '+e(c.baselineSha.slice(0,12)):'')+'</small>'+(c.ref?'<small><a href="https://github.com/co-va/professional/blob/'+(snapshot?.sha||'staging')+'/RELEASE_CLOSURE_REGISTRY.json" target="_blank" rel="noopener noreferrer">'+e(c.ref)+'</a></small>':'')+(c.approvedAt?'<small>Приёмка: '+e(c.approvedAt)+'</small>':'')+(c.changed?.length?'<small>'+e(c.changed.join(', '))+'</small>':'')+auditFor(allAudits,[c.key]).map(s=>'<small><a href="'+e(s.url)+'" target="_blank" rel="noopener noreferrer">'+e(s.title)+'</a> · '+e(auditStateLabel[s.state])+'</small>').join('')+'</span></div>').join('')+'</div></div>':'');
   }).join('');
-  return '<div class="admin-overview"><div class="admin-heading"><h2>Операционная готовность</h2></div><section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Услуги и продажи</h3><div class="admin-overview-period"><button type="button" data-operational-back>Обзор</button><button type="button" data-operational-refresh>Обновить</button></div></div>'+coreSummary+summary+'<p class="admin-overview-empty">Карта '+COVERAGE_VERSION+' · 18 механизмов. Автопроверки Core показывают частичные доказательства. User и сквозные сценарии без доказательств пока не подтверждены. Процент не управляет доступом к инструментам.</p><div class="admin-overview-detail-list">'+rows+'</div></section></div>';
+  return '<div class="admin-overview"><div class="admin-heading"><h2>Операционная готовность</h2></div><section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Услуги и продажи</h3><div class="admin-overview-period"><button type="button" data-operational-back>Обзор</button><button type="button" data-operational-refresh>Обновить</button></div></div>'+evidenceSummary+coreSummary+userSummary+profSummary+summary+'<p class="admin-overview-empty">Карта '+COVERAGE_VERSION+' · 18 механизмов. Core и User: результаты существующих автопроверок. Professional: действующий реестр приёмки. Сквозные критерии без доказательств не подтверждены. Процент не управляет доступом к инструментам.</p><div class="admin-overview-detail-list">'+rows+'</div></section></div>';
 }
-export function renderOperationalReadiness(content, {escapeHtml,isCurrent,onBack,load=loadOperationalReadiness,loadCore=loadCoreAudit}) {
+export function renderOperationalReadiness(content, {escapeHtml,isCurrent,onBack,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}) {
   if (!content) return;
-  let selected='', snapshot=null, coreAudit=null, request=0;
+  let selected='', snapshot=null, coreAudit=null, userAudit=null, request=0;
   const render=()=>{
     if(!isCurrent()) return;
-    content.innerHTML=readinessMarkup(snapshot,escapeHtml,selected,coreAudit);
+    content.innerHTML=readinessMarkup(snapshot,escapeHtml,selected,coreAudit,userAudit);
     content.querySelector('[data-operational-refresh]')?.addEventListener('click',refresh);
     content.querySelector('[data-operational-back]')?.addEventListener('click',()=>onBack?.());
     content.querySelectorAll('[data-operational-mechanism]').forEach(button=>button.addEventListener('click',()=>{
@@ -675,13 +827,14 @@ export function renderOperationalReadiness(content, {escapeHtml,isCurrent,onBack
   };
   async function refresh(){
     const id=++request;
-    snapshot=null; coreAudit=null; render();
+    snapshot=null; coreAudit=null; userAudit=null; render();
     const control=content.querySelector('[data-operational-refresh]');
     if(control) {control.disabled=true;control.textContent='Загрузка…';}
-    const [professional,core]=await Promise.allSettled([load(),loadCore()]);
+    const [professional,core,user]=await Promise.allSettled([load(),loadCore(),loadUser()]);
     if(id===request&&isCurrent()) {
       if(professional.status==='fulfilled') snapshot=professional.value;
       if(core.status==='fulfilled') coreAudit=core.value;
+      if(user.status==='fulfilled') userAudit=user.value;
     }
     if(id===request&&isCurrent()) render();
   }
