@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { MECHANISMS, coverageSnapshot, closureEvidence, loadOperationalReadiness, readinessMarkup, CORE_SCENARIOS, coreAuditSnapshot, loadCoreAudit, USER_SCENARIOS, userAuditSnapshot, professionalAuditSnapshot, evidenceCoverage, loadUserAudit } from '../admin/operational-readiness.js';
+import { MECHANISMS, coverageSnapshot, closureEvidence, loadOperationalReadiness, readinessMarkup, CORE_SCENARIOS, coreAuditSnapshot, loadCoreAudit, USER_SCENARIOS, userAuditSnapshot, professionalAuditSnapshot, evidenceCoverage, loadUserAudit, workQueue } from '../admin/operational-readiness.js';
 const sha='a'.repeat(40);
 const item={id:'start.service',paths:['core/service/**'],requires:[],external:[],acceptance:{visual:'approved',data:'approved'},closure:{state:'locked',baselineSha:sha,approvedBy:'owner',approvedAt:'2026-11-22',evidence:['test']}};
 const registry={schemaVersion:1,repository:'co-va/professional',branch:'staging',items:[item]};
@@ -81,3 +81,17 @@ assert.match(readinessMarkup(loaded,String,'records',core,user),/Критери�
 const userLoaded=await loadUserAudit(async url=>({ok:true,json:async()=>url.includes('/git/ref/')?{object:{sha}}:url.includes('/actions/runs?')?{workflow_runs:[run]}:{jobs:userJobs},text:async()=>userWorkflow}));
 assert.equal(userLoaded.passed,4);
 console.log('Cross-repository evidence projection: PASS');
+
+// Existing 44 criteria, with a concrete source finding and next action, not another registry.
+const queue=workQueue(a,{scenarios:[...core.scenarios,...user.scenarios]});
+assert.equal(queue.total,44);
+assert.equal(queue.counts.closed,1);
+assert.equal(Object.values(queue.counts).reduce((x,y)=>x+y,0),44);
+assert.ok(queue.rows.every(m=>m.rows.every(c=>c.work?.finding&&c.work?.next&&c.work?.source?.sha)));
+assert.equal(workQueue(null).counts.closed,0,'No source is not closure');
+assert.equal(workQueue(b).counts.recheck,1,'Changed accepted candidate is not current closure');
+assert.match(readinessMarkup(loaded,String,'sales',core,user),/Следующее действие/);
+assert.match(readinessMarkup(loaded,String,'sales',core,user),/Завершить продажу без обязательной записи/);
+assert.match(readinessMarkup(loaded,String,'services',core,user),/Вопрос закрыт/);
+assert.match(readinessMarkup(loaded,String,'',core,user),/Доказательства и версии/);
+console.log('Operational work queue: PASS');
