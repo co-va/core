@@ -158,8 +158,8 @@ export class ContactImportService {
     const done=rows.filter(r=>r.status==='done').length;
     const pending=rows.filter(r=>r.status!=='done').length;
     const issues=rows.filter(r=>r.status!=='done').flatMap(row=>
-      (Array.isArray(row.issues)?row.issues:[]).filter((i:any)=>!i.decision||Boolean(row.error))
-        .map((i:Issue)=>({...i,rowNumber:row.rowNumber,rowId:row.id,
+      ((Array.isArray(row.issues)?row.issues:[]) as unknown as Issue[]).filter(i=>!i.decision||Boolean(row.error))
+        .map(i=>({...i,rowNumber:row.rowNumber,rowId:row.id,
           personKey:row.personKey,contact:[
             text(obj(row.values).uei),text(obj(row.values).name),
             text(obj(row.values).surname),
