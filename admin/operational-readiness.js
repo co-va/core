@@ -875,7 +875,6 @@ export async function loadOperationalReadiness(fetcher=fetch) {
 /* #942: exact, narrowly scoped evidence from existing Core CI; never equate a
  * successful sub-scenario with full operational criterion or owner acceptance. */
 export const CORE_SCENARIOS = [
-  {id:'workspace.lifecycle',criteria:['workspace.profile','workspace.multiple','workspace.hours'],title:'PostgreSQL: создать два пространства, изменить одно, повторно открыть, проверить отдельные часы, порядок и удаление',job:'staging-smoke',step:'Verify canonical data transfer with PostgreSQL',command:'docker compose -f docker-compose.staging.yml exec -T backend node scripts/check-data-transfer.mjs'},
   {
     "id": "workspace.capacity",
     "criteria": [

@@ -947,7 +947,7 @@ try {
   assert.equal(opened.find(w=>w.key===wpB).from,'11:00');
   assert.equal(opened.find(w=>w.key===wpB).to,'19:00');
   assert.equal(opened.find(w=>w.key===wpB).visibleInPublicBooking,false);
-  await workplaceProfile.reorderWorkplaces(tenantId,accountId,[...existingPlaces,wpB,wpA]);
+  await workplaceProfile.reorderWorkplaces(tenantId,accountId,{keys:[...existingPlaces,wpB,wpA]});
   assert.deepEqual((await new ProfileService(db).get(tenantId,accountId)).workplaces.map(w=>w.key),[...existingPlaces,wpB,wpA]);
   await workplaceProfile.deleteWorkplace(tenantId,accountId,wpA);
   opened = (await new ProfileService(db).get(tenantId,accountId)).workplaces;

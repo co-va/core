@@ -131,11 +131,6 @@ export function criterionView(c,snapshot,audits=[]){
   if(resolution?.kind==='accepted'){status='ready';next='Вопрос принят. Проверять только затронутые изменения.';}
   if(resolution?.kind==='disputed'){status='disputed';next=resolution.remaining||'Уточнить приёмку.';}
   if(resolution?.kind==='regression'){status='unfinished';next=resolution.remaining;}
-  if(checks.some(x=>x.id==='workspace.lifecycle'&&x.state==='passed')&&status!=='ready'&&status!=='unfinished'&&status!=='disputed'){
-    if(c.key==='workspace.profile')next='Professional: создать, изменить и повторно открыть пространство; сверить порядок и удаление в интерфейсе.';
-    if(c.key==='workspace.multiple')next='Два пространства: проверить раздельные графики, записи и доступные услуги.';
-    if(c.key==='workspace.hours')next='Проверить исключения графика и закрытие времени для записи.';
-  }
   const priority=events.filter(x=>['deferred','resume'].includes(x.kind)&&x.ownerConfirmed===true).at(-1);
   if(candidate&&resolution?.kind==='accepted'&&status==='ready'){status='pending';next=candidate.remaining||next;}
   const notStarted=latest?.kind==='not-started'&&latest.ownerConfirmed===true&&status==='unknown';
@@ -172,6 +167,39 @@ const contexts=[
 function row(title,sub,status,extra,e){
   return '<span><strong>'+e(title)+'</strong>'+(sub?'<small>'+e(sub)+'</small>':'')+'</span><span class="development-row-end">'+(status?mark(status,e):'')+extra+'</span>';
 }
+const disclosure=open=>'<span class="development-disclosure" aria-hidden="true">'+(open?'▾':'▸')+'</span>';
+function progressSummary(views,available){
+  if(!available)return 'Данные не получены';
+  const unique=[...new Map(views.map(v=>[v.key,v])).values()];
+  const ready=unique.filter(v=>v.status==='ready').length;
+  return 'Закрыто '+ready+' из '+unique.length+' · осталось '+(unique.length-ready);
+}
+function criterionSummary(v,available){
+  if(!available)return 'Данные не получены';
+  if(v.status==='ready')return 'Закрыто';
+  if(v.deferred)return 'Отложено';
+  if(v.status==='unfinished')return 'Исправить';
+  if(v.status==='notStarted')return 'Реализовать';
+  if(v.status==='disputed')return 'Согласовать';
+  if(v.status==='partial')return 'Частично проверено';
+  return 'Проверить';
+}
+const plainTitles={'workspace.profile':'Добавить и изменить место работы','workspace.multiple':'Работать в нескольких местах','workspace.hours':'Настроить часы работы'};
+const soloTitles={'relations.types':'Своё или арендованное место','relations.terms':'Оплата аренды','relations.lifecycle':'Начало и окончание аренды'};
+function ownerDecision(c,mode,v){
+  if(mode!==0||v.status==='ready'||v.deferred)return '';
+  if(c.key==='relations.types')return 'Какие условия пользования местом нужны специалисту?';
+  if(c.key==='relations.terms')return 'Как рассчитывается аренда: за время, за период или другим способом?';
+  if(c.key==='relations.lifecycle')return 'Как учитывать начало, изменение и окончание аренды?';
+  return '';
+}
+function shortAction(c,v){
+  if(v.status==='ready')return 'Закрыто';
+  if(c.key==='workspace.profile')return 'Создать, изменить, открыть повторно и удалить тестовое место.';
+  if(c.key==='workspace.multiple')return 'Проверить независимые графики, услуги и записи двух мест.';
+  if(c.key==='workspace.hours')return 'Проверить часы работы и исключения в графике.';
+  return v.status==='disputed'?'Согласовать результат':v.status==='unfinished'?'Исправить конкретный сбой':'Проверить указанную возможность';
+}
 export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=null,audits=[],loading=false,stale=false},e){
   const selected=ACTIVITIES.find(a=>a.id===activity);
   const scenario=selected?scenarioMechanisms(activity,mode):[];
@@ -179,30 +207,44 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     own.map((name,i)=>{const active=a.id===activity&&mode===i;
       return '<button type="button" class="admin-overview-person development-mode" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'" aria-expanded="'+active+'"'+(active?' aria-controls="development-scenario"':'')+'>'+row(name,active?'Выбрано':'',null,'<span class="development-disclosure" aria-hidden="true">'+(active?'▾':'▸')+'</span>',e)+'</button>';
     }).join('')+'</section>').join('');
+  let number=0;
+  const numbered=scenario.map(m=>({...m,number:++number,views:m.criteria.map(c=>criterionView(c,snapshot,audits))}));
+  const nextMechanism=numbered.find(m=>m.applicability==='Основной'&&m.views.some(v=>v.status!=='ready'&&!v.deferred));
+  const nextIndex=nextMechanism?.views.findIndex(v=>v.status!=='ready'&&!v.deferred)??-1;
+  const nextCriterion=nextIndex>=0?nextMechanism.criteria[nextIndex]:null;
+  const nextView=nextIndex>=0?nextMechanism.views[nextIndex]:null;
+  const nextDecision=nextCriterion?ownerDecision(nextCriterion,mode,nextView):'';
+  const focus=nextCriterion&&snapshot?'<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Следующая задача</h3></div><div class="development-criterion-details"><section><h5>'+e(nextMechanism.number+'.'+(nextIndex+1)+' '+(plainTitles[nextCriterion.key]||(mode===0&&soloTitles[nextCriterion.key])||nextCriterion.title))+'</h5><p>'+e(nextDecision||shortAction(nextCriterion,nextView))+'</p><p><strong>'+e(nextDecision?'Решение владельца':'Исполнитель: AI')+'</strong></p></section></div></section>':'';
   const list=sections.map(([section,keys])=>{
-    const members=scenario.filter(m=>m.section===section);
+    const members=numbered.filter(m=>m.section===section);
     if(!members.length)return '';
-    const groupId='group:'+keys[0];
-    const expanded=open.has(groupId);
-    const groupStatus=developmentProgress(members.flatMap(m=>m.criteria.map(c=>({...criterionView(c,snapshot,audits),blocking:m.applicability==='Основной'}))),!!snapshot);
-    return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,members.length+' '+(members.length===1?'механизм':members.length<5?'механизма':'механизмов'),groupStatus,'<span class="development-disclosure" aria-hidden="true">'+(expanded?'▾':'▸')+'</span>',e)+'</button>'+
-      (expanded?'<div class="development-mechanisms">'+scopeGroups.map(([heading,applicability])=>{
-        const rows=members.filter(m=>m.applicability===applicability);
-        if(!rows.length)return '';
-        return '<div class="development-applicability"><h4>'+e(heading)+'</h4>'+rows.map(m=>{
-          const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=developmentProgress(views,!!snapshot);const key='mechanism:'+m.id;const show=open.has(key);
-          return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority+' · '+activityLabel(m.id),status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
-            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i],criterionId='criterion:'+m.id+':'+c.key,details=open.has(criterionId);const verified=[...v.history,...v.evidence.map(x=>(x.state==='passed'?'':x.state==='historical'?'Ранее: ':'Не пройдено: ')+x.title)];return '<div class="development-criterion"><button type="button" class="admin-overview-person development-criterion-head" data-dm-toggle="'+e(criterionId)+'" aria-expanded="'+details+'">'+row(c.title,'',developmentProgress([v],!!snapshot),'<span class="development-disclosure" aria-hidden="true">'+(details?'▾':'▸')+'</span>',e)+'</button>'+(details?'<div class="development-criterion-details"><section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section>'+(v.candidate?'<section><h5>Новое изменение</h5><p>'+e(v.candidate)+'</p></section>':'')+'<section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section></div>':'')+'</div>';}).join('')+'</div>':'')+'</div>';
-        }).join('')+'</div>';
+    const groupId='group:'+keys[0],expanded=open.has(groupId);
+    const allViews=members.flatMap(m=>m.views.map(v=>({...v,blocking:m.applicability==='Основной'})));
+    const groupStatus=developmentProgress(allViews,!!snapshot);
+    return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,progressSummary(allViews,!!snapshot),groupStatus,disclosure(expanded),e)+'</button>'+
+      (expanded?'<div class="development-mechanisms">'+members.map(m=>{
+        const status=developmentProgress(m.views,!!snapshot),key='mechanism:'+m.id,show=open.has(key);
+        return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.number+'. '+m.label,m.applicability+' · '+progressSummary(m.views,!!snapshot),status,disclosure(show),e)+'</button>'+
+          (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{
+            const v=m.views[i],criterionId='criterion:'+m.id+':'+c.key,details=open.has(criterionId),technicalId='technical:'+criterionId,technical=open.has(technicalId);
+            const title=plainTitles[c.key]||(mode===0&&soloTitles[c.key])||c.title;
+            const decision=ownerDecision(c,mode,v);
+            const verified=[...v.history,...v.evidence.map(x=>(x.state==='passed'?'':x.state==='historical'?'Ранее: ':'Не пройдено: ')+x.title)];
+            return '<div class="development-criterion"><button type="button" class="admin-overview-person development-criterion-head" data-dm-toggle="'+e(criterionId)+'" aria-expanded="'+details+'">'+row(m.number+'.'+(i+1)+' '+title,decision?'Нужно решение':criterionSummary(v,!!snapshot),developmentProgress([v],!!snapshot),disclosure(details),e)+'</button>'+
+              (details?'<div class="development-criterion-details">'+
+                (decision?'<section><h5>Нужно твоё решение</h5><p>'+e(decision)+'</p></section>':'<section><h5>Что дальше</h5><p>'+e(shortAction(c,v))+'</p><p>'+e(v.status==='ready'?'':'Исполнитель: AI')+'</p></section>')+
+                '<button type="button" class="admin-overview-person" data-dm-toggle="'+e(technicalId)+'" aria-expanded="'+technical+'">'+row('Технические подробности','',null,disclosure(technical),e)+'</button>'+
+                (technical?'<section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section><section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section>':'')+'</div>':'')+'</div>';
+          }).join('')+'</div>':'')+'</div>';
       }).join('')+'</div>':'')+'</section>';
   }).join('');
   const context=contexts[mode]||contexts[0];
-  return '<div class="admin-overview development-map"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Что необходимо для работы, что уже реализовано и что осталось.</p></div></div>'+
+  return '<div class="admin-overview development-map"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Покрытие профессии · закрытые и оставшиеся задачи</p></div></div>'+
     '<div class="development-root"><div class="admin-overview-app-head"><h3>Единое покрытие платформы</h3></div></div>'+
     '<div class="development-activities">'+graph+'</div>'+
     (loading?'<p class="development-message" role="status">Загрузка данных готовности…</p>':stale?'<p class="development-message" role="status">Не все сведения о готовности получены. Прежние подтверждения сохранены.</p>':'')+
     (selected?'<section id="development-scenario" class="development-scenario"><div class="admin-overview-app-head development-scenario-head"><h3>'+e(selected.name)+' <span class="admin-overview-head-suffix">/ '+e(own[mode])+'</span></h3><button class="admin-overview-close" type="button" data-dm-close aria-label="Свернуть подробности">×</button></div>'+
-      '<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Описание условий работы</h3></div><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></section>'+list+'</section>':'')+'</div>';
+      '<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Описание условий работы</h3></div><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></section>'+focus+list+'</section>':'')+'</div>';
 }
 export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}){
   if(!content)return;
@@ -212,7 +254,7 @@ export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOper
     content.innerHTML=developmentMarkup(state,escapeHtml);
     content.querySelectorAll('[data-dm-activity]').forEach(b=>b.addEventListener('click',()=>{
       const activity=b.dataset.dmActivity,mode=Number(b.dataset.dmMode);
-      state.activity=state.activity===activity&&state.mode===mode?null:activity;state.mode=mode;state.open=new Set();draw();
+      state.activity=state.activity===activity&&state.mode===mode?null:activity;state.mode=mode;state.open=state.activity?new Set(['group:workspace']):new Set();draw();
       if(state.activity)content.querySelector('#development-scenario')?.scrollIntoView({block:'start',behavior:'auto'});
     }));
     content.querySelector('[data-dm-close]')?.addEventListener('click',()=>{state.activity=null;state.open=new Set();draw();content.querySelector('.development-root')?.scrollIntoView({block:'start',behavior:'auto'});});
