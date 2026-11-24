@@ -271,6 +271,56 @@ try {
     telegrams:[],profilePhoto:'',primaryVerifiedEmail:'verified-user@example.test',
   });
   assert.deepEqual(preferred.emails,['verified-user@example.test','crm-old@example.test']);
+  const sameEmailFile=await makeReviewFile('source-same-email-review.xlsx',[
+    ['','Диана','','','','','79991118801','','shared-batch@example.test'],
+    ['','Борис','','','','','79991118802','','shared-batch@example.test'],
+  ]);
+  let repeated=await reviewer.create(tenantId,accountId,sameEmailFile);
+  assert.equal(repeated.done,0,'Repeated source Email is held for explicit identity review');
+  assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='identity'));
+  assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='email'));
+  repeated=await reviewer.decide(tenantId,repeated.id,{
+    rowNumber:3,field:'identity',mode:'different',value:'',
+  });
+  assert.equal(repeated.done,0);
+  repeated=await reviewer.decide(tenantId,repeated.id,{
+    rowNumber:3,field:'email',mode:'replace',value:'shared-batch@example.test',
+  });
+  assert.equal(repeated.done,1);
+  repeated=await reviewer.decide(tenantId,repeated.id,{
+    rowNumber:4,field:'identity',mode:'different',value:'',
+  });
+  assert.equal(repeated.done,1);
+  repeated=await reviewer.decide(tenantId,repeated.id,{
+    rowNumber:4,field:'email',mode:'keep',value:'',
+  });
+  assert.equal(repeated.done,2,'Both source rows are accounted for');
+  const splitRows=(await db.person.findMany({where:{tenantId}}))
+    .filter(x=>['Диана','Борис'].includes(x.data.name));
+  assert.equal(splitRows.length,2);
+  assert.equal(splitRows.filter(x=>x.data.emails?.includes('shared-batch@example.test')).length,1,
+    'Shared source email may be explicitly retained for just one person');
+
+  const birthdaySaved=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
+  await people.upsertPerson(tenantId,personId,{
+    person:{...birthdaySaved,birthDate:'1990-01-02'},
+  });
+  const birthdayFile=await makeReviewFile('contact-birthday-review.xlsx',[
+    ['0012','Анна','','','03.01.1990','','79991234567'],
+  ]);
+  let birthBatch=await reviewer.create(tenantId,accountId,birthdayFile);
+  assert.equal(birthBatch.done,0);
+  assert.ok(birthBatch.groups.some(group=>group.field==='identity'));
+  assert.ok(birthBatch.groups.some(group=>group.field==='birthDate'));
+  birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
+    rowNumber:3,field:'identity',mode:'same',value:personId,
+  });
+  assert.equal(birthBatch.done,0);
+  birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
+    rowNumber:3,field:'birthDate',mode:'keep',value:'',
+  });
+  assert.equal(birthBatch.done,1);
+  assert.equal((await db.person.findFirst({where:{tenantId,key:personId}})).data.birthDate,'1990-01-02');
   console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
