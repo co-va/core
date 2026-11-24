@@ -231,24 +231,37 @@ export class ContactImportService {
   }
   private async safeImport(tx:Tx,tenantId:string,values:Obj,targetId:string,decisions:Issue[]){
     const payload={...values};const ownership:Obj={};
+    const decisionIdentity=decisions.find(item=>item.field==='identity')?.decision;
+    const identityExplicitlyApproved=decisionIdentity?.mode==='same'
+      &&decisionIdentity.value===targetId;
+    if(decisionIdentity&&!['same','different'].includes(decisionIdentity.mode))
+      throw new BadRequestException('Укажите: тот же человек или другой человек');
+    if(decisionIdentity?.mode==='different'&&targetId)
+      throw new ConflictException('Выбран отдельный человек, но цель сопоставления не очищена');
     const existing=targetId?await tx.person.findFirst({where:{tenantId,key:targetId}}):null;
     if(targetId&&!existing)throw new ConflictException('Контакт изменён или удалён. Требуется повторная проверка.');
     const previous=obj(existing?.data);
     const identity=targetId?await tx.ueiState.findUnique({where:{tenantId}}):null;
     const savedCode=text(obj(obj(identity?.data).relations)['person:'+targetId]||previous.uei);
     if(targetId){
+      const sourceCandidates=findContactCandidates(
+        (await tx.person.findMany({where:{tenantId}})).map(row=>obj(row.data)),
+        obj(identity?.data),values);
+      if(identityExplicitlyApproved && !sourceCandidates.some(candidate=>candidate.key===targetId))
+        throw new ConflictException('Подтверждённое совпадение изменилось. Повторите проверку.');
       const originalPhone=phone(values.phone);
       const originalCode=code(values.uei);
       const verifiedByPhone=originalPhone&&Array.isArray(previous.phones)
         &&previous.phones.some((v:unknown)=>phone(v)===originalPhone);
       const verifiedByCode=originalCode&&code(savedCode)===originalCode;
-      if(!verifiedByPhone&&!verifiedByCode)
+      if(!verifiedByPhone&&!verifiedByCode&&!identityExplicitlyApproved)
         throw new ConflictException('Сопоставление изменилось. Проверьте код клиента или телефон.');
     }
     for(const issue of decisions){
       const decision=issue.decision;
       if(!decision)throw new BadRequestException('Сначала разрешите все различия');
       const field=issue.field;
+      if(field==='identity')continue;
       if(field==='format')throw new BadRequestException('Исправьте исходные данные строки Excel');
       if(decision.mode==='keep'||decision.mode==='remove'){
         delete payload[field];continue;
@@ -278,6 +291,12 @@ export class ContactImportService {
       throw new BadRequestException('Укажите имя контакта');
     if(!targetId&&!phone(payload.phone)&&!code(payload.uei))
       throw new BadRequestException('Для нового контакта укажите телефон или код клиента.');
+    if(decisionIdentity?.mode==='different'){
+      const current=await this.current(tx,tenantId);
+      const occupied=findContactCandidates(current.people,current.identity,payload);
+      if(occupied.some(candidate=>reliableContactCandidate(candidate)))
+        throw new ConflictException('Телефон или код всё ещё принадлежит другому человеку. Исправьте поле или выберите существующий контакт.');
+    }
     return this.people.importPerson(tenantId,payload,targetId,tx,ownership);
   }
   async decide(tenantId:string,batchId:string,body:unknown){
@@ -285,8 +304,12 @@ export class ContactImportService {
     const action=obj(body),rowNumber=Number(action.rowNumber);
     const field=text(action.field),mode=text(action.mode),value=text(action.value);
     if(!Number.isInteger(rowNumber)||rowNumber<1||!labels[field]
-      ||!['keep','replace','remove','add'].includes(mode)||value.length>500)
+      ||!['keep','replace','remove','add','same','different'].includes(mode)||value.length>500)
       throw new BadRequestException('Неверное решение для различия');
+    if(field==='identity'&&!['same','different'].includes(mode))
+      throw new BadRequestException('Укажите: тот же человек или другой человек');
+    if(field!=='identity'&&['same','different'].includes(mode))
+      throw new BadRequestException('Это решение предназначено только для сопоставления людей');
     if(mode==='add'&&!['email','additionalEmail','phone','additionalPhone',
       'telegram','additionalTelegram'].includes(field))
       throw new BadRequestException('Для этого поля возможно только исправление или сохранение прежнего значения');
@@ -313,15 +336,33 @@ export class ContactImportService {
           && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
           throw new BadRequestException('Неверный Email');
       }
-      changed.decision={mode:mode as 'keep' | 'replace' | 'remove' | 'add',value};
+      let personKey=row.personKey;
+      if(field==='identity'){
+        const state=await this.current(tx,tenantId);
+        const candidates=findContactCandidates(state.people,state.identity,obj(row.values));
+        if(mode==='same'&&!candidates.some(candidate=>candidate.key===value))
+          throw new BadRequestException('Выберите контакт из найденных совпадений');
+        if(mode==='different'&&value)
+          throw new BadRequestException('Для нового человека значение должно быть пустым');
+        changed.decision={mode:mode as 'same'|'different',value};
+        const sources=(await this.fileRows(tx,batchId)).map(item=>({
+          row:item.rowNumber,values:obj(item.values),
+        }));
+        const inspected=inspect(obj(row.values),state.people,state.identity,
+          sources,row.rowNumber,issues,changed.decision);
+        issues=inspected.issues as Issue[];
+        personKey=mode==='same'?value:'';
+      }else{
+        changed.decision={mode:mode as 'keep'|'replace'|'remove'|'add',value};
+      }
       const stillPending=issues.some(item=>!item.decision);
       if(stillPending){
         await tx.contactImportRow.update({where:{id:row.id},
-          data:{issues:issues as unknown as Prisma.InputJsonValue,error:''}});
+          data:{issues:issues as unknown as Prisma.InputJsonValue,error:'',personKey}});
       }else{
         await tx.$executeRawUnsafe('SAVEPOINT contact_import_decision');
         try{
-          const key=await this.safeImport(tx,tenantId,obj(row.values),row.personKey,issues);
+          const key=await this.safeImport(tx,tenantId,obj(row.values),personKey,issues);
           await tx.$executeRawUnsafe('RELEASE SAVEPOINT contact_import_decision');
           await tx.contactImportRow.update({where:{id:row.id},data:{
             status:'done',personKey:key,issues:issues as unknown as Prisma.InputJsonValue,error:'',
@@ -332,6 +373,7 @@ export class ContactImportService {
           // Keep all decisions but leave this row in review.
           await tx.contactImportRow.update({where:{id:row.id},data:{
             issues:issues as unknown as Prisma.InputJsonValue,
+            personKey,
             error:text((error as Error).message),
           }});
         }
