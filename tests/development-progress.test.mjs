@@ -36,3 +36,10 @@ assert.equal(criterionView({key:'records.prof',title:'Journal'},previouslyAccept
 const unverifiedMarkup=developmentMarkup({activity:'services',snapshot:snapshot([])},String);
 assert.doesNotMatch(unverifiedMarkup,/Требует доработки/);
 console.log('Development readiness evidence classification: PASS');
+const expandedDetails=developmentMarkup({activity:'services',open:new Set(['group:workspace','mechanism:workspace','criterion:workspace.profile']),snapshot:snapshot([])},String);
+assert.match(expandedDetails,/data-dm-toggle="criterion:workspace.profile" aria-expanded="true"/);
+assert.match(expandedDetails,/data-dm-toggle="criterion:workspace.multiple" aria-expanded="false"/);
+assert.match(expandedDetails,/<h5>Реализация<\/h5>/);
+assert.match(expandedDetails,/<h5>Результат проверок<\/h5>/);
+assert.match(expandedDetails,/<h5>До подтверждения<\/h5>/);
+assert.equal((expandedDetails.match(/class="development-criterion-details"/g)||[]).length,1);

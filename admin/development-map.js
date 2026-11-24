@@ -86,8 +86,8 @@ export function scenarioMechanisms(activity,mode) {
   })));
 }
 const historical={
-  'workspace.profile':['Переключение рабочего пространства подтверждено 15.11.2026.','Проверить оставшиеся действия управления пространством.'],
-  'workspace.multiple':['Переключение пространств подтверждено 15.11.2026.','Проверить независимость данных.'],
+  'workspace.profile':['Переключение рабочего пространства подтверждено 15.11.2026.','Подтвердить создание, изменение и сохранение после повторного открытия; удаление и порядок.'],
+  'workspace.multiple':['Переключение пространств подтверждено 15.11.2026.','Подтвердить отдельные графики, записи и услуги двух пространств в одном рабочем сценарии.'],
   'time.schedule':['График подтверждён 15.11.2026.','Проверить только оставшиеся сценарии.'],
   'records.prof':['Создание и редактирование записи подтверждены 15.11.2026.','Проверить неподтверждённые действия, а не заново весь Журнал.'],
   'services.execution':['Изменение услуги и оплата подтверждены 15.11.2026.','Проверить расход и историю завершения.'],
@@ -105,7 +105,7 @@ const proved=x=>x?.versions&&Object.values(x.versions).length&&Object.values(x.v
 const statusLabels={ready:'Готово',working:'В работе',unfinished:'Требует доработки',notStarted:'Не начато'};
 export function criterionView(c,snapshot,audits=[]){
   const row=snapshot?.mechanisms?.flatMap(m=>m.rows).find(r=>r.key===c.key);
-  const found=c.work?.finding||'Целевое требование. Текущая реализация ещё не обследована.';
+  const found=c.work?.finding||'Реализация не проверена.';
   const historic=historical[c.key];
   const events=eventsFor(snapshot,c.key);
   const confirmed=events.filter(x=>x.kind==='confirmed-action'||x.kind==='accepted'&&x.ownerConfirmed===true&&proved(x)&&x.remaining==='');
@@ -117,7 +117,7 @@ export function criterionView(c,snapshot,audits=[]){
   // An audit recommendation is not evidence that an existing operation fails.
   let status=['finish','verify'].includes(c.work?.state)?'pending':'unknown';
   if(checks.some(x=>['passed','historical'].includes(x.state)))status='partial';
-  let next=c.work?.next||'Сопоставить требование с существующей реализацией и проверить рабочий сценарий.';
+  let next=c.work?.next||'Проверить наличие и работу указанного действия.';
   if(row?.state==='accepted'){status='ready';next='Принято. Не повторять проверку без основания.';}
   else if(row?.accepted){status='partial';next='Прежняя приёмка сохранена; проверить влияние изменений.';}
   if(historic&&(status!=='ready'||c.key==='catalog.prof')){status=c.key==='catalog.prof'?'disputed':'partial';next=historic[1];}
@@ -187,7 +187,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
         return '<div class="development-applicability"><h4>'+e(heading)+'</h4>'+rows.map(m=>{
           const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=developmentProgress(views,!!snapshot);const key='mechanism:'+m.id;const show=open.has(key);
           return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority+' · '+activityLabel(m.id),status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
-            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(developmentProgress([v],!!snapshot),e)+'</div>'+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+v.evidence.map(x=>'<p>'+e(x.state==='passed'?'Проверено: ':x.state==='historical'?'Ранее проверено: ':'Пакет проверки не пройден: ')+e(x.title)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
+            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i],criterionId='criterion:'+c.key,details=open.has(criterionId);const verified=[...v.history,...v.evidence.map(x=>(x.state==='passed'?'':x.state==='historical'?'Ранее: ':'Не пройдено: ')+x.title)];return '<div class="development-criterion"><button type="button" class="admin-overview-person development-criterion-head" data-dm-toggle="'+e(criterionId)+'" aria-expanded="'+details+'">'+row(c.title,'',developmentProgress([v],!!snapshot),'<span class="development-disclosure" aria-hidden="true">'+(details?'▾':'▸')+'</span>',e)+'</button>'+(details?'<div class="development-criterion-details"><section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section>'+(v.candidate?'<section><h5>Новое изменение</h5><p>'+e(v.candidate)+'</p></section>':'')+'<section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section></div>':'')+'</div>';}).join('')+'</div>':'')+'</div>';
         }).join('')+'</div>';
       }).join('')+'</div>':'')+'</section>';
   }).join('');
@@ -211,7 +211,7 @@ export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOper
       if(state.activity)content.querySelector('#development-scenario')?.scrollIntoView({block:'start',behavior:'auto'});
     }));
     content.querySelector('[data-dm-close]')?.addEventListener('click',()=>{state.activity=null;state.open=new Set();draw();content.querySelector('.development-root')?.scrollIntoView({block:'start',behavior:'auto'});});
-    content.querySelectorAll('[data-dm-toggle]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.dmToggle;if(state.open.has(id))state.open.delete(id);else state.open.add(id);draw();[...content.querySelectorAll('[data-dm-toggle]')].find(el=>el.dataset.dmToggle===id)?.focus({preventScroll:true});}));
+    content.querySelectorAll('[data-dm-toggle]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.dmToggle;if(state.open.has(id))state.open.delete(id);else{if(id.startsWith('criterion:'))for(const k of state.open)if(k.startsWith('criterion:'))state.open.delete(k);state.open.add(id);}draw();[...content.querySelectorAll('[data-dm-toggle]')].find(el=>el.dataset.dmToggle===id)?.focus({preventScroll:true});}));
   };
   async function refresh(){
     const id=++request;state.loading=true;draw();
