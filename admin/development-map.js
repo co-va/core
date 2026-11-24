@@ -70,7 +70,6 @@ const team=['participants','permissions','compensation'];
 const growth=['loyalty','marketing','analytics','planning'];
 const own=['Самостоятельная работа','Работа с сотрудниками','Работа по найму'];
 export const ACTIVITIES=[{id:'services',name:'Оказание услуг',ids:service},{id:'trade',name:'Продажа товаров',ids:trade}];
-const places=['Собственное помещение','Арендованное помещение','Арендованное рабочее место','Пространство работодателя','Выездная / дистанционная работа'];
 const optional=new Set(['resources','orders','logistics','service-stages','loyalty','marketing','analytics','planning','integration','quality']);
 export function scenarioMechanisms(activity,mode) {
   const act=ACTIVITIES.find(a=>a.id===activity);
@@ -128,38 +127,62 @@ export function criterionView(c,snapshot,audits=[]){
 }
 const aggregate=views=>views.every(v=>v.status==='ready')?'ready':views.every(v=>v.status==='unknown')?'unknown':views.some(v=>v.status==='ready'||v.status==='partial')?'partial':views.some(v=>v.status==='unfinished')?'unfinished':views.some(v=>v.status==='disputed')?'disputed':'pending';
 const icon=status=>status==='ready'?'✓':status==='unfinished'?'!':status==='partial'?'◐':status==='disputed'?'?':'○';
-const mark=(status,e)=>'<span class="dm-status dm-status--'+status+'"><span aria-hidden="true">'+icon(status)+'</span> '+e(statusLabels[status])+'</span>';
-export function developmentMarkup({activity='services',mode=0,open=new Set(),snapshot=null,audits=[],loading=false,stale=false,zoom=1},e){
-  const scenario=scenarioMechanisms(activity,mode);
-  const graph=ACTIVITIES.map(a=>'<div class="dm-branch"><div class="dm-activity">'+e(a.name)+'</div><div class="dm-modes">'+own.map((name,i)=>'<button type="button" class="dm-mode'+(a.id===activity&&mode===i?' is-selected':'')+'" data-dm-activity="'+a.id+'" data-dm-mode="'+i+'" aria-pressed="'+(a.id===activity&&mode===i)+'">'+e(name)+'</button>').join('')+'</div></div>').join('');
-  const list=sections.map(([section])=>{
-    const rows=scenario.filter(m=>m.section===section);
-    if(!rows.length)return '';
-    return '<section class="dm-group"><h3>'+e(section)+'</h3><div class="dm-mechanisms">'+rows.map(m=>{
-      const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=aggregate(views);const expanded=open.has(m.id);
-      return '<article class="dm-mechanism"><button class="dm-mechanism-head" type="button" data-dm-toggle="'+m.id+'" aria-expanded="'+expanded+'"><span class="dm-mechanism-title">'+e(m.label)+'</span><span class="dm-chevron" aria-hidden="true">'+(expanded?'−':'+')+'</span><span class="dm-meta">'+e(m.applicability)+' · '+e(m.priority)+'</span>'+mark(status,e)+'</button>'+
-        (expanded?'<div class="dm-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="dm-criterion"><div class="dm-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(v.status,e)+'</div>'+ (v.deferred?'<p class="dm-deferred">Отложено по решению владельца</p>':'') +'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p class="dm-history">'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p class="dm-next"><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</article>';
-    }).join('')+'</div></section>';
-  }).join('');
+const mark=(status,e)=>'<span class="admin-overview-person-status development-status"><span aria-hidden="true">'+icon(status)+'</span> '+e(statusLabels[status])+'</span>';
+const scopeGroups=[['Основные механизмы','Основной'],['Дополнительные механизмы','При необходимости'],['По полномочиям','По полномочиям']];
+const contexts=[
+  {places:['Собственное помещение','Аренда помещения или рабочего места','Выездная / дистанционная работа'],roles:'Работает сам. Может привлекать помощников.',finance:'Собственные доходы, расходы и обязательства.'},
+  {places:['Собственное помещение','Аренда помещения или рабочих мест','Выездная / дистанционная работа'],roles:'Организует работу сотрудников и может работать сам.',finance:'Доходы и расходы деятельности, выплаты сотрудникам.'},
+  {places:['Пространство работодателя','Выездная / дистанционная работа по заданию работодателя'],roles:'Работает в пределах предоставленных полномочий. Может взаимодействовать с помощниками.',finance:'Личное вознаграждение; операции работодателя — по полномочиям.'}
+];
+function row(title,sub,status,extra,e){
+  return '<span><strong>'+e(title)+'</strong>'+(sub?'<small>'+e(sub)+'</small>':'')+'</span><span class="development-row-end">'+(status?mark(status,e):'')+extra+'</span>';
+}
+export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=null,audits=[],loading=false,stale=false},e){
   const selected=ACTIVITIES.find(a=>a.id===activity);
-  return '<section class="dm"><div class="admin-heading dm-heading"><div><h2>Карта развития</h2><p>Что необходимо для работы, что уже реализовано и что осталось.</p></div><div class="dm-actions"><button type="button" data-dm-zoom="-1" aria-label="Уменьшить масштаб">−</button><button type="button" data-dm-zoom="0" aria-label="Сбросить масштаб">'+Math.round(zoom*100)+'%</button><button type="button" data-dm-zoom="1" aria-label="Увеличить масштаб">+</button><button type="button" data-dm-refresh '+(loading?'disabled':'')+'>'+(loading?'Обновление…':'Обновить')+'</button></div></div>'+
-    (stale?'<p class="dm-notice">Не все сведения о готовности получены. Прежние подтверждения не отменены.</p>':'')+
-    '<div class="dm-viewport"><div class="dm-map" style="--dm-scale:'+zoom+'"><div class="dm-root">Единое покрытие платформы</div><div class="dm-fork">'+graph+'</div><div class="dm-context"><h3>'+e(selected.name)+' / '+e(own[mode])+'</h3><div class="dm-condition"><strong>Условия работы</strong><div>'+places.map(p=>'<span>'+e(p)+'</span>').join('')+'</div><p>Помощники и сотрудники могут участвовать при любом подходящем условии. Механизмы общие; конкретные полномочия и расходы зависят от условий.</p></div><p class="dm-caption">Основной / при необходимости / по полномочиям — применимость. Приоритеты предварительные, не состав тарифов. Новые требования включены в карту, но ещё не обследованы.</p></div>'+list+'</div></div></section>';
+  const scenario=selected?scenarioMechanisms(activity,mode):[];
+  const graph=ACTIVITIES.map(a=>'<section class="admin-overview-panel development-activity"><div class="admin-overview-panel-head"><h3>'+e(a.name)+'</h3></div>'+
+    own.map((name,i)=>{const active=a.id===activity&&mode===i;
+      return '<button type="button" class="admin-overview-person development-mode" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'" aria-expanded="'+active+'"'+(active?' aria-controls="development-scenario"':'')+'>'+row(name,active?'Выбрано':'',null,'<span class="development-disclosure" aria-hidden="true">'+(active?'▾':'▸')+'</span>',e)+'</button>';
+    }).join('')+'</section>').join('');
+  const list=scopeGroups.map(([heading,applicability])=>{
+    const members=scenario.filter(m=>m.applicability===applicability);
+    if(!members.length)return '';
+    return '<section class="development-scope"><div class="admin-overview-app-head"><h3>'+e(heading)+'</h3></div>'+
+      sections.map(([section])=>{
+        const rows=members.filter(m=>m.section===section);
+        if(!rows.length)return '';
+        const groupId=applicability+':'+section;
+        const expanded=open.has(groupId);
+        const groupStatus=aggregate(rows.flatMap(m=>m.criteria.map(c=>criterionView(c,snapshot,audits))));
+        return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,rows.length+' '+(rows.length===1?'механизм':rows.length<5?'механизма':'механизмов'),groupStatus,'<span class="development-disclosure" aria-hidden="true">'+(expanded?'▾':'▸')+'</span>',e)+'</button>'+
+          (expanded?'<div class="development-mechanisms">'+rows.map(m=>{
+            const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=aggregate(views);const key=groupId+':'+m.id;const show=open.has(key);
+            return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority,status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
+              (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(v.status,e)+'</div>'+(v.deferred?'<p>Отложено по решению владельца</p>':'')+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
+          }).join('')+'</div>':'')+'</section>';
+      }).join('')+'</section>';
+  }).join('');
+  const context=contexts[mode]||contexts[0];
+  return '<div class="admin-overview development-map"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Что необходимо для работы, что уже реализовано и что осталось.</p></div></div>'+
+    '<div class="development-root"><div class="admin-overview-app-head"><h3>Единое покрытие платформы</h3></div></div>'+
+    '<div class="development-activities">'+graph+'</div>'+
+    (loading?'<p class="development-message" role="status">Загрузка данных готовности…</p>':stale?'<p class="development-message" role="status">Не все сведения о готовности получены. Прежние подтверждения сохранены.</p>':'')+
+    (selected?'<section id="development-scenario" class="development-scenario"><div class="admin-overview-app-head development-scenario-head"><h3>'+e(selected.name)+' <span class="admin-overview-head-suffix">/ '+e(own[mode])+'</span></h3><button class="admin-overview-close" type="button" data-dm-close aria-label="Свернуть подробности">×</button></div>'+
+      '<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Условия работы</h3></div><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></section>'+list+'</section>':'')+'</div>';
 }
 export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}){
   if(!content)return;
-  let state={activity:'services',mode:0,open:new Set(),snapshot:null,audits:[],loading:false,stale:false,zoom:1},request=0;
+  let state={activity:null,mode:0,open:new Set(),snapshot:null,audits:[],loading:false,stale:false},request=0;
   const draw=()=>{
     if(!isCurrent())return;
-    const prior=content.querySelector('.dm-viewport');
-    const pos=prior?{left:prior.scrollLeft,top:prior.scrollTop}:null;
     content.innerHTML=developmentMarkup(state,escapeHtml);
-    const viewport=content.querySelector('.dm-viewport');
-    if(pos&&viewport){viewport.scrollLeft=pos.left;viewport.scrollTop=pos.top;}
-    content.querySelectorAll('[data-dm-activity]').forEach(b=>b.addEventListener('click',()=>{state.activity=b.dataset.dmActivity;state.mode=Number(b.dataset.dmMode);state.open=new Set();draw();}));
-    content.querySelectorAll('[data-dm-toggle]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.dmToggle;if(state.open.has(id))state.open.delete(id);else state.open.add(id);draw();content.querySelector('[data-dm-toggle="'+id+'"]')?.focus({preventScroll:true});}));
-    content.querySelectorAll('[data-dm-zoom]').forEach(b=>b.addEventListener('click',()=>{const step=Number(b.dataset.dmZoom);state.zoom=step?Math.max(0.9,Math.min(1.8,Math.round((state.zoom+step*.1)*10)/10)):1;draw();}));
-    content.querySelector('[data-dm-refresh]')?.addEventListener('click',refresh);
+    content.querySelectorAll('[data-dm-activity]').forEach(b=>b.addEventListener('click',()=>{
+      const activity=b.dataset.dmActivity,mode=Number(b.dataset.dmMode);
+      state.activity=state.activity===activity&&state.mode===mode?null:activity;state.mode=mode;state.open=new Set();draw();
+      if(state.activity)content.querySelector('#development-scenario')?.scrollIntoView({block:'start',behavior:'auto'});
+    }));
+    content.querySelector('[data-dm-close]')?.addEventListener('click',()=>{state.activity=null;state.open=new Set();draw();content.querySelector('.development-root')?.scrollIntoView({block:'start',behavior:'auto'});});
+    content.querySelectorAll('[data-dm-toggle]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.dmToggle;if(state.open.has(id))state.open.delete(id);else state.open.add(id);draw();[...content.querySelectorAll('[data-dm-toggle]')].find(el=>el.dataset.dmToggle===id)?.focus({preventScroll:true});}));
   };
   async function refresh(){
     const id=++request;state.loading=true;draw();
