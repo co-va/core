@@ -6,6 +6,8 @@ const { PrismaClient } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const { DataTransferService } = require('../dist/data-transfer/data-transfer.service.js');
 const { ContactImportService } = require('../dist/data-transfer/contact-import.service.js');
+const { readSource } = require('../dist/data-transfer/source.js');
+const { peopleExcelFacts, CONTACT_COLUMNS } = require('../dist/data-transfer/contacts-excel.js');
 const { inspectContactRow } = require('../dist/data-transfer/contact-review-inspect.js');
 const { PersonIdentityService } = require('../dist/online-booking/person-identity.service.js');
 const { BusinessStateService } = require('../dist/business-state/business-state.service.js');
@@ -46,6 +48,36 @@ try {
   await db.profile.create({data:{tenantId,platformAccountId:accountId,phones:[],emails:[],telegrams:[],customProfessions:[]}});
   await db.tenantAccess.create({data:{tenantId,commercialMode:'LIVE',isOwnerBook:true}});
   await db.businessAuxiliaryState.create({data:{tenantId,data:{wallets:[{id:'cash',name:'Наличные'}]}}});
+  // Excel percentage-formatted numeric cells are fractions internally.
+  // Import exactly what the professional sees, without requiring review.
+  const percentBook = new ExcelJS.Workbook();
+  const percentSheet = percentBook.addWorksheet('Люди');
+  const percentHeaders = CONTACT_COLUMNS.filter(col => !col.hidden).map(col => col.label);
+  percentSheet.addRow(percentHeaders);
+  for (const [index, discount] of [0.2, 1, 20, '0.2'].entries()) {
+    const cells = Object.fromEntries(percentHeaders.map(header => [header, '']));
+    cells['Код клиента'] = String(800 + index);
+    cells['Имя'] = 'Проценты ' + index;
+    cells['Телефон'] = '7999101000' + index;
+    cells['Скидка, %'] = discount;
+    const excelRow = percentSheet.addRow(percentHeaders.map(header => cells[header]));
+    if (index < 2) excelRow.getCell(6).numFmt = '0%';
+  }
+  const percentInput = {
+    filename:'contacts-percent-format.xlsx',
+    source:'suite',
+    dataUrl:'data:application/octet-stream;base64,'
+      + Buffer.from(await percentBook.xlsx.writeBuffer()).toString('base64'),
+  };
+  const parsedPercents = await readSource(percentInput);
+  assert.deepEqual(parsedPercents.sheets[0].rows.map(row => row[5]),[20,100,20,'0.2']);
+  const percentFacts = peopleExcelFacts(parsedPercents.sheets,parsedPercents.fingerprint);
+  assert.deepEqual(percentFacts.map(fact => fact.values.discountPercent),[20,100,20,0.2]);
+  assert.equal(inspectContactRow(percentFacts[0].values,[],{},[],2).issues
+    .some(issue => issue.field === 'discountPercent'),false);
+  assert.equal(inspectContactRow(percentFacts[1].values,[],{},[],3).issues
+    .some(issue => issue.field === 'discountPercent'),false);
+  console.log('PASS: Excel 20% and 100% styles import as 20 and 100 without discount review');
   // Preview uses the real domain/trigger paths and must leave zero saved facts.
   let result=await run('people',[{...person,externalId:'p1'}],true);assert.equal(result.failed,0);
   assert.equal(await db.person.count({where:{tenantId}}),0);assert.equal(await db.dataTransferFact.count({where:{tenantId}}),0);
@@ -341,9 +373,7 @@ try {
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'email',mode:'replace',value:'shared.import@example.test'});
   assert.equal(review.done,3);
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'identity',mode:'different',value:''});
-  assert.equal(review.done,3);
-  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'email',mode:'keep'});
-  assert.equal(review.done,4);
+  assert.equal(review.done,4,'Different person skips Email already assigned to Sasha');
   assert.equal(review.pending,0);
   assert.equal(review.status,'completed');
   const uploadedPeople=await db.person.findMany({where:{tenantId}});
@@ -822,17 +852,42 @@ try {
     repeated=await reviewer.decide(tenantId,repeated.id,{
       rowNumber:4,field:'identity',mode:'different',value:'',
     });
-    assert.equal(repeated.done,1);
-    repeated=await reviewer.decide(tenantId,repeated.id,{
-      rowNumber:4,field:'email',mode:'keep',value:'',
-    });
-    assert.equal(repeated.done,2,'Both source rows are accounted for');
+    assert.equal(repeated.done,2,'Second independent person skips already-owned Email');
     const splitRows=(await db.person.findMany({where:{tenantId}}))
       .filter(x=>['Диана','Борис'].includes(x.data.name));
     assert.equal(splitRows.length,2);
     assert.equal(splitRows.filter(x=>x.data.emails?.includes('shared-batch@example.test')).length,1,
       'Shared source email may be explicitly retained for just one person');
   
+    // Two different people may share an Email in Excel. Confirming
+    // "Другой человек" creates the new person WITHOUT the Email already
+    // owned by the existing person; no second Email confirmation is needed.
+    const existingEvgenia={
+      key:'import-existing-evgenia-'+randomUUID(),name:'Евгения',
+      phones:['+79991118891'],emails:['evgenia.claimed@example.test'],
+    };
+    await people.upsertPerson(tenantId,existingEvgenia.key,{person:existingEvgenia});
+    const nataliaInput=await makeReviewFile('natalia-other-person.xlsx',[[
+      '811','Наталья','','Ж','','','79991118892',
+      '','evgenia.claimed@example.test',
+    ]]);
+    let nataliaBatch=await reviewer.create(tenantId,accountId,nataliaInput);
+    assert.equal(nataliaBatch.done,0);
+    assert.ok(nataliaBatch.issues.some(x=>x.field==='identity'));
+    nataliaBatch=await reviewer.decide(tenantId,nataliaBatch.id,{
+      rowNumber:3,field:'identity',mode:'different',value:'',
+    });
+    assert.equal(nataliaBatch.done,1,
+      'Different person with someone else\'s Email needs no second Email decision');
+    const natalia=(await db.person.findMany({where:{tenantId}}))
+      .find(row=>row.data.name==='Наталья');
+    assert.ok(natalia,'Separate contact was created');
+    assert.ok(natalia.data.phones.some(phone=>phone.replace(/\D/g,'')==='79991118892'));
+    assert.ok(!(natalia.data.emails||[]).includes('evgenia.claimed@example.test'));
+    const evgeniaAfter=await db.person.findFirst({
+      where:{tenantId,key:existingEvgenia.key},
+    });
+    assert.deepEqual(evgeniaAfter.data.emails,['evgenia.claimed@example.test']);
     const birthdaySaved=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
     await people.upsertPerson(tenantId,personId,{
       person:{...birthdaySaved,birthDate:'1990-01-02'},

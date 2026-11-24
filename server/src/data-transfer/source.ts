@@ -47,9 +47,29 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
     workbook.eachSheet(sheet => {
       const header = sheet.getRow(1); const headers: string[] = [];
       for (let col = 1; col <= sheet.columnCount; col++) headers.push(text(cellValue(header.getCell(col).value)));
+      // Excel stores percentage-formatted cells as fractions:
+      // 20% -> 0.2; 100% -> 1. Convert ONLY cells in the named Contacts
+      // discount column with a real percentage number format. Plain numeric
+      // cells (20, 1, 0.2) must retain their literal percent-point values.
+      // No other workbook/domain or field is reinterpreted.
+      const groupedContacts = sheet.name === 'Люди' && headers[0] === 'Личные данные';
+      const contactHeaders = groupedContacts
+        ? headers.map((_, col) => text(cellValue(sheet.getRow(2).getCell(col + 1).value)))
+        : headers;
+      const contactDiscountColumn = ['Люди','Данные'].includes(sheet.name)
+        && contactHeaders.includes('Имя') && contactHeaders.includes('Телефон')
+        ? contactHeaders.indexOf('Скидка, %') : -1;
       const rows: any[][] = [];
       for (let row = 2; row <= sheet.rowCount; row++) {
-        const values = headers.map((_, col) => cellValue(sheet.getCell(row, col + 1).value)); rows.push(values);
+        const values = headers.map((_, col) => cellValue(sheet.getCell(row, col + 1).value));
+        if (contactDiscountColumn >= 0 && (!groupedContacts || row > 2)) {
+          const discountCell = sheet.getCell(row, contactDiscountColumn + 1);
+          const format = String(discountCell.numFmt || '').replace(/"[^"]*"/g, '');
+          if (typeof discountCell.value === 'number' && /(^|[^\\])%/.test(format)) {
+            values[contactDiscountColumn] = Number((discountCell.value * 100).toFixed(10));
+          }
+        }
+        rows.push(values);
       }
       if (headers.some(Boolean)) sheets.push({ name: sheet.name, headers, rows, date1904: workbook.properties.date1904 === true });
     });

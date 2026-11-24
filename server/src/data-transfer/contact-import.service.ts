@@ -7,7 +7,7 @@ import { SaasAccessService } from '../saas-access/saas-access.service';
 import { peopleExcelFacts, contactBirthday } from './contacts-excel';
 import { inspectContactRow } from './contact-review-inspect';
 import type { ReviewIssue } from './contact-review-inspect';
-import { findContactCandidates, reliableContactCandidate } from './contact-identity';
+import { contactMatches, findContactCandidates, reliableContactCandidate } from './contact-identity';
 import { readSource, SourceInput, Sheet } from './source';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { normalizeUEI } from '../../../core/uei-format.js';
@@ -301,6 +301,15 @@ export class ContactImportService {
       throw new BadRequestException('Для нового контакта укажите телефон или код клиента.');
     if(decisionIdentity?.mode==='different'){
       const current=await this.current(tx,tenantId);
+      // An independent person never inherits another Person's Email.
+      // Identity decisions are checked again under the tenant transaction
+      // lock so concurrent imports cannot silently duplicate it.
+      for(const field of ['email','additionalEmail'] as const){
+        if(!text(payload[field]))continue;
+        if(current.people.some(person=>
+          contactMatches(person,current.identity,field,payload[field])))
+          delete payload[field];
+      }
       const occupied=findContactCandidates(current.people,current.identity,payload);
       if(occupied.some(candidate=>reliableContactCandidate(candidate)))
         throw new ConflictException('Телефон или код всё ещё принадлежит другому человеку. Исправьте поле или выберите существующий контакт.');

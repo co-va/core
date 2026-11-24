@@ -7,7 +7,7 @@ import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublic
 import { renderTariffWorkbench } from './tariff-workbench.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { renderCommercialFinance } from './commercial-finance.js';
-import { renderOperationalReadiness } from './operational-readiness.js';
+import { renderDevelopmentMap } from './development-map.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
@@ -353,10 +353,10 @@ const ADMIN_SECTIONS = [
   { id: 'tariffs', label: 'Тарифы', icon: 'tags' },
   { id: 'finance', label: 'Финансы', icon: 'finance' },
   { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
+  { id: 'operational-readiness', label: 'Карта развития', icon: 'settings', desktopOnly: true },
 ];
 
 function adminSectionLabel() {
-  if (state.section === 'operational-readiness') return 'Готовность';
   return ADMIN_SECTIONS.find((item) => item.id === state.section)?.label || 'Пользователи';
 }
 
@@ -394,7 +394,9 @@ function bindAdminSessionControls() {
 }
 
 function renderMobileShell() {
-  const deck = v2CardDeck(ADMIN_SECTIONS, { active: state.section === 'operational-readiness' ? 'overview' : state.section, data: 'data-section' })
+  const mobileSections = ADMIN_SECTIONS.filter((item) => !item.desktopOnly);
+  if (!mobileSections.some((item) => item.id === state.section)) state.section = 'overview';
+  const deck = v2CardDeck(mobileSections, { active: state.section, data: 'data-section' })
     + '<div class="admin-mobile-deck-footer"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
     + adminSessionIcon('push')
     + adminSessionIcon('logout') + '</div>';
@@ -422,9 +424,9 @@ function renderMobileShell() {
     }
   };
   const stopNavigation = initV2WorkspaceInteraction(root, {
-    activeId: state.section === 'operational-readiness' ? 'overview' : state.section,
+    activeId: state.section,
     onRootSelect: (id) => {
-      if (!ADMIN_SECTIONS.some((item) => item.id === id)) return;
+      if (!mobileSections.some((item) => item.id === id)) return;
       toggleDeck(false);
       state.section = id;
       renderCurrentSection();
@@ -476,19 +478,19 @@ function setActiveSection(title) {
   const titleNode = app.querySelector('[data-toolbar-title], .admin-mobile-app .v2-header__title-label');
   if (titleNode) titleNode.textContent = title;
   app.querySelectorAll('[data-section]').forEach((button) => {
-    button.classList.toggle('is-active', button.dataset.section === (state.section === 'operational-readiness' ? 'overview' : state.section));
+    button.classList.toggle('is-active', button.dataset.section === (state.section));
   });
 }
 
 function renderCurrentSection() {
   if (state.section === 'overview') return renderOverview();
   if (state.section === 'operational-readiness') {
-    setActiveSection('Готовность');
+    setActiveSection('Карта развития');
     const content = app.querySelector('[data-content]');
     const token = Symbol('operational-readiness');
     if (!content) return;
     content.operationalReadinessToken = token;
-    return renderOperationalReadiness(content, { escapeHtml, onBack: () => { state.section = 'overview'; renderCurrentSection(); }, isCurrent: () => Boolean(state.admin) && state.section === 'operational-readiness' && content.isConnected && content.operationalReadinessToken === token });
+    return renderDevelopmentMap(content, { escapeHtml, isCurrent: () => Boolean(state.admin) && state.section === 'operational-readiness' && content.isConnected && content.operationalReadinessToken === token });
   }
   if (state.section === 'document-registry') {
     return renderDocumentRegistry(app.querySelector('[data-content]'), {
@@ -1153,10 +1155,6 @@ function renderOverview() {
             </div>
           `).join('')}
         </div>
-        <section class="admin-overview-panel">
-          <div class="admin-overview-panel-head"><h3>Операционная готовность</h3></div>
-          <button type="button" class="admin-overview-panel-link" data-overview-section="operational-readiness">Открыть карту готовности <span aria-hidden="true">↗</span></button>
-        </section>
       </section>
     </div>`;
 

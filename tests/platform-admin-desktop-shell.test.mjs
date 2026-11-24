@@ -28,6 +28,7 @@ runInNewContext(source.slice(start, end) + '\nrenderShell();', {
     { id: 'tenants', label: 'Пользователи', icon: 'people' },
     { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
     { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
+    { id: 'operational-readiness', label: 'Карта развития', icon: 'settings', desktopOnly: true },
   ],
   v2NavigationIcon,
   escapeHtml: (value) => String(value),
@@ -47,8 +48,8 @@ assert.match(shellHtml, /data-session-icon="push"/, 'PUSH action must remain in 
 assert.match(shellHtml, /data-session-icon="logout"/, 'Logout action must remain in shell');
 const menu = shellHtml.match(/<nav class="admin-nav"[^>]*>([\s\S]*?)<\/nav>/)?.[1] || '';
 const entries = [...menu.matchAll(/data-section="([^"]+)"/g)].map((match) => match[1]);
-assert.deepEqual(entries, ['overview', 'tenants', 'capabilities', 'document-registry']);
-assert.equal((menu.match(/class="v2-nav-icon"/g) || []).length, 4, 'All desktop menu entries must have the shared navigation icon');
+assert.deepEqual(entries, ['overview', 'tenants', 'capabilities', 'document-registry', 'operational-readiness']);
+assert.equal((menu.match(/class="v2-nav-icon"/g) || []).length, 5, 'All desktop menu entries must have the shared navigation icon');
 const documentEntry = menu.match(/<button[^>]+data-section="document-registry"[^>]*>([\s\S]*?)<\/button>/)?.[1] || '';
 assert.match(documentEntry, /<svg[^>]*>[\s\S]*M15 3v5h5/, 'Document registry icon must look like a folded sheet of paper');
 console.log('Platform Admin desktop shell mount point: PASS');
