@@ -1,5 +1,5 @@
 <!-- Generated from admin/index.source.html and the Admin UI by scripts/build-admin-preview.mjs. Do not edit directly. -->
-<!-- content-sha256: 95f5d37c79c3 -->
+<!-- content-sha256: 09a17886fb9b -->
 <!doctype html>
 <html lang="ru">
 <head>
@@ -1062,10 +1062,6 @@ ${Ft(t)}
           </div>
         </div>
       </section>
-      <section class="admin-overview-panel">
-        <div class="admin-overview-panel-head"><h3>\u041E\u043F\u0435\u0440\u0430\u0446\u0438\u043E\u043D\u043D\u0430\u044F \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u044C</h3></div>
-        <button type="button" class="admin-overview-panel-link" data-overview-section="operational-readiness">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043A\u0430\u0440\u0442\u0443 \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u0438 <span aria-hidden="true">\u2197</span></button>
-      </section>
       <section class="admin-overview-tools-section">
         <div class="admin-overview-app-head">
           <h3>\u0413\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u044C \u0444\u0443\u043D\u043A\u0446\u0438\u0439 <span class="admin-overview-head-suffix">/ \u0418\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u044B</span></h3>
@@ -1090,6 +1086,10 @@ ${Ft(t)}
             </div>
           `).join("")}
         </div>
+        <section class="admin-overview-panel">
+          <div class="admin-overview-panel-head"><h3>\u041E\u043F\u0435\u0440\u0430\u0446\u0438\u043E\u043D\u043D\u0430\u044F \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u044C</h3></div>
+          <button type="button" class="admin-overview-panel-link" data-overview-section="operational-readiness">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043A\u0430\u0440\u0442\u0443 \u0433\u043E\u0442\u043E\u0432\u043D\u043E\u0441\u0442\u0438 <span aria-hidden="true">\u2197</span></button>
+        </section>
       </section>
     </div>`,$e==="idle"&&bs(),e.querySelectorAll("[data-overview-group]").forEach(g=>{g.addEventListener("click",()=>{we=we===g.dataset.overviewGroup?"":g.dataset.overviewGroup,Q="",at()})}),e.querySelector("[data-overview-close]")?.addEventListener("click",()=>{we="",at()}),e.querySelectorAll("[data-overview-weeks]").forEach(g=>{g.addEventListener("click",()=>{et=Number(g.dataset.overviewWeeks)||8,at()})}),e.querySelectorAll("[data-overview-tenant]").forEach(g=>{g.addEventListener("click",()=>{A.section="tenants",ce(),Ct(g.dataset.overviewTenant)})}),e.querySelectorAll("[data-overview-section]").forEach(g=>{g.addEventListener("click",()=>{A.section=g.dataset.overviewSection,ce()})})}i(at,"renderOverview");function Ss(e,t=()=>{}){let n=A.tenants.find(o=>o.tenantId===e);if(!n||n.isOwnerBook)return;let a=n.ownerProfile?.name||n.invitation?.name||n.tenantName||"\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C",r=n.ownerProfile?.email||n.invitation?.email||"",s=document.createElement("div");s.className="admin-delete-backdrop",s.innerHTML=`
     <section class="admin-delete-modal" role="dialog" aria-modal="true" aria-labelledby="admin-delete-title">
