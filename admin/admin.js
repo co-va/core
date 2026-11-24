@@ -1129,10 +1129,6 @@ function renderOverview() {
           </div>
         </div>
       </section>
-      <section class="admin-overview-panel">
-        <div class="admin-overview-panel-head"><h3>Операционная готовность</h3></div>
-        <button type="button" class="admin-overview-panel-link" data-overview-section="operational-readiness">Открыть карту готовности <span aria-hidden="true">↗</span></button>
-      </section>
       <section class="admin-overview-tools-section">
         <div class="admin-overview-app-head">
           <h3>Готовность функций <span class="admin-overview-head-suffix">/ Инструменты</span></h3>
@@ -1157,6 +1153,10 @@ function renderOverview() {
             </div>
           `).join('')}
         </div>
+        <section class="admin-overview-panel">
+          <div class="admin-overview-panel-head"><h3>Операционная готовность</h3></div>
+          <button type="button" class="admin-overview-panel-link" data-overview-section="operational-readiness">Открыть карту готовности <span aria-hidden="true">↗</span></button>
+        </section>
       </section>
     </div>`;
 

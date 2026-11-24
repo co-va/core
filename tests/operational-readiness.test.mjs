@@ -31,3 +31,11 @@ assert.match(markup,/start.service/);
 assert.doesNotMatch(markup,/<input/);
 assert.match(readinessMarkup(null,String),/Проценты не определены/);
 console.log('Operational coverage projection: PASS');
+
+// Owner-approved placement: common platform coverage belongs to Tools readiness, not User accounts.
+const adminSource = (await import('node:fs')).readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
+const overview = adminSource.slice(adminSource.indexOf('function renderOverview()'),adminSource.indexOf('function openDeleteTenantModal('));
+const toolsStart = overview.indexOf('<section class="admin-overview-tools-section">');
+const operational = overview.indexOf('data-overview-section="operational-readiness"');
+assert.ok(toolsStart >= 0 && operational > overview.indexOf('data-overview-tool-app=', toolsStart) && operational < overview.indexOf('</section>', operational), 'Operational readiness follows both application tool panels inside shared readiness section');
+assert.equal(overview.split('data-overview-section="operational-readiness"').length,2);
