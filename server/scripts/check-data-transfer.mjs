@@ -384,6 +384,23 @@ try {
   const withExtra=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
   assert.ok(withExtra.data.emails.includes('ksenia@example.test'));
   assert.ok(withExtra.data.emails.includes('ksenia.extra@example.test'));
+  const discountBook=new ExcelJS.Workbook();
+  await discountBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  discountBook.worksheets[0].getRow(3).values=[
+    '','Татьяна','','Ж','',0.2,'79997774504',
+  ];
+  const discountInput={filename:'fractional-discount-review.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await discountBook.xlsx.writeBuffer()).toString('base64')};
+  let discountBatch=await reviewer.create(tenantId,accountId,discountInput);
+  assert.equal(discountBatch.done,0,'Ambiguous 0.2 discount requires confirmation');
+  assert.ok(discountBatch.groups.some(x=>x.field==='discountPercent'));
+  discountBatch=await reviewer.decide(tenantId,discountBatch.id,{
+    rowNumber:3,field:'discountPercent',mode:'replace',value:'20',
+  });
+  assert.equal(discountBatch.done,1);
+  const tanya=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Татьяна'}}});
+  assert.equal(Number(tanya.data.discountPercent),20);
   console.log('PASS: durable Contacts review, field groups, note, safe-first import, no duplicates and completed progress');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
   // Journal: six named groups plus standalone fields, same identity order as Contacts, and
