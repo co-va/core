@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { developmentProgress, criterionView, developmentMarkup } from '../admin/development-map.js';
+import { developmentProgress, criterionView, developmentMarkup, plannedQueue, scenarioMechanisms } from '../admin/development-map.js';
 const row=(key,status,deferred=false)=>({key,status,deferred});
 assert.deepEqual(developmentProgress([row('a','ready'),row('a','ready'),row('b','pending')]),{status:'working',percent:50});
 assert.deepEqual(developmentProgress([row('a','ready'),row('b','unfinished')]),{status:'unfinished',percent:50});
@@ -60,3 +60,13 @@ assert.match(full,/data-dm-toggle="mechanism:workspace"/);
 assert.match(full,/data-dm-toggle="mechanism:records"/);
 assert.match(full,/data-dm-toggle="mechanism:finance"/);
 assert.match(full,/data-dm-toggle="mechanism:integration"/);
+
+const planned= scenarioMechanisms('services',0).map((m,i)=>({...m,number:i+1,views:m.criteria.map(c=>criterionView(c,snapshot([])))}));
+const queue=plannedQueue(planned,snapshot([]));
+assert.ok(queue.ranks.get('records.core')>queue.ranks.get('workspace.profile'));
+assert.ok(queue.ranks.get('workspace.multiple')>queue.ranks.get('records.core'));
+assert.equal(queue.ranks.size,new Set(queue.ranks.keys()).size);
+assert.equal(queue.cycles.size,0);
+assert.match(full,/development-branches/);
+assert.match(full,/Задачи /);
+assert.match(brief,/Номер — место в карте/);

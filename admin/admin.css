@@ -1507,3 +1507,20 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-percent{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:650}
 .development-progress-track{display:block;height:6px;background:var(--border);border-radius:6px;overflow:hidden}
 .development-progress-fill{display:block;height:100%;border-radius:6px;background:currentColor}
+
+/* One connected map below the selected activity, with existing surface and text tokens. */
+.development-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,370px),1fr));align-items:start;gap:24px 16px;position:relative;padding-top:18px}
+.development-branches:before{content:"";position:absolute;top:0;left:0;right:0;border-top:1px solid var(--admin-pearl)}
+.development-branches>.development-group{position:relative;min-width:0;padding:16px}
+.development-branches>.development-group:before{content:"";position:absolute;top:-18px;left:50%;height:18px;border-left:1px solid var(--admin-pearl)}
+.development-branches .development-mechanisms{padding:8px 0 0 14px;border-left:1px solid var(--text-secondary);margin-left:7px;display:grid;gap:8px}
+.development-branches .development-mechanism{position:relative;border:1px solid var(--border);border-radius:12px;padding:0 10px;min-width:0}
+.development-branches .development-mechanism:before{content:"";position:absolute;left:-15px;top:26px;width:14px;border-top:1px solid var(--text-secondary)}
+.development-branches .development-mechanism>.admin-overview-person{align-items:flex-start;flex-wrap:wrap;gap:8px;padding:10px 0}
+.development-branches .development-criterion-head{flex-wrap:wrap;gap:8px}
+.development-branches .development-row-end{flex:1 1 100%;justify-content:space-between}
+.development-branches .development-progress{width:min(190px,85%)}
+.development-branches .development-criteria{padding-left:10px}
+.development-related{font-size:16px;line-height:1.45;margin:8px 0 14px;color:var(--text)}
+.development-plan-note{font-size:16px;line-height:1.5;color:var(--white);margin:0}
+@media(max-width:820px){.development-branches{grid-template-columns:minmax(0,1fr)}}
