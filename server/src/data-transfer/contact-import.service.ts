@@ -7,7 +7,7 @@ import { SaasAccessService } from '../saas-access/saas-access.service';
 import { peopleExcelFacts, contactBirthday } from './contacts-excel';
 import { inspectContactRow } from './contact-review-inspect';
 import type { ReviewIssue } from './contact-review-inspect';
-import { contactIdentityFields, findContactCandidates } from './contact-identity';
+import { findContactCandidates, reliableContactCandidate } from './contact-identity';
 import { readSource, SourceInput, Sheet } from './source';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { normalizeUEI } from '../../../core/uei-format.js';
