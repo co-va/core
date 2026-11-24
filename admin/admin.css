@@ -1492,3 +1492,9 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-applicability{padding-top:14px}
 .development-applicability+.development-applicability{border-top:1px solid var(--border);margin-top:14px}
 .development-applicability h4{margin:0 0 4px;font-size:16px;line-height:1.45;font-weight:650;color:var(--text-secondary)}
+
+/* Readiness is independent of priority. Reuse existing Admin semantic text colors. */
+.development-map .development-status.is-ready{color:#35633e}
+.development-map .development-status.is-partial,.development-map .development-status.is-pending,.development-map .development-status.is-disputed{color:#765600}
+.development-map .development-status.is-unfinished{color:#a33d32}
+.development-map .development-status.is-unknown,.development-map .development-status.is-deferred{color:var(--text-secondary)}

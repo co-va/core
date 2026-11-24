@@ -79,8 +79,8 @@ export function scenarioMechanisms(activity,mode) {
   return sections.flatMap(([name,keys])=>keys.filter(k=>ids.has(k)).map(k=>({ ...byId.get(k),section:name,
     applicability: mode===2&&['obligations','tax','planning','cost','inventory','marketing','analytics','loyalty','orders','logistics'].includes(k)?'По полномочиям':
       optional.has(k)||mode===0&&team.includes(k)||activity==='services'&&['products','sales','inventory'].includes(k)||activity==='trade'&&k==='time'&&mode===0?'При необходимости':'Основной',
-    priority: ['marketing','analytics','planning'].includes(k)?'Позднее · Pro (предложение)':
-      ['loyalty','quality','orders','logistics','resources','service-stages','integration'].includes(k)||mode===0&&team.includes(k)?'Следующий этап':'Первостепенно'
+    priority: ['marketing','analytics','planning'].includes(k)?'Позднее':
+      ['loyalty','quality','orders','logistics','resources','service-stages','integration'].includes(k)||mode===0&&team.includes(k)?'Второстепенно':'Первостепенно'
   })));
 }
 const historical={
@@ -127,7 +127,7 @@ export function criterionView(c,snapshot,audits=[]){
 }
 const aggregate=views=>views.every(v=>v.status==='ready')?'ready':views.every(v=>v.status==='unknown')?'unknown':views.some(v=>v.status==='ready'||v.status==='partial')?'partial':views.some(v=>v.status==='unfinished')?'unfinished':views.some(v=>v.status==='disputed')?'disputed':'pending';
 const icon=status=>status==='ready'?'✓':status==='unfinished'?'!':status==='partial'?'◐':status==='disputed'?'?':'○';
-const mark=(status,e)=>'<span class="admin-overview-person-status development-status"><span aria-hidden="true">'+icon(status)+'</span> '+e(statusLabels[status])+'</span>';
+const mark=(status,e)=>'<span class="admin-overview-person-status development-status is-'+status+'"><span aria-hidden="true">'+icon(status)+'</span> '+e(statusLabels[status])+'</span>';
 const scopeGroups=[['Основные механизмы','Основной'],['Дополнительные механизмы','При необходимости'],['По полномочиям','По полномочиям']];
 const contexts=[
   {places:['Собственное помещение','Аренда помещения или рабочего места','Выездная / дистанционная работа'],roles:'Работает сам. Может привлекать помощников.',finance:'Собственные доходы, расходы и обязательства.'},
