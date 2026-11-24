@@ -373,9 +373,7 @@ try {
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'email',mode:'replace',value:'shared.import@example.test'});
   assert.equal(review.done,3);
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'identity',mode:'different',value:''});
-  assert.equal(review.done,3);
-  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'email',mode:'keep'});
-  assert.equal(review.done,4);
+  assert.equal(review.done,4,'Different person skips Email already assigned to Sasha');
   assert.equal(review.pending,0);
   assert.equal(review.status,'completed');
   const uploadedPeople=await db.person.findMany({where:{tenantId}});
@@ -854,11 +852,7 @@ try {
     repeated=await reviewer.decide(tenantId,repeated.id,{
       rowNumber:4,field:'identity',mode:'different',value:'',
     });
-    assert.equal(repeated.done,1);
-    repeated=await reviewer.decide(tenantId,repeated.id,{
-      rowNumber:4,field:'email',mode:'keep',value:'',
-    });
-    assert.equal(repeated.done,2,'Both source rows are accounted for');
+    assert.equal(repeated.done,2,'Second independent person skips already-owned Email');
     const splitRows=(await db.person.findMany({where:{tenantId}}))
       .filter(x=>['Диана','Борис'].includes(x.data.name));
     assert.equal(splitRows.length,2);
