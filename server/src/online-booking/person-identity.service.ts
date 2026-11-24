@@ -79,6 +79,7 @@ type ContactSet = {
   emails: string[];
   telegrams: string[];
   profilePhoto: string;
+  primaryVerifiedEmail: string;
 };
 
 type PersonMatch = {
@@ -132,7 +133,15 @@ export class PersonIdentityService {
       ...rows.filter((row) => String(row.type) === 'TELEGRAM').map((row) => telegramId(row.value)),
     ].map(telegramId).filter(Boolean));
 
-    return { phones, emails, telegrams, profilePhoto: text(profileData.photo) };
+    // The verified flag is a SQL migration-backed Account field, intentionally
+    // not part of Prisma's generated Account model.
+    const verifiedRows=await this.prisma.$queryRaw<Array<{emailVerifiedAt:Date|null}>>`
+      SELECT "emailVerifiedAt" FROM "Account" WHERE "id"=${accountId} LIMIT 1
+    `;
+    return {
+      phones,emails,telegrams,profilePhoto:text(profileData.photo),
+      primaryVerifiedEmail:verifiedRows[0]?.emailVerifiedAt?canonicalEmail(account.email):'',
+    };
   }
 
   private matchPerson(person: Record<string, any>, contacts: ContactSet) {
@@ -154,7 +163,12 @@ export class PersonIdentityService {
       photo: contacts.profilePhoto,
       accounts: uniqueStrings([...accountIds(person), accountId]),
       phones: mergePhones(person.phones, contacts.phones),
-      emails: mergeEmails(person.emails, contacts.emails),
+      // Verified self-declared Email is always first. Older imported Emails
+      // remain secondary; never silently remove independent addresses.
+      emails: contacts.primaryVerifiedEmail
+        ? [contacts.primaryVerifiedEmail,...mergeEmails(person.emails,contacts.emails)
+            .filter(value=>value!==contacts.primaryVerifiedEmail)]
+        : mergeEmails(person.emails,contacts.emails),
       telegrams: mergeTelegrams(person.telegrams, contacts.telegrams),
     };
   }
@@ -205,11 +219,11 @@ export class PersonIdentityService {
       totalSpent: 0,
       lastVisit: '',
       programs: [],
-      creationSource: 'registration',
+      contactStatus: 'registered',
       createdAt: now,
     };
 
-    if (matchedPersonKeys.length > 1) {
+    if (matchedPersonKeys.length > 0) {
       person.identityReview = {
         status: 'CONTACT_CONFLICT',
         matchedPersonKeys: uniqueStrings(matchedPersonKeys),
@@ -250,6 +264,12 @@ export class PersonIdentityService {
     }
 
     const match = state.matches.find((item) => text(item.person.key) === matchedKeys[0])!;
+    // An Email/Telegram-only coincidence can belong to another person.
+    // Preserve it for explicit professional review, not automatic merging.
+    if (!match.matchedBy.phones.length) {
+      const person = await this.createBoundPerson(tenantId,account,contacts,matchedKeys);
+      return {person,personExisted:false,ambiguous:true};
+    }
     const enriched = this.enrichPerson(match.person, accountId, contacts);
     await this.businessState.upsertPerson(tenantId, matchedKeys[0], {
       person: enriched,

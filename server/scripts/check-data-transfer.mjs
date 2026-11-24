@@ -6,6 +6,8 @@ const { PrismaClient } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const { DataTransferService } = require('../dist/data-transfer/data-transfer.service.js');
 const { ContactImportService } = require('../dist/data-transfer/contact-import.service.js');
+const { inspectContactRow } = require('../dist/data-transfer/contact-review-inspect.js');
+const { PersonIdentityService } = require('../dist/online-booking/person-identity.service.js');
 const { BusinessStateService } = require('../dist/business-state/business-state.service.js');
 const { ProfileService } = require('../dist/profile/profile.service.js');
 const { RecordService } = require('../dist/record/record.service.js');
@@ -320,19 +322,25 @@ try {
   assert.equal(batch.total,4);
   assert.equal(batch.done,1,'Unambiguous contact must be imported immediately');
   assert.equal(batch.pending,3,'Three rows need separate operator decisions');
-  assert.equal(batch.groupCount,2,'Surname and Email are independent groups');
+  assert.equal(batch.groupCount,3,'Identity, Surname and Email are independent groups');
   const lada=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Лада'}}});
   assert.equal(lada?.data.note,'Примечание Лады','Imported note is preserved');
   const kseniaBefore=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
   assert.equal(kseniaBefore.data.surname,'Примерная');
-  let review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'surname',mode:'keep'});
+  let review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'identity',mode:'same',value:importedPerson.key});
+  assert.equal(review.done,1,'Identity confirmation alone cannot overwrite fields');
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'surname',mode:'keep'});
   assert.equal(review.done,1,'Resolving one field does not save the whole contact');
   assert.equal(review.pending,3);
   assert.ok(review.issues.some(i=>i.rowNumber===4&&i.field==='email'));
   assert.ok(!review.issues.some(i=>i.rowNumber===4&&i.field==='surname'));
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'email',mode:'keep'});
   assert.equal(review.done,2,'Contact is committed only after all its differences are processed');
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'identity',mode:'different',value:''});
+  assert.equal(review.done,2);
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'email',mode:'replace',value:'shared.import@example.test'});
+  assert.equal(review.done,3);
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'identity',mode:'different',value:''});
   assert.equal(review.done,3);
   review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'email',mode:'keep'});
   assert.equal(review.done,4);
@@ -362,6 +370,8 @@ try {
   let codeBatch=await reviewer.create(tenantId,accountId,codeInput);
   assert.equal(codeBatch.done,0);
   assert.ok(codeBatch.groups.some(x=>x.field==='uei'));
+  codeBatch=await reviewer.decide(tenantId,codeBatch.id,{rowNumber:3,field:'identity',mode:'same',value:importedPerson.key});
+  assert.equal(codeBatch.done,0);
   codeBatch=await reviewer.decide(tenantId,codeBatch.id,{rowNumber:3,field:'uei',mode:'keep'});
   assert.equal(codeBatch.done,1);
   const codeState=await db.ueiState.findUnique({where:{tenantId}});
@@ -378,6 +388,8 @@ try {
   let emailBatch=await reviewer.create(tenantId,accountId,emailInput);
   assert.equal(emailBatch.done,0);
   assert.ok(emailBatch.groups.some(x=>x.field==='email'));
+  emailBatch=await reviewer.decide(tenantId,emailBatch.id,{rowNumber:3,field:'identity',mode:'same',value:importedPerson.key});
+  assert.equal(emailBatch.done,0);
   emailBatch=await reviewer.decide(tenantId,emailBatch.id,{rowNumber:3,field:'email',
     mode:'add',value:'ksenia.extra@example.test'});
   assert.equal(emailBatch.done,1);
@@ -734,6 +746,134 @@ try {
   console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
   console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
   await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
+  {
+    // Persistent Excel reconciliation: Email-only is a candidate, not a
+    // license to silently attach a new phone to another person.
+    const reviewer=new ContactImportService(db,people,access);
+    const makeReviewFile=async(filename,rows)=>{
+      const wb=new ExcelJS.Workbook();
+      await wb.xlsx.load(await service.workbook({domain:'people',template:true}));
+      rows.forEach((row,index)=>{wb.worksheets[0].getRow(index+3).values=row;});
+      return {filename,source:'Контакты',strict:true,expectedDomain:'people',
+        dataUrl:'data:application/octet-stream;base64,'+
+          Buffer.from(await wb.xlsx.writeBuffer()).toString('base64')};
+    };
+    const identityFile=await makeReviewFile('identity-confirm.xlsx',[
+      ['','Тестовая','','','','','79991116701','','verified@example.test'],
+      ['','Анна','','','','','79991116702','','keep@example.test'],
+    ]);
+    let batch=await reviewer.create(tenantId,accountId,identityFile);
+    assert.equal(batch.total,2);
+    assert.equal(batch.done,1,'Unique person is imported directly');
+    assert.equal(batch.pending,1,'Email-only match is not silently merged');
+    const identityIssue=batch.issues.find(row=>row.rowNumber===4&&row.field==='identity');
+    assert.ok(identityIssue,'Identity review must be presented');
+    assert.ok(identityIssue.owners.some(o=>o.key===personId&&o.matchedBy.includes('email')));
+    batch=await reviewer.decide(tenantId,batch.id,{
+      rowNumber:4,field:'identity',mode:'same',value:personId,
+    });
+    assert.equal(batch.done,1,'Identity decision does not resolve other field conflicts');
+    assert.ok(batch.issues.some(x=>x.rowNumber===4&&x.field==='phone'));
+    batch=await reviewer.decide(tenantId,batch.id,{
+      rowNumber:4,field:'phone',mode:'add',value:'79991116702',
+    });
+    assert.equal(batch.done,2);
+    const updatedAnna=await db.person.findFirst({where:{tenantId,key:personId}});
+    assert.ok(updatedAnna.data.phones.some(p=>p.replace(/\D/g,'')==='79991116702'));
+    assert.ok(updatedAnna.data.emails.includes('keep@example.test'));
+  
+    // Same Email in separate source rows, with different names and phones,
+    // creates both an Email conflict and a person-identity review.
+    const independentRows=[
+      {row:3,values:{name:'Олег',phone:'79991118801',email:'shared@example.test'}},
+      {row:4,values:{name:'Лина',phone:'79991118802',additionalEmail:'shared@example.test'}},
+    ];
+    const inspected=inspectContactRow(independentRows[0].values,[],{},independentRows,3);
+    assert.ok(inspected.issues.some(x=>x.field==='email'));
+    assert.ok(inspected.issues.some(x=>x.field==='identity'));
+    assert.ok(inspected.issues.find(x=>x.field==='identity').owners
+      .some(o=>o.key==='excel:4'));
+  
+    // A self-supplied verified Email always precedes an older CRM Email.
+    const identityService=new PersonIdentityService(people,db);
+    const preferred=identityService.enrichPerson({
+      emails:['crm-old@example.test'],phones:['+79991119901'],accounts:[],
+    },'verified-user',{
+      emails:['verified-user@example.test'],phones:['+79991119901'],
+      telegrams:[],profilePhoto:'',primaryVerifiedEmail:'verified-user@example.test',
+    });
+    assert.deepEqual(preferred.emails,['verified-user@example.test','crm-old@example.test']);
+    const sameEmailFile=await makeReviewFile('source-same-email-review.xlsx',[
+      ['','Диана','','','','','79991118801','','shared-batch@example.test'],
+      ['','Борис','','','','','79991118802','','shared-batch@example.test'],
+    ]);
+    let repeated=await reviewer.create(tenantId,accountId,sameEmailFile);
+    assert.equal(repeated.done,0,'Repeated source Email is held for explicit identity review');
+    assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='identity'));
+    assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='email'));
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:3,field:'identity',mode:'different',value:'',
+    });
+    assert.equal(repeated.done,0);
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:3,field:'email',mode:'replace',value:'shared-batch@example.test',
+    });
+    assert.equal(repeated.done,1);
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:4,field:'identity',mode:'different',value:'',
+    });
+    assert.equal(repeated.done,1);
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:4,field:'email',mode:'keep',value:'',
+    });
+    assert.equal(repeated.done,2,'Both source rows are accounted for');
+    const splitRows=(await db.person.findMany({where:{tenantId}}))
+      .filter(x=>['Диана','Борис'].includes(x.data.name));
+    assert.equal(splitRows.length,2);
+    assert.equal(splitRows.filter(x=>x.data.emails?.includes('shared-batch@example.test')).length,1,
+      'Shared source email may be explicitly retained for just one person');
+  
+    const birthdaySaved=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
+    await people.upsertPerson(tenantId,personId,{
+      person:{...birthdaySaved,birthDate:'1990-01-02'},
+    });
+    const birthdayFile=await makeReviewFile('contact-birthday-review.xlsx',[
+      ['0012','Анна','','','03.01.1990','','79991234567'],
+    ]);
+    let birthBatch=await reviewer.create(tenantId,accountId,birthdayFile);
+    assert.equal(birthBatch.done,0);
+    assert.ok(birthBatch.groups.some(group=>group.field==='identity'));
+    assert.ok(birthBatch.groups.some(group=>group.field==='birthDate'));
+    birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
+      rowNumber:3,field:'identity',mode:'same',value:personId,
+    });
+    assert.equal(birthBatch.done,0);
+    birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
+      rowNumber:3,field:'birthDate',mode:'keep',value:'',
+    });
+    assert.equal(birthBatch.done,1);
+    assert.equal((await db.person.findFirst({where:{tenantId,key:personId}})).data.birthDate,'1990-01-02');
+    // A larger (or smaller) new file that includes already imported people
+    // must mark unchanged rows without writing Person data a second time.
+    const repeatedSubset=await makeReviewFile('existing-people-plus-new.xlsx',[
+      ['','Тестовая','','','','','79991116701','','verified@example.test'],
+      ['','Никита','','','','','79991116711','','new.nikita@example.test'],
+    ]);
+    let reused=await reviewer.create(tenantId,accountId,repeatedSubset);
+    assert.equal(reused.total,2);
+    assert.equal(reused.done,2);
+    assert.equal(reused.pending,0);
+    assert.equal(reused.skipped,1,'Existing identical contact must be skipped without upsert');
+    assert.equal(reused.rows.find(row=>row.rowNumber===3).status,'unchanged');
+    assert.equal((await db.person.findMany({where:{tenantId}}))
+      .filter(row=>row.data.name==='Тестовая').length,1);
+    assert.equal((await db.person.findMany({where:{tenantId}}))
+      .filter(row=>row.data.name==='Никита').length,1);
+    const duplicateSameFile=await reviewer.create(tenantId,accountId,repeatedSubset);
+    assert.equal(duplicateSameFile.id,reused.id,'Re-uploading identical file reopens batch');
+    assert.equal(duplicateSameFile.skipped,1);
+    console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
+    }
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
   // This script owns only its random isolated fixture, never existing tenant data.

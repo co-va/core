@@ -5,22 +5,22 @@ import { PrismaService } from '../prisma.service';
 import { BusinessStateService } from '../business-state/business-state.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { peopleExcelFacts, contactBirthday } from './contacts-excel';
+import { inspectContactRow } from './contact-review-inspect';
+import type { ReviewIssue } from './contact-review-inspect';
+import { findContactCandidates, reliableContactCandidate } from './contact-identity';
 import { readSource, SourceInput, Sheet } from './source';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { normalizeUEI } from '../../../core/uei-format.js';
 
 type Obj = Record<string, any>;
 type Tx = Prisma.TransactionClient;
-type Issue = {
-  field: string; label: string; system: string; excel: string;
-  owners: Array<{ key: string; code: string; name: string }>;
-  decision?: { mode: 'keep' | 'replace' | 'remove' | 'add'; value: string };
-};
+type Issue = ReviewIssue;
 type Row = { id: string; rowNumber: number; values: Prisma.JsonValue; issues: Prisma.JsonValue;
   status: string; personKey: string; error: string };
 const text = (v:unknown)=>String(v??'').trim();
 const obj = (v:unknown):Obj => v && typeof v==='object' && !Array.isArray(v) ? v as Obj : {};
 const arr = (v:unknown):Obj[]=>Array.isArray(v)?v.map(obj):[];
+const processed=(status:string)=>status==='done'||status==='unchanged';
 const phone = (v:unknown)=>{ try {return text(v)?normalizePhone(v):'';}catch{return '';} };
 const code = (v:unknown)=>{try{return text(v)?normalizeUEI(v):'';}catch{return '';}};
 const email = (v:unknown)=>text(v).toLocaleLowerCase('ru-RU');
@@ -30,10 +30,8 @@ const labels:Record<string,string>={
   email:'Email',additionalEmail:'Дополнительный Email',name:'Имя',
   surname:'Фамилия',birthDate:'Дата рождения',gender:'Пол',
   discountPercent:'Скидка',telegram:'Telegram',additionalTelegram:'Дополнительный Telegram',
-  note:'Примечание',format:'Данные строки',
+  note:'Примечание',format:'Данные строки',identity:'Совпадение контакта',
 };
-const primaryFields=['uei','phone','name','surname','email','additionalPhone',
-  'additionalEmail','birthDate','gender','discountPercent','telegram','additionalTelegram','note'];
 const fieldNorm=(field:string,value:unknown)=>{
   if(field==='uei')return code(value);
   if(field==='phone'||field==='additionalPhone')return phone(value);
@@ -41,109 +39,10 @@ const fieldNorm=(field:string,value:unknown)=>{
   if(field==='discountPercent')return text(value).replace(',','.');
   return norm(value);
 };
-const relevant=(v:Obj,field:string)=>text(v[field])!=='';
-const ownerLabel=(person:Obj,identity:Obj)=>({
-  key:text(person.key),
-  code:text(obj(identity.relations)['person:'+text(person.key)]||person.uei),
-  name:[text(person.name),text(person.surname)].filter(Boolean).join(' '),
-});
-const existingField=(person:Obj,identity:Obj,field:string):string=>{
-  if(field==='uei')return text(obj(identity.relations)['person:'+text(person.key)]||person.uei);
-  const map:Record<string,string>={email:'emails',additionalEmail:'emails',
-    phone:'phones',additionalPhone:'phones',telegram:'telegrams',additionalTelegram:'telegrams'};
-  if(map[field])return text(Array.isArray(person[map[field]])
-    ?person[map[field]][field.startsWith('additional')?1:0]:'');
-  return text(person[field]);
-};
-const present=(person:Obj,field:string,value:unknown):boolean=>{
-  const map:Record<string,string>={email:'emails',additionalEmail:'emails',
-    phone:'phones',additionalPhone:'phones',telegram:'telegrams',additionalTelegram:'telegrams'};
-  if(map[field])return (Array.isArray(person[map[field]])?person[map[field]]:[])
-    .some((candidate:unknown)=>fieldNorm(field,candidate)===fieldNorm(field,value));
-  return fieldNorm(field,person[field])===fieldNorm(field,value);
-};
 function issue(field:string,existing:unknown,incoming:unknown,owners:Issue['owners']=[]):Issue{
   return {field,label:labels[field]||field,system:text(existing),excel:text(incoming),owners};
 }
-function matches(people:Obj[],identity:Obj,values:Obj){
-  const p=phone(values.phone),u=code(values.uei);
-  const byPhone=p?people.filter(person=>[...(Array.isArray(person.phones)?person.phones:[])].some((v:unknown)=>phone(v)===p)):[];
-  const byCode=u?people.filter(person=>code(obj(identity.relations)['person:'+text(person.key)]||person.uei)===u):[];
-  const found=byPhone.length===1?byPhone[0]:byCode.length===1?byCode[0]:null;
-  return {found,byPhone,byCode};
-}
-function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:number,originalIssues:Issue[]=[]){
-  const {found,byPhone,byCode}=matches(people,identity,values);
-  const issues=new Map<string,Issue>();
-  const add=(field:string,system:unknown,excelValue:unknown,owners:Issue['owners']=[])=>
-    issues.set(field,issue(field,system,excelValue,owners));
-  if(byPhone.length>1)add('phone',byPhone.map(p=>ownerLabel(p,identity).name).join('; '),values.phone,byPhone.map(p=>ownerLabel(p,identity)));
-  if(byCode.length>1)add('uei',byCode.map(p=>ownerLabel(p,identity).name).join('; '),values.uei,byCode.map(p=>ownerLabel(p,identity)));
-  if(byPhone.length===1 && byCode.length===1 && byPhone[0].key!==byCode[0].key)
-    add('uei',existingField(byPhone[0],identity,'uei'),values.uei,[ownerLabel(byCode[0],identity)]);
-  if(found){
-    for(const field of primaryFields){
-      if(!relevant(values,field))continue;
-      const current=existingField(found,identity,field);
-      if(field==='uei' && byCode.length===1 && byCode[0].key!==found.key)continue;
-      if(field==='phone'||field==='additionalPhone'||field==='email'
-        ||field==='additionalEmail'||field==='telegram'||field==='additionalTelegram'){
-        if(current&&!present(found,field,values[field]))add(field,current,values[field]);
-      }else if(current&&fieldNorm(field,current)!==fieldNorm(field,values[field])){
-        add(field,current,values[field]);
-      }
-    }
-  }else if(!phone(values.phone)&&!code(values.uei)){
-    add('phone','',values.phone||'Укажите телефон или код клиента');
-  }
-  // A source file must not silently assign the same phone, code or email to
-  // two different rows. Each row is resolved independently.
-  for(const [field,normalizer] of [['phone',phone],['uei',code],['email',email]] as const){
-    const current=normalizer(values[field]);
-    if(!current)continue;
-    const overlapping=file.filter(row=>row.row!==rowNumber
-      && normalizer(obj(row.values)[field])===current);
-    if(overlapping.length && overlapping.some(row=>
-      primaryFields.some(key=>fieldNorm(key,obj(row.values)[key])
-        !==fieldNorm(key,values[key])))){
-      const owners=overlapping.map(row=>({
-        key:'excel:'+row.row,code:text(obj(row.values).uei),
-        name:[text(obj(row.values).name),text(obj(row.values).surname)].filter(Boolean).join(' '),
-      }));
-      add(field,existingField(found||{},identity,field)||'Повтор в Excel',values[field],owners);
-    }
-  }
-  // Email collisions across existing contacts must also be explicitly
-  // acknowledged, regardless of whether shared addresses are legitimate.
-  for(const field of ['email','additionalEmail']){
-    if(!relevant(values,field))continue;
-    const owners=people.filter(p=>p.key!==found?.key && present(p,'email',values[field]));
-    if(owners.length)add(field,existingField(found||{},identity,field)||'Email занят',
-      values[field],owners.map(p=>ownerLabel(p,identity)));
-  }
-  for(const field of ['phone','additionalPhone']){
-    if(!relevant(values,field))continue;
-    const owners=people.filter(p=>p.key!==found?.key && present(p,'phone',values[field]));
-    if(owners.length)add(field,existingField(found||{},identity,field)||'Телефон занят',
-      values[field],owners.map(p=>ownerLabel(p,identity)));
-  }
-  // CRM exports often encode 20% as 0.2. Treat values 0..1 as
-  // ambiguous instead of silently storing the wrong personal discount.
-  const rate=Number(text(values.discountPercent).replace(',','.'));
-  if(relevant(values,'discountPercent') && rate>0 && rate<=1)
-    add('discountPercent','Уточните: 1% или 100% (доля)',values.discountPercent);
-  if(values.uei && !code(values.uei))add('uei','',values.uei);
-  if(values.phone && !phone(values.phone))add('phone','Неверный формат',values.phone);
-  if(values.additionalPhone && !phone(values.additionalPhone))
-    add('additionalPhone','Неверный формат',values.additionalPhone);
-  for(const field of ['email','additionalEmail']){
-    if(values[field]&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(values[field])))
-      add(field,'Неверный формат',values[field]);
-  }
-  for(const previous of originalIssues)
-    add(previous.field,previous.system,previous.excel,previous.owners||[]);
-  return {person:found,issues:[...issues.values()]};
-}
+const inspect=inspectContactRow;
 @Injectable()
 export class ContactImportService {
   constructor(private readonly prisma:PrismaService,private readonly people:BusinessStateService,
@@ -170,9 +69,10 @@ export class ContactImportService {
     return tx.contactImportRow.findMany({where:{batchId},orderBy:{rowNumber:'asc'}});
   }
   private summary(batch:Obj,rows:Row[],withRows=false){
-    const done=rows.filter(r=>r.status==='done').length;
-    const pending=rows.filter(r=>r.status!=='done').length;
-    const issues=rows.filter(r=>r.status!=='done').flatMap(row=>
+    const done=rows.filter(r=>processed(r.status)).length;
+    const skipped=rows.filter(r=>r.status==='unchanged').length;
+    const pending=rows.length-done;
+    const issues=rows.filter(r=>!processed(r.status)).flatMap(row=>
       ((Array.isArray(row.issues)?row.issues:[]) as unknown as Issue[]).filter(i=>!i.decision||Boolean(row.error))
         .map(i=>({...i,rowNumber:row.rowNumber,rowId:row.id,
           personKey:row.personKey,contact:[
@@ -183,7 +83,7 @@ export class ContactImportService {
       const key=text(i.field);a[key] ||= {field:key,label:i.label,count:0};a[key].count++;return a;
     },{})).map(([,v])=>v);
     return {id:batch.id,filename:batch.filename,total:batch.total,
-      done,pending,groupCount:groups.length,groups,status:pending?'review':'completed',
+      done,skipped,pending,groupCount:groups.length,groups,status:pending?'review':'completed',
       createdAt:batch.createdAt,
       ...(withRows?{issues,rows:rows.map(r=>({
         rowNumber:r.rowNumber,status:r.status,personKey:r.personKey,
@@ -299,6 +199,12 @@ export class ContactImportService {
             status:'review',personKey:text(checked.person?.key),
             issues:checked.issues as unknown as Prisma.InputJsonValue,
           }});
+        }else if(checked.unchanged && checked.person){
+          // No Person/UEI write: identical facts are recorded as processed.
+          await tx.contactImportRow.update({where:{id:latest.id},data:{
+            status:'unchanged',personKey:text(checked.person.key),
+            issues:[] as Prisma.InputJsonValue,error:'',
+          }});
         }else{
           await tx.$executeRawUnsafe('SAVEPOINT contact_import_row');
           try{
@@ -325,7 +231,7 @@ export class ContactImportService {
   }
   private async complete(tenantId:string,batchId:string){
     const pending=await this.prisma.contactImportRow.count({
-      where:{tenantId,batchId,status:{not:'done'}},
+      where:{tenantId,batchId,status:{notIn:['done','unchanged']}},
     });
     await this.prisma.contactImportBatch.update({
       where:{id:batchId},data:{status:pending?'review':'completed'},
@@ -333,24 +239,37 @@ export class ContactImportService {
   }
   private async safeImport(tx:Tx,tenantId:string,values:Obj,targetId:string,decisions:Issue[]){
     const payload={...values};const ownership:Obj={};
+    const decisionIdentity=decisions.find(item=>item.field==='identity')?.decision;
+    const identityExplicitlyApproved=decisionIdentity?.mode==='same'
+      &&decisionIdentity.value===targetId;
+    if(decisionIdentity&&!['same','different'].includes(decisionIdentity.mode))
+      throw new BadRequestException('Укажите: тот же человек или другой человек');
+    if(decisionIdentity?.mode==='different'&&targetId)
+      throw new ConflictException('Выбран отдельный человек, но цель сопоставления не очищена');
     const existing=targetId?await tx.person.findFirst({where:{tenantId,key:targetId}}):null;
     if(targetId&&!existing)throw new ConflictException('Контакт изменён или удалён. Требуется повторная проверка.');
     const previous=obj(existing?.data);
     const identity=targetId?await tx.ueiState.findUnique({where:{tenantId}}):null;
     const savedCode=text(obj(obj(identity?.data).relations)['person:'+targetId]||previous.uei);
     if(targetId){
+      const sourceCandidates=findContactCandidates(
+        (await tx.person.findMany({where:{tenantId}})).map(row=>obj(row.data)),
+        obj(identity?.data),values);
+      if(identityExplicitlyApproved && !sourceCandidates.some(candidate=>candidate.key===targetId))
+        throw new ConflictException('Подтверждённое совпадение изменилось. Повторите проверку.');
       const originalPhone=phone(values.phone);
       const originalCode=code(values.uei);
       const verifiedByPhone=originalPhone&&Array.isArray(previous.phones)
         &&previous.phones.some((v:unknown)=>phone(v)===originalPhone);
       const verifiedByCode=originalCode&&code(savedCode)===originalCode;
-      if(!verifiedByPhone&&!verifiedByCode)
+      if(!verifiedByPhone&&!verifiedByCode&&!identityExplicitlyApproved)
         throw new ConflictException('Сопоставление изменилось. Проверьте код клиента или телефон.');
     }
     for(const issue of decisions){
       const decision=issue.decision;
       if(!decision)throw new BadRequestException('Сначала разрешите все различия');
       const field=issue.field;
+      if(field==='identity')continue;
       if(field==='format')throw new BadRequestException('Исправьте исходные данные строки Excel');
       if(decision.mode==='keep'||decision.mode==='remove'){
         delete payload[field];continue;
@@ -380,6 +299,12 @@ export class ContactImportService {
       throw new BadRequestException('Укажите имя контакта');
     if(!targetId&&!phone(payload.phone)&&!code(payload.uei))
       throw new BadRequestException('Для нового контакта укажите телефон или код клиента.');
+    if(decisionIdentity?.mode==='different'){
+      const current=await this.current(tx,tenantId);
+      const occupied=findContactCandidates(current.people,current.identity,payload);
+      if(occupied.some(candidate=>reliableContactCandidate(candidate)))
+        throw new ConflictException('Телефон или код всё ещё принадлежит другому человеку. Исправьте поле или выберите существующий контакт.');
+    }
     return this.people.importPerson(tenantId,payload,targetId,tx,ownership);
   }
   async decide(tenantId:string,batchId:string,body:unknown){
@@ -387,8 +312,12 @@ export class ContactImportService {
     const action=obj(body),rowNumber=Number(action.rowNumber);
     const field=text(action.field),mode=text(action.mode),value=text(action.value);
     if(!Number.isInteger(rowNumber)||rowNumber<1||!labels[field]
-      ||!['keep','replace','remove','add'].includes(mode)||value.length>500)
+      ||!['keep','replace','remove','add','same','different'].includes(mode)||value.length>500)
       throw new BadRequestException('Неверное решение для различия');
+    if(field==='identity'&&!['same','different'].includes(mode))
+      throw new BadRequestException('Укажите: тот же человек или другой человек');
+    if(field!=='identity'&&['same','different'].includes(mode))
+      throw new BadRequestException('Это решение предназначено только для сопоставления людей');
     if(mode==='add'&&!['email','additionalEmail','phone','additionalPhone',
       'telegram','additionalTelegram'].includes(field))
       throw new BadRequestException('Для этого поля возможно только исправление или сохранение прежнего значения');
@@ -399,7 +328,7 @@ export class ContactImportService {
         where:{batchId_rowNumber:{batchId,rowNumber}},
       });
       if(!row||row.tenantId!==tenantId)throw new NotFoundException('Строка загрузки не найдена');
-      if(row.status==='done')return this.summary(await this.getBatch(tenantId,batchId,tx),
+      if(processed(row.status))return this.summary(await this.getBatch(tenantId,batchId,tx),
         await this.fileRows(tx,batchId),true);
       let issues=arr(row.issues) as unknown as Issue[];
       const changed=issues.find(item=>item.field===field);
@@ -415,15 +344,47 @@ export class ContactImportService {
           && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
           throw new BadRequestException('Неверный Email');
       }
-      changed.decision={mode:mode as 'keep' | 'replace' | 'remove' | 'add',value};
+      let personKey=row.personKey;
+      if(field==='identity'){
+        const state=await this.current(tx,tenantId);
+        const candidates=findContactCandidates(state.people,state.identity,obj(row.values));
+        const sourceRows=await this.fileRows(tx,batchId);
+        const sources=sourceRows.map(item=>({
+          row:item.rowNumber,values:obj(item.values),
+        }));
+        const possible=inspect(obj(row.values),state.people,state.identity,
+          sources,row.rowNumber,issues);
+        let chosenValue=value;
+        if(mode==='same'&&value.startsWith('excel:')){
+          const sourceNumber=Number(value.slice(6));
+          if(!possible.sourceCandidates.some(candidate=>candidate.key===value))
+            throw new BadRequestException('Выберите строку из найденных совпадений');
+          const other=sourceRows.find(item=>item.rowNumber===sourceNumber);
+          if(!other||other.status!=='done'||!other.personKey)
+            throw new BadRequestException('Сначала обработайте контакт из строки '+sourceNumber);
+          chosenValue=other.personKey;
+        }
+        if(mode==='same'&&!findContactCandidates(state.people,state.identity,obj(row.values))
+          .some(candidate=>candidate.key===chosenValue))
+          throw new BadRequestException('Совпадение изменилось. Проверьте номер телефона, Email или код');
+        if(mode==='different'&&value)
+          throw new BadRequestException('Для нового человека значение должно быть пустым');
+        changed.decision={mode:mode as 'same'|'different',value:chosenValue};
+        const inspected=inspect(obj(row.values),state.people,state.identity,
+          sources,row.rowNumber,issues,changed.decision);
+        issues=inspected.issues as Issue[];
+        personKey=mode==='same'?chosenValue:'';
+      }else{
+        changed.decision={mode:mode as 'keep'|'replace'|'remove'|'add',value};
+      }
       const stillPending=issues.some(item=>!item.decision);
       if(stillPending){
         await tx.contactImportRow.update({where:{id:row.id},
-          data:{issues:issues as unknown as Prisma.InputJsonValue,error:''}});
+          data:{issues:issues as unknown as Prisma.InputJsonValue,error:'',personKey}});
       }else{
         await tx.$executeRawUnsafe('SAVEPOINT contact_import_decision');
         try{
-          const key=await this.safeImport(tx,tenantId,obj(row.values),row.personKey,issues);
+          const key=await this.safeImport(tx,tenantId,obj(row.values),personKey,issues);
           await tx.$executeRawUnsafe('RELEASE SAVEPOINT contact_import_decision');
           await tx.contactImportRow.update({where:{id:row.id},data:{
             status:'done',personKey:key,issues:issues as unknown as Prisma.InputJsonValue,error:'',
@@ -434,6 +395,7 @@ export class ContactImportService {
           // Keep all decisions but leave this row in review.
           await tx.contactImportRow.update({where:{id:row.id},data:{
             issues:issues as unknown as Prisma.InputJsonValue,
+            personKey,
             error:text((error as Error).message),
           }});
         }
@@ -441,7 +403,7 @@ export class ContactImportService {
       const rows=await this.fileRows(tx,batchId);
       const batch=await this.getBatch(tenantId,batchId,tx);
       await tx.contactImportBatch.update({where:{id:batchId},
-        data:{status:rows.every(r=>r.status==='done')?'completed':'review'}});
+        data:{status:rows.every(r=>processed(r.status))?'completed':'review'}});
       return this.summary(batch,rows,true);
     },{timeout:30000});
   }

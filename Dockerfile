@@ -6,7 +6,7 @@ RUN node scripts/build-pages.mjs
 FROM node:24 AS build
 WORKDIR /app/server
 COPY server/package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY server/prisma ./prisma
 RUN npx prisma generate
 COPY server/tsconfig.json server/nest-cli.json ./

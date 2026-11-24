@@ -314,6 +314,22 @@ export class BusinessStateService {
       if(!phones.some((value:unknown)=>normalizePhone(value)===additional)){phones.push(additional);ownership.additionalPhone=additional;}else delete ownership.additionalPhone;
       person.phones=phones;
     }
+    // A verified Email supplied by the person in User always precedes CRM
+    // values. The earlier addresses stay available as secondary Emails.
+    const linkedAccounts=(Array.isArray(person.accounts)?person.accounts:[])
+      .map((value:unknown)=>text(value)).filter(Boolean);
+    if(linkedAccounts.length){
+      const verifiedRows=await tx.$queryRaw<Array<{ email:string }>>(
+        Prisma.sql`SELECT "email" FROM "Account"
+          WHERE "id" IN (${Prisma.join(linkedAccounts)}) AND "emailVerifiedAt" IS NOT NULL LIMIT 1`
+      );
+      const verifiedEmail=text(verifiedRows[0]?.email).toLowerCase();
+      if(verifiedEmail){
+        const emails=Array.isArray(person.emails)?person.emails:[];
+        person.emails=[verifiedEmail,...[...new Set(emails.map((v:unknown)=>text(v).toLowerCase())
+          .filter(Boolean))].filter(value=>value!==verifiedEmail)];
+      }
+    }
     await tx.person.upsert({ where: { tenantId_key: { tenantId, key } },
       create: { tenantId, key, position: rows.length, data: json(person) }, update: { data: json(person) } });
     await tx.ueiState.upsert({ where: { tenantId }, create: { tenantId, data: json(identity) }, update: { data: json(identity) } });
