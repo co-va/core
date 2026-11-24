@@ -340,18 +340,32 @@ export class ContactImportService {
       if(field==='identity'){
         const state=await this.current(tx,tenantId);
         const candidates=findContactCandidates(state.people,state.identity,obj(row.values));
-        if(mode==='same'&&!candidates.some(candidate=>candidate.key===value))
-          throw new BadRequestException('Выберите контакт из найденных совпадений');
-        if(mode==='different'&&value)
-          throw new BadRequestException('Для нового человека значение должно быть пустым');
-        changed.decision={mode:mode as 'same'|'different',value};
-        const sources=(await this.fileRows(tx,batchId)).map(item=>({
+        const sourceRows=await this.fileRows(tx,batchId);
+        const sources=sourceRows.map(item=>({
           row:item.rowNumber,values:obj(item.values),
         }));
+        const possible=inspect(obj(row.values),state.people,state.identity,
+          sources,row.rowNumber,issues);
+        let chosenValue=value;
+        if(mode==='same'&&value.startsWith('excel:')){
+          const sourceNumber=Number(value.slice(6));
+          if(!possible.sourceCandidates.some(candidate=>candidate.key===value))
+            throw new BadRequestException('Выберите строку из найденных совпадений');
+          const other=sourceRows.find(item=>item.rowNumber===sourceNumber);
+          if(!other||other.status!=='done'||!other.personKey)
+            throw new BadRequestException('Сначала обработайте контакт из строки '+sourceNumber);
+          chosenValue=other.personKey;
+        }
+        if(mode==='same'&&!findContactCandidates(state.people,state.identity,obj(row.values))
+          .some(candidate=>candidate.key===chosenValue))
+          throw new BadRequestException('Совпадение изменилось. Проверьте номер телефона, Email или код');
+        if(mode==='different'&&value)
+          throw new BadRequestException('Для нового человека значение должно быть пустым');
+        changed.decision={mode:mode as 'same'|'different',value:chosenValue};
         const inspected=inspect(obj(row.values),state.people,state.identity,
           sources,row.rowNumber,issues,changed.decision);
         issues=inspected.issues as Issue[];
-        personKey=mode==='same'?value:'';
+        personKey=mode==='same'?chosenValue:'';
       }else{
         changed.decision={mode:mode as 'keep'|'replace'|'remove'|'add',value};
       }
