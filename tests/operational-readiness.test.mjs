@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { MECHANISMS, coverageSnapshot, closureEvidence, loadOperationalReadiness, readinessMarkup } from '../admin/operational-readiness.js';
+import { MECHANISMS, coverageSnapshot, closureEvidence, loadOperationalReadiness, readinessMarkup, CORE_SCENARIOS, coreAuditSnapshot, loadCoreAudit } from '../admin/operational-readiness.js';
 const sha='a'.repeat(40);
 const item={id:'start.service',paths:['core/service/**'],requires:[],external:[],acceptance:{visual:'approved',data:'approved'},closure:{state:'locked',baselineSha:sha,approvedBy:'owner',approvedAt:'2026-11-22',evidence:['test']}};
 const registry={schemaVersion:1,repository:'co-va/professional',branch:'staging',items:[item]};
@@ -39,3 +39,23 @@ const toolsStart = overview.indexOf('<section class="admin-overview-tools-sectio
 const operational = overview.indexOf('data-overview-section="operational-readiness"');
 assert.ok(toolsStart >= 0 && operational > overview.indexOf('data-overview-tool-app=', toolsStart) && operational < overview.indexOf('</section>', operational), 'Operational readiness follows both application tool panels inside shared readiness section');
 assert.equal(overview.split('data-overview-section="operational-readiness"').length,2);
+
+// Core evidence is independent from owner acceptance, validated against exact SHA and successful named steps.
+const run={id:42,head_sha:sha,path:'.github/workflows/check.yml'};
+const pkg={scripts:{test:CORE_SCENARIOS.filter(s=>s.test).map(s=>'node '+s.test).join(' && ')}};
+const workflow=[...new Map(CORE_SCENARIOS.map(s=>[s.step,'- name: '+s.step+'\n  run: '+s.command])).values()].join('\n');
+const jobs=['check','staging-smoke'].map((name,i)=>({id:i+1,name,head_sha:sha,conclusion:'success',steps:[...new Set(CORE_SCENARIOS.filter(s=>s.job===name).map(s=>s.step))].map(name=>({name,conclusion:'success'}))}));
+const core=coreAuditSnapshot(sha,run,jobs,pkg,workflow);
+assert.equal(core.passed,CORE_SCENARIOS.length);
+assert.equal(coreAuditSnapshot(sha,run,jobs,{scripts:{test:''}},workflow).passed,CORE_SCENARIOS.filter(s=>!s.test).length);
+assert.equal(coreAuditSnapshot(sha,run,[],pkg,workflow).passed,0);
+assert.equal(coreAuditSnapshot(sha,run,jobs,pkg,'').passed,0);
+assert.throws(()=>coreAuditSnapshot(sha,{...run,head_sha:'b'.repeat(40)},jobs,pkg,workflow));
+const failing=jobs.map(j=>j.name==='staging-smoke'?{...j,conclusion:'failure',steps:j.steps.map(s=>({...s,conclusion:'failure'}))}:j);
+assert.ok(coreAuditSnapshot(sha,run,failing,pkg,workflow).failed>0);
+assert.equal(a.confirmed,1,'Core evidence cannot inflate full acceptance');
+assert.match(readinessMarkup(loaded,String,'contacts',core),/Подключённые сценарии Core/);
+assert.match(readinessMarkup(loaded,String,'contacts',core),/Импорт контактов: повторы/);
+const loadedCore=await loadCoreAudit(async url=>({ok:true,json:async()=>url.includes('/git/ref/')?{object:{sha}}:url.includes('/check-runs')?{check_runs:[{id:1,name:'check',head_sha:sha,app:{slug:'github-actions'},details_url:'https://github.com/co-va/core/actions/runs/42/job/1'}]}:url.includes('/jobs?')?{jobs}:url.endsWith('/package.json')?pkg:run,text:async()=>workflow}));
+assert.equal(loadedCore.passed,CORE_SCENARIOS.length);
+console.log('Core CI evidence projection: PASS');
