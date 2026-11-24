@@ -3,6 +3,7 @@ import { standardFacts } from './standard-facts';
 import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
 import { DOMAINS, LABELS, Fact, parseCsv, text } from './formats';
+export { peopleWorkbook } from './contacts-excel';
 
 export const FIELDS: Record<string, string> = { ...STANDARD_LABELS,
   transferId: 'ID переноса', externalId: 'ID источника', sourceKey: 'Ключ строки', name: 'Имя', surname: 'Фамилия', phone: 'Телефон', email: 'Email', uei: 'UEI',
@@ -25,7 +26,7 @@ export const DOMAIN_FIELDS: Record<string, string[]> = {
   consumables: ['recordId','recordTransferId','personKey','personTransferId','phone','uei','name','date','from','procedure','withoutProcedure','itemId','itemTransferId','material','manufacturer','unit','quantity','unitCost','occurredAt','workplace','workplaceKey'],
 };
 export type Sheet = { name: string; headers: string[]; rows: any[][]; date1904?: boolean; stableFingerprint?: string };
-export type SourceInput = { dataUrl?: string; filename?: string; source?: string; withoutProcedureFacts?: string[]; sheets?: Record<string, { domain: string; columns?: Record<string, number> }> };
+export type SourceInput = { dataUrl?: string; filename?: string; source?: string; strict?: boolean; expectedDomain?: 'people' | 'records' | 'finance'; withoutProcedureFacts?: string[]; sheets?: Record<string, { domain: string; columns?: Record<string, number> }> };
 function cellValue(value: any): any {
   if (value == null || value instanceof Date || typeof value !== 'object') return value ?? '';
   // Do not execute formulas or accept stale cached formula results as source facts.
