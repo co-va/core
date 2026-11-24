@@ -6,6 +6,8 @@ const { PrismaClient } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const { DataTransferService } = require('../dist/data-transfer/data-transfer.service.js');
 const { ContactImportService } = require('../dist/data-transfer/contact-import.service.js');
+const { readSource } = require('../dist/data-transfer/source.js');
+const { peopleExcelFacts, CONTACT_COLUMNS } = require('../dist/data-transfer/contacts-excel.js');
 const { inspectContactRow } = require('../dist/data-transfer/contact-review-inspect.js');
 const { PersonIdentityService } = require('../dist/online-booking/person-identity.service.js');
 const { BusinessStateService } = require('../dist/business-state/business-state.service.js');
@@ -46,6 +48,36 @@ try {
   await db.profile.create({data:{tenantId,platformAccountId:accountId,phones:[],emails:[],telegrams:[],customProfessions:[]}});
   await db.tenantAccess.create({data:{tenantId,commercialMode:'LIVE',isOwnerBook:true}});
   await db.businessAuxiliaryState.create({data:{tenantId,data:{wallets:[{id:'cash',name:'Наличные'}]}}});
+  // Excel percentage-formatted numeric cells are fractions internally.
+  // Import exactly what the professional sees, without requiring review.
+  const percentBook = new ExcelJS.Workbook();
+  const percentSheet = percentBook.addWorksheet('Люди');
+  const percentHeaders = CONTACT_COLUMNS.filter(col => !col.hidden).map(col => col.label);
+  percentSheet.addRow(percentHeaders);
+  for (const [index, discount] of [0.2, 1, 20, '0.2'].entries()) {
+    const cells = Object.fromEntries(percentHeaders.map(header => [header, '']));
+    cells['Код клиента'] = String(800 + index);
+    cells['Имя'] = 'Проценты ' + index;
+    cells['Телефон'] = '7999101000' + index;
+    cells['Скидка, %'] = discount;
+    const excelRow = percentSheet.addRow(percentHeaders.map(header => cells[header]));
+    if (index < 2) excelRow.getCell(6).numFmt = '0%';
+  }
+  const percentInput = {
+    filename:'contacts-percent-format.xlsx',
+    source:'suite',
+    dataUrl:'data:application/octet-stream;base64,'
+      + Buffer.from(await percentBook.xlsx.writeBuffer()).toString('base64'),
+  };
+  const parsedPercents = await readSource(percentInput);
+  assert.deepEqual(parsedPercents.sheets[0].rows.map(row => row[5]),[20,100,20,'0.2']);
+  const percentFacts = peopleExcelFacts(parsedPercents.sheets,parsedPercents.fingerprint);
+  assert.deepEqual(percentFacts.map(fact => fact.values.discountPercent),[20,100,20,0.2]);
+  assert.equal(inspectContactRow(percentFacts[0].values,[],{},[],2).issues
+    .some(issue => issue.field === 'discountPercent'),false);
+  assert.equal(inspectContactRow(percentFacts[1].values,[],{},[],3).issues
+    .some(issue => issue.field === 'discountPercent'),false);
+  console.log('PASS: Excel 20% and 100% styles import as 20 and 100 without discount review');
   // Preview uses the real domain/trigger paths and must leave zero saved facts.
   let result=await run('people',[{...person,externalId:'p1'}],true);assert.equal(result.failed,0);
   assert.equal(await db.person.count({where:{tenantId}}),0);assert.equal(await db.dataTransferFact.count({where:{tenantId}}),0);
