@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { BusinessStateService } from '../business-state/business-state.service';
-import { peopleExcelFacts } from './contacts-excel';
+import { peopleExcelFacts, contactBirthday } from './contacts-excel';
 import { readSource, SourceInput, Sheet } from './source';
 import { normalizePhone } from '../../../core/phone/index.js';
 import { normalizeUEI } from '../../../core/uei-format.js';
@@ -130,9 +130,8 @@ function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:numbe
   if(values.uei && !code(values.uei))add('uei','',values.uei);
   if(values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(values.email)))
     add('email','',values.email);
-  for(const previous of originalIssues){
-    if(previous.field==='format')add('format',previous.system,previous.excel,previous.owners||[]);
-  }
+  for(const previous of originalIssues)
+    add(previous.field,previous.system,previous.excel,previous.owners||[]);
   return {person:found,issues:[...issues.values()]};
 }
 @Injectable()
@@ -214,11 +213,25 @@ export class ContactImportService {
         rows.push({row:rowNumber,values:fact.values,issues:[]});
       }catch(error){
         const headers=grouped?(sheet.rows[0]||[]).map(text):sheet.headers;
-        const at=(label:string)=>text(row[headers.indexOf(label)]);
-        rows.push({row:rowNumber,values:{
+        const at=(label:string)=>headers.indexOf(label)<0?'':text(row[headers.indexOf(label)]);
+        const message=text((error as Error).message);
+        const field=/имя/i.test(message)?'name'
+          :/дата рождения|год рождения/i.test(message)?'birthDate'
+          :/пол:/i.test(message)?'gender'
+          :/скидк/i.test(message)?'discountPercent'
+          :/телефон/i.test(message)?'phone':'format';
+        const raw:Obj={
           name:at('Имя'),surname:at('Фамилия'),phone:at('Телефон'),
-          uei:at('Код клиента'),email:at('Email'),note:at('Примечание'),
-        },issues:[issue('format',(error as Error).message,'Исправьте строку Excel')]});
+          additionalPhone:at('Дополнительный телефон'),
+          email:at('Email'),additionalEmail:at('Дополнительный Email'),
+          uei:at('Код клиента')||at('UEI'),birthDate:at('Дата рождения'),
+          gender:at('Пол'),discountPercent:at('Скидка, %'),
+          telegram:at('Telegram'),additionalTelegram:at('Дополнительный Telegram'),
+          note:at('Примечание'),integrationSource:at('Источник интеграции'),
+        };
+        rows.push({row:rowNumber,values:raw,
+          issues:[issue(field,message,field==='format'?'Исправьте строку':raw[field])],
+        });
       }
     }
     if(!rows.length)throw new BadRequestException('В файле нет контактов');
@@ -318,6 +331,11 @@ export class ContactImportService {
         && fieldNorm(field,previous[field])!==fieldNorm(field,payload[field])
         && !ownership.hasOwnProperty(field))
         throw new ConflictException('Данные контакта изменились. Повторно проверьте: '+(labels[field]||field));
+    if(payload.birthDate && typeof payload.birthDate==='string' &&
+      !/^\\d{2}-\\d{2}$|^\\d{4}-\\d{2}-\\d{2}$/.test(payload.birthDate))
+      payload.birthDate=contactBirthday(payload.birthDate);
+    if(payload.discountPercent!==undefined && text(payload.discountPercent))
+      payload.discountPercent=Number(text(payload.discountPercent).replace('%','').replace(',','.'));
     if(!text(payload.name)&&!targetId)
       throw new BadRequestException('Укажите имя контакта');
     return this.people.importPerson(tenantId,payload,targetId,tx,ownership);
