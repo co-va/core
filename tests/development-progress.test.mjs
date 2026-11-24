@@ -51,4 +51,12 @@ assert.match(brief,/1\.1 Добавить и изменить место раб�
 assert.match(brief,/Закрыто 0 из 3 · осталось 3/);
 assert.doesNotMatch(brief,/<h5>Результат проверок<\/h5>/);
 assert.match(brief,/Технические подробности/);
-assert.match(brief,/Следующая задача/);
+assert.match(brief,/Ближайшая задача/);
+
+assert.match(brief,/Связанные механизмы/);
+assert.match(brief,/2\. Условия деятельности/);
+const full=developmentMarkup({activity:'services',open:new Set(['group:workspace','group:contacts','group:compensation','group:loyalty','group:documents']),snapshot:snapshot([])},String);
+assert.match(full,/data-dm-toggle="mechanism:workspace"/);
+assert.match(full,/data-dm-toggle="mechanism:records"/);
+assert.match(full,/data-dm-toggle="mechanism:finance"/);
+assert.match(full,/data-dm-toggle="mechanism:integration"/);

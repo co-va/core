@@ -200,6 +200,34 @@ function shortAction(c,v){
   if(c.key==='workspace.hours')return 'Проверить часы работы и исключения в графике.';
   return v.status==='disputed'?'Согласовать результат':v.status==='unfinished'?'Исправить конкретный сбой':'Проверить указанную возможность';
 }
+// Existing catalogue IDs; these are business relationships to consider together,
+// not verified hard prerequisites or new mechanisms.
+const relatedMechanisms={
+  workspace:['workspace-relations','time','services','records'],
+  'workspace-relations':['workspace','obligations','finance'],
+  participants:['permissions','time','compensation'],
+  permissions:['participants','workspace'],
+  resources:['workspace','time','inventory'],
+  time:['workspace','records','services'],
+  contacts:['records','loyalty','communications'],
+  services:['workspace','time','records','inventory','cost'],
+  records:['workspace','time','contacts','services','finance','inventory'],
+  sales:['products','inventory','finance'],
+  inventory:['products','services','sales','cost','finance'],
+  obligations:['workspace-relations','finance','cost'],
+  finance:['records','sales','obligations','cost'],
+  cost:['services','inventory','finance','obligations'],
+};
+function relatedSummary(m,numbered,snapshot){
+  const linked=numbered.filter(x=>(relatedMechanisms[m.id]||[]).includes(x.id));
+  const business=linked.map(x=>x.number+'. '+x.label);
+  const registry=snapshot?.registry?.items||[];
+  const items=new Map(registry.map(x=>[x.id,x]));
+  const refs=new Set(m.criteria.map(c=>c.ref).filter(Boolean));
+  const required=[...new Set([...refs].flatMap(ref=>items.get(ref)?.requires||[]))];
+  const technical=required.map(id=>items.get(id)?.label||id);
+  return {business,technical};
+}
 export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=null,audits=[],loading=false,stale=false},e){
   const selected=ACTIVITIES.find(a=>a.id===activity);
   const scenario=selected?scenarioMechanisms(activity,mode):[];
@@ -209,12 +237,13 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     }).join('')+'</section>').join('');
   let number=0;
   const numbered=scenario.map(m=>({...m,number:++number,views:m.criteria.map(c=>criterionView(c,snapshot,audits))}));
+  // This is an orientation point, not an instruction to ignore dependencies.
   const nextMechanism=numbered.find(m=>m.applicability==='Основной'&&m.views.some(v=>v.status!=='ready'&&!v.deferred));
   const nextIndex=nextMechanism?.views.findIndex(v=>v.status!=='ready'&&!v.deferred)??-1;
   const nextCriterion=nextIndex>=0?nextMechanism.criteria[nextIndex]:null;
   const nextView=nextIndex>=0?nextMechanism.views[nextIndex]:null;
   const nextDecision=nextCriterion?ownerDecision(nextCriterion,mode,nextView):'';
-  const focus=nextCriterion&&snapshot?'<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Следующая задача</h3></div><div class="development-criterion-details"><section><h5>'+e(nextMechanism.number+'.'+(nextIndex+1)+' '+(plainTitles[nextCriterion.key]||(mode===0&&soloTitles[nextCriterion.key])||nextCriterion.title))+'</h5><p>'+e(nextDecision||shortAction(nextCriterion,nextView))+'</p><p><strong>'+e(nextDecision?'Решение владельца':'Исполнитель: AI')+'</strong></p></section></div></section>':'';
+  const focus=nextCriterion&&snapshot?'<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Ближайшая задача</h3></div><div class="development-criterion-details"><section><h5>'+e(nextMechanism.number+'.'+(nextIndex+1)+' '+(plainTitles[nextCriterion.key]||(mode===0&&soloTitles[nextCriterion.key])||nextCriterion.title))+'</h5><p>'+e(nextDecision||shortAction(nextCriterion,nextView))+'</p><p><strong>'+e(nextDecision?'Решение владельца':'Исполнитель: AI')+'</strong></p></section></div></section>':'';
   const list=sections.map(([section,keys])=>{
     const members=numbered.filter(m=>m.section===section);
     if(!members.length)return '';
@@ -223,9 +252,9 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     const groupStatus=developmentProgress(allViews,!!snapshot);
     return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,progressSummary(allViews,!!snapshot),groupStatus,disclosure(expanded),e)+'</button>'+
       (expanded?'<div class="development-mechanisms">'+members.map(m=>{
-        const status=developmentProgress(m.views,!!snapshot),key='mechanism:'+m.id,show=open.has(key);
+        const status=developmentProgress(m.views,!!snapshot),key='mechanism:'+m.id,show=open.has(key),links=relatedSummary(m,numbered,snapshot);
         return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.number+'. '+m.label,m.applicability+' · '+progressSummary(m.views,!!snapshot),status,disclosure(show),e)+'</button>'+
-          (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{
+          (show?'<div class="development-criteria">'+(links.business.length?'<p class="development-related"><strong>Связанные механизмы:</strong> '+e(links.business.join(' · '))+'</p>':'')+m.criteria.map((c,i)=>{
             const v=m.views[i],criterionId='criterion:'+m.id+':'+c.key,details=open.has(criterionId),technicalId='technical:'+criterionId,technical=open.has(technicalId);
             const title=plainTitles[c.key]||(mode===0&&soloTitles[c.key])||c.title;
             const decision=ownerDecision(c,mode,v);
@@ -234,7 +263,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
               (details?'<div class="development-criterion-details">'+
                 (decision?'<section><h5>Нужно твоё решение</h5><p>'+e(decision)+'</p></section>':'<section><h5>Что дальше</h5><p>'+e(shortAction(c,v))+'</p><p>'+e(v.status==='ready'?'':'Исполнитель: AI')+'</p></section>')+
                 '<button type="button" class="admin-overview-person" data-dm-toggle="'+e(technicalId)+'" aria-expanded="'+technical+'">'+row('Технические подробности','',null,disclosure(technical),e)+'</button>'+
-                (technical?'<section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section><section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section>':'')+'</div>':'')+'</div>';
+                (technical?(links.technical.length?'<section><h5>Зависимости из реестра</h5><p>'+e(links.technical.join(' · '))+'</p></section>':'')+'<section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section><section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section>':'')+'</div>':'')+'</div>';
           }).join('')+'</div>':'')+'</div>';
       }).join('')+'</div>':'')+'</section>';
   }).join('');
@@ -254,7 +283,7 @@ export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOper
     content.innerHTML=developmentMarkup(state,escapeHtml);
     content.querySelectorAll('[data-dm-activity]').forEach(b=>b.addEventListener('click',()=>{
       const activity=b.dataset.dmActivity,mode=Number(b.dataset.dmMode);
-      state.activity=state.activity===activity&&state.mode===mode?null:activity;state.mode=mode;state.open=state.activity?new Set(['group:workspace']):new Set();draw();
+      state.activity=state.activity===activity&&state.mode===mode?null:activity;state.mode=mode;state.open=state.activity?new Set(sections.map(([,keys])=>'group:'+keys[0])):new Set();draw();
       if(state.activity)content.querySelector('#development-scenario')?.scrollIntoView({block:'start',behavior:'auto'});
     }));
     content.querySelector('[data-dm-close]')?.addEventListener('click',()=>{state.activity=null;state.open=new Set();draw();content.querySelector('.development-root')?.scrollIntoView({block:'start',behavior:'auto'});});
