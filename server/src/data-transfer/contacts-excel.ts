@@ -105,7 +105,7 @@ export function peopleExcelFacts(sheets:Sheet[],sourceFingerprint:string,source=
   const first=grouped?1:0;
   const offset=2;
   // Earlier grouped templates did not include the optional provenance column.
-  const required=CONTACT_COLUMNS.filter(c=>!c.hidden&&c.key!=='integrationSource').map(c=>c.label);
+  const required=CONTACT_COLUMNS.filter(c=>!c.hidden&&c.key!=='integrationSource'&&c.key!=='note').map(c=>c.label);
   const legacy=headers.includes('UEI')&&headers.includes('Имя')&&!grouped;
   if(!legacy && required.some(label=>headers.filter(h=>h===label).length!==1))
     throw Error('В таблице отсутствуют необходимые столбцы. Скачайте актуальный шаблон.');
