@@ -318,6 +318,15 @@ export class ContactImportService {
     const previous=obj(existing?.data);
     const identity=targetId?await tx.ueiState.findUnique({where:{tenantId}}):null;
     const savedCode=text(obj(obj(identity?.data).relations)['person:'+targetId]||previous.uei);
+    if(targetId){
+      const originalPhone=phone(values.phone);
+      const originalCode=code(values.uei);
+      const verifiedByPhone=originalPhone&&Array.isArray(previous.phones)
+        &&previous.phones.some((v:unknown)=>phone(v)===originalPhone);
+      const verifiedByCode=originalCode&&code(savedCode)===originalCode;
+      if(!verifiedByPhone&&!verifiedByCode)
+        throw new ConflictException('Сопоставление изменилось. Проверьте код клиента или телефон.');
+    }
     for(const issue of decisions){
       const decision=issue.decision;
       if(!decision)throw new BadRequestException('Сначала разрешите все различия');
@@ -347,6 +356,8 @@ export class ContactImportService {
       payload.discountPercent=Number(text(payload.discountPercent).replace('%','').replace(',','.'));
     if(!text(payload.name)&&!targetId)
       throw new BadRequestException('Укажите имя контакта');
+    if(!targetId&&!phone(payload.phone)&&!code(payload.uei))
+      throw new BadRequestException('Для нового контакта укажите телефон или код клиента.');
     return this.people.importPerson(tenantId,payload,targetId,tx,ownership);
   }
   async decide(tenantId:string,batchId:string,body:unknown){
