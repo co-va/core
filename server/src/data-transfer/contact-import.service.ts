@@ -14,7 +14,7 @@ type Tx = Prisma.TransactionClient;
 type Issue = {
   field: string; label: string; system: string; excel: string;
   owners: Array<{ key: string; code: string; name: string }>;
-  decision?: { mode: 'keep' | 'replace' | 'remove'; value: string };
+  decision?: { mode: 'keep' | 'replace' | 'remove' | 'add'; value: string };
 };
 type Row = { id: string; rowNumber: number; values: Prisma.JsonValue; issues: Prisma.JsonValue;
   status: string; personKey: string; error: string };
@@ -277,15 +277,16 @@ export class ContactImportService {
     const work=await this.prisma.contactImportRow.findMany({
       where:{tenantId,batchId,status:'new'},orderBy:{rowNumber:'asc'},take:size,
     });
+    const all=(await this.prisma.contactImportRow.findMany({
+      where:{tenantId,batchId},select:{rowNumber:true,values:true},
+      orderBy:{rowNumber:'asc'},
+    })).map(item=>({row:item.rowNumber,values:obj(item.values)}));
     for(const row of work){
       await this.prisma.$transaction(async tx=>{
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))::text`;
         const latest=await tx.contactImportRow.findFirst({where:{id:row.id,tenantId,batchId}});
         if(!latest||latest.status!=='new')return;
         const {people,identity}=await this.current(tx,tenantId);
-        const all=(await this.fileRows(tx,batchId)).map(item=>({
-          row:item.rowNumber,values:obj(item.values),
-        }));
         const checked=inspect(obj(latest.values),people,identity,all,latest.rowNumber,
           arr(latest.issues) as unknown as Issue[]);
         if(checked.issues.length){
@@ -353,9 +354,11 @@ export class ContactImportService {
       if(field==='uei'&&savedCode)ownership.uei=savedCode;
       if(['name','surname','birthDate','gender','note','discountPercent'].includes(field)
         &&previous[field]!==undefined)ownership[field]=previous[field];
-      if(field==='email'&&Array.isArray(previous.emails)&&previous.emails.length)
+      if(decision.mode!=='add'&&field==='email'
+        &&Array.isArray(previous.emails)&&previous.emails.length)
         ownership.email=previous.emails[0];
-      if(field==='phone'&&Array.isArray(previous.phones)&&previous.phones.length)
+      if(decision.mode!=='add'&&field==='phone'
+        &&Array.isArray(previous.phones)&&previous.phones.length)
         ownership.phone=previous.phones[0];
     }
     for(const field of ['name','surname','note','birthDate','gender','discountPercent'])
@@ -379,8 +382,11 @@ export class ContactImportService {
     const action=obj(body),rowNumber=Number(action.rowNumber);
     const field=text(action.field),mode=text(action.mode),value=text(action.value);
     if(!Number.isInteger(rowNumber)||rowNumber<1||!labels[field]
-      ||!['keep','replace','remove'].includes(mode)||value.length>500)
+      ||!['keep','replace','remove','add'].includes(mode)||value.length>500)
       throw new BadRequestException('Неверное решение для различия');
+    if(mode==='add'&&!['email','additionalEmail','phone','additionalPhone',
+      'telegram','additionalTelegram'].includes(field))
+      throw new BadRequestException('Для этого поля возможно только исправление или сохранение прежнего значения');
     return this.prisma.$transaction(async tx=>{
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))::text`;
       await this.getBatch(tenantId,batchId,tx);
@@ -393,7 +399,7 @@ export class ContactImportService {
       let issues=arr(row.issues) as unknown as Issue[];
       const changed=issues.find(item=>item.field===field);
       if(!changed)throw new BadRequestException('Различие уже устранено');
-      if(mode==='replace'){
+      if(mode==='replace'||mode==='add'){
         if(!value && !['email','additionalEmail','telegram','additionalTelegram','note'].includes(field))
           throw new BadRequestException('Укажите новое значение');
         if(field==='uei'&&(!code(value)||code(value)==='0000'))
@@ -404,7 +410,7 @@ export class ContactImportService {
           && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
           throw new BadRequestException('Неверный Email');
       }
-      changed.decision={mode:mode as 'keep' | 'replace' | 'remove',value};
+      changed.decision={mode:mode as 'keep' | 'replace' | 'remove' | 'add',value};
       const stillPending=issues.some(item=>!item.decision);
       if(stillPending){
         await tx.contactImportRow.update({where:{id:row.id},
