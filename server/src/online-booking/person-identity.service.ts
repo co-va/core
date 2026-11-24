@@ -133,9 +133,14 @@ export class PersonIdentityService {
       ...rows.filter((row) => String(row.type) === 'TELEGRAM').map((row) => telegramId(row.value)),
     ].map(telegramId).filter(Boolean));
 
+    // The verified flag is a SQL migration-backed Account field, intentionally
+    // not part of Prisma's generated Account model.
+    const verifiedRows=await this.prisma.$queryRaw<Array<{emailVerifiedAt:Date|null}>>`
+      SELECT "emailVerifiedAt" FROM "Account" WHERE "id"=${accountId} LIMIT 1
+    `;
     return {
       phones,emails,telegrams,profilePhoto:text(profileData.photo),
-      primaryVerifiedEmail:account.emailVerifiedAt?canonicalEmail(account.email):'',
+      primaryVerifiedEmail:verifiedRows[0]?.emailVerifiedAt?canonicalEmail(account.email):'',
     };
   }
 
