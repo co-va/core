@@ -7,7 +7,7 @@ import {
   consumeDepositAllocations,
   restoreDepositAllocations,
 } from '../loyalty/deposit-state';
-import { resolvePersonPricePercent } from '../loyalty/price-condition';
+import { resolvePersonPricePercent, resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import {
   applyPersonalAccountMovement,
   personalAccountMoney,
@@ -288,8 +288,31 @@ export class PaymentSettlementService {
     const operationId = randomUUID();
     let remainingDue = 0;
     await this.serializable(async (tx) => {
-      if (source.type === 'record') await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
-      const condition = await resolvePersonPricePercent(tx, tenantId, person, occurredAt);
+      let condition;
+      let historicalRecordPayment = false;
+      let recordVisitAt: Date | null = null;
+      if (source.type === 'record') {
+        await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
+        const recordRow = await tx.record.findUnique({
+          where: { tenantId_recordId: { tenantId, recordId: source.id } },
+        });
+        if (!recordRow) throw new BadRequestException('Запись для оплаты не найдена');
+        const record = objectValue(recordRow.data);
+        recordVisitAt = visitDatePriceMoment(record.date);
+        const visitDay = text(record.date).slice(0, 10);
+        const paymentDay = occurredAt.toISOString().slice(0, 10);
+        const today = new Date().toISOString().slice(0, 10);
+        // Historical entry is identified by the dated service AND dated
+        // operation. Current-day payment of a past record is not backfill.
+        historicalRecordPayment = Boolean(visitDay && visitDay < today && paymentDay < today);
+        // The visit, not the money transfer, determines the deposit percent.
+        condition = await resolveSelectedRecordProgramPricePercent(
+          tx, tenantId, objectValue(record.person), record.loyaltyProgram,
+          visitDatePriceMoment(record.date),
+        );
+      } else {
+        condition = await resolvePersonPricePercent(tx, tenantId, person, occurredAt);
+      }
       const settlement = canonicalSettlementInput(input.settlement, condition.percent);
       const paid = await this.serviceNet(tx, tenantId, source);
       const due = Math.max(0, money(settlement.planTotal - paid));
@@ -308,7 +331,14 @@ export class PaymentSettlementService {
         canonicalPersonKey = availability.personKey;
       }
 
-      const depositAllocations = await consumeDepositAllocations(tx, tenantId, requestedDepositAllocations, ownerKey, occurredAt);
+      const depositAllocations = await consumeDepositAllocations(
+        tx, tenantId, requestedDepositAllocations, ownerKey,
+        // Keep the actual money-operation date separate from the visit date.
+        // An older visit must never use funding received after that visit.
+        occurredAt,
+        historicalRecordPayment,
+        recordVisitAt,
+      );
       if (personalAccountAmount > 0) {
         await applyPersonalAccountMovement(tx, {
           eventId: `personal-account:${operationId}`,
@@ -338,6 +368,7 @@ export class PaymentSettlementService {
           depositAllocations,
           personalAccountAmount,
           priceCondition: condition.source ? clone(condition.source) : null,
+          ...(historicalRecordPayment ? { historicalBackfill: true } : {}),
           cashTotal: cashAllocated,
           cashServiceAmount,
           total: money(serviceAmount + tips),
@@ -356,7 +387,9 @@ export class PaymentSettlementService {
       if (source.type === 'record' && remainingDue <= 0.009) {
         const row = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: source.id } } });
         const record = objectValue(row?.data);
-        if (row && Array.isArray(record.consumableTemplates) && record.consumableTemplates.length) {
+        // A historical invoice must not unexpectedly consume present-day
+        // stock. Inventory transfer has its own dated movement owner.
+        if (!historicalRecordPayment && row && Array.isArray(record.consumableTemplates) && record.consumableTemplates.length) {
           await this.inventory.syncRecordConsumptionInTx(tx, tenantId, record, record.consumableTemplates, true);
           await tx.record.update({ where: { id: row.id }, data: { data: json({ ...record, consumablesPosted: true }) } });
         }

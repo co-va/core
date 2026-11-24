@@ -671,6 +671,14 @@ model FinanceOperation {
   sourceId            String
   originalOperationId String   @default("")
   occurredAt          DateTime
+  // Explicit audit axes: import provenance is not a financial action or payment status.
+  origin              String   @default("application")
+  importBatchId       String   @default("")
+  externalOperationId String   @default("")
+  sourceRow           Int      @default(0)
+  reconciliationStatus String  @default("not_applicable")
+  linkedRecordId      String   @default("")
+  walletResolution    String   @default("resolved")
   data                Json
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -681,6 +689,9 @@ model FinanceOperation {
   @@unique([tenantId, operationId])
   @@index([tenantId, sourceType, sourceId])
   @@index([tenantId, occurredAt])
+  @@index([tenantId, origin, occurredAt])
+  @@index([tenantId, importBatchId])
+  @@index([tenantId, externalOperationId])
 }
 
 model FinanceLedgerEntry {
@@ -1397,6 +1408,7 @@ model DataTransferFact {
 }
 
 // Technical audit of one actual transfer; canonical facts stay in their owners.
+// An immutable upload source with independently resolved contact rows.
 model ContactImportBatch {
   id          String   @id
   tenantId    String

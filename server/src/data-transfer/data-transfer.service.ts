@@ -16,6 +16,8 @@ import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { calendarDate, canonical, clock, decimal, DOMAINS, Fact, instant, LABELS, text } from './formats';
 import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook, peopleWorkbook } from './source';
+import { scopedExcelFacts, scopedExcelWorkbook } from './scoped-excel';
+import { peopleExcelFacts } from './contacts-excel';
 
 type Tx = Prisma.TransactionClient;
 type Values = Record<string, any>;
@@ -40,9 +42,10 @@ export class DataTransferService {
   }
 
   async workbook(input: any) {
-    const rows=Array.isArray(input?.rows)?input.rows:[];
-    if (input?.domain==='people') return peopleWorkbook(rows,input?.template===true);
-    return transferWorkbook(rows,input?.template===true);
+    const rows = Array.isArray(input?.rows) ? input.rows : [];
+    if (input?.domain === 'people') return peopleWorkbook(rows, input?.template === true);
+    if (input?.domain === 'records' || input?.domain === 'finance') return scopedExcelWorkbook(input.domain, rows, input?.template === true);
+    return transferWorkbook(rows, input?.template === true);
   }
 
   private async reference(tx: Tx, tenantId: string, domain: string, value: unknown, source: string) {
@@ -70,10 +73,10 @@ export class DataTransferService {
       if (value && typeof value === 'object' && !(value instanceof Date)) throw Error(`${FIELDS[field] || field}: ${value.invalid || 'неверный тип значения'}`);
     }
     if (!DOMAINS.includes(fact.domain)) throw Error('Выберите тип данных для листа');
-    for(const field of ['date','birthday','scheduleDate','termStartDate','termEndDate','endDate','expiresAt'])if(v[field]!=null)v[field]=calendarDate(v[field]);
-    for (const field of ['from', 'to','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
-    for (const field of ['occurredAt', 'createdAt']) if (v[field] != null) v[field] = instant(v[field]);
-    for (const field of ['price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
+    for(const field of ['date','invoiceDate','birthday','scheduleDate','termStartDate','termEndDate','expiresAt','endDate'])if(v[field]!=null)v[field]=calendarDate(v[field]);
+    for (const field of ['from', 'to','createdTime','changedTime','scheduleFrom','scheduleTo']) if (v[field] != null) v[field] = clock(v[field]);
+    for (const field of ['occurredAt', 'createdAt', 'cancelledAt']) if (v[field] != null) v[field] = instant(v[field]);
+    for (const field of ['quotedTotal','price', 'cost', 'discountPercent', 'discountMoney', 'duration', 'amount', 'quantity', 'unitCost','programAmount','benefitValue','depositAmount','accountAmount','spendLimitPercent','financeAmount','tips','interestRate','minStock','targetStock','packageQuantity','grossWeight','tareWeight','lastPurchasePrice','containerCount','containerDelta','expectedContainerCount','actualContainerCount','listPrice','supplierDiscount','actualPrice','expectedQuantity','actualQuantity']) {
       if (v[field] != null) v[field] = decimal(v[field], FIELDS[field]);
     }
     if(v.discount!==undefined) {
@@ -84,6 +87,17 @@ export class DataTransferService {
     for(const field of ['trackLots','canConsume','canSell','visibleToEndUser'])if(v[field]!==undefined){
       if(![true,false,'Да','Нет','да','нет'].includes(v[field]))throw Error(`${FIELDS[field]}: укажите Да или Нет`);
       v[field]=[true,'Да','да'].includes(v[field]);
+    }
+    if(v.allocations!==undefined){
+      let parsed:any;
+      try{parsed=JSON.parse(text(v.allocations));}
+      catch{throw Error('Кошельки оплаты: проверьте суммы');}
+      if(!Array.isArray(parsed)||!parsed.length)throw Error('Укажите кошельки оплаты');
+      v.allocations=parsed.map((row:any)=>{
+        if(!row||typeof row!=='object'||Array.isArray(row)||!text(row.wallet))
+          throw Error('Укажите название каждого кошелька');
+        return {wallet:text(row.wallet),amount:decimal(row.amount,'Сумма кошелька')};
+      });
     }
     if (v.procedures != null) {
       let list: any;
@@ -98,6 +112,7 @@ export class DataTransferService {
       });
       if (v.procedure) throw Error('Укажите либо одну процедуру, либо список процедур');
     }
+    for(const field of ['createdDate','changedDate'])if(v[field]!==undefined && v[field]!==null && v[field]!=='')v[field]=calendarDate(v[field]);
     for(const field of ['spendLimitPercent','benefitValue','interestRate','supplierDiscount'])if(v[field]>100)throw Error(`${FIELDS[field]}: значение больше 100`);
     if (v.discountPercent > 100) throw Error('Скидка %: значение больше 100');
     if (v.discountPercent != null && v.discountMoney != null) throw Error('Указаны два вида скидки. Оставьте один явно заданный вид.');
@@ -117,6 +132,76 @@ export class DataTransferService {
     const previous = byId || byKey;
     const input = { ...normalized }; delete input.transferId; delete input.sourceKey;
     if (previous && canonical(previous.input) === canonical(input)) return { transferId: previous.id, targetId: previous.targetId, status: 'unchanged' };
+    if(previous && ['payments','operations'].includes(fact.domain)){
+      const saved=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{tenantId,operationId:previous.targetId}},
+      });
+      if(saved?.status==='cancelled')
+        throw Error('Отменённую операцию нельзя изменять через загрузку Excel.');
+    }
+    // Exported files contain hidden original identifiers. Re-importing them
+    // cannot create a second Record or FinanceOperation or silently replace
+    // an independently edited fact.
+    if(!previous && fact.domain==='records' && text(normalized.recordId)){
+      const current=await tx.record.findUnique({where:{tenantId_recordId:{tenantId,recordId:text(normalized.recordId)}}});
+      if(current){
+        const stored=current.data as Values;
+        const names=(Array.isArray(stored.procedures)?stored.procedures:[]).map((p:Values)=>text(p?.name));
+        const incoming=(Array.isArray(normalized.procedures)?normalized.procedures:[]).map((p:Values)=>text(p?.name));
+        if(text(stored.date)!==text(normalized.date)||text(stored.from)!==text(normalized.from)
+          ||text(stored.to)!==text(normalized.to)||text(stored.person?.name)!==text(normalized.name)
+          ||canonical(names)!==canonical(incoming))
+          throw Error('Эта запись уже существует и отличается от файла. Для изменения откройте запись в Журнале.');
+        return {transferId:'',targetId:current.recordId,status:'unchanged'};
+      }
+    }
+    if(!previous && ['payments','operations'].includes(fact.domain) && text(normalized.canonicalOperationId)){
+      const current=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{tenantId,operationId:text(normalized.canonicalOperationId)}},
+      });
+      if(current){
+        const facts=current.data as Values;
+        if(Boolean(normalized.importCancelled)!==(current.status==='cancelled'))
+          throw Error('Статус существующей операции отличается от файла. Измените операцию в ДДС.');
+        const requested=Number(normalized.financeAmount ?? normalized.amount);
+        const saved=Number(facts?.total);
+        if(!Number.isFinite(requested)||Math.abs(requested-saved)>0.009)
+          throw Error('Эта финансовая операция уже существует и отличается от файла.');
+        if(fact.domain==='payments' && text(normalized.recordId)
+          && (current.sourceType!=='record'||current.sourceId!==text(normalized.recordId)))
+          throw Error('Указанная операция относится к другой записи.');
+        return {transferId:'',targetId:current.operationId,status:'unchanged'};
+      }
+    }
+    // If the application exported a canonical operation ID as the document
+    // number, identify each wallet movement of that existing operation. An
+    // arbitrary CRM invoice number is never treated as a Record identifier.
+    if(!previous && ['payments','operations'].includes(fact.domain)
+      && text(normalized.documentNumber) && text(normalized.invoiceDate)){
+      const current=await tx.financeOperation.findUnique({
+        where:{tenantId_operationId:{
+          tenantId,operationId:text(normalized.documentNumber),
+        }},
+      });
+      if(current){
+        if(current.status==='cancelled')throw Error('Исходная операция отменена.');
+        const data=current.data as Values;
+        const wallet=text(normalized.wallet);
+        const amount=Number(normalized.financeAmount ?? normalized.amount);
+        const allocations=Array.isArray(data.allocations)?data.allocations:[];
+        const matchingWallet=allocations.length
+          ?allocations.some((item:Values)=>text(item.walletName)===wallet
+            && Math.abs(Number(item.amount)-amount)<0.009)
+          :text(data.walletName)===wallet
+            && Math.abs(Number(data.total)-amount)<0.009;
+        const quote=data.sourceQuote as Values | undefined;
+        if(!matchingWallet || fact.domain==='payments'&&current.sourceType!=='record'
+          ||quote?.subject && text(normalized.subject)!==text(quote.subject)
+          ||quote?.invoiceDate && text(normalized.invoiceDate)!==text(quote.invoiceDate))
+          throw Error('Номер документа принадлежит другой финансовой операции. Проверьте оплату.');
+        return {transferId:'',targetId:current.operationId,status:'unchanged'};
+      }
+    }
     const id = previous?.id || randomUUID();
     const provenance = { type: 'import', label: 'Импорт', transferId: id, source, sessionId, revision: (previous?.revision || 0) + 1 };
     await tx.$queryRaw`SELECT set_config('co_va.transfer_provenance', ${JSON.stringify(provenance)}, true)`;
@@ -170,25 +255,86 @@ export class DataTransferService {
       }));
       if (!snapshots.length && (v.cost != null || v.price != null || v.discountPercent != null || v.discountMoney != null)) throw Error('Не указана процедура для цены или скидки');
       targetId = await this.records.importHistorical(tenantId, { date: v.date, from: v.from, to: v.to,
-        workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '', phone: person.phones?.[0] || '' },
-        procedures: snapshots, appendProcedures:v.appendProcedures===true, ...(v.createdAt ? { createdAt: v.createdAt } : {}) }, target || text(v.recordId), tx);
+        workplaceId: workplace.key, person: { key: person.key, name: person.name, surname: person.surname || '',
+          phone:text(v.phone)||person.phones?.[0]||'',
+          email:text(v.email)||person.emails?.[0]||'',
+          uei:person.uei||text(v.uei)||'' },
+        procedures: snapshots, appendProcedures:v.appendProcedures===true,
+        ...(v.createdAt ? { createdAt: v.createdAt } : {}),
+        ...(v.createdDate ? { createdDate:v.createdDate,createdTime:v.createdTime } : {}),
+        ...(v.creatorName ? { creatorName:text(v.creatorName) } : {}),
+        ...(v.changedBy || v.changedDate || v.changedTime ? {
+          changedBy:text(v.changedBy),changedDate:v.changedDate,changedTime:v.changedTime,
+        } : {}),
+        ...(v.quotedTotal !== undefined ? { quotedTotal:v.quotedTotal } : {}),
+        ...(v.comment ? { comment:text(v.comment) } : {}),
+        ...(v.integrationSource ? { integrationSource:text(v.integrationSource) } : {}),
+        ...((v.bookedBy || v.actionStatus || v.visitStatus || v.paymentStatus) ? {
+          bookedBy: text(v.bookedBy),actionStatus:text(v.actionStatus),
+          visitStatus:text(v.visitStatus),paymentStatus:text(v.paymentStatus),
+        } : {}),
+      }, target || text(v.recordId), tx);
     } else if(['deposits','accounts','operations'].includes(fact.domain)) {
       const person=fact.domain!=='operations'?await this.people.resolveTransferPerson(tenantId,v,tx):null;
       if(person){v.person=person;v.personKey=person.key;}
       if(fact.domain==='accounts' && (v.recordId || v.date))v.recordId=(await this.records.resolveTransferredRecord(tenantId,v,tx)).id;
       if(v.wallet){const wallet=await this.finance.resolveTransferredWallet(tenantId,v,tx);v.walletId=wallet.id;v.walletName=wallet.name;}
       targetId=fact.domain==='deposits'?await this.finance.importDeposit(tenantId,v,target,tx):fact.domain==='accounts'?await this.personalAccounts.importHistorical(tenantId,v,target,tx):await this.finance.importFinancialOperation(tenantId,v,target,tx);
+      if(fact.domain==='operations'&&v.importCancelled===true)
+        await this.finance.cancelImportedFinanceOperation(tenantId,targetId,v.cancelledAt,tx);
     } else if (fact.domain === 'payments') {
       if (v.amount == null) throw Error('Сумма имеет неверный формат');
       if (!v.occurredAt) throw Error('Не указана дата оплаты');
+      const compactFinance=Boolean(v.purpose && v.invoiceDate);
       let person: Values | undefined;
-      if (v.personKey || v.phone || v.uei) person = await this.people.resolveTransferPerson(tenantId, v, tx);
+      if (v.personKey || v.phone || v.uei) {
+        // The finance participant can contain full first+last name; identity
+        // still comes from code or telephone, not exact first-name formatting.
+        person = await this.people.resolveTransferPerson(tenantId,
+          compactFinance ? {...v,name:''} : v, tx);
+      }
       let record: Values | undefined;
-      if (v.recordId || v.date) record = await this.records.resolveTransferredRecord(tenantId, { ...v, personKey: person?.key }, tx);
-      if(v.paymentSource && !['Кошелёк','Депозит','Личный счёт'].includes(v.paymentSource))throw Error('Уточните источник оплаты');
-      const wallet = !v.paymentSource || v.paymentSource==='Кошелёк' ? await this.finance.resolveTransferredWallet(tenantId, v, tx) : {id:'',name:''};
-      if(v.paymentSource==='Личный счёт') targetId=await this.personalAccounts.importHistorical(tenantId,{...v,personKey:person?.key || record?.person?.key,recordId:record?.id,accountAction:'Оплата',accountAmount:v.amount},target,tx);
-      else targetId = await this.finance.importPayment(tenantId, { ...v, recordId: record?.id, person: person || record?.person || {}, workplaceId: record?.workplaceId || '', walletId: wallet.id, walletName: wallet.name }, target, tx);
+      if(compactFinance){
+        let workplaceId='';
+        if(v.workplace){
+          const workplace=await this.profiles.resolveTransferWorkplace(tenantId,v,tx);
+          workplaceId=workplace.key;
+        }
+        let linkedRecordId='';
+        if(text(v.documentNumber)){
+          // The original CRM Record ID may live in an earlier import fact,
+          // while the canonical Record uses a different internal identifier.
+          const imported=await tx.dataTransferFact.findMany({where:{
+            tenantId,domain:'records',
+            sourceKey:{endsWith:':records:'+text(v.documentNumber)},
+          },select:{targetId:true}});
+          const candidates=[...new Set(imported.map(row=>row.targetId))];
+          if(candidates.length===1)linkedRecordId=candidates[0];
+          else if(candidates.length>1)
+            throw Error('Номер документа относится к нескольким исходным записям.');
+        }
+        record=await this.records.matchFinancialRecord(tenantId,
+          {...v,recordId:linkedRecordId,personKey:person?.key,workplaceId},tx);
+        if(!person)person=record.person;
+        if(!record?.id)throw Error('Не найден идентификатор записи для оплаты');
+      }else if (v.recordId || v.date){
+        record=await this.records.resolveTransferredRecord(tenantId,
+          { ...v, personKey: person?.key }, tx);
+      }
+      if(v.paymentSource && !['Кошелёк','Депозит','Личный счёт'].includes(v.paymentSource))
+        throw Error('Уточните источник оплаты');
+      const wallet = !v.paymentSource || v.paymentSource==='Кошелёк'
+        ? await this.finance.resolveTransferredWallet(tenantId, v, tx)
+        : {id:'',name:''};
+      const withLink={...v,recordId:record?.id,person:person || record?.person || {},
+        workplaceId:record?.workplaceId || '',walletId:wallet.id,walletName:wallet.name};
+      if(v.paymentSource==='Личный счёт')
+        targetId=await this.personalAccounts.importHistorical(tenantId,
+          {...withLink,personKey:person?.key || record?.person?.key,
+            accountAction:'Оплата',accountAmount:v.amount},target,tx);
+      else targetId = await this.finance.importPayment(tenantId,withLink,target,tx);
+      if(v.importCancelled===true)
+        await this.finance.cancelImportedFinanceOperation(tenantId,targetId,v.cancelledAt,tx);
     } else if(fact.domain==='offers') {
       targetId=await this.inventory.importOffer(tenantId,v,target,tx);
     } else if (fact.domain === 'items') {
@@ -217,7 +363,21 @@ export class DataTransferService {
 
   async run(tenantId: string, accountId: string, input: SourceInput, preview: boolean) {
     let facts: Fact[];
-    try { const parsed = await readSource(input); facts = sourceFacts(parsed.sheets, parsed.fingerprint, input); }
+    try {
+      const parsed = await readSource(input);
+      facts = input.expectedDomain === 'people'
+        ? peopleExcelFacts(parsed.sheets, parsed.fingerprint, text(input.source) || 'Контакты')
+        : input.expectedDomain === 'records' || input.expectedDomain === 'finance'
+        ? scopedExcelFacts(parsed.sheets, parsed.fingerprint, input.expectedDomain, text(input.source) || 'Excel')
+        : sourceFacts(parsed.sheets, parsed.fingerprint, input);
+      if (input.expectedDomain === 'people' && facts.some(fact => fact.domain !== 'people')) {
+        throw Error('В этом разделе загружаются только контакты');
+      }
+      if (input.expectedDomain === 'records' && facts.some(fact => fact.domain !== 'records'))
+        throw Error('В этом разделе загружаются только записи');
+      if (input.expectedDomain === 'finance' && facts.some(fact => !['operations','payments'].includes(fact.domain)))
+        throw Error('В этом разделе загружаются только финансовые операции');
+    }
     catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
     const access = await this.access.resolveTenantAccess(tenantId);
     const workplaceLimit = await this.access.resolveCapability(tenantId, 'workplaces.max');
@@ -227,7 +387,12 @@ export class DataTransferService {
     const seen = new Map<string, string>();
     for (const fact of facts) {
       const key = `${fact.domain}:${fact.sourceKey}`; const value = canonical(fact.values);
-      if (seen.has(key) && seen.get(key) !== value) conflicts.set(key, 'Один ID источника указан для разных фактов в файле. Проверьте данные.');
+      if (seen.has(key)) {
+        if(fact.values.invoiceDate)
+          conflicts.set(key,'В файле несколько платежей с одинаковыми реквизитами. Для разных оплат уточните номер документа, кошелёк или дату оплаты.');
+        else if(seen.get(key)!==value)
+          conflicts.set(key,'Один ID источника указан для разных фактов в файле. Проверьте данные.');
+      }
       seen.set(key, value);
     }
     const sessionId=randomUUID();
@@ -259,6 +424,11 @@ export class DataTransferService {
             await tx.$executeRawUnsafe('SAVEPOINT transfer_fact');
             try{add(fact,await perform(tx,fact));await tx.$executeRawUnsafe('RELEASE SAVEPOINT transfer_fact');}
             catch(error){await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT transfer_fact');await tx.$executeRawUnsafe('RELEASE SAVEPOINT transfer_fact');add(fact,null,reason(error));}
+          }
+          // Dedicated Excel flows must never save a partial file. On any row
+          // error the transaction rolls back all people, history and IDs.
+          if (!preview && input.strict === true && result.failed > 0) {
+            throw new BadRequestException('В файле есть ошибки. Ничего не загружено.');
           }
           await this.finance.finishHistoricalDeposits(tx,tenantId,result.rows.filter((row:any)=>row.domain==='deposits'&&!row.reason).map((row:any)=>row.targetId));
           if(preview)throw new PreviewRollback(result);

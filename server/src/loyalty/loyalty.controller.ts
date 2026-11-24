@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { NotificationEventService } from '../notification/notification-event.service';
@@ -68,8 +68,9 @@ export class LoyaltyController {
   listPersonDeposits(
     @Req() request: AuthenticatedRequest,
     @Param('personKey') personKey: string,
+    @Query('at') at = '',
   ) {
-    return this.deposits.list(request.auth!.tenantId, personKey);
+    return this.deposits.list(request.auth!.tenantId, personKey, at);
   }
 
   @Post('deposits/fund')

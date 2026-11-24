@@ -8,11 +8,11 @@ export { peopleWorkbook } from './contacts-excel';
 export const FIELDS: Record<string, string> = { ...STANDARD_LABELS,
   transferId: 'ID переноса', externalId: 'ID источника', sourceKey: 'Ключ строки', name: 'Имя', surname: 'Фамилия', phone: 'Телефон', email: 'Email', uei: 'UEI',
   city: 'Город', address: 'Адрес', currency: 'Валюта', timeZone: 'Часовой пояс', about: 'Описание',
-  personKey: 'ID человека CO-VA', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства CO-VA', procedure: 'Процедура', procedures: 'Процедуры (JSON)', procedureId: 'ID процедуры CO-VA',
+  personKey: 'ID человека', workplace: 'Рабочее пространство', workplaceKey: 'ID пространства', procedure: 'Процедура', procedures: 'Процедуры (JSON)', procedureId: 'ID услуги',
   date: 'Дата обслуживания', from: 'Время обслуживания', to: 'Окончание обслуживания', createdAt: 'Дата создания в источнике', occurredAt: 'Дата факта',
-  recordId: 'ID записи CO-VA', recordTransferId: 'ID переноса записи', personTransferId: 'ID переноса человека', workplaceTransferId: 'ID переноса пространства',
+  recordId: 'ID записи', recordTransferId: 'ID переноса записи', personTransferId: 'ID переноса человека', workplaceTransferId: 'ID переноса пространства',
   price: 'Исторический прайс', cost: 'Цена работы', discountPercent: 'Скидка %', discountMoney: 'Скидка суммой', duration: 'Длительность',
-  amount: 'Сумма оплаты', walletId: 'ID кошелька CO-VA', wallet: 'Кошелёк', material: 'Расходник', itemId: 'ID позиции CO-VA', itemTransferId: 'ID переноса позиции',
+  amount: 'Сумма оплаты', walletId: 'ID кошелька', wallet: 'Кошелёк', material: 'Расходник', itemId: 'ID позиции', itemTransferId: 'ID переноса позиции',
   manufacturer: 'Производитель', unit: 'Единица', quantity: 'Количество', unitCost: 'Себестоимость единицы', kind: 'Тип движения', note: 'Примечание', withoutProcedure: 'Без процедуры',
 };
 export const DOMAIN_FIELDS: Record<string, string[]> = {
@@ -64,8 +64,17 @@ export async function readSource(input: SourceInput): Promise<{ sheets: Sheet[];
 export function defaultDomain(name: string) { return name === 'Данные' ? 'standard' : DOMAINS.find(key => name === key || name === LABELS[key]) || ''; }
 export function defaultColumns(headers: string[]) {
   const result: Record<string, number> = {};
+  // Historical branded labels remain readable, but are never written into new files.
+  const legacy: Record<string, string> = {
+    personKey: 'ID человека CO-VA',
+    workplaceKey: 'ID пространства CO-VA',
+    procedureId: 'ID процедуры CO-VA',
+    recordId: 'ID записи CO-VA',
+    walletId: 'ID кошелька CO-VA',
+    itemId: 'ID позиции CO-VA',
+  };
   for (const [field, label] of Object.entries(FIELDS)) {
-    const matches = headers.map((h, i) => h === field || h === label ? i : -1).filter(i => i >= 0);
+    const matches = headers.map((h, i) => h === field || h === label || h === legacy[field] ? i : -1).filter(i => i >= 0);
     if (matches.length === 1) result[field] = matches[0];
   }
   return result;

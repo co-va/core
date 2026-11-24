@@ -219,6 +219,7 @@ export class PersonIdentityService {
       totalSpent: 0,
       lastVisit: '',
       programs: [],
+      contactStatus: 'registered',
       createdAt: now,
     };
 

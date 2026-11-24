@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { FinanceService } from '../finance/finance.service';
-import { resolveSelectedRecordProgramPricePercent } from '../loyalty/price-condition';
+import { resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import { ProcedureService } from '../procedure/procedure.service';
 import { TimeService } from '../time/time.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -124,8 +124,10 @@ export class RecordService {
     ];
   }
 
-  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown = null) {
-    return (await resolveSelectedRecordProgramPricePercent(this.prisma, tenantId, person, loyaltyProgram)).percent;
+  private async pricePercent(tenantId: string, person: JsonObject, loyaltyProgram: unknown, visitDate: unknown) {
+    return (await resolveSelectedRecordProgramPricePercent(
+      this.prisma, tenantId, person, loyaltyProgram, visitDatePriceMoment(visitDate),
+    )).percent;
   }
 
   private async validateAvailability(
@@ -168,6 +170,7 @@ export class RecordService {
         return id
           && id !== excludeRecordId
           && !cancelled.has(id)
+          && !['Отменил','Удалена'].includes(text(record?.historicalAction))
           && text(record?.workplaceId) === workplaceId
           && dateValue(record?.date) === date;
       })
@@ -241,14 +244,19 @@ export class RecordService {
       ? this.time.minutesToTime(startMinutes + totalDuration)
       : '';
     const to = derivedTo || text(input.to);
-    await this.validateAvailability(tenantId, { date, workplaceId, from, to }, { excludeRequestId: sourceRequestId });
+    // Professional Journal may recreate historical visits without today's
+    // working schedule. Public booking still follows ordinary availability.
+    const historicalOwnerEntry = !publicBooking && date < new Date().toISOString().slice(0, 10);
+    if (!historicalOwnerEntry) {
+      await this.validateAvailability(tenantId, { date, workplaceId, from, to }, { excludeRequestId: sourceRequestId });
+    }
 
     const products = arrayValue(input.products).map((item) => clone(objectValue(item)));
     let person = clone(objectValue(input.person));
     const group = normalizeGroup(input.group, person, groupCapacityFromProcedures(procedureSnapshots));
     if (group?.participants?.length) person = clone(group.participants[0]);
     const loyaltyProgram = nullableObject(input.loyaltyProgram);
-    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
+    const pricePercent = await this.pricePercent(tenantId, person, loyaltyProgram, date);
     const settlement = this.finance.calculateSettlement(this.settlementSources(procedureSnapshots, products), pricePercent);
 
     const now = new Date().toISOString();
@@ -313,6 +321,23 @@ export class RecordService {
       if(matches.length===1){existing=matches[0];id=existing.recordId;}
     }
     const previous = objectValue(existing?.data);
+    const actionName=text(input.actionStatus);
+    const visitName=text(input.visitStatus);
+    const paymentName=text(input.paymentStatus);
+    const actorName=text(input.bookedBy);
+    const importedSource=text(input.integrationSource);
+    const sourceName=({
+      'Онлайн-запись':'online-booking','Приложение':'account-journal',
+      'Журнал':'journal',
+    } as Record<string,string>)[importedSource] || importedSource;
+    if (actionName && !['Записался','Перенёс','Отменил','Удалена'].includes(actionName))
+      throw new BadRequestException('Статус записи: выберите Записался, Перенёс или Отменил');
+    if (visitName && !['Ожидает','Пришёл','Не пришёл'].includes(visitName))
+      throw new BadRequestException('Посещение: выберите Ожидает, Пришёл или Не пришёл');
+    if (paymentName && !['Не оплачено','Частично','Оплачено'].includes(paymentName))
+      throw new BadRequestException('Оплата: выберите Не оплачено, Частично или Оплачено');
+    if (actorName && !['Самостоятельно','Профессионал'].includes(actorName))
+      throw new BadRequestException('Кто записал: выберите Самостоятельно или Профессионал');
     if (!targetId && !input.appendProcedures) {
       const rows = await tx.record.findMany({ where: { tenantId } });
       const matches = rows.map(row => objectValue(row.data)).filter(record => text(record.person?.key) === text(input.person?.key)
@@ -331,7 +356,31 @@ export class RecordService {
       from: input.from!==undefined?text(input.from):text(previous.from), to: input.to!==undefined?text(input.to):text(previous.to), person: clone(input.person), procedures,
       timePrecision: (input.from!==undefined?input.from:previous.from) ? 'minute' : 'date', historicalTransfer: true,
       ...(input.createdAt ? { createdAt: text(input.createdAt) } : {}),
+      ...(input.creatorName ? { historicalCreatorName:text(input.creatorName) } : {}),
+      ...(input.createdDate ? { historicalCreatedDate:text(input.createdDate),
+        historicalCreatedTime:text(input.createdTime) } : {}),
+      ...(input.changedBy ? { historicalChangedBy:text(input.changedBy) } : {}),
+      ...(input.changedDate ? { historicalChangedDate:text(input.changedDate),
+        historicalChangedTime:text(input.changedTime) } : {}),
+      ...(input.quotedTotal !== undefined ? { historicalQuotedTotal:Number(input.quotedTotal) } : {}),
+      ...(input.comment ? { historicalComment:text(input.comment) } : {}),
+      ...(input.integrationSource ? { historicalIntegrationSource:text(input.integrationSource) } : {}),
+      ...(sourceName ? { source:sourceName } : actorName
+        ? { source:actorName==='Самостоятельно'?'online-booking':'journal' } : {}),
+      ...(actionName ? { historicalAction: actionName } : {}),
+      ...(visitName ? { historicalVisit: visitName } : {}),
+      ...(paymentName ? { historicalPaymentStatus: paymentName } : {}),
     };
+    if (input.createdDate && input.createdTime && !input.createdAt) {
+      const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(input.workplaceId) } } });
+      const createdAt=zonedDateTimeToDate(text(input.createdDate)+'T'+text(input.createdTime),workplace?.timeZone);
+      if(!createdAt)throw new BadRequestException('Неверные дата или время создания записи');
+      record.createdAt=createdAt.toISOString();
+    }
+    if (!input.createdDate && input.createdTime)
+      throw new BadRequestException('Для времени создания укажите дату');
+    if (!input.changedDate && input.changedTime)
+      throw new BadRequestException('Для времени изменения укажите дату');
     if (input.from) {
       const workplace = await tx.workplace.findUnique({ where: { tenantId_key: { tenantId, key: text(input.workplaceId) } } });
       const occurredAt = zonedDateTimeToDate(`${input.date}T${input.from}`, workplace?.timeZone)?.toISOString();
@@ -341,6 +390,61 @@ export class RecordService {
       create: { tenantId, recordId: id, position: await tx.record.count({ where: { tenantId } }), data: json(record) }, update: { data: json(record) } });
     await this.finance.importRecordSettlement(tenantId, id, procedures, tx);
     return id;
+  }
+
+  // Finance Excel links a payment to one existing appointment; it never
+  // creates an appointment, changes its price or guesses between candidates.
+  async matchFinancialRecord(tenantId:string,input:JsonObject,tx:Prisma.TransactionClient) {
+    const norm=(value:unknown)=>text(value).toLocaleLowerCase('ru-RU')
+      .replace(/ё/g,'е').replace(/\s+/g,' ').trim();
+    const digits=(value:unknown)=>text(value).replace(/\D/g,'').slice(-10);
+    const date=dateValue(input.date);
+    const subject=norm(input.subject || input.procedure);
+    const phone=digits(input.phone);
+    const code=norm(input.uei);
+    const participant=norm(input.participant || input.name);
+    const personId=text(input.personKey);
+    const workplaceId=text(input.workplaceId);
+    const time=text(input.from);
+    const sourceDoc=text(input.documentNumber);
+    if(!date || !subject || ![personId,phone,code,participant].some(Boolean))
+      throw new ConflictException('Для сопоставления записи нужны дата счёта, услуга и участник');
+    const rows=await tx.record.findMany({where:{tenantId}});
+    const relevant=rows.map(row=>({id:row.recordId,record:objectValue(row.data)}))
+      .filter(({id,record})=>{
+        if(['Отменил','Удалена'].includes(text(record.historicalAction)))return false;
+        if(dateValue(record.date)!==date)return false;
+        if(workplaceId && text(record.workplaceId)!==workplaceId)return false;
+        if(time && text(record.from)!==time)return false;
+        const person=objectValue(record.person);
+        if(personId && text(person.key)!==personId)return false;
+        if(phone && digits(person.phone)!==phone)return false;
+        if(code && norm(person.uei)!==code && !personId)return false;
+        if(participant){
+          const full=norm([person.name,person.surname].filter(Boolean).join(' '));
+          if(full!==participant && norm(person.name)!==participant)return false;
+        }
+        const services=arrayValue(record.procedures).map(p=>norm(p?.name)).filter(Boolean);
+        const products=arrayValue(record.products).map(p=>norm(p?.name)).filter(Boolean);
+        const claimed=subject.split(/[,;+]/).map(part=>part.trim()).filter(Boolean);
+        return claimed.length>0 && claimed.every(name=>[...services,...products].includes(name));
+      });
+    // An explicit, previously verified import mapping is authoritative.
+    // Do not ignore a contradictory date, person or service and match by guess.
+    const linkedId=text(input.recordId);
+    if(linkedId){
+      const linked=relevant.filter(item=>item.id===linkedId);
+      if(linked.length!==1)
+        throw new ConflictException('Номер исходной записи найден, но дата, участник или услуга не совпадают.');
+      return linked[0].record;
+    }
+    // An imported CRM invoice is not automatically a Record ID.
+    const exact=sourceDoc?relevant.filter(item=>item.id===sourceDoc):[];
+    const matches=exact.length?exact:relevant;
+    if(matches.length!==1)throw new ConflictException(matches.length
+      ? 'Найдено несколько записей. Уточните время или код клиента.'
+      : 'Запись для оплаты не найдена. Проверьте участника, дату, услугу и рабочее пространство.');
+    return matches[0].record;
   }
 
   async resolveTransferredRecord(tenantId: string, input: JsonObject, tx: Prisma.TransactionClient) {
@@ -378,7 +482,7 @@ export class RecordService {
       .map((row) => objectValue(row.data))
       .filter((record) => {
         const id = text(record.id);
-        return id && !cancelled.has(id);
+        return id && !cancelled.has(id) && !['Отменил','Удалена'].includes(text(record?.historicalAction));
       })
       .map((record) => ({
         id: text(record.id),
@@ -392,9 +496,10 @@ export class RecordService {
   }
 
   private projectLifecycle(record: JsonObject, events: JsonObject[]) {
-    let status = 'active';
+    let status = ['Отменил','Удалена'].includes(text(record.historicalAction)) ? 'cancelled' : 'active';
     let confirmed = false;
-    let attendance = '';
+    let attendance = text(record.historicalVisit)==='Пришёл' ? 'arrived'
+      : text(record.historicalVisit)==='Не пришёл' ? 'no-show' : '';
     let confirmedAt = '';
     let attendanceAt = '';
     let cancelledAt = '';
@@ -467,7 +572,7 @@ export class RecordService {
       if (!directMatch && !groupMatch && !bookedByMatch) continue;
       const events = byRecord.get(text(record.id)) || [];
       const lifecycle = this.projectLifecycle(record, events);
-      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram);
+      const pricePercent = await this.pricePercent(tenantId, person, record.loyaltyProgram, record.date);
       const fallbackSettlement = this.finance.calculateSettlement(
         this.settlementSources(
           arrayValue(record.procedures).map((item) => objectValue(item)),
@@ -476,12 +581,28 @@ export class RecordService {
         pricePercent,
       );
       const unknownPrice = record.historicalTransfer && (!arrayValue(record.procedures).length || arrayValue(record.procedures).some(item => item.cost == null || item.cost === ''));
-      const settlement = unknownPrice ? null : await this.finance.settlementForSource(
+      const storedSettlement = unknownPrice ? null : await this.finance.settlementForSource(
         tenantId,
         'record',
         text(record.id),
         fallbackSettlement,
       ) || fallbackSettlement;
+      // Project unpaid bookings from the deposit terms valid at their visit
+      // date. A newly funded deposit must appear, and an ended one must not
+      // remain on a future booking. Never rewrite a paid historical snapshot.
+      const storedPayment = await this.finance.recordSettlementPaymentState(
+        tenantId, text(record.id), storedSettlement,
+      );
+      const settlement = storedSettlement && storedPayment.paid <= 0.009
+        ? this.finance.repriceSettlement(
+            this.settlementSources(
+              arrayValue(record.procedures).map((item) => objectValue(item)),
+              arrayValue(record.products).map((item) => objectValue(item)),
+            ),
+            storedSettlement,
+            pricePercent,
+          )
+        : storedSettlement;
       const payment = await this.finance.recordSettlementPaymentState(tenantId, text(record.id), settlement);
       result.push({
         ...record,
@@ -592,12 +713,16 @@ export class RecordService {
       || text(current.from) !== from
       || text(current.to) !== to;
     if (scheduleChanged) {
-      await this.validateAvailability(tenantId, {
-        date,
-        workplaceId: incomingWorkplaceId,
-        from,
-        to,
-      }, { excludeRecordId: id });
+      const publicBooking = ['online-booking', 'account-journal'].includes(text(current.source));
+      const historicalOwnerEntry = !publicBooking && date < new Date().toISOString().slice(0, 10);
+      if (!historicalOwnerEntry) {
+        await this.validateAvailability(tenantId, {
+          date,
+          workplaceId: incomingWorkplaceId,
+          from,
+          to,
+        }, { excludeRecordId: id });
+      }
     }
 
     const products = productsChanged
@@ -615,7 +740,7 @@ export class RecordService {
     const loyaltyProgram = programChanged ? nullableObject(incoming.loyaltyProgram) : nullableObject(current.loyaltyProgram);
 
     const currentPerson = objectValue(current.person);
-    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram);
+    const currentPricePercent = await this.pricePercent(tenantId, currentPerson, current.loyaltyProgram, current.date);
     const currentFallbackSettlement = this.finance.calculateSettlement(
       this.settlementSources(
         arrayValue(current.procedures).map((item) => objectValue(item)),
@@ -631,10 +756,14 @@ export class RecordService {
     ) || currentFallbackSettlement;
 
     const nextSettlementSources = this.settlementSources(procedures, products);
-    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram);
+    const nextPricePercent = await this.pricePercent(tenantId, person, loyaltyProgram, date);
+    const visitPriceChanged = dateValue(current.date) !== date && nextPricePercent !== currentPricePercent;
+    // A moved, unpaid visit is re-priced; a paid calculation remains history.
+    const repriceUnpaidVisit = visitPriceChanged
+      && (await this.finance.recordSettlementPaymentState(tenantId, id, currentSettlement)).paid <= 0.009;
     const settlement = personChanged
       ? this.finance.calculateSettlement(nextSettlementSources, nextPricePercent)
-      : (refreshProcedures || productsChanged || programChanged)
+      : (refreshProcedures || productsChanged || programChanged || repriceUnpaidVisit)
         ? this.finance.repriceSettlement(nextSettlementSources, currentSettlement, nextPricePercent)
         : null;
 

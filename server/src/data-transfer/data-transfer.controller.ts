@@ -8,7 +8,8 @@ type AuthRequest = Request & { auth?: { tenantId: string; platformAccountId: str
 @Controller('data-transfer')
 @UseGuards(JwtAuthGuard)
 export class DataTransferController {
-  constructor(private readonly transfer: DataTransferService, private readonly contacts: ContactImportService) {}
+  constructor(private readonly transfer: DataTransferService,
+    private readonly contacts: ContactImportService) {}
   @Get('contacts/batches') contactBatches(@Req() req:AuthRequest) {
     return this.contacts.list(req.auth!.tenantId);
   }

@@ -61,8 +61,18 @@ assert.equal(runtime.effectiveDiscountForPerson({ ...me, discountPercent: 0 }, [
 ], at), null, 'Ended instance does not leave a stale percent');
 assert.equal(runtime.effectiveDiscountForPerson({ ...me, discountPercent: 0 }, [], at), null,
   'Empty manual discount field stays empty, not 0%');
-assert.equal(runtime.effectiveDiscountForPerson(me, [program], at), null,
-  'Two conflicting discount sources must not be silently added or selected');
+assert.deepEqual(plain(runtime.effectiveDiscountForPerson(me, [program], at)),
+  { percent: 20, source: 'program', programName: 'Сезонная программа' },
+  'A deposit supersedes the earlier manual percentage, without double discount');
+assert.equal(runtime.effectiveDiscountForPerson(me, [
+  program, { ...program, depositId: 'deposit-2', programId: 'program-2', programName: 'Другая программа', terms: { ...program.terms, benefitValue: 25 } },
+], at), null, 'Two competing program percentages must remain a conflict');
+assert.equal(runtime.effectiveDiscountForPerson(me, [{ ...program, status: 'expired' }], at), null,
+  'The old manual percentage must not revive after a deposit expires');
+assert.deepEqual(plain(runtime.effectiveDiscountForPerson({
+  ...me, discountPercent: 15, discountAssignedAt: '2026-11-10T12:00:00.000Z',
+}, [{ ...program, status: 'expired', fundedAt: '2026-11-09T12:00:00.000Z' }], new Date('2026-11-11T12:00:00.000Z'))),
+  { percent: 15, source: 'personal', programName: '' }, 'New manual rate after a deposit is allowed');
 assert.equal(runtime.personBelongsToAccount({ ...other, phones: me.phones }, 'account-me', me.phones[0]), false,
   'Another explicitly linked account cannot inherit a discount through matching phone');
 
@@ -81,7 +91,7 @@ const prisma = {
   } },
   loyaltyDepositInstance: { async findMany({ where }) {
     depositReads += 1;
-    return depositRows.filter((row) => where.tenantId.in.includes(row.tenantId) && row.status === 'active');
+    return depositRows.filter((row) => where.tenantId.in.includes(row.tenantId) && (!where.status || row.status === where.status));
   } },
 };
 const listDiscounts = () => runtime.accountDiscounts.call({ prisma }, 'account-me', '79990000000', ['pro-a', 'pro-b']);
@@ -169,6 +179,18 @@ const context = {
     },
   },
   personalAccounts: { endUserSummary: async () => personalAccountView },
+  // Canonical DepositService already reconstructs balances of old expiries
+  // from FinanceOperation; account-facing cards reuse its result.
+  deposits: {
+    list: async (_tenantId, personKey) => assignedRows
+      .filter(row => row.personKey === personKey)
+      .map(row => ({
+        ...row, fundedAmount: row.initialAmount,
+        discountPercent: row.status === 'active'
+          && (!row.terms.termEndDate || row.terms.termEndDate >= new Date().toISOString().slice(0, 10))
+          ? 20 : 0,
+      })),
+  },
 };
 context.visibleDepositSummaries = programRuntime.visibleDepositSummaries.bind(context);
 const assignedPrograms = () => programRuntime.programSummaries.call(
@@ -240,7 +262,7 @@ assignedRows = [{ ...assignedRows[0], status: 'closed', terms: program.terms }];
 assigned = await assignedPrograms();
 assert.equal(assigned[0].discountPercent, 0, 'Closed program cannot advertise an active percent');
 
-assert.match(service, /depositPriceSourcesFromRows\(rows, personKey, new Date\(\)\)/,
+assert.match(service, /this\.deposits\.list\(tenantId, personKey\)/,
   'Program discount and Person discount use one existing canonical source');
 
 

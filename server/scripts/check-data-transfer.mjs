@@ -214,133 +214,666 @@ try {
   assert.equal(await db.dataTransferFact.count({where:{tenantId}}),before);
   // A corrected bad row complements the successful original row.
   result=await run('people',[{externalId:'bad',name:'Мария',phone:'79991112233'}]);assert.equal(result.failed,0);
-  await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
-  // Persistent Excel reconciliation: Email-only is a candidate, not a
-  // license to silently attach a new phone to another person.
-  const reviewer=new ContactImportService(db,people,access);
-  const makeReviewFile=async(filename,rows)=>{
-    const wb=new ExcelJS.Workbook();
-    await wb.xlsx.load(await service.workbook({domain:'people',template:true}));
-    rows.forEach((row,index)=>{wb.worksheets[0].getRow(index+3).values=row;});
-    return {filename,source:'Контакты',strict:true,expectedDomain:'people',
-      dataUrl:'data:application/octet-stream;base64,'+
-        Buffer.from(await wb.xlsx.writeBuffer()).toString('base64')};
-  };
-  const identityFile=await makeReviewFile('identity-confirm.xlsx',[
-    ['','Тестовая','','','','','79991116701','','verified@example.test'],
-    ['','Анна','','','','','79991116702','','keep@example.test'],
+  // Real one-sheet Contacts Excel, with no service metadata in visible columns.
+  const emptyContacts = new ExcelJS.Workbook();
+  await emptyContacts.xlsx.load(await service.workbook({ domain:'people',template:true }));
+  const contactSheet = emptyContacts.worksheets[0];
+  assert.equal(emptyContacts.worksheets.length,1);
+  assert.equal(contactSheet.name,'Люди');
+  assert.equal(contactSheet.rowCount,2,'Template has group and field headers, no people');
+  assert.equal(contactSheet.getCell(1,1).value,'Личные данные');
+  assert.equal(contactSheet.getCell(1,7).value,'Контактные данные');
+  assert.deepEqual(contactSheet.getRow(2).values.slice(1,13),[
+    'Код клиента','Имя','Фамилия','Пол','Дата рождения','Скидка, %',
+    'Телефон','Дополнительный телефон','Email','Дополнительный Email',
+    'Telegram','Дополнительный Telegram',
   ]);
-  let batch=await reviewer.create(tenantId,accountId,identityFile);
-  assert.equal(batch.total,2);
-  assert.equal(batch.done,1,'Unique person is imported directly');
-  assert.equal(batch.pending,1,'Email-only match is not silently merged');
-  const identityIssue=batch.issues.find(row=>row.rowNumber===4&&row.field==='identity');
-  assert.ok(identityIssue,'Identity review must be presented');
-  assert.ok(identityIssue.owners.some(o=>o.key===personId&&o.matchedBy.includes('email')));
-  batch=await reviewer.decide(tenantId,batch.id,{
-    rowNumber:4,field:'identity',mode:'same',value:personId,
-  });
-  assert.equal(batch.done,1,'Identity decision does not resolve other field conflicts');
-  assert.ok(batch.issues.some(x=>x.rowNumber===4&&x.field==='phone'));
-  batch=await reviewer.decide(tenantId,batch.id,{
-    rowNumber:4,field:'phone',mode:'add',value:'79991116702',
-  });
-  assert.equal(batch.done,2);
-  const updatedAnna=await db.person.findFirst({where:{tenantId,key:personId}});
-  assert.ok(updatedAnna.data.phones.some(p=>p.replace(/\D/g,'')==='79991116702'));
-  assert.ok(updatedAnna.data.emails.includes('keep@example.test'));
-
-  // Same Email in separate source rows, with different names and phones,
-  // creates both an Email conflict and a person-identity review.
-  const independentRows=[
-    {row:3,values:{name:'Олег',phone:'79991118801',email:'shared@example.test'}},
-    {row:4,values:{name:'Лина',phone:'79991118802',additionalEmail:'shared@example.test'}},
+  assert.equal(contactSheet.getCell(2,13).value,'Источник интеграции');
+  assert.equal(contactSheet.getCell(2,13).fill.fgColor.argb,'FF303238');
+  assert.equal(contactSheet.getCell(2,14).value,'Примечание');
+  assert.equal(contactSheet.getColumn(15).hidden,true,'Internal key is not exposed to professionals');
+  assert.equal(contactSheet.getCell(2,15).value,'ID человека');
+  contactSheet.getRow(3).values=[
+    'A012','Ксения Примерная','','Ж','15/6/85',10,'79997771234',
+    '79997771235','ksenia@example.test','ksenia.second@example.test',
+    '@ksenia_test','@ksenia_alt','YCLIENTS',
   ];
-  const inspected=inspectContactRow(independentRows[0].values,[],{},independentRows,3);
-  assert.ok(inspected.issues.some(x=>x.field==='email'));
-  assert.ok(inspected.issues.some(x=>x.field==='identity'));
-  assert.ok(inspected.issues.find(x=>x.field==='identity').owners
-    .some(o=>o.key==='excel:4'));
+  const contactPayload={filename:'contacts.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await emptyContacts.xlsx.writeBuffer()).toString('base64'),
+    strict:true,expectedDomain:'people',sheets:{'Люди':{domain:'people'}}};
+  const beforeContacts=await db.person.count({where:{tenantId}});
+  const inspected=await service.run(tenantId,accountId,contactPayload,true);
+  assert.equal(inspected.failed,0,JSON.stringify(inspected.rows));
+  assert.equal(inspected.transferred,1);
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts,'Preview never writes people');
+  const committed=await service.run(tenantId,accountId,contactPayload,false);
+  assert.equal(committed.transferred,1);
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
+  const importedPerson=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Ксения'}}});
+  assert.equal(importedPerson.data.contactStatus,'import');
+  const originFact=await db.dataTransferFact.findFirst({where:{tenantId,domain:'people',targetId:importedPerson.key}});
+  assert.equal(originFact?.input?.integrationSource,'YCLIENTS','Source is retained in import provenance');
+  assert.equal(importedPerson.data.surname,'Примерная');
+  assert.equal(importedPerson.data.gender,'female');
+  assert.equal(importedPerson.data.birthDate,'1985-06-15');
+  assert.equal(importedPerson.data.discountPercent,10);
+  assert.deepEqual(importedPerson.data.phones.slice().sort(),['+79997771234','+79997771235'].sort());
+  assert.deepEqual(importedPerson.data.emails.slice().sort(),['ksenia@example.test','ksenia.second@example.test'].sort());
+  assert.deepEqual(importedPerson.data.telegrams.slice().sort(),['@ksenia_test','@ksenia_alt'].sort());
+  const duplicate=await service.run(tenantId,accountId,contactPayload,false);
+  assert.equal(duplicate.unchanged,1,'Re-upload never duplicates');
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1);
+  const wrongContacts=new ExcelJS.Workbook();
+  await wrongContacts.xlsx.load(await service.workbook({domain:'people',template:true}));
+  wrongContacts.worksheets[0].getRow(3).values=['','Ирина','','М','15.06','','79993332211'];
+  wrongContacts.worksheets[0].getRow(4).values=['','Неверный','','М','15.06','','bad-phone'];
+  const badPayload={...contactPayload,
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await wrongContacts.xlsx.writeBuffer()).toString('base64')};
+  const badChecked=await service.run(tenantId,accountId,badPayload,true);
+  assert.ok(badChecked.failed>0,'User must be shown invalid lines before import');
+  await assert.rejects(()=>service.run(tenantId,accountId,badPayload,false),
+    /В файле есть ошибки/,'Strict import aborts the entire batch');
+  assert.equal(await db.person.count({where:{tenantId}}),beforeContacts+1,'No partial contacts saved');
+  const existingExport=new ExcelJS.Workbook();
+  await existingExport.xlsx.load(await service.workbook({domain:'people',rows:[{
+    name:'Ксения',surname:'Примерная',phone:'79997771234',
+    email:'ksenia@example.test',personKey:importedPerson.key,
+  }]}));
+  assert.equal(existingExport.worksheets[0].getCell(3,2).value,'Ксения');
+  assert.equal(existingExport.worksheets[0].getCell(3,15).value,importedPerson.key);
+  const noYearBook=new ExcelJS.Workbook();
+  await noYearBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  noYearBook.worksheets[0].getRow(3).values=['','Алиса Сергеева','','М','15.06','','79997776655'];
+  const noYearInput={...contactPayload,dataUrl:'data:application/octet-stream;base64,'+
+    Buffer.from(await noYearBook.xlsx.writeBuffer()).toString('base64')};
+  const noYearPreview=await service.run(tenantId,accountId,noYearInput,true);
+  assert.equal(noYearPreview.failed,0,JSON.stringify(noYearPreview.rows));
+  const noYearCommit=await service.run(tenantId,accountId,noYearInput,false);
+  assert.equal(noYearCommit.transferred,1);
+  const noYearPerson=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Алиса'}}});
+  assert.equal(noYearPerson?.data.surname,'Сергеева');
+  assert.equal(noYearPerson?.data.birthDate,'06-15','Birthday without year must not synthesize a year');
+  assert.equal(noYearPerson?.data.gender,'male');
+  const legacyContact=new ExcelJS.Workbook();
+  const legacySheet=legacyContact.addWorksheet('Люди');
+  legacySheet.addRow(['Имя','Фамилия','Телефон','Дополнительный телефон','Email','Дата рождения','Пол','UEI','ID человека']);
+  legacySheet.addRow(['Ольга','Л.', '79996663344','','olga@example.test','15.06.1985','Женский','']);
+  const legacyInput={...contactPayload,dataUrl:'data:application/octet-stream;base64,'+
+    Buffer.from(await legacyContact.xlsx.writeBuffer()).toString('base64')};
+  const legacyCheck=await service.run(tenantId,accountId,legacyInput,true);
+  assert.equal(legacyCheck.failed,0,JSON.stringify(legacyCheck.rows));
+  assert.equal(legacyCheck.transferred,1);
+  console.log('PASS: grouping, contacts, secondary fields, short and full birthdays, gender and old file compatibility');
+  // Durable contact-import queue: safe contacts immediately enter the
+  // canonical Person table; conflicting contacts remain in their file until
+  // every independently grouped field is decided.
+  const reviewer=new ContactImportService(db,people,access);
+  const reviewBook=new ExcelJS.Workbook();
+  await reviewBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  const reviewSheet=reviewBook.worksheets[0];
+  reviewSheet.getRow(3).values=['','Лада','','Ж','','','79997774501','','lada.unique@example.test','','','','Excel','Примечание Лады'];
+  reviewSheet.getRow(4).values=['A012','Ксения','Неверная','','','','79997771234','','other.ksenia@example.test','','','','Excel',''];
+  reviewSheet.getRow(5).values=['','Саша','','М','','','79997774502','','shared.import@example.test','','','','Excel',''];
+  reviewSheet.getRow(6).values=['','Марина','','Ж','','','79997774503','','shared.import@example.test','','','','Excel',''];
+  const reviewInput={filename:'new-contact-review.xlsx',source:'Контакты',strict:true,expectedDomain:'people',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await reviewBook.xlsx.writeBuffer()).toString('base64')};
+  const batch=await reviewer.create(tenantId,accountId,reviewInput);
+  assert.equal(batch.total,4);
+  assert.equal(batch.done,1,'Unambiguous contact must be imported immediately');
+  assert.equal(batch.pending,3,'Three rows need separate operator decisions');
+  assert.equal(batch.groupCount,3,'Identity, Surname and Email are independent groups');
+  const lada=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Лада'}}});
+  assert.equal(lada?.data.note,'Примечание Лады','Imported note is preserved');
+  const kseniaBefore=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.equal(kseniaBefore.data.surname,'Примерная');
+  let review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'identity',mode:'same',value:importedPerson.key});
+  assert.equal(review.done,1,'Identity confirmation alone cannot overwrite fields');
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'surname',mode:'keep'});
+  assert.equal(review.done,1,'Resolving one field does not save the whole contact');
+  assert.equal(review.pending,3);
+  assert.ok(review.issues.some(i=>i.rowNumber===4&&i.field==='email'));
+  assert.ok(!review.issues.some(i=>i.rowNumber===4&&i.field==='surname'));
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'email',mode:'keep'});
+  assert.equal(review.done,2,'Contact is committed only after all its differences are processed');
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'identity',mode:'different',value:''});
+  assert.equal(review.done,2);
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'email',mode:'replace',value:'shared.import@example.test'});
+  assert.equal(review.done,3);
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'identity',mode:'different',value:''});
+  assert.equal(review.done,3);
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'email',mode:'keep'});
+  assert.equal(review.done,4);
+  assert.equal(review.pending,0);
+  assert.equal(review.status,'completed');
+  const uploadedPeople=await db.person.findMany({where:{tenantId}});
+  const shared=uploadedPeople.filter(x=>(x.data.emails||[]).includes('shared.import@example.test'));
+  assert.equal(shared.length,1,'Operator can remove duplicate Email from one imported contact');
+  assert.equal(shared[0].data.name,'Саша');
+  const kseniaAfter=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.equal(kseniaAfter.data.surname,'Примерная');
+  assert.deepEqual(kseniaAfter.data.emails,kseniaBefore.data.emails,'Unresolved Email never overwrites saved contact');
+  const completed=await reviewer.detail(tenantId,batch.id);
+  assert.equal(completed.done,4);
+  const repeat=await reviewer.create(tenantId,accountId,reviewInput);
+  assert.equal(repeat.id,batch.id,'Exact same file reopens existing permanent review');
+  assert.equal(repeat.done,4,'Reupload cannot duplicate people');
+  // A mismatched source code must not overwrite the canonical client code.
+  const codeBook=new ExcelJS.Workbook();
+  await codeBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  codeBook.worksheets[0].getRow(3).values=[
+    'A099','Ксения','Примерная','','','','79997771234','','ksenia@example.test',
+  ];
+  const codeInput={filename:'contact-code-conflict.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await codeBook.xlsx.writeBuffer()).toString('base64')};
+  let codeBatch=await reviewer.create(tenantId,accountId,codeInput);
+  assert.equal(codeBatch.done,0);
+  assert.ok(codeBatch.groups.some(x=>x.field==='uei'));
+  codeBatch=await reviewer.decide(tenantId,codeBatch.id,{rowNumber:3,field:'identity',mode:'same',value:importedPerson.key});
+  assert.equal(codeBatch.done,0);
+  codeBatch=await reviewer.decide(tenantId,codeBatch.id,{rowNumber:3,field:'uei',mode:'keep'});
+  assert.equal(codeBatch.done,1);
+  const codeState=await db.ueiState.findUnique({where:{tenantId}});
+  assert.equal(codeState.data.relations['person:'+importedPerson.key],'A012');
+  // An explicitly approved new Email may be added without deleting the old.
+  const moreEmail=new ExcelJS.Workbook();
+  await moreEmail.xlsx.load(await service.workbook({domain:'people',template:true}));
+  moreEmail.worksheets[0].getRow(3).values=[
+    'A012','Ксения','Примерная','','','','79997771234','','ksenia.extra@example.test',
+  ];
+  const emailInput={filename:'contact-more-email.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await moreEmail.xlsx.writeBuffer()).toString('base64')};
+  let emailBatch=await reviewer.create(tenantId,accountId,emailInput);
+  assert.equal(emailBatch.done,0);
+  assert.ok(emailBatch.groups.some(x=>x.field==='email'));
+  emailBatch=await reviewer.decide(tenantId,emailBatch.id,{rowNumber:3,field:'identity',mode:'same',value:importedPerson.key});
+  assert.equal(emailBatch.done,0);
+  emailBatch=await reviewer.decide(tenantId,emailBatch.id,{rowNumber:3,field:'email',
+    mode:'add',value:'ksenia.extra@example.test'});
+  assert.equal(emailBatch.done,1);
+  const withExtra=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.ok(withExtra.data.emails.includes('ksenia@example.test'));
+  assert.ok(withExtra.data.emails.includes('ksenia.extra@example.test'));
+  const discountBook=new ExcelJS.Workbook();
+  await discountBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  discountBook.worksheets[0].getRow(3).values=[
+    '','Татьяна','','Ж','',0.2,'79997774504',
+  ];
+  const discountInput={filename:'fractional-discount-review.xlsx',source:'Контакты',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await discountBook.xlsx.writeBuffer()).toString('base64')};
+  let discountBatch=await reviewer.create(tenantId,accountId,discountInput);
+  assert.equal(discountBatch.done,0,'Ambiguous 0.2 discount requires confirmation');
+  assert.ok(discountBatch.groups.some(x=>x.field==='discountPercent'));
+  discountBatch=await reviewer.decide(tenantId,discountBatch.id,{
+    rowNumber:3,field:'discountPercent',mode:'replace',value:'20',
+  });
+  assert.equal(discountBatch.done,1);
+  const tanya=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Татьяна'}}});
+  assert.equal(Number(tanya.data.discountPercent),20);
+  console.log('PASS: durable Contacts review, field groups, note, safe-first import, no duplicates and completed progress');
+  console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
+  // Journal: six named groups plus standalone fields, same identity order as Contacts, and
+  // one booking per row regardless of the number of services.
+  const jBook=new ExcelJS.Workbook();
+  await jBook.xlsx.load(await service.workbook({domain:'records',template:true}));
+  const jSheet=jBook.worksheets[0];
+  assert.equal(jBook.worksheets.length,1);
+  assert.equal(jSheet.name,'Записи');
+  assert.deepEqual([2,7,10,13,17,21].map(i=>jSheet.getCell(1,i).value),
+    ['Клиент','Визит','Создание записи','История записи','Услуги','Статусы']);
+  assert.equal(jSheet.getCell(1,1).value,null);
+  assert.equal(jSheet.getCell(1,20).value,null);
+  assert.equal(jSheet.getCell(1,23).value,null);
+  assert.equal(jSheet.getCell(2,2).fill.fgColor.argb,'FF303238');
+  assert.equal(jSheet.getCell(2,2).font.color.argb,'FFFFFFFF');
+  const jHeaders=jSheet.getRow(2).values;
+  assert.deepEqual(jHeaders.slice(2,7),['Код клиента','Имя','Фамилия','Телефон','Email']);
+  assert.ok(jHeaders.includes('Услуга 3'));
+  assert.ok(!jHeaders.includes('Услуга 4'));
+  assert.ok(!jHeaders.includes('Оплачено полностью'));
+  assert.ok(!jHeaders.includes('Товар 1'));
+  assert.ok(!jHeaders.includes('Кошелёк'));
+  assert.equal(jSheet.getColumn(jHeaders.indexOf('ID записи')).hidden,true);
+  const putJ=(sheet,row,values)=>{
+    const header=sheet.getRow(2).values;
+    for(const [label,value] of Object.entries(values)){
+      const [group,field]=label.includes('/')?label.split('/'):[null,label];
+      const groupStart=group?sheet.getRow(1).values.indexOf(group):0;
+      const col=group?header.findIndex((title,i)=>i>=groupStart&&i<groupStart+5&&title===field):header.indexOf(field);
+      assert.ok(col>0,'Missing Journal Excel column '+label);
+      sheet.getRow(row).getCell(col).value=value;
+    }
+  };
+  putJ(jSheet,3,{
+    'Рабочее пространство':'BeautyToria',
+    'Код клиента':'12','Имя':'Анна','Телефон':'79991234567','Email':'anna.booking@example.test',
+    'Дата визита':'2014-06-15','Время визита':'10:00',
+    'Создание записи/Имя':'Администратор','Создание записи/Дата':'2014-06-01',
+    'Создание записи/Время':'09:30','История записи/Статус':'Записался',
+    'История записи/Имя':'Администратор','История записи/Дата':'2014-06-02',
+    'История записи/Время':'10:45',
+    'Услуга 1':'Стрижка','Услуга 2':'Укладка',
+    'Стоимость':3500,'Статус посещения':'Не пришёл',
+    'Статус оплаты':'Оплачено',
+    'Комментарий':'Подтверждение по телефону','Источник интеграции':'Онлайн-запись',
+  });
+  const jPayload={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jBook.xlsx.writeBuffer()).toString('base64')};
+  const beforeJ=await db.record.count({where:{tenantId}});
+  const beforePayments=await db.financeOperation.count({where:{tenantId}});
+  const jPreview=await service.run(tenantId,accountId,jPayload,true);
+  assert.equal(jPreview.failed,0,JSON.stringify(jPreview.rows));
+  assert.equal(jPreview.transferred,1);
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ);
+  result=await service.run(tenantId,accountId,jPayload,false);
+  assert.equal(result.transferred,1,JSON.stringify(result.rows));
+  const jId=target(result,'records').targetId;
+  const jRecord=(await db.record.findUnique({where:{tenantId_recordId:{tenantId,recordId:jId}}})).data;
+  assert.equal(jRecord.procedures.length,2);
+  assert.equal(jRecord.procedures[0].name,'Стрижка');
+  assert.equal(jRecord.procedures[1].name,'Укладка');
+  assert.equal(jRecord.to,'','Unknown departure time is allowed');
+  assert.equal(jRecord.historicalVisit,'Не пришёл');
+  assert.equal(jRecord.historicalPaymentStatus,'Оплачено');
+  assert.equal(jRecord.historicalAction,'Записался');
+  assert.equal(jRecord.historicalCreatorName,'Администратор');
+  assert.equal(jRecord.historicalCreatedDate,'2014-06-01');
+  assert.equal(jRecord.historicalCreatedTime,'09:30');
+  assert.equal(jRecord.historicalChangedBy,'Администратор');
+  assert.equal(jRecord.historicalChangedDate,'2014-06-02');
+  assert.equal(jRecord.historicalChangedTime,'10:45');
+  assert.equal(jRecord.historicalQuotedTotal,3500);
+  assert.equal(jRecord.historicalComment,'Подтверждение по телефону');
+  assert.equal(jRecord.person.email,'anna.booking@example.test');
+  assert.equal(jRecord.historicalIntegrationSource,'Онлайн-запись');
+  assert.equal(jRecord.source,'online-booking','Source meaning survives import');
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforePayments,
+    'Paid status and record price do not create money movements');
+  result=await service.run(tenantId,accountId,jPayload,false);
+  assert.equal(result.unchanged,1,'Repeat upload does not duplicate Record');
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
+  const jExport=new ExcelJS.Workbook();
+  await jExport.xlsx.load(await service.workbook({domain:'records',rows:[{
+    recordId:jId,workplace:'BeautyToria',uei:'12',name:'Анна',
+    date:'2014-06-15',from:'10:00',creatorName:'Администратор',
+    actionStatus:'Записался',paymentStatus:'Оплачено',paidFull:'Да',quotedTotal:3500,
+    services:[{name:'Стрижка'},{name:'Укладка'}],
+  }]}));
+  const jExportSheet=jExport.worksheets[0];
+  assert.equal(jExportSheet.rowCount,3);
+  assert.equal(jExportSheet.getCell(3,17).value,'Стрижка');
+  assert.equal(jExportSheet.getCell(3,18).value,'Укладка');
+  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('Стоимость')).value,3500);
+  assert.equal(jExportSheet.getCell(3,jExportSheet.getRow(2).values.indexOf('ID записи')).value,jId);
+  const jInvalid=new ExcelJS.Workbook();
+  await jInvalid.xlsx.load(await service.workbook({domain:'records',template:true}));
+  putJ(jInvalid.worksheets[0],3,{
+    'Рабочее пространство':'BeautyToria','Код клиента':'12',
+    'Имя':'Анна','Телефон':'79991234567','Дата визита':'2013-03-12',
+    'Время визита':'09:00','История записи/Статус':'Записался',
+    'Статус посещения':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
+  });
+  putJ(jInvalid.worksheets[0],4,{
+    'Рабочее пространство':'BeautyToria','Имя':'Несуществующий',
+    'Телефон':'79999992200','Дата визита':'2013-03-13',
+    'Время визита':'10:00','История записи/Статус':'Записался',
+    'Статус посещения':'Пришёл','Статус оплаты':'Не оплачено','Услуга 1':'Стрижка',
+  });
+  const jInvalidPayload={...jPayload,
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await jInvalid.xlsx.writeBuffer()).toString('base64')};
+  assert.equal((await service.run(tenantId,accountId,jInvalidPayload,true)).failed,1);
+  await assert.rejects(()=>service.run(tenantId,accountId,jInvalidPayload,false),/В файле есть ошибки/);
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1,'No partial Journal upload');
 
-  // A self-supplied verified Email always precedes an older CRM Email.
-  const identityService=new PersonIdentityService(people,db);
-  const preferred=identityService.enrichPerson({
-    emails:['crm-old@example.test'],phones:['+79991119901'],accounts:[],
-  },'verified-user',{
-    emails:['verified-user@example.test'],phones:['+79991119901'],
-    telegrams:[],profilePhoto:'',primaryVerifiedEmail:'verified-user@example.test',
-  });
-  assert.deepEqual(preferred.emails,['verified-user@example.test','crm-old@example.test']);
-  const sameEmailFile=await makeReviewFile('source-same-email-review.xlsx',[
-    ['','Диана','','','','','79991118801','','shared-batch@example.test'],
-    ['','Борис','','','','','79991118802','','shared-batch@example.test'],
+  // DDS Excel: one operation per row, real imported payment bound to Record.
+  const fBook=new ExcelJS.Workbook();
+  await fBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const fSheet=fBook.worksheets[0];
+  assert.equal(fSheet.name,'Финансы');
+  assert.deepEqual([1,4,7,11,15,17].map(i=>fSheet.getCell(1,i).value),
+    ['Счёт','Участник','Операция','Финансовые данные','Касса','Дополнительно']);
+  assert.deepEqual(fSheet.getRow(2).values.slice(1,19),[
+    'Рабочее пространство','Дата счёта','Время','Код','Имя / название',
+    'Телефон','Номер документа','Назначение','Наименование','Движение',
+    'Цена','Скидка','К оплате','Оплачено','Дата оплаты','Кошелёк',
+    'Комментарий','Источник интеграции',
   ]);
-  let repeated=await reviewer.create(tenantId,accountId,sameEmailFile);
-  assert.equal(repeated.done,0,'Repeated source Email is held for explicit identity review');
-  assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='identity'));
-  assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='email'));
-  repeated=await reviewer.decide(tenantId,repeated.id,{
-    rowNumber:3,field:'identity',mode:'different',value:'',
-  });
-  assert.equal(repeated.done,0);
-  repeated=await reviewer.decide(tenantId,repeated.id,{
-    rowNumber:3,field:'email',mode:'replace',value:'shared-batch@example.test',
-  });
-  assert.equal(repeated.done,1);
-  repeated=await reviewer.decide(tenantId,repeated.id,{
-    rowNumber:4,field:'identity',mode:'different',value:'',
-  });
-  assert.equal(repeated.done,1);
-  repeated=await reviewer.decide(tenantId,repeated.id,{
-    rowNumber:4,field:'email',mode:'keep',value:'',
-  });
-  assert.equal(repeated.done,2,'Both source rows are accounted for');
-  const splitRows=(await db.person.findMany({where:{tenantId}}))
-    .filter(x=>['Диана','Борис'].includes(x.data.name));
-  assert.equal(splitRows.length,2);
-  assert.equal(splitRows.filter(x=>x.data.emails?.includes('shared-batch@example.test')).length,1,
-    'Shared source email may be explicitly retained for just one person');
+  assert.equal(fSheet.getCell(2,2).fill.fgColor.argb,'FF303238');
+  assert.equal(fSheet.getCell(2,2).font.color.argb,'FFFFFFFF');
+  fSheet.getRow(3).values=[
+    'BeautyToria','2014-06-15','10:00','12','Анна','79991234567',
+    'invoice-001','Услуга','Стрижка','Приход',750,'',750,750,
+    '2014-06-15','Наличные','','YCLIENTS',
+  ];
+  const fPayload={filename:'ДДС.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+Buffer.from(await fBook.xlsx.writeBuffer()).toString('base64')};
+  const beforeF=await db.financeOperation.count({where:{tenantId}});
+  result=await service.run(tenantId,accountId,fPayload,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,1);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF);
+  result=await service.run(tenantId,accountId,fPayload,false);
+  assert.equal(result.transferred,1,JSON.stringify(result.rows));
+  const journalPaymentId=target(result,'payments').targetId;
+  assert.equal((await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:journalPaymentId}},
+  })).sourceId,jId);
+  result=await service.run(tenantId,accountId,fPayload,false);
+  assert.equal(result.unchanged,1,'Repeat finance upload never duplicates payment');
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF+1);
+  // Exported Record and Finance files can be uploaded again without duplication.
+  const jRoundtrip={filename:'Записи.xlsx',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await jExport.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,jRoundtrip,false);
+  assert.equal(result.unchanged,1,JSON.stringify(result.rows));
+  assert.equal(await db.record.count({where:{tenantId}}),beforeJ+1);
+  const latestPaymentId=journalPaymentId;
+  assert.ok(latestPaymentId);
+  const fRoundtripBook=new ExcelJS.Workbook();
+  await fRoundtripBook.xlsx.load(await service.workbook({domain:'finance',rows:[{
+    workplace:'BeautyToria',invoiceDate:'2014-06-15',invoiceTime:'10:00',
+    participantCode:'12',participant:'Анна',phone:'79991234567',
+    documentNumber:latestPaymentId,purpose:'Услуга',subject:'Стрижка',
+    direction:'Приход',price:750,quotedTotal:750,amount:750,
+    paymentDate:'2014-06-15',wallet:'Наличные',integrationSource:'YCLIENTS',
+  }]}));
+  const fRoundtrip={filename:'Финансы.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await fRoundtripBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,fRoundtrip,false);
+  assert.equal(result.unchanged,1,JSON.stringify(result.rows));
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeF+1);
 
-  const birthdaySaved=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
-  await people.upsertPerson(tenantId,personId,{
-    person:{...birthdaySaved,birthDate:'1990-01-02'},
+  // Cash refund correctly reduces the real payment; no deposit entry is invented.
+  const refundBook=new ExcelJS.Workbook();
+  const refundSheet=refundBook.addWorksheet('Финансы');
+  refundSheet.addRow(['Дата операции','Вид операции','Кошелёк','Сумма','Исходная оплата']);
+  const refundRow=refundSheet.getRow(2);
+  const index=(label)=>refundSheet.getRow(1).values.indexOf(label);
+  refundRow.getCell(index('Дата операции')).value='2014-06-20T10:00:00Z';
+  refundRow.getCell(index('Вид операции')).value='Возврат оплаты';
+  refundRow.getCell(index('Кошелёк')).value='Наличные';
+  refundRow.getCell(index('Сумма')).value=200;
+  refundRow.getCell(index('Исходная оплата')).value=latestPaymentId;
+  const refundInput={filename:'Возвраты.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await refundBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,refundInput,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  result=await service.run(tenantId,accountId,refundInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  const refundId=target(result,'operations').targetId;
+  const refundOp=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:refundId}},
   });
-  const birthdayFile=await makeReviewFile('contact-birthday-review.xlsx',[
-    ['0012','Анна','','','03.01.1990','','79991234567'],
-  ]);
-  let birthBatch=await reviewer.create(tenantId,accountId,birthdayFile);
-  assert.equal(birthBatch.done,0);
-  assert.ok(birthBatch.groups.some(group=>group.field==='identity'));
-  assert.ok(birthBatch.groups.some(group=>group.field==='birthDate'));
-  birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
-    rowNumber:3,field:'identity',mode:'same',value:personId,
+  assert.equal(refundOp.kind,'refund');
+  assert.equal(refundOp.originalOperationId,latestPaymentId);
+  result=await service.run(tenantId,accountId,refundInput,false);
+  assert.equal(result.unchanged,1);
+
+  // CSV is not a fake export-only format: the same header imports as a Record.
+  const csvText='Имя;Телефон;Дата;Рабочее пространство;Статус записи;Посещение;Оплата;Услуга 1\n'
+    +'Анна;79991234567;2012-05-06;BeautyToria;Записался;Пришёл;Не оплачено;Стрижка\n';
+  const csvInput={filename:'Записи.csv',source:'Журнал',strict:true,expectedDomain:'records',
+    dataUrl:'data:text/csv;base64,'+Buffer.from(csvText).toString('base64')};
+  result=await service.run(tenantId,accountId,csvInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,1);
+  result=await service.run(tenantId,accountId,csvInput,false);
+  assert.equal(result.unchanged,1);
+  // Cancelled historical DDS facts create a genuine reversal, preserving zero cash effect.
+  const articleResult=await run('articles',[{
+    article:'Excel тест дохода',articleDirection:'Доход',articleEconomicType:'Прочий доход',
+  }]);
+  assert.equal(articleResult.failed,0,JSON.stringify(articleResult.rows));
+  const cancelBook=new ExcelJS.Workbook();
+  const cancelSheet=cancelBook.addWorksheet('Финансы');
+  cancelSheet.addRow(['Дата операции','Вид операции','Кошелёк','Сумма',
+    'Статья','Статус','Дата отмены']);
+  const position=(label)=>cancelSheet.getRow(1).values.indexOf(label);
+  const cancelLine=cancelSheet.getRow(2);
+  cancelLine.getCell(position('Дата операции')).value='2022-01-05T12:00:00Z';
+  cancelLine.getCell(position('Вид операции')).value='Доход';
+  cancelLine.getCell(position('Кошелёк')).value='Наличные';
+  cancelLine.getCell(position('Сумма')).value=100;
+  cancelLine.getCell(position('Статья')).value='Excel тест дохода';
+  cancelLine.getCell(position('Статус')).value='Отменена';
+  cancelLine.getCell(position('Дата отмены')).value='2022-01-07T10:00:00Z';
+  const cancelInput={filename:'Отменённые.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await cancelBook.xlsx.writeBuffer()).toString('base64')};
+  result=await service.run(tenantId,accountId,cancelInput,true);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  result=await service.run(tenantId,accountId,cancelInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  const cancelledId=target(result,'operations').targetId;
+  const cancelled=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:cancelledId}},
   });
-  assert.equal(birthBatch.done,0);
-  birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
-    rowNumber:3,field:'birthDate',mode:'keep',value:'',
+  assert.equal(cancelled.status,'cancelled');
+  const reversal=await db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:'cancel-'+cancelledId}},
   });
-  assert.equal(birthBatch.done,1);
-  assert.equal((await db.person.findFirst({where:{tenantId,key:personId}})).data.birthDate,'1990-01-02');
-  // A larger (or smaller) new file that includes already imported people
-  // must mark unchanged rows without writing Person data a second time.
-  const repeatedSubset=await makeReviewFile('existing-people-plus-new.xlsx',[
-    ['','Тестовая','','','','','79991116701','','verified@example.test'],
-    ['','Никита','','','','','79991116711','','new.nikita@example.test'],
-  ]);
-  let reused=await reviewer.create(tenantId,accountId,repeatedSubset);
-  assert.equal(reused.total,2);
-  assert.equal(reused.done,2);
-  assert.equal(reused.pending,0);
-  assert.equal(reused.skipped,1,'Existing identical contact must be skipped without upsert');
-  assert.equal(reused.rows.find(row=>row.rowNumber===3).status,'unchanged');
-  assert.equal((await db.person.findMany({where:{tenantId}}))
-    .filter(row=>row.data.name==='Тестовая').length,1);
-  assert.equal((await db.person.findMany({where:{tenantId}}))
-    .filter(row=>row.data.name==='Никита').length,1);
-  const duplicateSameFile=await reviewer.create(tenantId,accountId,repeatedSubset);
-  assert.equal(duplicateSameFile.id,reused.id,'Re-uploading identical file reopens batch');
-  assert.equal(duplicateSameFile.skipped,1);
-  console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
+  assert.equal(reversal?.kind,'cancel');
+  result=await service.run(tenantId,accountId,cancelInput,false);
+  assert.equal(result.unchanged,1);
+  // A split invoice is still one service quote and TWO wallet movements.
+  const walletState=await db.businessAuxiliaryState.findUnique({where:{tenantId}});
+  const walletData=walletState.data;
+  await db.businessAuxiliaryState.update({where:{tenantId},data:{
+    data:{...walletData,wallets:[...walletData.wallets,{id:'sber',name:'Сбербанк'}]},
+  }});
+  const splitBook=new ExcelJS.Workbook();
+  await splitBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const splitSheet=splitBook.worksheets[0];
+  const splitRow=(number,wallet,amount)=>{splitSheet.getRow(number).values=[
+    'BeautyToria','2014-06-15','10:00','12','Анна','79991234567',
+    'crm-split-2014','Услуга','Стрижка','Приход',1000,'10%',900,amount,
+    '2014-06-16',wallet,'','YCLIENTS',
+  ];};
+  splitRow(3,'Наличные',400);splitRow(4,'Сбербанк',500);
+  const splitInput={filename:'finance-split.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await splitBook.xlsx.writeBuffer()).toString('base64')};
+  const beforeSplit=await db.financeOperation.count({where:{tenantId}});
+  const splitCheck=await service.run(tenantId,accountId,splitInput,true);
+  assert.equal(splitCheck.failed,0,JSON.stringify(splitCheck.rows));
+  assert.equal(splitCheck.transferred,2);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit);
+  result=await service.run(tenantId,accountId,splitInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,2);
+  const splitOps=await Promise.all(result.rows.map(row=>db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:row.targetId}},
+  })));
+  assert.ok(splitOps.every(op=>op?.sourceType==='record'&&op.sourceId===jId));
+  assert.deepEqual(splitOps.map(op=>Number(op.data.total)).sort((a,b)=>a-b),[400,500]);
+  assert.ok(splitOps.every(op=>op.data.sourceQuote.quotedTotal===900));
+  assert.ok(splitOps.every(op=>op.data.sourceQuote.price===1000));
+  assert.ok(splitOps.every(op=>op.data.sourceQuote.discountPercent===10));
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit+2);
+  result=await service.run(tenantId,accountId,splitInput,false);
+  assert.equal(result.unchanged,2);
+  assert.equal(await db.financeOperation.count({where:{tenantId}}),beforeSplit+2);
+  // A supplier has neither Client code nor phone. Two payments still mean
+  // ONE historical purchase quote and TWO cash expenses.
+  const vendorBook=new ExcelJS.Workbook();
+  await vendorBook.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  const vendorSheet=vendorBook.worksheets[0];
+  const vendorRow=(n,wallet)=>{vendorSheet.getRow(n).values=[
+    'BeautyToria','2013-05-10','','','Wildberries','',
+    'WB-2013-05','Закупка','Перчатки','Расход',10000,'',10000,5000,
+    '2013-05-12',wallet,'','Excel',
+  ];};
+  vendorRow(3,'Наличные');vendorRow(4,'Сбербанк');
+  const vendorInput={filename:'supplier.xlsx',source:'ДДС',strict:true,expectedDomain:'finance',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await vendorBook.xlsx.writeBuffer()).toString('base64')};
+  const vendorPreview=await service.run(tenantId,accountId,vendorInput,true);
+  assert.equal(vendorPreview.failed,0,JSON.stringify(vendorPreview.rows));
+  assert.equal(vendorPreview.transferred,2);
+  result=await service.run(tenantId,accountId,vendorInput,false);
+  assert.equal(result.failed,0,JSON.stringify(result.rows));
+  assert.equal(result.transferred,2);
+  const vendorOps=await Promise.all(result.rows.map(row=>db.financeOperation.findUnique({
+    where:{tenantId_operationId:{tenantId,operationId:row.targetId}},
+  })));
+  assert.ok(vendorOps.every(op=>op.kind==='manual-expense'));
+  assert.ok(vendorOps.every(op=>Number(op.data.quotedTotal)===10000));
+  assert.equal(vendorOps.reduce((sum,op)=>sum+Number(op.data.total),0),10000);
+  result=await service.run(tenantId,accountId,vendorInput,false);
+  assert.equal(result.unchanged,2);
+  // A mismatched participant never guesses the same record based on date.
+  const wrongSplit=new ExcelJS.Workbook();
+  await wrongSplit.xlsx.load(await service.workbook({domain:'finance',template:true}));
+  wrongSplit.worksheets[0].getRow(3).values=[
+    'BeautyToria','2014-06-15','10:00','','Другой человек','',
+    'other-invoice','Услуга','Стрижка','Приход',1000,'',1000,1000,
+    '2014-06-16','Наличные','','YCLIENTS',
+  ];
+  const wrongInput={...splitInput,dataUrl:'data:application/octet-stream;base64,'+
+    Buffer.from(await wrongSplit.xlsx.writeBuffer()).toString('base64')};
+  const wrongCheck=await service.run(tenantId,accountId,wrongInput,true);
+  assert.equal(wrongCheck.failed,1,'Unknown person must remain unlinked');
+  await assert.rejects(()=>service.run(tenantId,accountId,wrongInput,false),
+    /В файле есть ошибки/);
+  console.log('PASS: grouped Finance Excel, split wallets, historical quote, unique Record match and repeat safety');
+  console.log('PASS: historical cancelled DDS operation and reversal');
+  console.log('PASS: XLSX export/reimport, refunds, and CSV upload');
+  console.log('PASS: Journal and DDS Excel templates, horizontal services, preview, atomic import, repeat safety');
+  await (await import('./check-universal-transfer.mjs')).verifyUniversalTransfer({db,service,people,finance,procedures,inventory,accountId});
+  {
+    // Persistent Excel reconciliation: Email-only is a candidate, not a
+    // license to silently attach a new phone to another person.
+    const reviewer=new ContactImportService(db,people,access);
+    const makeReviewFile=async(filename,rows)=>{
+      const wb=new ExcelJS.Workbook();
+      await wb.xlsx.load(await service.workbook({domain:'people',template:true}));
+      rows.forEach((row,index)=>{wb.worksheets[0].getRow(index+3).values=row;});
+      return {filename,source:'Контакты',strict:true,expectedDomain:'people',
+        dataUrl:'data:application/octet-stream;base64,'+
+          Buffer.from(await wb.xlsx.writeBuffer()).toString('base64')};
+    };
+    const identityFile=await makeReviewFile('identity-confirm.xlsx',[
+      ['','Тестовая','','','','','79991116701','','verified@example.test'],
+      ['','Анна','','','','','79991116702','','keep@example.test'],
+    ]);
+    let batch=await reviewer.create(tenantId,accountId,identityFile);
+    assert.equal(batch.total,2);
+    assert.equal(batch.done,1,'Unique person is imported directly');
+    assert.equal(batch.pending,1,'Email-only match is not silently merged');
+    const identityIssue=batch.issues.find(row=>row.rowNumber===4&&row.field==='identity');
+    assert.ok(identityIssue,'Identity review must be presented');
+    assert.ok(identityIssue.owners.some(o=>o.key===personId&&o.matchedBy.includes('email')));
+    batch=await reviewer.decide(tenantId,batch.id,{
+      rowNumber:4,field:'identity',mode:'same',value:personId,
+    });
+    assert.equal(batch.done,1,'Identity decision does not resolve other field conflicts');
+    assert.ok(batch.issues.some(x=>x.rowNumber===4&&x.field==='phone'));
+    batch=await reviewer.decide(tenantId,batch.id,{
+      rowNumber:4,field:'phone',mode:'add',value:'79991116702',
+    });
+    assert.equal(batch.done,2);
+    const updatedAnna=await db.person.findFirst({where:{tenantId,key:personId}});
+    assert.ok(updatedAnna.data.phones.some(p=>p.replace(/\D/g,'')==='79991116702'));
+    assert.ok(updatedAnna.data.emails.includes('keep@example.test'));
+  
+    // Same Email in separate source rows, with different names and phones,
+    // creates both an Email conflict and a person-identity review.
+    const independentRows=[
+      {row:3,values:{name:'Олег',phone:'79991118801',email:'shared@example.test'}},
+      {row:4,values:{name:'Лина',phone:'79991118802',additionalEmail:'shared@example.test'}},
+    ];
+    const inspected=inspectContactRow(independentRows[0].values,[],{},independentRows,3);
+    assert.ok(inspected.issues.some(x=>x.field==='email'));
+    assert.ok(inspected.issues.some(x=>x.field==='identity'));
+    assert.ok(inspected.issues.find(x=>x.field==='identity').owners
+      .some(o=>o.key==='excel:4'));
+  
+    // A self-supplied verified Email always precedes an older CRM Email.
+    const identityService=new PersonIdentityService(people,db);
+    const preferred=identityService.enrichPerson({
+      emails:['crm-old@example.test'],phones:['+79991119901'],accounts:[],
+    },'verified-user',{
+      emails:['verified-user@example.test'],phones:['+79991119901'],
+      telegrams:[],profilePhoto:'',primaryVerifiedEmail:'verified-user@example.test',
+    });
+    assert.deepEqual(preferred.emails,['verified-user@example.test','crm-old@example.test']);
+    const sameEmailFile=await makeReviewFile('source-same-email-review.xlsx',[
+      ['','Диана','','','','','79991118801','','shared-batch@example.test'],
+      ['','Борис','','','','','79991118802','','shared-batch@example.test'],
+    ]);
+    let repeated=await reviewer.create(tenantId,accountId,sameEmailFile);
+    assert.equal(repeated.done,0,'Repeated source Email is held for explicit identity review');
+    assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='identity'));
+    assert.ok(repeated.issues.some(i=>i.rowNumber===3&&i.field==='email'));
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:3,field:'identity',mode:'different',value:'',
+    });
+    assert.equal(repeated.done,0);
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:3,field:'email',mode:'replace',value:'shared-batch@example.test',
+    });
+    assert.equal(repeated.done,1);
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:4,field:'identity',mode:'different',value:'',
+    });
+    assert.equal(repeated.done,1);
+    repeated=await reviewer.decide(tenantId,repeated.id,{
+      rowNumber:4,field:'email',mode:'keep',value:'',
+    });
+    assert.equal(repeated.done,2,'Both source rows are accounted for');
+    const splitRows=(await db.person.findMany({where:{tenantId}}))
+      .filter(x=>['Диана','Борис'].includes(x.data.name));
+    assert.equal(splitRows.length,2);
+    assert.equal(splitRows.filter(x=>x.data.emails?.includes('shared-batch@example.test')).length,1,
+      'Shared source email may be explicitly retained for just one person');
+  
+    const birthdaySaved=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
+    await people.upsertPerson(tenantId,personId,{
+      person:{...birthdaySaved,birthDate:'1990-01-02'},
+    });
+    const birthdayFile=await makeReviewFile('contact-birthday-review.xlsx',[
+      ['0012','Анна','','','03.01.1990','','79991234567'],
+    ]);
+    let birthBatch=await reviewer.create(tenantId,accountId,birthdayFile);
+    assert.equal(birthBatch.done,0);
+    assert.ok(birthBatch.groups.some(group=>group.field==='identity'));
+    assert.ok(birthBatch.groups.some(group=>group.field==='birthDate'));
+    birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
+      rowNumber:3,field:'identity',mode:'same',value:personId,
+    });
+    assert.equal(birthBatch.done,0);
+    birthBatch=await reviewer.decide(tenantId,birthBatch.id,{
+      rowNumber:3,field:'birthDate',mode:'keep',value:'',
+    });
+    assert.equal(birthBatch.done,1);
+    assert.equal((await db.person.findFirst({where:{tenantId,key:personId}})).data.birthDate,'1990-01-02');
+    // A larger (or smaller) new file that includes already imported people
+    // must mark unchanged rows without writing Person data a second time.
+    const repeatedSubset=await makeReviewFile('existing-people-plus-new.xlsx',[
+      ['','Тестовая','','','','','79991116701','','verified@example.test'],
+      ['','Никита','','','','','79991116711','','new.nikita@example.test'],
+    ]);
+    let reused=await reviewer.create(tenantId,accountId,repeatedSubset);
+    assert.equal(reused.total,2);
+    assert.equal(reused.done,2);
+    assert.equal(reused.pending,0);
+    assert.equal(reused.skipped,1,'Existing identical contact must be skipped without upsert');
+    assert.equal(reused.rows.find(row=>row.rowNumber===3).status,'unchanged');
+    assert.equal((await db.person.findMany({where:{tenantId}}))
+      .filter(row=>row.data.name==='Тестовая').length,1);
+    assert.equal((await db.person.findMany({where:{tenantId}}))
+      .filter(row=>row.data.name==='Никита').length,1);
+    const duplicateSameFile=await reviewer.create(tenantId,accountId,repeatedSubset);
+    assert.equal(duplicateSameFile.id,reused.id,'Re-uploading identical file reopens batch');
+    assert.equal(duplicateSameFile.skipped,1);
+    console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
+    }
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
   // This script owns only its random isolated fixture, never existing tenant data.

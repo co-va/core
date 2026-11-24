@@ -499,6 +499,17 @@ export class InventoryService {
       resourceByItem.set(progress.inventoryItemId, list);
     }
 
+    // Each supplier mini-card needs the name of ITS linked catalog row,
+    // not the primary supplier name kept on the inventory item itself.
+    const supplierCatalogIds = [...new Set(supplierOffers
+      .map(offer => offer.catalogItemId).filter((id): id is string => Boolean(id)))];
+    const supplierCatalogRows = supplierCatalogIds.length
+      ? await this.prisma.inventoryCounterpartyCatalogItem.findMany({
+        where: { tenantId, id: { in: supplierCatalogIds } },
+        select: { id: true, name: true },
+      }) : [];
+    const supplierCatalogNames = new Map(supplierCatalogRows.map(row => [row.id, row.name]));
+
     const itemByInternal = new Map(items.map((item: AnyRecord) => [item.id, item]));
     const offersByItem = new Map<string, AnyRecord[]>();
     supplierOffers.forEach((offer: AnyRecord) => {
@@ -508,6 +519,7 @@ export class InventoryService {
         supplier: offer.supplier,
         counterpartyId: offer.counterpartyId || null,
         catalogItemId: offer.catalogItemId || null,
+        catalogName: offer.catalogItemId ? supplierCatalogNames.get(offer.catalogItemId) || '' : '',
         listPrice: offer.listPrice == null ? null : decimalNumber(offer.listPrice),
         discountPercent: offer.discountPercent == null ? null : decimalNumber(offer.discountPercent),
         actualPrice: offer.actualPrice == null ? null : decimalNumber(offer.actualPrice),
