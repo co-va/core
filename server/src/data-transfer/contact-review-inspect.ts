@@ -64,6 +64,22 @@ export function inspectContactRow(values:Obj,people:Obj[],identity:Obj,
   file:Array<{row:number;values:Obj}>,rowNumber:number,
   previous:ReviewIssue[]=[],choice:ReviewIssue['decision']|null=null){
   const candidates=findContactCandidates(people,identity,values);
+  const sourceCandidates=file.filter(row=>row.row!==rowNumber &&
+    contactIdentityFields.some(field=>{
+      const incoming=identityValue(field,values[field]);
+      return incoming&&contactIdentityFields.some(other=>
+        sameFamily(field,other)&&identityValue(other,obj(row.values)[other])===incoming);
+    })&&contactFields.some(field=>
+      fieldValue(field,obj(row.values)[field])!==fieldValue(field,values[field])))
+    .map(row=>({
+      key:'excel:'+row.row,code:text(obj(row.values).uei),
+      name:[text(obj(row.values).name),text(obj(row.values).surname)]
+        .filter(Boolean).join(' '),
+      matchedBy:contactIdentityFields.filter(field=>
+        Boolean(identityValue(field,values[field]))&&contactIdentityFields.some(other=>
+          sameFamily(field,other)&&identityValue(other,obj(row.values)[other])
+            ===identityValue(field,values[field]))),
+    }));
   const selected=choice||previous.find(i=>i.field==='identity')?.decision||null;
   const selectedSame=selected?.mode==='same';
   const selectedOther=selected?.mode==='different';
@@ -133,15 +149,16 @@ export function inspectContactRow(values:Obj,people:Obj[],identity:Obj,
   }
   const needsChoice=candidates.length>0 &&(
     candidates.length!==1||!reliableContactCandidate(candidates[0])||issues.size>0
-  );
+  ) || sourceCandidates.length>0;
   if(needsChoice||selected){
     const identityIssue=make('identity',
       candidates.length===1?candidates[0].name:'Найдены совпадения',
       [text(values.uei),text(values.name),text(values.surname)].filter(Boolean).join(' '),
-      candidates.map(c=>({key:c.key,code:c.code,name:c.name,
-        matchedBy:[...c.matchedBy]})));
+      [...candidates.map(c=>({key:c.key,code:c.code,name:c.name,
+        matchedBy:[...c.matchedBy]})),...sourceCandidates]);
     if(selected&&(selected.mode==='different'
-      ||(selected.mode==='same'&&Boolean(chosen))))identityIssue.decision=selected;
+      ||(selected.mode==='same'&&(Boolean(chosen)||sourceCandidates.some(c=>c.key===selected.value)))))
+      identityIssue.decision=selected;
     issues.set('identity',identityIssue);
   }
   for(const old of previous){
@@ -149,5 +166,5 @@ export function inspectContactRow(values:Obj,people:Obj[],identity:Obj,
     if(old.field==='format'&&!issues.has(old.field))issues.set(old.field,old);
     else if(old.decision&&issues.has(old.field))issues.get(old.field)!.decision=old.decision;
   }
-  return {person,issues:[...issues.values()],candidates};
+  return {person,issues:[...issues.values()],candidates,sourceCandidates};
 }
