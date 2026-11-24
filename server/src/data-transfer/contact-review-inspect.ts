@@ -184,5 +184,15 @@ export function inspectContactRow(values:Obj,people:Obj[],identity:Obj,
     if(old.field==='format'&&!issues.has(old.field))issues.set(old.field,old);
     else if(old.decision&&issues.has(old.field))issues.get(old.field)!.decision=old.decision;
   }
+  if(selectedOther){
+    // "Другой человек" means an independent Person. When the supplied
+    // Email belongs to a different persisted Person, do not demand another
+    // decision about the same identity conflict or duplicate their address.
+    for(const field of ['email','additionalEmail']){
+      const current=issues.get(field);
+      if(current?.owners.some(owner=>!owner.key.startsWith('excel:')))
+        current.decision={mode:'keep',value:''};
+    }
+  }
   return {person,issues:[...issues.values()],candidates,sourceCandidates,unchanged:false};
 }

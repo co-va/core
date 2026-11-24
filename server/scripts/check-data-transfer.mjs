@@ -865,6 +865,35 @@ try {
     assert.equal(splitRows.filter(x=>x.data.emails?.includes('shared-batch@example.test')).length,1,
       'Shared source email may be explicitly retained for just one person');
   
+    // Two different people may share an Email in Excel. Confirming
+    // "Другой человек" creates the new person WITHOUT the Email already
+    // owned by the existing person; no second Email confirmation is needed.
+    const existingEvgenia={
+      key:'import-existing-evgenia-'+randomUUID(),name:'Евгения',
+      phones:['+79991118891'],emails:['evgenia.claimed@example.test'],
+    };
+    await people.upsertPerson(tenantId,existingEvgenia.key,{person:existingEvgenia});
+    const nataliaInput=await makeReviewFile('natalia-other-person.xlsx',[[
+      '811','Наталья','','Ж','','','79991118892',
+      '','evgenia.claimed@example.test',
+    ]]);
+    let nataliaBatch=await reviewer.create(tenantId,accountId,nataliaInput);
+    assert.equal(nataliaBatch.done,0);
+    assert.ok(nataliaBatch.issues.some(x=>x.field==='identity'));
+    nataliaBatch=await reviewer.decide(tenantId,nataliaBatch.id,{
+      rowNumber:3,field:'identity',mode:'different',value:'',
+    });
+    assert.equal(nataliaBatch.done,1,
+      'Different person with someone else\'s Email needs no second Email decision');
+    const natalia=(await db.person.findMany({where:{tenantId}}))
+      .find(row=>row.data.name==='Наталья');
+    assert.ok(natalia,'Separate contact was created');
+    assert.ok(natalia.data.phones.some(phone=>phone.replace(/\D/g,'')==='79991118892'));
+    assert.ok(!(natalia.data.emails||[]).includes('evgenia.claimed@example.test'));
+    const evgeniaAfter=await db.person.findFirst({
+      where:{tenantId,key:existingEvgenia.key},
+    });
+    assert.deepEqual(evgeniaAfter.data.emails,['evgenia.claimed@example.test']);
     const birthdaySaved=(await db.person.findFirst({where:{tenantId,key:personId}})).data;
     await people.upsertPerson(tenantId,personId,{
       person:{...birthdaySaved,birthDate:'1990-01-02'},
