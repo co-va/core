@@ -294,12 +294,16 @@ export class ContactImportService {
             issues:checked.issues as unknown as Prisma.InputJsonValue,
           }});
         }else{
+          await tx.$executeRawUnsafe('SAVEPOINT contact_import_row');
           try{
             const personKey=await this.safeImport(tx,tenantId,obj(latest.values),
               text(checked.person?.key),[]);
+            await tx.$executeRawUnsafe('RELEASE SAVEPOINT contact_import_row');
             await tx.contactImportRow.update({where:{id:latest.id},
               data:{status:'done',personKey,issues:[] as Prisma.InputJsonValue,error:''}});
           }catch(error){
+            await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT contact_import_row');
+            await tx.$executeRawUnsafe('RELEASE SAVEPOINT contact_import_row');
             await tx.contactImportRow.update({where:{id:latest.id},data:{
               status:'review',personKey:text(checked.person?.key),
               error:text((error as Error).message),
@@ -406,14 +410,17 @@ export class ContactImportService {
         await tx.contactImportRow.update({where:{id:row.id},
           data:{issues:issues as unknown as Prisma.InputJsonValue,error:''}});
       }else{
+        await tx.$executeRawUnsafe('SAVEPOINT contact_import_decision');
         try{
           const key=await this.safeImport(tx,tenantId,obj(row.values),row.personKey,issues);
+          await tx.$executeRawUnsafe('RELEASE SAVEPOINT contact_import_decision');
           await tx.contactImportRow.update({where:{id:row.id},data:{
             status:'done',personKey:key,issues:issues as unknown as Prisma.InputJsonValue,error:'',
           }});
         }catch(error){
-          // Keep all decisions but leave this row in review; the form shows
-          // the error and a field can be corrected without uploading again.
+          await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT contact_import_decision');
+          await tx.$executeRawUnsafe('RELEASE SAVEPOINT contact_import_decision');
+          // Keep all decisions but leave this row in review.
           await tx.contactImportRow.update({where:{id:row.id},data:{
             issues:issues as unknown as Prisma.InputJsonValue,
             error:text((error as Error).message),
