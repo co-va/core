@@ -305,56 +305,86 @@ function queueLabel(t,plan){
   if(!rank)return '';
   return 'Задача '+rank;
 }
-export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=null,audits=[],loading=false,stale=false},e){
+// Window capacity follows the available Admin content, not the size of the catalogue.
+// No page or pane scrolling: longer lists are paged with the same 44px table rows.
+export function developmentWindowLayout(width=920,height=610,count=4){
+  const w=Math.max(1,width),h=Math.max(1,height);
+  const maxColumns=Math.max(1,Math.min(4,Math.floor((w+12)/342)));
+  const maxRows=h>=650?2:1;
+  const capacity=Math.min(count,4,maxColumns*maxRows);
+  const columns=Math.min(maxColumns,Math.max(1,capacity));
+  const rows=Math.ceil(capacity/columns);
+  const paneHeight=Math.floor((h-12*(rows-1))/rows);
+  return {capacity,columns,rows,listRows:Math.max(1,Math.floor((paneHeight-94)/44)),detailRows:Math.max(1,Math.floor((paneHeight-94)/88)),paneWidth:Math.floor((w-12*(columns-1))/columns)};
+}
+const criterionTitle=(c,mode)=>plainTitles[c.key]||(mode===0&&soloTitles[c.key])||c.title;
+function statusText(v,available){return !available?'Данные не получены':v.status==='ready'?'Готово':v.status==='unfinished'?'Требует доработки':v.status==='notStarted'?'Не начато':v.status==='partial'?'Частично проверено':v.status==='disputed'?'Согласовать':v.deferred?'Отложено':'Не проверено';}
+function compactSummary(views,available){
+  if(!available)return 'Данные не получены';
+  const unique=[...new Map(views.map(v=>[v.key,v])).values()];
+  const accepted=unique.filter(v=>v.status==='ready').length;
+  const partial=unique.filter(v=>v.status!=='ready'&&(v.status==='partial'||v.history?.length||v.evidence?.some(x=>x.state==='passed'||x.state==='historical'))).length;
+  return [accepted?'Принято '+accepted:'',partial?'Частично '+partial:'',unique.length-accepted-partial?'Проверить '+(unique.length-accepted-partial):''].filter(Boolean).join(' · ');
+}
+function splitDetail(value,max){
+  const words=String(value||'').split(/\s+/).filter(Boolean),parts=[];let line='';
+  for(const word of words){if(line&&(line+' '+word).length>max){parts.push(line);line='';}if(word.length>max){if(line){parts.push(line);line='';}for(let i=0;i<word.length;i+=max)parts.push(word.slice(i,i+max));}else line+=(line?' ':'')+word;}
+  if(line)parts.push(line);return parts.length?parts:['—'];
+}
+function windowPane(id,title,rows,limit,page,e,detail=false){
+  const pages=Math.max(1,Math.ceil(rows.length/limit)),current=Math.max(0,Math.min(page||0,pages-1));
+  return '<section class="admin-card development-window'+(detail?' is-detail':'')+'" data-dm-window="'+e(id)+'"><header class="development-window-head"><strong>'+e(title)+'</strong><div class="development-window-pages"><button type="button" class="admin-tool-registry-expand" data-dm-page="'+e(id)+'" data-page="'+(current-1)+'" aria-label="Предыдущая страница"'+(!current?' disabled':'')+'>‹</button><span>'+ (current+1)+' / '+pages+'</span><button type="button" class="admin-tool-registry-expand" data-dm-page="'+e(id)+'" data-page="'+(current+1)+'" aria-label="Следующая страница"'+(current+1>=pages?' disabled':'')+'>›</button></div></header><table class="admin-table admin-tool-register-table development-table'+(detail?' development-detail-table':'')+'"><thead><tr><th scope="col">'+(detail?'Результат / действие':'Наименование')+'</th>'+(detail?'':'<th scope="col">Готовность</th>')+'</tr></thead><tbody>'+rows.slice(current*limit,(current+1)*limit).join('')+'</tbody></table></section>';
+}
+function selectRow({key,label,sub='',progress=null,active=false,kind},e){
+  return '<tr'+(active?' class="is-selected"':'')+'><td><button type="button" class="development-table-choice" data-dm-select="'+e(kind)+'" data-dm-key="'+e(key)+'" aria-pressed="'+active+'" title="'+e(label+(sub?' — '+sub:''))+'"><strong>'+e(label)+'</strong>'+(sub?'<small>'+e(sub)+'</small>':'')+'</button></td><td>'+(progress?mark(progress,e):'—')+'</td></tr>';
+}
+function detailRows(items,layout,e){
+  const max=Math.max(55,Math.floor((layout.paneWidth-24)/7.2)*3);
+  return items.flatMap(item=>splitDetail(item.value,max).map((part,i)=>'<tr><td><strong>'+e(item.label+(i?' · продолжение':''))+'</strong><p>'+e(part)+'</p>'+(item.go&&i===0?'<button type="button" class="development-detail-link" data-dm-go="'+e(item.go)+'">Открыть</button>':'')+'</td></tr>'));
+}
+export function developmentMarkup({activity=null,mode=0,group=null,mechanism=null,criterion=null,level='groups',detailMode='result',pages={},width=920,height=610,snapshot=null,audits=[],loading=false,stale=false},e){
   const selected=ACTIVITIES.find(a=>a.id===activity);
-  const scenario=selected?scenarioMechanisms(activity,mode):[];
-  const graph=ACTIVITIES.map(a=>'<section class="admin-overview-panel development-activity"><div class="admin-overview-panel-head"><h3>'+e(a.name)+'</h3></div>'+
-    own.map((name,i)=>{const active=a.id===activity&&mode===i;
-      return '<button type="button" class="admin-overview-person development-mode" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'" aria-expanded="'+active+'"'+(active?' aria-controls="development-scenario"':'')+'>'+row(name,active?'Выбрано':'',null,'<span class="development-disclosure" aria-hidden="true">'+(active?'▾':'▸')+'</span>',e)+'</button>';
-    }).join('')+'</section>').join('');
-  let number=0;
-  const numbered=scenario.map(m=>({...m,number:++number,views:m.criteria.map(c=>criterionView(c,snapshot,audits))}));
-  const plan=plannedQueue(numbered,snapshot);
-  const firstKey=[...plan.ranks.keys()][0];
-  const nextMechanism=numbered.find(m=>m.criteria.some(c=>c.key===firstKey));
-  const nextIndex=nextMechanism?.criteria.findIndex(c=>c.key===firstKey)??-1;
-  const nextCriterion=nextIndex>=0?nextMechanism.criteria[nextIndex]:null;
-  const nextView=nextIndex>=0?nextMechanism.views[nextIndex]:null;
-  const nextDecision=nextCriterion?ownerDecision(nextCriterion,mode,nextView):'';
-  const focus=nextCriterion&&snapshot?'<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Ближайшая задача</h3></div><div class="development-criterion-details development-focus"><section><h5>'+e(nextMechanism.number+'.'+(nextIndex+1)+' '+(plainTitles[nextCriterion.key]||(mode===0&&soloTitles[nextCriterion.key])||nextCriterion.title))+'</h5><p>'+e(nextDecision||shortAction(nextCriterion,nextView))+'</p><p><strong>'+e(nextDecision?'Решение владельца':'Исполнитель: AI')+'</strong></p></section></div></section>':'';
-  const list='<div class="development-branches">'+sections.map(([section,keys])=>{
-    const members=numbered.filter(m=>m.section===section);
-    if(!members.length)return '';
-    const groupId='group:'+keys[0],expanded=open.has(groupId);
-    const allViews=members.flatMap(m=>m.views.map(v=>({...v,blocking:m.applicability==='Основной'})));
-    const groupStatus=developmentProgress(allViews,!!snapshot);
-    return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,progressSummary(allViews,!!snapshot),groupStatus,disclosure(expanded),e)+'</button>'+
-      (expanded?'<div class="development-mechanisms">'+members.map(m=>{
-        const status=developmentProgress(m.views,!!snapshot),key='mechanism:'+m.id,show=open.has(key),links=relatedSummary(m,numbered,snapshot);
-        const ranks=m.criteria.map(c=>plan.ranks.get(c.key)).filter(Boolean).sort((a,b)=>a-b);
-        const taskLabel=snapshot&&ranks.length?' · Задачи '+ranks.join(', '):'';
-        return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.number+'. '+m.label,m.applicability+' · '+progressSummary(m.views,!!snapshot)+taskLabel,status,disclosure(show),e)+'</button>'+
-          (show?'<div class="development-criteria">'+(links.business.length?'<p class="development-related"><strong>Связанные механизмы:</strong> '+e(links.business.join(' · '))+'</p>':'')+m.criteria.map((c,i)=>{
-            const v=m.views[i],criterionId='criterion:'+m.id+':'+c.key,details=open.has(criterionId),technicalId='technical:'+criterionId,technical=open.has(technicalId);
-            const title=plainTitles[c.key]||(mode===0&&soloTitles[c.key])||c.title;
-            const decision=ownerDecision(c,mode,v);
-            const task=plan.tasks.get(c.key),taskOrder=snapshot?queueLabel(task,plan):'';
-            const prerequisites=task.dependencies.map(k=>plan.tasks.get(k)).filter(t=>t&&t.view.status!=='ready'&&!t.view.deferred);
-            const verified=[...v.history,...v.evidence.map(x=>(x.state==='passed'?'':x.state==='historical'?'Ранее: ':'Не пройдено: ')+x.title)];
-            return '<div class="development-criterion"><button type="button" class="admin-overview-person development-criterion-head" data-dm-toggle="'+e(criterionId)+'" aria-expanded="'+details+'">'+row(m.number+'.'+(i+1)+' '+title,[taskOrder,decision?'Нужно решение':criterionSummary(v,!!snapshot)].filter(Boolean).join(' · '),developmentProgress([v],!!snapshot),disclosure(details),e)+'</button>'+
-              (details?'<div class="development-criterion-details"><section><h5>Результат</h5><p>'+e(briefResult(c,v))+'</p></section>'+(prerequisites.length?'<section><h5>Сначала</h5><p>'+e(prerequisites.map(t=>queueLabel(t,plan)+' · '+t.number+' '+(plainTitles[t.key]||t.criterion.title)).join(' / '))+'</p></section>':'')+
-                (decision?'<section><h5>Нужно твоё решение</h5><p>'+e(decision)+'</p></section>':'<section><h5>Что дальше</h5><p>'+e(shortAction(c,v))+'</p><p>'+e(v.status==='ready'?'':'Исполнитель: AI')+'</p></section>')+
-                '<button type="button" class="admin-overview-person" data-dm-toggle="'+e(technicalId)+'" aria-expanded="'+technical+'">'+row('Технические подробности','',null,disclosure(technical),e)+'</button>'+
-                (technical?(links.technical.length?'<section><h5>Зависимости из реестра</h5><p>'+e(links.technical.join(' · '))+'</p></section>':'')+'<section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section><section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section>':'')+'</div>':'')+'</div>';
-          }).join('')+'</div>':'')+'</div>';
-      }).join('')+'</div>':'')+'</section>';
-  }).join('')+'</div>';
-  const context=contexts[mode]||contexts[0];
-  return '<div class="admin-overview development-map'+(selected?' is-scenario':'')+'"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Покрытие профессии · закрытые и оставшиеся задачи</p></div></div>'+
-    (!selected?'<div class="development-root"><div class="admin-overview-app-head"><h3>Единое покрытие платформы</h3></div></div><div class="development-activities">'+graph+'</div>':'')+
-    '<p class="development-message" role="status"'+(!loading&&!stale?' hidden':'')+'>'+ (loading?'Загрузка данных готовности…':stale?'Не все сведения получены.':'')+'</p>'+
-    (selected?'<section id="development-scenario" class="development-scenario"><div class="admin-overview-app-head development-scenario-head"><h3>'+e(selected.name)+' <span class="admin-overview-head-suffix">/ '+e(own[mode])+'</span></h3><button class="admin-overview-close" type="button" data-dm-close aria-label="Вернуться к выбору деятельности">×</button></div><div class="development-canvas">'+
-      '<details class="admin-overview-panel development-context"><summary><strong>Описание условий работы</strong></summary><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></details>'+focus+'<p class="development-plan-note">Номер — место в карте. Задача — предварительный порядок выполнения с учётом известных связей.</p><div class="development-map-tree"><div class="development-tree-root">'+e(selected.name)+' · '+e(own[mode])+'</div>'+list+'</div></div></section>':'')+'</div>';
+  const header='<div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2></div></div>';
+  if(!selected){
+    const choices=ACTIVITIES.map(a=>'<section class="admin-card development-choice-window"><div class="development-window-head"><strong>'+e(a.name)+'</strong></div><table class="admin-table admin-tool-register-table development-table"><tbody>'+own.map((name,i)=>'<tr><td><button type="button" class="development-table-choice" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'"><strong>'+e(name)+'</strong></button></td></tr>').join('')+'</tbody></table></section>').join('');
+    return '<div class="admin-overview development-map">'+header+'<div class="development-home"><div class="development-tree-root">Единое покрытие платформы</div><div class="development-activities">'+choices+'</div></div></div>';
+  }
+  const numbered=scenarioMechanisms(activity,mode).map((m,i)=>({...m,number:i+1,views:m.criteria.map(c=>criterionView(c,snapshot,audits))}));
+  const plan=plannedQueue(numbered,snapshot),m=numbered.find(x=>x.id===mechanism),index=m?.criteria.findIndex(c=>c.key===criterion)??-1,c=index>=0?m.criteria[index]:null,v=index>=0?m.views[index]:null;
+  const first=[...plan.ranks.keys()][0],firstTask=plan.tasks.get(first),firstLabel=firstTask?'Задача '+plan.ranks.get(first)+' · '+firstTask.number+' '+criterionTitle(firstTask.criterion,mode):'';
+  const context=contexts[mode]||contexts[0],groups=sections.map(([name,ids])=>({name,id:ids[0],members:numbered.filter(x=>x.section===name)})).filter(x=>x.members.length);
+  const selectedGroup=groups.find(x=>x.id===group),members=selectedGroup?selectedGroup.members:numbered;
+  const groupRows=[selectRow({key:'all',label:'Все механизмы',sub:compactSummary(numbered.flatMap(x=>x.views),!!snapshot),progress:developmentProgress(numbered.flatMap(x=>x.views),!!snapshot),active:!group,kind:'group'},e),...groups.map(g=>{const views=g.members.flatMap(x=>x.views.map(v=>({...v,blocking:x.applicability==='Основной'})));return selectRow({key:g.id,label:g.name,sub:compactSummary(views,!!snapshot),progress:developmentProgress(views,!!snapshot),active:group===g.id,kind:'group'},e);})];
+  const mechanismRows=members.map(x=>{const ranks=x.criteria.map(c=>plan.ranks.get(c.key)).filter(Boolean).sort((a,b)=>a-b);return selectRow({key:x.id,label:x.number+'. '+x.label,sub:[compactSummary(x.views,!!snapshot),snapshot&&ranks.length?'№ '+ranks.join(', '):''].filter(Boolean).join(' · '),progress:developmentProgress(x.views,!!snapshot),active:m?.id===x.id,kind:'mechanism'},e);});
+  const criterionRows=m?m.criteria.map((x,i)=>{const view=m.views[i],rank=plan.ranks.get(x.key);return selectRow({key:x.key,label:m.number+'.'+(i+1)+' '+criterionTitle(x,mode),sub:[snapshot&&rank?'Задача '+rank:'',statusText(view,!!snapshot)].filter(Boolean).join(' · '),progress:developmentProgress([view],!!snapshot),active:c?.key===x.key,kind:'criterion'},e);}):[];
+  const descriptors=[{id:'groups',title:'Разделы',rows:groupRows},{id:'mechanisms',title:selectedGroup?.name||'Все механизмы',rows:mechanismRows}];
+  if(m)descriptors.push({id:'criteria',title:m.number+'. '+m.label,rows:criterionRows});
+  let detailItems=[],detailTitle='Результат';
+  if(detailMode==='context'){
+    detailTitle='Условия работы';detailItems=[{label:'Места работы',value:context.places.join(' · ')},{label:'Участники',value:context.roles},{label:'Финансы',value:context.finance}];
+  }else if(c){
+    const task=plan.tasks.get(c.key),decision=ownerDecision(c,mode,v);
+    detailTitle=m.number+'.'+(index+1)+' · '+(detailMode==='technical'?'Доказательства':'Результат');
+    if(detailMode==='technical'){
+      detailItems=[{label:'Реализация',value:v.found},...v.history.map(value=>({label:'Ранее проверено',value})),...v.evidence.map(x=>({label:x.state==='failed'?'Не пройдено':'Проверка',value:x.title})),{label:'Осталось',value:v.next}];
+      const tech=relatedSummary(m,numbered,snapshot).technical;if(tech.length)detailItems.push({label:'Зависимости реестра',value:tech.join(' · ')});
+    }else{
+      detailItems=[{label:'Результат',value:briefResult(c,v)},{label:decision?'Решение владельца':'Следующее действие',value:decision||shortAction(c,v)}];
+      for(const key of task.dependencies){const dep=plan.tasks.get(key);if(dep&&dep.view.status!=='ready'&&!dep.view.deferred)detailItems.push({label:'Сначала · '+queueLabel(dep,plan),value:dep.number+' '+criterionTitle(dep.criterion,mode),go:dep.key});}
+      for(const related of numbered.filter(x=>(relatedMechanisms[m.id]||[]).includes(x.id)))detailItems.push({label:'Связанный механизм',value:related.number+' '+related.label,go:'mechanism:'+related.id});
+    }
+  }
+  if(detailItems.length)descriptors.push({id:'detail',title:detailTitle,detail:true});
+  const layout=developmentWindowLayout(width,height,descriptors.length),focused=Math.max(0,descriptors.findIndex(x=>x.id===level));
+  const end=Math.max(layout.capacity,focused+1),visible=descriptors.slice(Math.max(0,end-layout.capacity),end);
+  const visibleLayout=developmentWindowLayout(width,height,visible.length);
+  const grid=visible.map(x=>windowPane(x.id,x.title,x.detail?detailRows(detailItems,visibleLayout,e):x.rows,x.detail?visibleLayout.detailRows:visibleLayout.listRows,pages[x.id],e,!!x.detail)).join('');
+  const nav=descriptors.map(x=>'<button type="button" class="development-nav-step'+(x.id===level?' is-active':'')+'" data-dm-level="'+e(x.id)+'">'+e(x.id==='groups'?'Разделы':x.id==='mechanisms'?'Механизмы':x.id==='criteria'?'Состав':detailMode==='context'?'Условия':'Результат')+'</button>').join('<span aria-hidden="true"> › </span>');
+  return '<div class="admin-overview development-map is-scenario">'+
+    '<div class="development-scenario-head"><strong>'+e(selected.name)+' / '+e(own[mode])+'</strong><button class="admin-overview-close" type="button" data-dm-close aria-label="К выбору деятельности">×</button></div>'+
+    '<div class="development-control-row"><nav aria-label="Уровни карты">'+nav+'</nav><div class="development-control-actions"><button type="button" class="development-nav-step" data-dm-context>Условия работы</button>'+(c?'<button type="button" class="development-nav-step" data-dm-technical>'+ (detailMode==='technical'?'Результат':'Доказательства')+'</button>':'')+'</div></div>'+
+    '<div class="development-next-row">'+(snapshot&&firstTask?'<button type="button" class="development-nav-step" data-dm-go="'+e(first)+'" title="'+e(firstLabel)+'">'+e(firstLabel)+'</button>':'<span>'+e(loading?'Получение результатов…':stale?'Не все данные получены':'План задач')+'</span>')+'</div>'+
+    '<div class="development-windows" data-columns="'+visibleLayout.columns+'" data-rows="'+visibleLayout.rows+'" style="--dm-cols:'+visibleLayout.columns+';--dm-rows:'+visibleLayout.rows+'">'+grid+'</div></div>';
 }
 // Patch only changed nodes. Retain the canvas, scroll container, and all untouched branches.
 export function patchDevelopmentNode(current,next){
@@ -371,45 +401,53 @@ export function patchDevelopmentNode(current,next){
 }
 export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}){
   if(!content)return;
-  let state={activity:null,mode:0,open:new Set(),snapshot:null,audits:[],loading:true,stale:false},request=0;
-  const draw=(anchor=null)=>{
-    if(!isCurrent())return;
-    const canvas=content.querySelector('.development-canvas');
-    const top=canvas?.scrollTop||0,left=canvas?.scrollLeft||0;
-    const anchorKey=anchor?.dataset.dmToggle,offset=anchor?.getBoundingClientRect().top;
+  let state={activity:null,mode:0,group:null,mechanism:null,criterion:null,level:'groups',detailMode:'result',pages:{},width:Math.max(1,content.clientWidth),height:Math.max(1,content.clientHeight-132),snapshot:null,audits:[],loading:true,stale:false};
+  let request=0,observer;
+  const draw=()=>{
+    if(!isCurrent()){observer?.disconnect();return;}
     const template=content.ownerDocument.createElement('template');template.innerHTML=developmentMarkup(state,escapeHtml);
     const root=content.querySelector('.development-map');
     if(root)patchDevelopmentNode(root,template.content.firstElementChild);
     else content.replaceChildren(template.content);
-    const nextCanvas=content.querySelector('.development-canvas');
-    if(nextCanvas&&canvas===nextCanvas){
-      nextCanvas.scrollTop=top;nextCanvas.scrollLeft=left;
-      if(anchorKey&&Number.isFinite(offset)){
-        const button=[...nextCanvas.querySelectorAll('[data-dm-toggle]')].find(el=>el.dataset.dmToggle===anchorKey);
-        if(button)nextCanvas.scrollTop+=button.getBoundingClientRect().top-offset;
-      }
-    }
   };
+  const measure=()=>{
+    if(!isCurrent()){observer?.disconnect();return;}
+    const box=content.querySelector('.development-windows'),width=Math.max(1,box?.clientWidth||content.clientWidth),height=Math.max(1,box?.clientHeight||content.clientHeight-132);
+    if(width!==state.width||height!==state.height){state.width=width;state.height=height;draw();}
+  };
+  function resetSelection(){state.group=null;state.mechanism=null;state.criterion=null;state.level='groups';state.detailMode='result';state.pages={};}
+  function openTask(key){
+    const numbered=scenarioMechanisms(state.activity,state.mode),m=key.startsWith('mechanism:')?numbered.find(x=>x.id===key.slice(10)):numbered.find(x=>x.criteria.some(c=>c.key===key));
+    if(!m)return;
+    state.group=sections.find(([name])=>name===m.section)?.[1][0]||null;
+    state.mechanism=m.id;state.criterion=key.startsWith('mechanism:')?null:key;state.level=state.criterion?'detail':'criteria';state.detailMode='result';state.pages={};
+    const groupMembers=numbered.filter(x=>x.section===m.section),layout=developmentWindowLayout(state.width,state.height,state.criterion?4:3);
+    state.pages.mechanisms=Math.floor(groupMembers.findIndex(x=>x.id===m.id)/layout.listRows);
+    if(state.criterion)state.pages.criteria=Math.floor(m.criteria.findIndex(c=>c.key===state.criterion)/layout.listRows);
+  }
   content.onclick=event=>{
     if(!isCurrent())return;
-    const button=event.target.closest('button');
-    if(!button||!content.contains(button))return;
-    if(button.hasAttribute('data-dm-activity')){
-      state.activity=button.dataset.dmActivity;state.mode=Number(button.dataset.dmMode);
-      state.open=new Set(sections.map(([,keys])=>'group:'+keys[0]));draw();return;
-    }
-    if(button.hasAttribute('data-dm-close')){state.activity=null;state.open=new Set();draw();return;}
-    const id=button.dataset.dmToggle;if(!id)return;
-    if(state.open.has(id))state.open.delete(id);else state.open.add(id);
-    draw(button);
+    const button=event.target.closest('button');if(!button||!content.contains(button))return;
+    if(button.hasAttribute('data-dm-activity')){state.activity=button.dataset.dmActivity;state.mode=Number(button.dataset.dmMode);resetSelection();}
+    else if(button.hasAttribute('data-dm-close')){state.activity=null;resetSelection();}
+    else if(button.hasAttribute('data-dm-page'))state.pages={...state.pages,[button.dataset.dmPage]:Math.max(0,Number(button.dataset.page)||0)};
+    else if(button.hasAttribute('data-dm-level'))state.level=button.dataset.dmLevel;
+    else if(button.hasAttribute('data-dm-context')){state.detailMode='context';state.level='detail';state.pages={...state.pages,detail:0};}
+    else if(button.hasAttribute('data-dm-technical')){state.detailMode=state.detailMode==='technical'?'result':'technical';state.level='detail';state.pages={...state.pages,detail:0};}
+    else if(button.hasAttribute('data-dm-go'))openTask(button.dataset.dmGo);
+    else if(button.dataset.dmSelect==='group'){state.group=button.dataset.dmKey==='all'?null:button.dataset.dmKey;state.mechanism=null;state.criterion=null;state.detailMode='result';state.level='mechanisms';state.pages={...state.pages,mechanisms:0,criteria:0,detail:0};}
+    else if(button.dataset.dmSelect==='mechanism'){state.mechanism=button.dataset.dmKey;state.criterion=null;state.detailMode='result';state.level='criteria';state.pages={...state.pages,criteria:0,detail:0};}
+    else if(button.dataset.dmSelect==='criterion'){state.criterion=button.dataset.dmKey;state.detailMode='result';state.level='detail';state.pages={...state.pages,detail:0};}
+    else return;
+    draw();measure();
   };
   async function refresh(){
-    const id=++request;
-    const results=await Promise.allSettled([load(),loadCore(),loadUser()]);
+    const id=++request,results=await Promise.allSettled([load(),loadCore(),loadUser()]);
     if(id!==request||!isCurrent())return;
     if(results[0].status==='fulfilled')state.snapshot=results[0].value;
-    state.audits=[1,2].map((n,i)=>results[n].status==='fulfilled'?results[n].value:state.audits[i]);
-    state.loading=false;state.stale=results.some(r=>r.status!=='fulfilled');draw();
+    state.audits=[1,2].map((n,i)=>results[n].status==='fulfilled'?results[n].value:state.audits[i]);state.loading=false;state.stale=results.some(r=>r.status!=='fulfilled');draw();
   }
-  draw();void refresh();
+  draw();measure();
+  if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(measure);observer.observe(content);}
+  void refresh();
 }

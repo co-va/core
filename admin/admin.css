@@ -1508,32 +1508,46 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-progress-track{display:block;height:6px;background:var(--border);border-radius:6px;overflow:hidden}
 .development-progress-fill{display:block;height:100%;border-radius:6px;background:currentColor}
 
-/* Development map is a bounded workspace inside the existing Admin shell. */
-.admin-main:has(.development-map){overflow:hidden}
+/* Same Admin list primitives as Users/Tools. Only the screen layout and column widths differ. */
+.admin-main:has(.development-map){overflow:hidden;padding-top:16px;padding-bottom:16px}
 .admin-content:has(.development-map){height:100%;min-height:0;min-width:0}
-.development-map{height:100%;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:12px}
+.development-map{height:100%;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:8px}
 .development-map>.admin-heading{flex:0 0 auto;margin-bottom:0}
-.development-map>.development-message{flex:0 0 auto}
-.development-map:not(.is-scenario){overflow:auto}
-.development-map .development-scenario{flex:1 1 0;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:12px}
-.development-scenario-head{flex:0 0 auto}
-.development-canvas{flex:1 1 0;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;overflow-anchor:none;display:grid;align-content:start;gap:14px;padding:0 4px 12px 0}
-.development-context{padding:14px 16px}
-.development-context summary{cursor:pointer;font-size:18px;color:var(--text)}
-.development-context[open] summary{margin-bottom:14px}
-.development-map-tree{min-width:0;display:grid;gap:0}
-.development-tree-root{justify-self:center;background:var(--surface);color:var(--text);font-size:18px;font-weight:650;padding:12px 16px;border-radius:12px;text-align:center;max-width:100%}
-.development-branches{min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;position:relative;margin:0 0 0 12px;padding:16px 0 0 16px;border-left:1px solid var(--admin-pearl)}
-.development-tree-root:after{content:none}
-.development-branches>.development-group{position:relative;min-width:0;padding:12px 16px}
-.development-branches>.development-group:before{content:"";position:absolute;left:-17px;top:32px;width:16px;border-top:1px solid var(--admin-pearl)}
-.development-branches .development-mechanisms{margin:4px 0 0 8px;padding:4px 0 0 12px;border-left:1px solid var(--text-secondary);display:grid;gap:4px}
-.development-branches .development-mechanism{position:relative;min-width:0;border-bottom:1px solid var(--border);padding:0 4px}
-.development-branches .development-mechanism:before{content:"";position:absolute;left:-13px;top:26px;width:12px;border-top:1px solid var(--text-secondary)}
-.development-branches .development-mechanism>.admin-overview-person,.development-branches .development-criterion-head{flex-wrap:wrap;gap:8px}
-.development-branches .development-row-end{flex:0 1 auto;max-width:100%}
-.development-branches .development-progress{width:150px;max-width:100%}
-.development-branches .development-criteria{padding-left:10px}
-.development-related{font-size:16px;line-height:1.45;margin:8px 0 14px;color:var(--text)}
-.development-plan-note{font-size:16px;line-height:1.5;color:var(--white);margin:0}
-@media(min-width:761px){.admin-main:has(.development-map){padding-top:16px;padding-bottom:16px}}
+.development-home{min-height:0;display:flex;flex-direction:column;gap:16px;align-items:stretch}
+.development-home .development-tree-root{align-self:center;background:var(--surface);color:var(--text);padding:12px 16px;border-radius:12px;font-weight:650}
+.development-home .development-activities{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.development-home .development-activities:before,.development-home .development-root:after{content:none}
+.development-map .development-scenario-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex:0 0 38px;min-width:0;color:var(--white);font-size:18px}
+.development-scenario-head>strong{min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.development-control-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 34px;min-width:0;overflow:hidden}
+.development-control-row nav,.development-control-actions{display:flex;align-items:center;gap:4px;min-width:0;white-space:nowrap}
+.development-control-row nav>span{color:var(--white)}
+.development-nav-step{border:0;background:transparent;color:var(--white);font:inherit;font-size:13px;padding:5px 6px;cursor:pointer;white-space:nowrap;min-width:0}
+.development-nav-step.is-active{font-weight:750;text-decoration:underline;text-underline-offset:4px}
+.development-next-row{flex:0 0 32px;display:flex;align-items:center;min-width:0;overflow:hidden;color:var(--white)}
+.development-next-row .development-nav-step{overflow:hidden;text-overflow:ellipsis;text-align:left;max-width:100%;font-weight:650}
+.development-windows{flex:1 1 0;min-width:0;min-height:0;display:grid;grid-template-columns:repeat(var(--dm-cols),minmax(0,1fr));grid-template-rows:repeat(var(--dm-rows),minmax(0,1fr));gap:12px;overflow:hidden}
+.development-window,.development-choice-window{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.development-window-head{height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 12px;color:var(--text);border-bottom:1px solid var(--admin-pearl);min-width:0}
+.development-window-head>strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.development-window-pages{display:flex;align-items:center;gap:4px;flex:0 0 auto;font-size:12px;font-variant-numeric:tabular-nums}
+.development-window-pages button:disabled{opacity:.25;cursor:default}
+.development-map .development-table{min-width:0;width:100%;table-layout:fixed;border-collapse:collapse}
+.development-map .development-table :is(th,td):first-child{width:65%;padding:4px 12px}
+.development-map .development-table :is(th,td):nth-child(2){width:35%;padding:4px 8px;text-align:left}
+.development-map .development-table th{font-size:12px}
+.development-map .development-table tr.is-selected{background:var(--surface-soft)}
+.development-map .development-table tbody td{height:44px}
+.development-table-choice{border:0;background:transparent;text-align:left;display:grid;gap:2px;width:100%;min-width:0;padding:0;color:var(--text);cursor:pointer}
+.development-table-choice strong,.development-table-choice small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.development-table-choice strong{font-size:13px;font-weight:650}
+.development-table-choice small{font-size:11px;color:var(--text-secondary)}
+.development-map .development-table .development-progress{width:100%;font-size:11px;gap:3px}
+.development-map .development-table .development-progress-head{gap:2px;flex-wrap:wrap}
+.development-map .development-table .development-progress-track{height:3px}
+.development-map .development-detail-table :is(th,td):first-child,.development-map .development-choice-window .development-table td:first-child{width:100%}
+.development-map .development-detail-table td{height:88px;white-space:normal;vertical-align:top;padding:6px 12px;overflow-wrap:anywhere;font-size:12px;line-height:1.25}
+.development-detail-table td>strong{font-size:12px;display:block;margin-bottom:3px}
+.development-detail-table p{margin:0;color:var(--text);font-size:12px;line-height:1.25}
+.development-detail-link{padding:2px 0;border:0;background:transparent;color:var(--text);text-decoration:underline;font:inherit;cursor:pointer}
+@media(max-width:900px){.development-control-row{gap:3px}.development-nav-step{font-size:12px;padding-inline:3px}.development-control-row nav{gap:2px}.development-control-actions{gap:2px}}
