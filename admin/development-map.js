@@ -243,7 +243,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
   const nextCriterion=nextIndex>=0?nextMechanism.criteria[nextIndex]:null;
   const nextView=nextIndex>=0?nextMechanism.views[nextIndex]:null;
   const nextDecision=nextCriterion?ownerDecision(nextCriterion,mode,nextView):'';
-  const focus=nextCriterion&&snapshot?'<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Ближайшая задача</h3></div><div class="development-criterion-details"><section><h5>'+e(nextMechanism.number+'.'+(nextIndex+1)+' '+(plainTitles[nextCriterion.key]||(mode===0&&soloTitles[nextCriterion.key])||nextCriterion.title))+'</h5><p>'+e(nextDecision||shortAction(nextCriterion,nextView))+'</p><p><strong>'+e(nextDecision?'Решение владельца':'Исполнитель: AI')+'</strong></p></section></div></section>':'';
+  const focus=nextCriterion&&snapshot?'<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Ближайшая задача</h3></div><div class="development-criterion-details development-focus"><section><h5>'+e(nextMechanism.number+'.'+(nextIndex+1)+' '+(plainTitles[nextCriterion.key]||(mode===0&&soloTitles[nextCriterion.key])||nextCriterion.title))+'</h5><p>'+e(nextDecision||shortAction(nextCriterion,nextView))+'</p><p><strong>'+e(nextDecision?'Решение владельца':'Исполнитель: AI')+'</strong></p></section></div></section>':'';
   const list=sections.map(([section,keys])=>{
     const members=numbered.filter(m=>m.section===section);
     if(!members.length)return '';
