@@ -301,11 +301,11 @@ export class BusinessStateService {
     const linkedAccounts=(Array.isArray(person.accounts)?person.accounts:[])
       .map((value:unknown)=>text(value)).filter(Boolean);
     if(linkedAccounts.length){
-      const verified=await tx.account.findFirst({
-        where:{id:{in:linkedAccounts},emailVerifiedAt:{not:null}},
-        select:{email:true},
-      });
-      const verifiedEmail=text(verified?.email).toLowerCase();
+      const verifiedRows=await tx.$queryRaw<Array<{ email:string }>>(
+        Prisma.sql`SELECT "email" FROM "Account"
+          WHERE "id" IN (${Prisma.join(linkedAccounts)}) AND "emailVerifiedAt" IS NOT NULL LIMIT 1`
+      );
+      const verifiedEmail=text(verifiedRows[0]?.email).toLowerCase();
       if(verifiedEmail){
         const emails=Array.isArray(person.emails)?person.emails:[];
         person.emails=[verifiedEmail,...[...new Set(emails.map((v:unknown)=>text(v).toLowerCase())
