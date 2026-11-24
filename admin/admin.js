@@ -7,6 +7,7 @@ import { renderAdminTools, loadTariffs, updateTariffSettings, updateTariffPublic
 import { renderTariffWorkbench } from './tariff-workbench.js';
 import { enhanceCommercialTenantTools } from './commercial-tenant.js';
 import { renderCommercialFinance } from './commercial-finance.js';
+import { renderOperationalReadiness } from './operational-readiness.js';
 import { field, passwordField, initPasswordFields } from '../ui/inputs/index.js';
 import { v2Sticker } from '../ui/v2/sticker.js';
 import { v2Shell } from '../ui/v2/shell.js';
@@ -347,6 +348,7 @@ async function refreshData() {
 
 const ADMIN_SECTIONS = [
   { id: 'overview', label: 'Обзор', icon: 'home' },
+  { id: 'operational-readiness', label: 'Готовность', icon: 'settings' },
   { id: 'tenants', label: 'Пользователи', icon: 'people' },
   { id: 'capabilities', label: 'Инструменты', icon: 'settings' },
   { id: 'tariffs', label: 'Тарифы', icon: 'tags' },
@@ -480,6 +482,14 @@ function setActiveSection(title) {
 
 function renderCurrentSection() {
   if (state.section === 'overview') return renderOverview();
+  if (state.section === 'operational-readiness') {
+    setActiveSection('Готовность');
+    const content = app.querySelector('[data-content]');
+    const token = Symbol('operational-readiness');
+    if (!content) return;
+    content.operationalReadinessToken = token;
+    return renderOperationalReadiness(content, { escapeHtml, isCurrent: () => Boolean(state.admin) && state.section === 'operational-readiness' && content.isConnected && content.operationalReadinessToken === token });
+  }
   if (state.section === 'document-registry') {
     return renderDocumentRegistry(app.querySelector('[data-content]'), {
       escapeHtml,
