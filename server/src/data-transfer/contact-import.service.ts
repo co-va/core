@@ -127,6 +127,11 @@ function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:numbe
     if(owners.length)add(field,existingField(found||{},identity,field)||'Телефон занят',
       values[field],owners.map(p=>ownerLabel(p,identity)));
   }
+  // CRM exports often encode 20% as 0.2. Treat values 0..1 as
+  // ambiguous instead of silently storing the wrong personal discount.
+  const rate=Number(text(values.discountPercent).replace(',','.'));
+  if(relevant(values,'discountPercent') && rate>0 && rate<=1)
+    add('discountPercent','Уточните: 1% или 100% (доля)',values.discountPercent);
   if(values.uei && !code(values.uei))add('uei','',values.uei);
   if(values.phone && !phone(values.phone))add('phone','Неверный формат',values.phone);
   if(values.additionalPhone && !phone(values.additionalPhone))
