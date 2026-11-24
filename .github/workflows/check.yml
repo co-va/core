@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -34,6 +36,25 @@ jobs:
           if [ "${branch_name}" != "main" ] && [ "${branch_name}" != "staging" ]; then
             echo "Only main and staging branches are allowed"
             exit 1
+          fi
+      - name: Require recorded operational evidence for release
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node tests/release-evidence.test.mjs
+          node scripts/check-release-evidence.mjs "$BASE_SHA" "$HEAD_SHA" core
+      - name: Verify generated Admin preview
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! git diff --quiet "$BASE_SHA...$HEAD_SHA" -- admin/ ui/ css/ core/auth.js core/environment.js scripts/build-admin-preview.mjs; then
+            npm install --no-save --package-lock=false esbuild@0.25.12
+            node scripts/build-admin-preview.mjs
+            git diff --exit-code -- admin/index.html
           fi
       - name: Syntax and architecture checks
         run: npm run check

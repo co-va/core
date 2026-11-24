@@ -353,7 +353,7 @@ const ADMIN_SECTIONS = [
   { id: 'tariffs', label: 'Тарифы', icon: 'tags' },
   { id: 'finance', label: 'Финансы', icon: 'finance' },
   { id: 'document-registry', label: 'Реестр документов', icon: 'documents' },
-  { id: 'operational-readiness', label: 'Карта развития', icon: 'settings' },
+  { id: 'operational-readiness', label: 'Карта развития', icon: 'settings', desktopOnly: true },
 ];
 
 function adminSectionLabel() {
@@ -394,7 +394,9 @@ function bindAdminSessionControls() {
 }
 
 function renderMobileShell() {
-  const deck = v2CardDeck(ADMIN_SECTIONS, { active: state.section, data: 'data-section' })
+  const mobileSections = ADMIN_SECTIONS.filter((item) => !item.desktopOnly);
+  if (!mobileSections.some((item) => item.id === state.section)) state.section = 'overview';
+  const deck = v2CardDeck(mobileSections, { active: state.section, data: 'data-section' })
     + '<div class="admin-mobile-deck-footer"><span>' + escapeHtml(state.admin?.account?.email || '') + '</span>'
     + adminSessionIcon('push')
     + adminSessionIcon('logout') + '</div>';
@@ -424,7 +426,7 @@ function renderMobileShell() {
   const stopNavigation = initV2WorkspaceInteraction(root, {
     activeId: state.section,
     onRootSelect: (id) => {
-      if (!ADMIN_SECTIONS.some((item) => item.id === id)) return;
+      if (!mobileSections.some((item) => item.id === id)) return;
       toggleDeck(false);
       state.section = id;
       renderCurrentSection();

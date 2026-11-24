@@ -7,8 +7,16 @@ const service = readFileSync(new URL('../server/src/saas-admin/saas-admin.servic
 
 const navigation = source.slice(source.indexOf('const ADMIN_SECTIONS = ['), source.indexOf('function adminSectionLabel('));
 assert.ok(navigation.includes("id: 'tenants'"));
-const sectionIds = [...navigation.matchAll(/id: '([^']+)'/g)].map((match) => match[1]);
-assert.deepEqual(sectionIds, ['overview', 'tenants', 'capabilities', 'tariffs', 'finance', 'document-registry'], 'Desktop and mobile navigation order');
+const items = runInNewContext(navigation + '\nADMIN_SECTIONS');
+const sectionIds = Array.from(items, item => item.id);
+const previousSections = ['overview', 'tenants', 'capabilities', 'tariffs', 'finance', 'document-registry'];
+assert.deepEqual(sectionIds, [...previousSections, 'operational-readiness'], 'Desktop navigation adds the approved development map last');
+assert.deepEqual(Array.from(items.filter(item => !item.desktopOnly), item => item.id), previousSections, 'Mobile navigation remains unchanged');
+const mobileShell = source.slice(source.indexOf('function renderMobileShell()'), source.indexOf('function renderShell()'));
+assert.match(mobileShell, /const mobileSections = ADMIN_SECTIONS\.filter\(\(item\) => !item\.desktopOnly\)/);
+assert.match(mobileShell, /v2CardDeck\(mobileSections,/);
+assert.match(mobileShell, /if \(!mobileSections\.some\(\(item\) => item\.id === state\.section\)\) state\.section = 'overview'/);
+assert.match(mobileShell, /if \(!mobileSections\.some\(\(item\) => item\.id === id\)\) return/);
 const stateDeclaration = source.slice(source.indexOf('const state = {'), source.indexOf('let adminPollTimer'));
 assert.match(stateDeclaration, /section: 'overview'/, 'Dashboard must open first on login');
 assert.ok(!navigation.includes("id: 'owner'"), 'Owner is a user, not a separate Admin section');
