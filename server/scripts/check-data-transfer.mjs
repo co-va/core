@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const { PrismaClient } = require('@prisma/client');
 const ExcelJS = require('exceljs');
 const { DataTransferService } = require('../dist/data-transfer/data-transfer.service.js');
+const { ContactImportService } = require('../dist/data-transfer/contact-import.service.js');
 const { BusinessStateService } = require('../dist/business-state/business-state.service.js');
 const { ProfileService } = require('../dist/profile/profile.service.js');
 const { RecordService } = require('../dist/record/record.service.js');
@@ -301,6 +302,55 @@ try {
   assert.equal(legacyCheck.failed,0,JSON.stringify(legacyCheck.rows));
   assert.equal(legacyCheck.transferred,1);
   console.log('PASS: grouping, contacts, secondary fields, short and full birthdays, gender and old file compatibility');
+  // Durable contact-import queue: safe contacts immediately enter the
+  // canonical Person table; conflicting contacts remain in their file until
+  // every independently grouped field is decided.
+  const reviewer=new ContactImportService(db,people);
+  const reviewBook=new ExcelJS.Workbook();
+  await reviewBook.xlsx.load(await service.workbook({domain:'people',template:true}));
+  const reviewSheet=reviewBook.worksheets[0];
+  reviewSheet.getRow(3).values=['','Лада','','Ж','','','79997774501','','lada.unique@example.test','','','','Excel','Примечание Лады'];
+  reviewSheet.getRow(4).values=['A012','Ксения','Неверная','','','','79997771234','','other.ksenia@example.test','','','','Excel',''];
+  reviewSheet.getRow(5).values=['','Саша','','М','','','79997774502','','shared.import@example.test','','','','Excel',''];
+  reviewSheet.getRow(6).values=['','Марина','','Ж','','','79997774503','','shared.import@example.test','','','','Excel',''];
+  const reviewInput={filename:'new-contact-review.xlsx',source:'Контакты',strict:true,expectedDomain:'people',
+    dataUrl:'data:application/octet-stream;base64,'+
+      Buffer.from(await reviewBook.xlsx.writeBuffer()).toString('base64')};
+  const batch=await reviewer.create(tenantId,accountId,reviewInput);
+  assert.equal(batch.total,4);
+  assert.equal(batch.done,1,'Unambiguous contact must be imported immediately');
+  assert.equal(batch.pending,3,'Three rows need separate operator decisions');
+  assert.equal(batch.groupCount,2,'Surname and Email are independent groups');
+  const lada=await db.person.findFirst({where:{tenantId,data:{path:['name'],equals:'Лада'}}});
+  assert.equal(lada?.data.note,'Примечание Лады','Imported note is preserved');
+  const kseniaBefore=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.equal(kseniaBefore.data.surname,'Примерная');
+  let review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'surname',mode:'keep'});
+  assert.equal(review.done,1,'Resolving one field does not save the whole contact');
+  assert.equal(review.pending,3);
+  assert.ok(review.issues.some(i=>i.rowNumber===4&&i.field==='email'));
+  assert.ok(!review.issues.some(i=>i.rowNumber===4&&i.field==='surname'));
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:4,field:'email',mode:'keep'});
+  assert.equal(review.done,2,'Contact is committed only after all its differences are processed');
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:5,field:'email',mode:'replace',value:'shared.import@example.test'});
+  assert.equal(review.done,3);
+  review=await reviewer.decide(tenantId,batch.id,{rowNumber:6,field:'email',mode:'keep'});
+  assert.equal(review.done,4);
+  assert.equal(review.pending,0);
+  assert.equal(review.status,'completed');
+  const uploadedPeople=await db.person.findMany({where:{tenantId}});
+  const shared=uploadedPeople.filter(x=>(x.data.emails||[]).includes('shared.import@example.test'));
+  assert.equal(shared.length,1,'Operator can remove duplicate Email from one imported contact');
+  assert.equal(shared[0].data.name,'Саша');
+  const kseniaAfter=await db.person.findFirst({where:{tenantId,key:importedPerson.key}});
+  assert.equal(kseniaAfter.data.surname,'Примерная');
+  assert.deepEqual(kseniaAfter.data.emails,kseniaBefore.data.emails,'Unresolved Email never overwrites saved contact');
+  const completed=await reviewer.detail(tenantId,batch.id);
+  assert.equal(completed.done,4);
+  const repeat=await reviewer.create(tenantId,accountId,reviewInput);
+  assert.equal(repeat.id,batch.id,'Exact same file reopens existing permanent review');
+  assert.equal(repeat.done,4,'Reupload cannot duplicate people');
+  console.log('PASS: durable Contacts review, field groups, note, safe-first import, no duplicates and completed progress');
   console.log('PASS: Contacts Excel one-sheet template, preview, strict atomic import, origin, duplicate safety, export');
   // Journal: six named groups plus standalone fields, same identity order as Contacts, and
   // one booking per row regardless of the number of services.
