@@ -20,6 +20,7 @@ type Row = { id: string; rowNumber: number; values: Prisma.JsonValue; issues: Pr
 const text = (v:unknown)=>String(v??'').trim();
 const obj = (v:unknown):Obj => v && typeof v==='object' && !Array.isArray(v) ? v as Obj : {};
 const arr = (v:unknown):Obj[]=>Array.isArray(v)?v.map(obj):[];
+const processed=(status:string)=>status==='done'||status==='unchanged';
 const phone = (v:unknown)=>{ try {return text(v)?normalizePhone(v):'';}catch{return '';} };
 const code = (v:unknown)=>{try{return text(v)?normalizeUEI(v):'';}catch{return '';}};
 const email = (v:unknown)=>text(v).toLocaleLowerCase('ru-RU');
@@ -68,9 +69,10 @@ export class ContactImportService {
     return tx.contactImportRow.findMany({where:{batchId},orderBy:{rowNumber:'asc'}});
   }
   private summary(batch:Obj,rows:Row[],withRows=false){
-    const done=rows.filter(r=>r.status==='done').length;
-    const pending=rows.filter(r=>r.status!=='done').length;
-    const issues=rows.filter(r=>r.status!=='done').flatMap(row=>
+    const done=rows.filter(r=>processed(r.status)).length;
+    const skipped=rows.filter(r=>r.status==='unchanged').length;
+    const pending=rows.length-done;
+    const issues=rows.filter(r=>!processed(r.status)).flatMap(row=>
       ((Array.isArray(row.issues)?row.issues:[]) as unknown as Issue[]).filter(i=>!i.decision||Boolean(row.error))
         .map(i=>({...i,rowNumber:row.rowNumber,rowId:row.id,
           personKey:row.personKey,contact:[
@@ -81,7 +83,7 @@ export class ContactImportService {
       const key=text(i.field);a[key] ||= {field:key,label:i.label,count:0};a[key].count++;return a;
     },{})).map(([,v])=>v);
     return {id:batch.id,filename:batch.filename,total:batch.total,
-      done,pending,groupCount:groups.length,groups,status:pending?'review':'completed',
+      done,skipped,pending,groupCount:groups.length,groups,status:pending?'review':'completed',
       createdAt:batch.createdAt,
       ...(withRows?{issues,rows:rows.map(r=>({
         rowNumber:r.rowNumber,status:r.status,personKey:r.personKey,
@@ -197,6 +199,12 @@ export class ContactImportService {
             status:'review',personKey:text(checked.person?.key),
             issues:checked.issues as unknown as Prisma.InputJsonValue,
           }});
+        }else if(checked.unchanged && checked.person){
+          // No Person/UEI write: identical facts are recorded as processed.
+          await tx.contactImportRow.update({where:{id:latest.id},data:{
+            status:'unchanged',personKey:text(checked.person.key),
+            issues:[] as Prisma.InputJsonValue,error:'',
+          }});
         }else{
           await tx.$executeRawUnsafe('SAVEPOINT contact_import_row');
           try{
@@ -223,7 +231,7 @@ export class ContactImportService {
   }
   private async complete(tenantId:string,batchId:string){
     const pending=await this.prisma.contactImportRow.count({
-      where:{tenantId,batchId,status:{not:'done'}},
+      where:{tenantId,batchId,status:{notIn:['done','unchanged']}},
     });
     await this.prisma.contactImportBatch.update({
       where:{id:batchId},data:{status:pending?'review':'completed'},
@@ -320,7 +328,7 @@ export class ContactImportService {
         where:{batchId_rowNumber:{batchId,rowNumber}},
       });
       if(!row||row.tenantId!==tenantId)throw new NotFoundException('Строка загрузки не найдена');
-      if(row.status==='done')return this.summary(await this.getBatch(tenantId,batchId,tx),
+      if(processed(row.status))return this.summary(await this.getBatch(tenantId,batchId,tx),
         await this.fileRows(tx,batchId),true);
       let issues=arr(row.issues) as unknown as Issue[];
       const changed=issues.find(item=>item.field===field);
@@ -395,7 +403,7 @@ export class ContactImportService {
       const rows=await this.fileRows(tx,batchId);
       const batch=await this.getBatch(tenantId,batchId,tx);
       await tx.contactImportBatch.update({where:{id:batchId},
-        data:{status:rows.every(r=>r.status==='done')?'completed':'review'}});
+        data:{status:rows.every(r=>processed(r.status))?'completed':'review'}});
       return this.summary(batch,rows,true);
     },{timeout:30000});
   }

@@ -86,6 +86,24 @@ export function inspectContactRow(values:Obj,people:Obj[],identity:Obj,
   const chosen=selectedSame?candidates.find(p=>p.key===selected.value):null;
   const candidate=selectedSame?chosen:selectedOther?null:candidates.length===1?candidates[0]:null;
   const person=candidate?people.find(p=>text(p.key)===candidate.key)||null:null;
+  // Repeated rows in a differently-sized workbook are already processed
+  // when every non-empty imported value exists in this very same person.
+  // The import must not upsert or change such a Person again.
+  const unchanged=Boolean(person && previous.length===0 && !selectedOther
+    && candidates.length===1 && reliableContactCandidate(candidates[0])
+    && sourceCandidates.length===0 && contactFields.every(field=>{
+      if(!text(values[field]))return true;
+      const current=getPersonValue(person,identity,field);
+      if(groupFor(field))return matchesField(person,field,values[field]);
+      if(field==='discountPercent'){
+        const incoming=Number(values[field]),saved=Number(current);
+        return Number.isFinite(incoming)&&Number.isFinite(saved)
+          && (incoming===saved || (incoming>0&&incoming<=1&&incoming*100===saved));
+      }
+      return Boolean(current)&&fieldValue(field,current)===fieldValue(field,values[field]);
+    }));
+  if(unchanged)return {person,issues:[] as ReviewIssue[],candidates,sourceCandidates,
+    unchanged:true};
   const issues=new Map<string,ReviewIssue>();
   const add=(field:string,system:unknown,excel:unknown,owners:ReviewIssue['owners']=[])=>{
     const old=issues.get(field);
@@ -166,5 +184,5 @@ export function inspectContactRow(values:Obj,people:Obj[],identity:Obj,
     if(old.field==='format'&&!issues.has(old.field))issues.set(old.field,old);
     else if(old.decision&&issues.has(old.field))issues.get(old.field)!.decision=old.decision;
   }
-  return {person,issues:[...issues.values()],candidates,sourceCandidates};
+  return {person,issues:[...issues.values()],candidates,sourceCandidates,unchanged:false};
 }

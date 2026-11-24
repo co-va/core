@@ -321,6 +321,25 @@ try {
   });
   assert.equal(birthBatch.done,1);
   assert.equal((await db.person.findFirst({where:{tenantId,key:personId}})).data.birthDate,'1990-01-02');
+  // A larger (or smaller) new file that includes already imported people
+  // must mark unchanged rows without writing Person data a second time.
+  const repeatedSubset=await makeReviewFile('existing-people-plus-new.xlsx',[
+    ['','Тестовая','','','','','79991116701','','verified@example.test'],
+    ['','Никита','','','','','79991116711','','new.nikita@example.test'],
+  ]);
+  let reused=await reviewer.create(tenantId,accountId,repeatedSubset);
+  assert.equal(reused.total,2);
+  assert.equal(reused.done,2);
+  assert.equal(reused.pending,0);
+  assert.equal(reused.skipped,1,'Existing identical contact must be skipped without upsert');
+  assert.equal(reused.rows.find(row=>row.rowNumber===3).status,'unchanged');
+  assert.equal((await db.person.findMany({where:{tenantId}}))
+    .filter(row=>row.data.name==='Тестовая').length,1);
+  assert.equal((await db.person.findMany({where:{tenantId}}))
+    .filter(row=>row.data.name==='Никита').length,1);
+  const duplicateSameFile=await reviewer.create(tenantId,accountId,repeatedSubset);
+  assert.equal(duplicateSameFile.id,reused.id,'Re-uploading identical file reopens batch');
+  assert.equal(duplicateSameFile.skipped,1);
   console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
