@@ -305,7 +305,7 @@ try {
   // Durable contact-import queue: safe contacts immediately enter the
   // canonical Person table; conflicting contacts remain in their file until
   // every independently grouped field is decided.
-  const reviewer=new ContactImportService(db,people);
+  const reviewer=new ContactImportService(db,people,access);
   const reviewBook=new ExcelJS.Workbook();
   await reviewBook.xlsx.load(await service.workbook({domain:'people',template:true}));
   const reviewSheet=reviewBook.worksheets[0];
