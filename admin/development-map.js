@@ -102,7 +102,7 @@ const eventsFor=(snapshot,key)=>{
   return source.filter(x=>x?.criterion===key&&typeof x.result==='string'&&x.result.trim()&&typeof x.remaining==='string'&&typeof x.id==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x.date||''));
 };
 const proved=x=>x?.versions&&Object.values(x.versions).length&&Object.values(x.versions).every(validSha)&&Array.isArray(x.checks)&&x.checks.length&&x.checks.every(y=>typeof y==='string'&&y.trim());
-const statusLabels={ready:'Готово',partial:'Частично готово',pending:'Нужно проверить',unfinished:'Нужно доделать',unknown:'Не обследовано',disputed:'Уточнить приёмку',deferred:'Отложено'};
+const statusLabels={ready:'Готово',working:'В работе',unfinished:'Требует доработки',notStarted:'Не начато'};
 export function criterionView(c,snapshot,audits=[]){
   const row=snapshot?.mechanisms?.flatMap(m=>m.rows).find(r=>r.key===c.key);
   const found=c.work?.finding||'Целевое требование. Текущая реализация ещё не обследована.';
@@ -125,11 +125,31 @@ export function criterionView(c,snapshot,audits=[]){
   if(resolution?.kind==='disputed'){status='disputed';next=resolution.remaining||'Уточнить приёмку.';}
   if(resolution?.kind==='regression'){status='unfinished';next=resolution.remaining;}
   const priority=events.filter(x=>['deferred','resume'].includes(x.kind)&&x.ownerConfirmed===true).at(-1);
-  return {status,label:statusLabels[status],found:latest?.result||found,next,history:[...(historic?[historic[0]]:[]),...confirmed.map(x=>x.date+': '+x.result)],candidate:status==='ready'?candidate?.result:null,deferred:priority?.kind==='deferred'};
+  if(candidate&&resolution?.kind==='accepted'&&status==='ready'){status='pending';next=candidate.remaining||next;}
+  const notStarted=latest?.kind==='not-started'&&latest.ownerConfirmed===true&&status==='unknown';
+  if(notStarted)status='notStarted';
+  return {key:c.key,status,found:latest?.result||found,next,history:[...(historic?[historic[0]]:[]),...confirmed.map(x=>x.date+': '+x.result)],candidate:status==='ready'?candidate?.result:null,deferred:priority?.kind==='deferred'};
 }
-const aggregate=views=>views.every(v=>v.status==='ready')?'ready':views.every(v=>v.status==='unknown')?'unknown':views.some(v=>v.status==='ready'||v.status==='partial')?'partial':views.some(v=>v.status==='unfinished')?'unfinished':views.some(v=>v.status==='disputed')?'disputed':'pending';
-const icon=status=>status==='ready'?'✓':status==='unfinished'?'!':status==='partial'?'◐':status==='disputed'?'?':'○';
-const mark=(status,e)=>'<span class="admin-overview-person-status development-status is-'+status+'"><span aria-hidden="true">'+icon(status)+'</span> '+e(statusLabels[status])+'</span>';
+// Percent is the fraction of distinct, currently accepted criteria, not an estimate of code completion.
+export function developmentProgress(views,sourceAvailable=true){
+  const unique=[...new Map(views.map((v,i)=>[v.key??i,v])).values()];
+  const active=unique.filter(v=>!v.deferred);
+  if(!active.length)return null;
+  if(!sourceAvailable)return {status:null,percent:null};
+  const accepted=unique.filter(v=>v.status==='ready').length;
+  const allReady=accepted===unique.length;
+  const allNotStarted=unique.every(v=>v.status==='notStarted');
+  const unfinished=active.some(v=>v.status==='unfinished');
+  const working=active.some(v=>['ready','partial','pending','disputed'].includes(v.status));
+  const status=allReady?'ready':unfinished?'unfinished':working?'working':allNotStarted?'notStarted':null;
+  const percent=allReady?100:allNotStarted?0:accepted>0?Math.min(99,Math.round(100*accepted/unique.length)):null;
+  return {status,percent};
+}
+const mark=(progress,e)=>{
+  if(!progress)return '';
+  const {status,percent}=progress;
+  return '<span class="development-progress is-'+(status||'neutral')+'"><span class="development-progress-head">'+(status?'<span>'+e(statusLabels[status])+'</span>':'')+'<span class="development-percent">'+(percent===null?'—':percent+'%')+'</span></span><span class="development-progress-track" '+(percent===null?'role="img" aria-label="Степень готовности не определена"':'role="progressbar" aria-label="Подтверждённая готовность" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'"')+'>'+(percent===null?'':'<span class="development-progress-fill" style="width:'+percent+'%"></span>')+'</span></span>';
+};
 const activityLabel=id=>{const uses=mechanismActivities(id);return uses.length>1?'Общий механизм · '+uses.map(a=>a.name).join(' / '):'Только '+(uses[0]?.name.toLowerCase()||'не определено');};
 const scopeGroups=[['Основные механизмы','Основной'],['Дополнительные механизмы','При необходимости'],['По полномочиям','По полномочиям']];
 const contexts=[
@@ -152,15 +172,15 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
     if(!members.length)return '';
     const groupId='group:'+keys[0];
     const expanded=open.has(groupId);
-    const groupStatus=aggregate(members.flatMap(m=>m.criteria.map(c=>criterionView(c,snapshot,audits))));
+    const groupStatus=developmentProgress(members.flatMap(m=>m.criteria.map(c=>criterionView(c,snapshot,audits))),!!snapshot);
     return '<section class="admin-overview-panel development-group"><button class="admin-overview-person development-group-head" type="button" data-dm-toggle="'+e(groupId)+'" aria-expanded="'+expanded+'">'+row(section,members.length+' '+(members.length===1?'механизм':members.length<5?'механизма':'механизмов'),groupStatus,'<span class="development-disclosure" aria-hidden="true">'+(expanded?'▾':'▸')+'</span>',e)+'</button>'+
       (expanded?'<div class="development-mechanisms">'+scopeGroups.map(([heading,applicability])=>{
         const rows=members.filter(m=>m.applicability===applicability);
         if(!rows.length)return '';
         return '<div class="development-applicability"><h4>'+e(heading)+'</h4>'+rows.map(m=>{
-          const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=aggregate(views);const key='mechanism:'+m.id;const show=open.has(key);
+          const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=developmentProgress(views,!!snapshot);const key='mechanism:'+m.id;const show=open.has(key);
           return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority+' · '+activityLabel(m.id),status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
-            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(v.status,e)+'</div>'+(v.deferred?'<p>Отложено по решению владельца</p>':'')+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
+            (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(developmentProgress([v],!!snapshot),e)+'</div>'+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
         }).join('')+'</div>';
       }).join('')+'</div>':'')+'</section>';
   }).join('');

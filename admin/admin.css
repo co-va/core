@@ -1493,8 +1493,12 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-applicability+.development-applicability{border-top:1px solid var(--border);margin-top:14px}
 .development-applicability h4{margin:0 0 4px;font-size:16px;line-height:1.45;font-weight:650;color:var(--text-secondary)}
 
-/* Readiness is independent of priority. Reuse existing Admin semantic text colors. */
-.development-map .development-status.is-ready{color:#35633e}
-.development-map .development-status.is-partial,.development-map .development-status.is-pending,.development-map .development-status.is-disputed{color:#765600}
-.development-map .development-status.is-unfinished{color:#a33d32}
-.development-map .development-status.is-unknown,.development-map .development-status.is-deferred{color:var(--text-secondary)}
+/* Development map: four owner-approved states, independent of priority. */
+.development-progress{display:grid;gap:4px;width:190px;max-width:100%;flex:0 0 auto;color:#929292;font-size:16px;line-height:1.3}
+.development-progress.is-ready{color:#22A447}
+.development-progress.is-working{color:#2878E8}
+.development-progress.is-unfinished{color:#E53935}
+.development-progress-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;white-space:normal}
+.development-percent{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:650}
+.development-progress-track{display:block;height:6px;background:var(--border);border-radius:6px;overflow:hidden}
+.development-progress-fill{display:block;height:100%;border-radius:6px;background:currentColor}
