@@ -70,12 +70,14 @@ const team=['participants','permissions','compensation'];
 const growth=['loyalty','marketing','analytics','planning'];
 const own=['Самостоятельная работа','Работа с сотрудниками','Работа по найму'];
 export const ACTIVITIES=[{id:'services',name:'Оказание услуг',ids:service},{id:'trade',name:'Продажа товаров',ids:trade}];
+const activityMechanismIds=activity=>new Set([...both,...activity.ids,...team,...growth]);
+export function mechanismActivities(id){return ACTIVITIES.filter(activity=>activityMechanismIds(activity).has(id));}
 const optional=new Set(['resources','orders','logistics','service-stages','loyalty','marketing','analytics','planning','integration','quality']);
 export function scenarioMechanisms(activity,mode) {
   const act=ACTIVITIES.find(a=>a.id===activity);
   if(!act||!Number.isInteger(mode)||mode<0||mode>2)return [];
   // Same mechanism can be relevant in several scenarios; assistant/help is independent of rental.
-  const ids=new Set([...both,...act.ids,...team,...growth]);
+  const ids=activityMechanismIds(act);
   return sections.flatMap(([name,keys])=>keys.filter(k=>ids.has(k)).map(k=>({ ...byId.get(k),section:name,
     applicability: mode===2&&['obligations','tax','planning','cost','inventory','marketing','analytics','loyalty','orders','logistics'].includes(k)?'По полномочиям':
       optional.has(k)||mode===0&&team.includes(k)||activity==='services'&&['products','sales','inventory'].includes(k)||activity==='trade'&&k==='time'&&mode===0?'При необходимости':'Основной',
@@ -128,6 +130,7 @@ export function criterionView(c,snapshot,audits=[]){
 const aggregate=views=>views.every(v=>v.status==='ready')?'ready':views.every(v=>v.status==='unknown')?'unknown':views.some(v=>v.status==='ready'||v.status==='partial')?'partial':views.some(v=>v.status==='unfinished')?'unfinished':views.some(v=>v.status==='disputed')?'disputed':'pending';
 const icon=status=>status==='ready'?'✓':status==='unfinished'?'!':status==='partial'?'◐':status==='disputed'?'?':'○';
 const mark=(status,e)=>'<span class="admin-overview-person-status development-status is-'+status+'"><span aria-hidden="true">'+icon(status)+'</span> '+e(statusLabels[status])+'</span>';
+const activityLabel=id=>{const uses=mechanismActivities(id);return uses.length>1?'Общий механизм · '+uses.map(a=>a.name).join(' / '):'Только '+(uses[0]?.name.toLowerCase()||'не определено');};
 const scopeGroups=[['Основные механизмы','Основной'],['Дополнительные механизмы','При необходимости'],['По полномочиям','По полномочиям']];
 const contexts=[
   {places:['Собственное помещение','Аренда помещения или рабочего места','Выездная / дистанционная работа'],roles:'Работает сам. Может привлекать помощников.',finance:'Собственные доходы, расходы и обязательства.'},
@@ -156,7 +159,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
         if(!rows.length)return '';
         return '<div class="development-applicability"><h4>'+e(heading)+'</h4>'+rows.map(m=>{
           const views=m.criteria.map(c=>criterionView(c,snapshot,audits));const status=aggregate(views);const key='mechanism:'+m.id;const show=open.has(key);
-          return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority,status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
+          return '<div class="development-mechanism"><button class="admin-overview-person" type="button" data-dm-toggle="'+e(key)+'" aria-expanded="'+show+'">'+row(m.label,m.priority+' · '+activityLabel(m.id),status,'<span class="development-disclosure" aria-hidden="true">'+(show?'▾':'▸')+'</span>',e)+'</button>'+
             (show?'<div class="development-criteria">'+m.criteria.map((c,i)=>{const v=views[i];return '<div class="development-criterion"><div class="development-criterion-head"><strong>'+e(c.title)+'</strong>'+mark(v.status,e)+'</div>'+(v.deferred?'<p>Отложено по решению владельца</p>':'')+'<p>'+e(v.found)+'</p>'+v.history.map(h=>'<p>'+e(h)+'</p>').join('')+(v.candidate?'<p>Новое изменение: '+e(v.candidate)+'</p>':'')+'<p><strong>Осталось:</strong> '+e(v.next)+'</p></div>';}).join('')+'</div>':'')+'</div>';
         }).join('')+'</div>';
       }).join('')+'</div>':'')+'</section>';
