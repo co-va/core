@@ -59,6 +59,7 @@ model Tenant {
   accountLinks             AccountTenantLink[]
   bookingRequests          BookingRequest[]
   people                   Person[]
+  contactImportBatches     ContactImportBatch[]
   ueiState                 UeiState?
   records                  Record[]
   recordEvents             RecordEvent[]
@@ -1396,6 +1397,41 @@ model DataTransferFact {
 }
 
 // Technical audit of one actual transfer; canonical facts stay in their owners.
+model ContactImportBatch {
+  id          String   @id
+  tenantId    String
+  accountId   String
+  filename    String
+  fingerprint String
+  total       Int
+  status      String   @default("review")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  rows        ContactImportRow[]
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@unique([tenantId, fingerprint])
+}
+
+model ContactImportRow {
+  id        String   @id
+  tenantId  String
+  batchId   String
+  rowNumber Int
+  values    Json
+  issues    Json
+  status    String   @default("new")
+  personKey String   @default("")
+  error     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  batch     ContactImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, rowNumber])
+  @@index([tenantId, status])
+}
+
 model DataTransferSession {
   id         String @id
   tenantId   String
