@@ -227,8 +227,9 @@ try {
   ]);
   assert.equal(contactSheet.getCell(2,13).value,'Источник интеграции');
   assert.equal(contactSheet.getCell(2,13).fill.fgColor.argb,'FF303238');
-  assert.equal(contactSheet.getColumn(14).hidden,true,'Internal key is not exposed to professionals');
-  assert.equal(contactSheet.getCell(2,14).value,'ID человека');
+  assert.equal(contactSheet.getCell(2,14).value,'Примечание');
+  assert.equal(contactSheet.getColumn(15).hidden,true,'Internal key is not exposed to professionals');
+  assert.equal(contactSheet.getCell(2,15).value,'ID человека');
   contactSheet.getRow(3).values=[
     'A012','Ксения Примерная','','Ж','15/6/85',10,'79997771234',
     '79997771235','ksenia@example.test','ksenia.second@example.test',
@@ -276,7 +277,7 @@ try {
     email:'ksenia@example.test',personKey:importedPerson.key,
   }]}));
   assert.equal(existingExport.worksheets[0].getCell(3,2).value,'Ксения');
-  assert.equal(existingExport.worksheets[0].getCell(3,14).value,importedPerson.key);
+  assert.equal(existingExport.worksheets[0].getCell(3,15).value,importedPerson.key);
   const noYearBook=new ExcelJS.Workbook();
   await noYearBook.xlsx.load(await service.workbook({domain:'people',template:true}));
   noYearBook.worksheets[0].getRow(3).values=['','Алиса Сергеева','','М','15.06','','79997776655'];
