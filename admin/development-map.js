@@ -136,7 +136,7 @@ export function criterionView(c,snapshot,audits=[]){
   if(candidate&&resolution?.kind==='accepted'&&status==='ready'){status='pending';next=candidate.remaining||next;}
   const notStarted=latest?.kind==='not-started'&&latest.ownerConfirmed===true&&status==='unknown';
   if(notStarted)status='notStarted';
-  return {key:c.key,status,found:latest?.result||found,next,history:[...(historic?[historic[0]]:[]),...confirmed.map(x=>x.date+': '+x.result)],candidate:status==='ready'?candidate?.result:null,deferred:priority?.kind==='deferred',evidence:[...new Map(checks.filter(x=>['passed','historical','failed'].includes(x.state)).map(x=>[x.id,x])).values()].map(x=>({title:x.title,state:x.state}))};
+  return {key:c.key,status,found:latest?.result||found,next,history:[...(historic?[historic[0]]:[]),...confirmed.map(x=>x.date+': '+x.result)],candidate:status==='ready'?candidate?.result:null,hasCandidate:!!candidate,deferred:priority?.kind==='deferred',evidence:[...new Map(checks.filter(x=>['passed','historical','failed'].includes(x.state)).map(x=>[x.id,x])).values()].map(x=>({title:x.title,state:x.state}))};
 }
 // Percent is the fraction of distinct, currently accepted criteria, not an estimate of code completion.
 export function developmentProgress(views,sourceAvailable=true){
@@ -148,7 +148,7 @@ export function developmentProgress(views,sourceAvailable=true){
   const allReady=accepted===unique.length;
   const allNotStarted=unique.every(v=>v.status==='notStarted');
   const unfinished=active.some(v=>v.status==='unfinished'&&v.blocking!==false);
-  const working=active.some(v=>['ready','partial','pending','disputed'].includes(v.status)||v.status==='unfinished'&&v.blocking===false);
+  const working=active.some(v=>['ready','partial','disputed'].includes(v.status)||v.status==='unfinished'&&v.blocking===false||v.status==='pending'&&(v.history?.length||v.evidence?.some(x=>['passed','historical'].includes(x.state))||v.hasCandidate));
   const status=allReady?'ready':unfinished?'unfinished':working?'working':allNotStarted?'notStarted':null;
   const percent=allReady?100:allNotStarted?0:accepted>0?Math.min(99,Math.round(100*accepted/unique.length)):null;
   return {status,percent};
@@ -173,7 +173,9 @@ function progressSummary(views,available){
   if(!available)return 'Данные не получены';
   const unique=[...new Map(views.map(v=>[v.key,v])).values()];
   const ready=unique.filter(v=>v.status==='ready').length;
-  return 'Закрыто '+ready+' из '+unique.length+' · осталось '+(unique.length-ready);
+  const partial=unique.filter(v=>v.status!=='ready'&&(v.status==='partial'||v.history?.length||v.evidence?.some(x=>x.state==='passed'||x.state==='historical'))).length;
+  const unknown=unique.length-ready-partial;
+  return [ready?'Принято '+ready+' из '+unique.length:'',partial?'Проверено частично '+partial+' из '+unique.length:'',unknown?'Без полной проверки '+unknown:''].filter(Boolean).join(' · ');
 }
 function criterionSummary(v,available){
   if(!available)return 'Данные не получены';
@@ -348,29 +350,61 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
       }).join('')+'</div>':'')+'</section>';
   }).join('')+'</div>';
   const context=contexts[mode]||contexts[0];
-  return '<div class="admin-overview development-map"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Покрытие профессии · закрытые и оставшиеся задачи</p></div></div>'+
-    '<div class="development-root"><div class="admin-overview-app-head"><h3>Единое покрытие платформы</h3></div></div>'+
-    '<div class="development-activities">'+graph+'</div>'+
-    (loading?'<p class="development-message" role="status">Загрузка данных готовности…</p>':stale?'<p class="development-message" role="status">Не все сведения о готовности получены. Прежние подтверждения сохранены.</p>':'')+
-    (selected?'<section id="development-scenario" class="development-scenario"><div class="admin-overview-app-head development-scenario-head"><h3>'+e(selected.name)+' <span class="admin-overview-head-suffix">/ '+e(own[mode])+'</span></h3><button class="admin-overview-close" type="button" data-dm-close aria-label="Свернуть подробности">×</button></div>'+
-      '<section class="admin-overview-panel"><div class="admin-overview-panel-head"><h3>Описание условий работы</h3></div><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></section>'+focus+'<p class="development-plan-note">Номер — место в карте. Задача — предварительный порядок выполнения с учётом известных связей.</p>'+list+'</section>':'')+'</div>';
+  return '<div class="admin-overview development-map'+(selected?' is-scenario':'')+'"><div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2><p>Покрытие профессии · закрытые и оставшиеся задачи</p></div></div>'+
+    (!selected?'<div class="development-root"><div class="admin-overview-app-head"><h3>Единое покрытие платформы</h3></div></div><div class="development-activities">'+graph+'</div>':'')+
+    '<p class="development-message" role="status"'+(!loading&&!stale?' hidden':'')+'>'+ (loading?'Загрузка данных готовности…':stale?'Не все сведения получены.':'')+'</p>'+
+    (selected?'<section id="development-scenario" class="development-scenario"><div class="admin-overview-app-head development-scenario-head"><h3>'+e(selected.name)+' <span class="admin-overview-head-suffix">/ '+e(own[mode])+'</span></h3><button class="admin-overview-close" type="button" data-dm-close aria-label="Вернуться к выбору деятельности">×</button></div><div class="development-canvas">'+
+      '<details class="admin-overview-panel development-context"><summary><strong>Описание условий работы</strong></summary><dl class="development-conditions"><dt>Рабочее пространство</dt><dd><ul>'+context.places.map(p=>'<li>'+e(p)+'</li>').join('')+'</ul></dd><dt>Участники</dt><dd>'+e(context.roles)+'</dd><dt>Финансы</dt><dd>'+e(context.finance)+'</dd></dl></details>'+focus+'<p class="development-plan-note">Номер — место в карте. Задача — предварительный порядок выполнения с учётом известных связей.</p><div class="development-map-tree"><div class="development-tree-root">'+e(selected.name)+' · '+e(own[mode])+'</div>'+list+'</div></div></section>':'')+'</div>';
+}
+// Patch only changed nodes. Retain the canvas, scroll container, and all untouched branches.
+export function patchDevelopmentNode(current,next){
+  if(current.nodeType!==next.nodeType||current.nodeName!==next.nodeName){current.replaceWith(next.cloneNode(true));return;}
+  if(current.nodeType===3||current.nodeType===8){if(current.nodeValue!==next.nodeValue)current.nodeValue=next.nodeValue;return;}
+  for(const a of [...current.attributes])if(!next.hasAttribute(a.name)&&!(current.tagName==='DETAILS'&&a.name==='open'))current.removeAttribute(a.name);
+  for(const a of [...next.attributes])if(current.getAttribute(a.name)!==a.value)current.setAttribute(a.name,a.value);
+  const prev=[...current.childNodes],fresh=[...next.childNodes];
+  for(let i=0;i<fresh.length;i++){
+    if(i<prev.length)patchDevelopmentNode(prev[i],fresh[i]);
+    else current.append(fresh[i].cloneNode(true));
+  }
+  for(let i=fresh.length;i<prev.length;i++)prev[i].remove();
 }
 export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}){
   if(!content)return;
-  let state={activity:null,mode:0,open:new Set(),snapshot:null,audits:[],loading:false,stale:false},request=0;
-  const draw=()=>{
+  let state={activity:null,mode:0,open:new Set(),snapshot:null,audits:[],loading:true,stale:false},request=0;
+  const draw=(anchor=null)=>{
     if(!isCurrent())return;
-    content.innerHTML=developmentMarkup(state,escapeHtml);
-    content.querySelectorAll('[data-dm-activity]').forEach(b=>b.addEventListener('click',()=>{
-      const activity=b.dataset.dmActivity,mode=Number(b.dataset.dmMode);
-      state.activity=state.activity===activity&&state.mode===mode?null:activity;state.mode=mode;state.open=state.activity?new Set(sections.map(([,keys])=>'group:'+keys[0])):new Set();draw();
-      if(state.activity)content.querySelector('#development-scenario')?.scrollIntoView({block:'start',behavior:'auto'});
-    }));
-    content.querySelector('[data-dm-close]')?.addEventListener('click',()=>{state.activity=null;state.open=new Set();draw();content.querySelector('.development-root')?.scrollIntoView({block:'start',behavior:'auto'});});
-    content.querySelectorAll('[data-dm-toggle]').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.dmToggle;if(state.open.has(id))state.open.delete(id);else{if(id.startsWith('criterion:'))for(const k of state.open)if(k.startsWith('criterion:'))state.open.delete(k);state.open.add(id);}draw();[...content.querySelectorAll('[data-dm-toggle]')].find(el=>el.dataset.dmToggle===id)?.focus({preventScroll:true});}));
+    const canvas=content.querySelector('.development-canvas');
+    const top=canvas?.scrollTop||0,left=canvas?.scrollLeft||0;
+    const anchorKey=anchor?.dataset.dmToggle,offset=anchor?.getBoundingClientRect().top;
+    const template=content.ownerDocument.createElement('template');template.innerHTML=developmentMarkup(state,escapeHtml);
+    const root=content.querySelector('.development-map');
+    if(root)patchDevelopmentNode(root,template.content.firstElementChild);
+    else content.replaceChildren(template.content);
+    const nextCanvas=content.querySelector('.development-canvas');
+    if(nextCanvas&&canvas===nextCanvas){
+      nextCanvas.scrollTop=top;nextCanvas.scrollLeft=left;
+      if(anchorKey&&Number.isFinite(offset)){
+        const button=[...nextCanvas.querySelectorAll('[data-dm-toggle]')].find(el=>el.dataset.dmToggle===anchorKey);
+        if(button)nextCanvas.scrollTop+=button.getBoundingClientRect().top-offset;
+      }
+    }
+  };
+  content.onclick=event=>{
+    if(!isCurrent())return;
+    const button=event.target.closest('button');
+    if(!button||!content.contains(button))return;
+    if(button.hasAttribute('data-dm-activity')){
+      state.activity=button.dataset.dmActivity;state.mode=Number(button.dataset.dmMode);
+      state.open=new Set(sections.map(([,keys])=>'group:'+keys[0]));draw();return;
+    }
+    if(button.hasAttribute('data-dm-close')){state.activity=null;state.open=new Set();draw();return;}
+    const id=button.dataset.dmToggle;if(!id)return;
+    if(state.open.has(id))state.open.delete(id);else state.open.add(id);
+    draw(button);
   };
   async function refresh(){
-    const id=++request;state.loading=true;draw();
+    const id=++request;
     const results=await Promise.allSettled([load(),loadCore(),loadUser()]);
     if(id!==request||!isCurrent())return;
     if(results[0].status==='fulfilled')state.snapshot=results[0].value;

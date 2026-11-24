@@ -6,7 +6,7 @@ assert.deepEqual(developmentProgress([row('a','ready'),row('b','unfinished')]),{
 assert.deepEqual(developmentProgress([row('a','ready')]),{status:'ready',percent:100});
 assert.deepEqual(developmentProgress([row('a','notStarted')]),{status:'notStarted',percent:0});
 assert.deepEqual(developmentProgress([row('a','unknown')]),{status:null,percent:null});
-assert.deepEqual(developmentProgress([row('a','pending')]),{status:'working',percent:null});
+assert.deepEqual(developmentProgress([row('a','pending')]),{status:null,percent:null});
 assert.deepEqual(developmentProgress([row('a','ready')],false),{status:null,percent:null});
 assert.equal(developmentProgress([row('a','pending',true)]),null);
 assert.deepEqual(developmentProgress([row('a','ready'),row('b','unknown',true)]),{status:'working',percent:50});
@@ -48,7 +48,8 @@ const brief=developmentMarkup({activity:'services',open:new Set(['group:workspac
 assert.match(brief,/1\. Рабочие пространства/);
 assert.match(brief,/2\. Условия деятельности/);
 assert.match(brief,/1\.1 Добавить и изменить место работы/);
-assert.match(brief,/Закрыто 0 из 3 · осталось 3/);
+assert.match(brief,/Проверено частично 3 из 3/);
+assert.doesNotMatch(brief,/Закрыто 0 из/);
 assert.doesNotMatch(brief,/<h5>Результат проверок<\/h5>/);
 assert.match(brief,/Технические подробности/);
 assert.match(brief,/Ближайшая задача/);
@@ -72,3 +73,8 @@ assert.match(full,/Задачи /);
 assert.match(brief,/Номер — место в карте/);
 
 assert.match(brief,/На тестовой базе: создание, изменение, сохранение, порядок и удаление работают/);
+
+assert.match(brief,/development-canvas/);
+assert.match(brief,/development-tree-root/);
+assert.doesNotMatch(brief,/data-dm-activity=/);
+assert.deepEqual(developmentProgress([{key:'a',status:'pending',hasCandidate:true}]),{status:'working',percent:null});
