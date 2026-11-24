@@ -32,13 +32,12 @@ assert.doesNotMatch(markup,/<input/);
 assert.match(readinessMarkup(null,String),/Проценты не определены/);
 console.log('Operational coverage projection: PASS');
 
-// Owner-approved placement: common platform coverage belongs to Tools readiness, not User accounts.
+// Owner-approved 24.11: development map is a separate Admin navigation section, not an Overview panel.
 const adminSource = (await import('node:fs')).readFileSync(new URL('../admin/admin.js', import.meta.url), 'utf8');
 const overview = adminSource.slice(adminSource.indexOf('function renderOverview()'),adminSource.indexOf('function openDeleteTenantModal('));
-const toolsStart = overview.indexOf('<section class="admin-overview-tools-section">');
-const operational = overview.indexOf('data-overview-section="operational-readiness"');
-assert.ok(toolsStart >= 0 && operational > overview.indexOf('data-overview-tool-app=', toolsStart) && operational < overview.indexOf('</section>', operational), 'Operational readiness follows both application tool panels inside shared readiness section');
-assert.equal(overview.split('data-overview-section="operational-readiness"').length,2);
+assert.match(adminSource, /\{ id: 'operational-readiness', label: 'Карта развития'/);
+assert.doesNotMatch(overview, /data-overview-section="operational-readiness"/);
+assert.match(adminSource, /return renderDevelopmentMap\(content,/);
 
 // Core evidence is independent from owner acceptance, validated against exact SHA and successful named steps.
 const run={id:42,head_sha:sha,path:'.github/workflows/check.yml'};

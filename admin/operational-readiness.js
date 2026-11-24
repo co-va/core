@@ -869,7 +869,7 @@ export async function loadOperationalReadiness(fetcher=fetch) {
     catch {return [base,null];}
   })));
   const coverage=coverageSnapshot(registry,comparisons);
-  return {sha,...coverage,professionalAudit:professionalAuditSnapshot(registry,sha,coverage)};
+  return {sha,...coverage,registry,professionalAudit:professionalAuditSnapshot(registry,sha,coverage)};
 }
 
 /* #942: exact, narrowly scoped evidence from existing Core CI; never equate a
