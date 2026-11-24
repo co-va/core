@@ -70,3 +70,5 @@ assert.equal(queue.cycles.size,0);
 assert.match(full,/development-branches/);
 assert.match(full,/Задачи /);
 assert.match(brief,/Номер — место в карте/);
+
+assert.match(brief,/На тестовой базе: создание, изменение, сохранение, порядок и удаление работают/);

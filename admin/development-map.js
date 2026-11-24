@@ -86,8 +86,9 @@ export function scenarioMechanisms(activity,mode) {
   })));
 }
 const historical={
-  'workspace.profile':['Переключение рабочего пространства подтверждено 15.11.2026.','Подтвердить создание, изменение и сохранение после повторного открытия; удаление и порядок.'],
-  'workspace.multiple':['Переключение пространств подтверждено 15.11.2026.','Подтвердить отдельные графики, записи и услуги двух пространств в одном рабочем сценарии.'],
+  'workspace.profile':['Переключение ранее подтверждено. Тест Core/staging bf40e75: создание, изменение, повторное чтение, порядок и мягкое удаление — PASS (run 45463704289/job 138693035571).','Проверить эти действия в Professional, включая повторный вход.'],
+  'workspace.multiple':['Переключение ранее подтверждено. Тест Core/staging bf40e75: изменение одного из двух пространств не изменяет другое — PASS (run 45463704289/job 138693035571).','Подтвердить отдельные графики, записи и услуги двух пространств в одном рабочем сценарии.'],
+  'workspace.hours':['Тест Core/staging bf40e75: разные часы двух пространств сохраняются — PASS (run 45463704289/job 138693035571).','Проверить исключения графика и закрытие времени для записи.'],
   'time.schedule':['График подтверждён 15.11.2026.','Проверить только оставшиеся сценарии.'],
   'records.prof':['Создание и редактирование записи подтверждены 15.11.2026.','Проверить неподтверждённые действия, а не заново весь Журнал.'],
   'services.execution':['Изменение услуги и оплата подтверждены 15.11.2026.','Проверить расход и историю завершения.'],
@@ -193,11 +194,22 @@ function ownerDecision(c,mode,v){
   if(c.key==='relations.lifecycle')return 'Как учитывать начало, изменение и окончание аренды?';
   return '';
 }
+function briefResult(c,v){
+  if(v.status==='ready')return 'Вопрос закрыт.';
+  if(c.key==='workspace.profile')return 'На тестовой базе: создание, изменение, сохранение, порядок и удаление работают.';
+  if(c.key==='workspace.multiple')return 'На тестовой базе: изменение одного места не затрагивает другое.';
+  if(c.key==='workspace.hours')return 'На тестовой базе: разные часы сохраняются.';
+  if(v.status==='unfinished')return 'Выявлен сбой.';
+  if(v.status==='notStarted')return 'Реализация отсутствует.';
+  if(v.status==='disputed')return 'Результат не согласован.';
+  if(v.status==='partial')return 'Часть действий проверена, вопрос не закрыт.';
+  return 'Итог пока не подтверждён.';
+}
 function shortAction(c,v){
   if(v.status==='ready')return 'Закрыто';
-  if(c.key==='workspace.profile')return 'Создать, изменить, открыть повторно и удалить тестовое место.';
+  if(c.key==='workspace.profile')return 'Проверить сохранение, повторный вход, изменение и удаление места в Professional.';
   if(c.key==='workspace.multiple')return 'Проверить независимые графики, услуги и записи двух мест.';
-  if(c.key==='workspace.hours')return 'Проверить часы работы и исключения в графике.';
+  if(c.key==='workspace.hours')return 'Проверить исключения графика и закрытие времени для записи.';
   return v.status==='disputed'?'Согласовать результат':v.status==='unfinished'?'Исправить конкретный сбой':'Проверить указанную возможность';
 }
 // Existing catalogue IDs; these are business relationships to consider together,
@@ -328,7 +340,7 @@ export function developmentMarkup({activity=null,mode=0,open=new Set(),snapshot=
             const prerequisites=task.dependencies.map(k=>plan.tasks.get(k)).filter(t=>t&&t.view.status!=='ready'&&!t.view.deferred);
             const verified=[...v.history,...v.evidence.map(x=>(x.state==='passed'?'':x.state==='historical'?'Ранее: ':'Не пройдено: ')+x.title)];
             return '<div class="development-criterion"><button type="button" class="admin-overview-person development-criterion-head" data-dm-toggle="'+e(criterionId)+'" aria-expanded="'+details+'">'+row(m.number+'.'+(i+1)+' '+title,[taskOrder,decision?'Нужно решение':criterionSummary(v,!!snapshot)].filter(Boolean).join(' · '),developmentProgress([v],!!snapshot),disclosure(details),e)+'</button>'+
-              (details?'<div class="development-criterion-details">'+(prerequisites.length?'<section><h5>Сначала</h5><p>'+e(prerequisites.map(t=>queueLabel(t,plan)+' · '+t.number+' '+(plainTitles[t.key]||t.criterion.title)).join(' / '))+'</p></section>':'')+
+              (details?'<div class="development-criterion-details"><section><h5>Результат</h5><p>'+e(briefResult(c,v))+'</p></section>'+(prerequisites.length?'<section><h5>Сначала</h5><p>'+e(prerequisites.map(t=>queueLabel(t,plan)+' · '+t.number+' '+(plainTitles[t.key]||t.criterion.title)).join(' / '))+'</p></section>':'')+
                 (decision?'<section><h5>Нужно твоё решение</h5><p>'+e(decision)+'</p></section>':'<section><h5>Что дальше</h5><p>'+e(shortAction(c,v))+'</p><p>'+e(v.status==='ready'?'':'Исполнитель: AI')+'</p></section>')+
                 '<button type="button" class="admin-overview-person" data-dm-toggle="'+e(technicalId)+'" aria-expanded="'+technical+'">'+row('Технические подробности','',null,disclosure(technical),e)+'</button>'+
                 (technical?(links.technical.length?'<section><h5>Зависимости из реестра</h5><p>'+e(links.technical.join(' · '))+'</p></section>':'')+'<section><h5>Реализация</h5><p>'+e(v.found)+'</p></section><section><h5>Результат проверок</h5>'+(verified.length?'<ul>'+verified.map(h=>'<li>'+e(h)+'</li>').join('')+'</ul>':'<p>Подтверждённых результатов нет.</p>')+'</section><section><h5>'+(v.status==='ready'?'Результат':v.status==='unfinished'?'Конкретная проблема':'До подтверждения')+'</h5><p>'+e(v.next)+'</p></section>':'')+'</div>':'')+'</div>';
