@@ -305,17 +305,9 @@ function queueLabel(t,plan){
   if(!rank)return '';
   return 'Задача '+rank;
 }
-// Window capacity follows the available Admin content, not the size of the catalogue.
-// No page or pane scrolling: longer lists are paged with the same 44px table rows.
-export function developmentWindowLayout(width=920,height=610,count=4){
-  const w=Math.max(1,width),h=Math.max(1,height);
-  const maxColumns=Math.max(1,Math.min(4,Math.floor((w+12)/342)));
-  const maxRows=h>=650?2:1;
-  const capacity=Math.min(count,4,maxColumns*maxRows);
-  const columns=Math.min(maxColumns,Math.max(1,capacity));
-  const rows=Math.ceil(capacity/columns);
-  const paneHeight=Math.floor((h-12*(rows-1))/rows);
-  return {capacity,columns,rows,listRows:Math.max(1,Math.floor((paneHeight-94)/44)),detailRows:Math.max(1,Math.floor((paneHeight-94)/88)),paneWidth:Math.floor((w-12*(columns-1))/columns)};
+// One ordinary full-width list at a time, independent of the five-section index.
+export function developmentWindowLayout(width=920,height=610,count=1){
+  return {capacity:1,columns:1,rows:1,listRows:Math.max(1,Math.floor((height-100)/44)),detailRows:Math.max(1,Math.floor((height-100)/88)),paneWidth:Math.max(1,width)};
 }
 const criterionTitle=(c,mode)=>plainTitles[c.key]||(mode===0&&soloTitles[c.key])||c.title;
 function statusText(v,available){return !available?'Данные не получены':v.status==='ready'?'Готово':v.status==='unfinished'?'Требует доработки':v.status==='notStarted'?'Не начато':v.status==='partial'?'Частично проверено':v.status==='disputed'?'Согласовать':v.deferred?'Отложено':'Не проверено';}
@@ -333,7 +325,7 @@ function splitDetail(value,max){
 }
 function windowPane(id,title,rows,limit,page,e,detail=false){
   const pages=Math.max(1,Math.ceil(rows.length/limit)),current=Math.max(0,Math.min(page||0,pages-1));
-  return '<section class="admin-card development-window'+(detail?' is-detail':'')+'" data-dm-window="'+e(id)+'"><header class="development-window-head"><strong>'+e(title)+'</strong><div class="development-window-pages"><button type="button" class="admin-tool-registry-expand" data-dm-page="'+e(id)+'" data-page="'+(current-1)+'" aria-label="Предыдущая страница"'+(!current?' disabled':'')+'>‹</button><span>'+ (current+1)+' / '+pages+'</span><button type="button" class="admin-tool-registry-expand" data-dm-page="'+e(id)+'" data-page="'+(current+1)+'" aria-label="Следующая страница"'+(current+1>=pages?' disabled':'')+'>›</button></div></header><table class="admin-table admin-tool-register-table development-table'+(detail?' development-detail-table':'')+'"><thead><tr><th scope="col">'+(detail?'Результат / действие':'Наименование')+'</th>'+(detail?'':'<th scope="col">Готовность</th>')+'</tr></thead><tbody>'+rows.slice(current*limit,(current+1)*limit).join('')+'</tbody></table></section>';
+  return '<section class="admin-users-section development-window'+(detail?' is-detail':'')+'" data-dm-window="'+e(id)+'"><header class="development-window-head"><h2 class="admin-users-section-title">'+e(title)+'</h2><div class="development-window-pages"><button type="button" class="admin-tool-registry-expand" data-dm-page="'+e(id)+'" data-page="'+(current-1)+'" aria-label="Предыдущая страница"'+(!current?' disabled':'')+'>‹</button><span>'+ (current+1)+' / '+pages+'</span><button type="button" class="admin-tool-registry-expand" data-dm-page="'+e(id)+'" data-page="'+(current+1)+'" aria-label="Следующая страница"'+(current+1>=pages?' disabled':'')+'>›</button></div></header><div class="admin-card"><table class="admin-table admin-tool-register-table development-table'+(detail?' development-detail-table':'')+'"><thead><tr><th scope="col">'+(detail?'Результат / действие':'Наименование')+'</th>'+(detail?'':'<th scope="col">Готовность</th>')+'</tr></thead><tbody>'+rows.slice(current*limit,(current+1)*limit).join('')+'</tbody></table></div></section>';
 }
 function selectRow({key,label,sub='',progress=null,active=false,kind},e){
   return '<tr'+(active?' class="is-selected"':'')+'><td><button type="button" class="development-table-choice" data-dm-select="'+e(kind)+'" data-dm-key="'+e(key)+'" aria-pressed="'+active+'" title="'+e(label+(sub?' — '+sub:''))+'"><strong>'+e(label)+'</strong>'+(sub?'<small>'+e(sub)+'</small>':'')+'</button></td><td>'+(progress?mark(progress,e):'—')+'</td></tr>';
@@ -342,11 +334,11 @@ function detailRows(items,layout,e){
   const max=Math.max(55,Math.floor((layout.paneWidth-24)/7.2)*3);
   return items.flatMap(item=>splitDetail(item.value,max).map((part,i)=>'<tr><td><strong>'+e(item.label+(i?' · продолжение':''))+'</strong><p>'+e(part)+'</p>'+(item.go&&i===0?'<button type="button" class="development-detail-link" data-dm-go="'+e(item.go)+'">Открыть</button>':'')+'</td></tr>'));
 }
-export function developmentMarkup({activity=null,mode=0,group=null,mechanism=null,criterion=null,level='groups',detailMode='result',pages={},width=920,height=610,snapshot=null,audits=[],loading=false,stale=false},e){
+export function developmentMarkup({activity=null,mode=0,group=null,mechanism=null,criterion=null,level='mechanisms',detailMode='result',pages={},width=920,height=610,snapshot=null,audits=[],loading=false,stale=false},e){
   const selected=ACTIVITIES.find(a=>a.id===activity);
   const header='<div class="admin-heading admin-overview-heading"><div><h2>Карта развития</h2></div></div>';
   if(!selected){
-    const choices=ACTIVITIES.map(a=>'<section class="admin-card development-choice-window"><div class="development-window-head"><strong>'+e(a.name)+'</strong></div><table class="admin-table admin-tool-register-table development-table"><tbody>'+own.map((name,i)=>'<tr><td><button type="button" class="development-table-choice" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'"><strong>'+e(name)+'</strong></button></td></tr>').join('')+'</tbody></table></section>').join('');
+    const choices=ACTIVITIES.map(a=>'<section class="admin-users-section development-choice-window"><h2 class="admin-users-section-title">'+e(a.name)+'</h2><div class="admin-card"><table class="admin-table admin-tool-register-table development-table"><tbody>'+own.map((name,i)=>'<tr><td><button type="button" class="development-table-choice" data-dm-activity="'+e(a.id)+'" data-dm-mode="'+i+'"><strong>'+e(name)+'</strong></button></td></tr>').join('')+'</tbody></table></div></section>').join('');
     return '<div class="admin-overview development-map">'+header+'<div class="development-home"><div class="development-tree-root">Единое покрытие платформы</div><div class="development-activities">'+choices+'</div></div></div>';
   }
   const numbered=scenarioMechanisms(activity,mode).map((m,i)=>({...m,number:i+1,views:m.criteria.map(c=>criterionView(c,snapshot,audits))}));
@@ -375,16 +367,16 @@ export function developmentMarkup({activity=null,mode=0,group=null,mechanism=nul
     }
   }
   if(detailItems.length)descriptors.push({id:'detail',title:detailTitle,detail:true});
-  const layout=developmentWindowLayout(width,height,descriptors.length),focused=Math.max(0,descriptors.findIndex(x=>x.id===level));
-  const end=Math.max(layout.capacity,focused+1),visible=descriptors.slice(Math.max(0,end-layout.capacity),end);
-  const visibleLayout=developmentWindowLayout(width,height,visible.length);
-  const grid=visible.map(x=>windowPane(x.id,x.title,x.detail?detailRows(detailItems,visibleLayout,e):x.rows,x.detail?visibleLayout.detailRows:visibleLayout.listRows,pages[x.id],e,!!x.detail)).join('');
+  const current=descriptors.find(x=>x.id===level)||descriptors[0];
+  const layout=developmentWindowLayout(width,height);
+  const grid=windowPane(current.id,current.title,current.detail?detailRows(detailItems,layout,e):current.rows,current.detail?layout.detailRows:layout.listRows,pages[current.id],e,!!current.detail);
+  const sectionIndex='<div class="development-section-index" aria-label="Разделы деятельности">'+groups.map(g=>'<button type="button" class="development-section-choice'+(group===g.id?' is-selected':'')+'" data-dm-select="group" data-dm-key="'+e(g.id)+'" aria-pressed="'+(group===g.id)+'"><strong>'+e(g.name)+'</strong>'+mark(developmentProgress(g.members.flatMap(x=>x.views.map(v=>({...v,blocking:x.applicability==='Основной'}))),!!snapshot),e)+'</button>').join('')+'</div>';
   const nav=descriptors.map(x=>'<button type="button" class="development-nav-step'+(x.id===level?' is-active':'')+'" data-dm-level="'+e(x.id)+'">'+e(x.id==='groups'?'Разделы':x.id==='mechanisms'?'Механизмы':x.id==='criteria'?'Состав':detailMode==='context'?'Условия':'Результат')+'</button>').join('<span aria-hidden="true"> › </span>');
   return '<div class="admin-overview development-map is-scenario">'+
     '<div class="development-scenario-head"><strong>'+e(selected.name)+' / '+e(own[mode])+'</strong><button class="admin-overview-close" type="button" data-dm-close aria-label="К выбору деятельности">×</button></div>'+
-    '<div class="development-control-row"><nav aria-label="Уровни карты">'+nav+'</nav><div class="development-control-actions"><button type="button" class="development-nav-step" data-dm-context>Условия работы</button>'+(c?'<button type="button" class="development-nav-step" data-dm-technical>'+ (detailMode==='technical'?'Результат':'Доказательства')+'</button>':'')+'</div></div>'+
+    sectionIndex+'<div class="development-control-row"><nav aria-label="Уровни карты">'+nav+'</nav><div class="development-control-actions"><button type="button" class="development-nav-step" data-dm-context>Условия работы</button>'+(c?'<button type="button" class="development-nav-step" data-dm-technical>'+ (detailMode==='technical'?'Результат':'Доказательства')+'</button>':'')+'</div></div>'+
     '<div class="development-next-row">'+(snapshot&&firstTask?'<button type="button" class="development-nav-step" data-dm-go="'+e(first)+'" title="'+e(firstLabel)+'">'+e(firstLabel)+'</button>':'<span>'+e(loading?'Получение результатов…':stale?'Не все данные получены':'План задач')+'</span>')+'</div>'+
-    '<div class="development-windows" data-columns="'+visibleLayout.columns+'" data-rows="'+visibleLayout.rows+'" style="--dm-cols:'+visibleLayout.columns+';--dm-rows:'+visibleLayout.rows+'">'+grid+'</div></div>';
+    '<div class="development-windows">'+grid+'</div></div>';
 }
 // Patch only changed nodes. Retain the canvas, scroll container, and all untouched branches.
 export function patchDevelopmentNode(current,next){
@@ -401,7 +393,7 @@ export function patchDevelopmentNode(current,next){
 }
 export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOperationalReadiness,loadCore=loadCoreAudit,loadUser=loadUserAudit}){
   if(!content)return;
-  let state={activity:null,mode:0,group:null,mechanism:null,criterion:null,level:'groups',detailMode:'result',pages:{},width:Math.max(1,content.clientWidth),height:Math.max(1,content.clientHeight-132),snapshot:null,audits:[],loading:true,stale:false};
+  let state={activity:null,mode:0,group:null,mechanism:null,criterion:null,level:'mechanisms',detailMode:'result',pages:{},width:Math.max(1,content.clientWidth),height:Math.max(1,content.clientHeight-220),snapshot:null,audits:[],loading:true,stale:false};
   let request=0,observer;
   const draw=()=>{
     if(!isCurrent()){observer?.disconnect();return;}
@@ -412,10 +404,10 @@ export function renderDevelopmentMap(content,{escapeHtml,isCurrent,load=loadOper
   };
   const measure=()=>{
     if(!isCurrent()){observer?.disconnect();return;}
-    const box=content.querySelector('.development-windows'),width=Math.max(1,box?.clientWidth||content.clientWidth),height=Math.max(1,box?.clientHeight||content.clientHeight-132);
+    const box=content.querySelector('.development-windows'),width=Math.max(1,box?.clientWidth||content.clientWidth),height=Math.max(1,box?.clientHeight||content.clientHeight-220);
     if(width!==state.width||height!==state.height){state.width=width;state.height=height;draw();}
   };
-  function resetSelection(){state.group=null;state.mechanism=null;state.criterion=null;state.level='groups';state.detailMode='result';state.pages={};}
+  function resetSelection(){state.group=null;state.mechanism=null;state.criterion=null;state.level='mechanisms';state.detailMode='result';state.pages={};}
   function openTask(key){
     const numbered=scenarioMechanisms(state.activity,state.mode),m=key.startsWith('mechanism:')?numbered.find(x=>x.id===key.slice(10)):numbered.find(x=>x.criteria.some(c=>c.key===key));
     if(!m)return;

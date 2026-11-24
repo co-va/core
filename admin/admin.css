@@ -1069,20 +1069,11 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 .admin-tool-register-layout{gap:44px}
-/* The sticky element belongs to each section, so its own header leaves the
-   viewport as the next section arrives; horizontal clipping is only inside it. */
-.admin-tool-register-sticky{
-  position:sticky;top:0;z-index:3;background:var(--surface-dark)
-}
-.admin-tool-register-sticky>.admin-users-section-title{margin:0;padding:0 0 12px}
-.admin-tool-register-head-scroll{
-  box-sizing:border-box;width:100%;overflow:hidden;
-  border-inline:1px solid var(--line);
-  background:var(--admin-pearl);border-radius:14px 14px 0 0
-}
+/* Title and complete table are independent, like the Users register.
+   A detached sticky header must not remain visible above its section. */
 .admin-tool-register-card{
   margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden;
-  border-top:0;border-radius:0 0 14px 14px
+  border-radius:14px
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
@@ -1526,23 +1517,33 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-nav-step.is-active{font-weight:750;text-decoration:underline;text-underline-offset:4px}
 .development-next-row{flex:0 0 32px;display:flex;align-items:center;min-width:0;overflow:hidden;color:var(--white)}
 .development-next-row .development-nav-step{overflow:hidden;text-overflow:ellipsis;text-align:left;max-width:100%;font-weight:650}
-.development-windows{flex:1 1 0;min-width:0;min-height:0;display:grid;grid-template-columns:repeat(var(--dm-cols),minmax(0,1fr));grid-template-rows:repeat(var(--dm-rows),minmax(0,1fr));gap:12px;overflow:hidden}
+.development-windows{flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+.development-section-index{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;flex:0 0 auto;min-width:0}
+.development-section-choice{min-width:0;padding:10px 8px;display:grid;gap:8px;text-align:left;align-content:space-between;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;cursor:pointer}
+.development-section-choice strong{font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.development-section-choice.is-selected{background:var(--admin-pearl);border-color:var(--text-secondary)}
+.development-section-choice .development-progress{width:100%;font-size:12px}
+.development-window .admin-card{min-width:0}
+.development-window-head .admin-users-section-title{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.development-window-head .development-window-pages{color:var(--white)}
+.development-window-head .development-window-pages button{color:var(--white)}
+@media(max-width:900px){.development-section-choice strong{font-size:12px}.development-section-choice{padding:8px 5px}}
 .development-window,.development-choice-window{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
-.development-window-head{height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 12px;color:var(--text);border-bottom:1px solid var(--admin-pearl);min-width:0}
+.development-window-head{height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 0 8px;color:var(--white);min-width:0}
 .development-window-head>strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .development-window-pages{display:flex;align-items:center;gap:4px;flex:0 0 auto;font-size:12px;font-variant-numeric:tabular-nums}
 .development-window-pages button:disabled{opacity:.25;cursor:default}
 .development-map .development-table{min-width:0;width:100%;table-layout:fixed;border-collapse:collapse}
 .development-map .development-table :is(th,td):first-child{width:65%;padding:4px 12px}
 .development-map .development-table :is(th,td):nth-child(2){width:35%;padding:4px 8px;text-align:left}
-.development-map .development-table th{font-size:12px}
+.development-map .development-table th{font-size:15px}
 .development-map .development-table tr.is-selected{background:var(--surface-soft)}
 .development-map .development-table tbody td{height:44px}
 .development-table-choice{border:0;background:transparent;text-align:left;display:grid;gap:2px;width:100%;min-width:0;padding:0;color:var(--text);cursor:pointer}
 .development-table-choice strong,.development-table-choice small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
-.development-table-choice strong{font-size:13px;font-weight:650}
-.development-table-choice small{font-size:11px;color:var(--text-secondary)}
-.development-map .development-table .development-progress{width:100%;font-size:11px;gap:3px}
+.development-table-choice strong{font-size:15px;font-weight:650}
+.development-table-choice small{font-size:13px;color:var(--text-secondary)}
+.development-map .development-table .development-progress{width:100%;font-size:14px;gap:3px}
 .development-map .development-table .development-progress-head{gap:2px;flex-wrap:wrap}
 .development-map .development-table .development-progress-track{height:3px}
 .development-map .development-detail-table :is(th,td):first-child,.development-map .development-choice-window .development-table td:first-child{width:100%}
