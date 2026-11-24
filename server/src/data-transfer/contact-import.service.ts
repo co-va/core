@@ -104,9 +104,8 @@ function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:numbe
     const overlapping=file.filter(row=>row.row!==rowNumber
       && normalizer(obj(row.values)[field])===current);
     if(overlapping.length && overlapping.some(row=>
-      norm(obj(row.values).name)!==norm(values.name)
-      ||norm(obj(row.values).surname)!==norm(values.surname)
-      ||field==='email')){
+      primaryFields.some(key=>fieldNorm(key,obj(row.values)[key])
+        !==fieldNorm(key,values[key])))){
       const owners=overlapping.map(row=>({
         key:'excel:'+row.row,code:text(obj(row.values).uei),
         name:[text(obj(row.values).name),text(obj(row.values).surname)].filter(Boolean).join(' '),
@@ -129,8 +128,13 @@ function inspect(values:Obj,people:Obj[],identity:Obj,file:Obj[],rowNumber:numbe
       values[field],owners.map(p=>ownerLabel(p,identity)));
   }
   if(values.uei && !code(values.uei))add('uei','',values.uei);
-  if(values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(values.email)))
-    add('email','',values.email);
+  if(values.phone && !phone(values.phone))add('phone','Неверный формат',values.phone);
+  if(values.additionalPhone && !phone(values.additionalPhone))
+    add('additionalPhone','Неверный формат',values.additionalPhone);
+  for(const field of ['email','additionalEmail']){
+    if(values[field]&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(values[field])))
+      add(field,'Неверный формат',values[field]);
+  }
   for(const previous of originalIssues)
     add(previous.field,previous.system,previous.excel,previous.owners||[]);
   return {person:found,issues:[...issues.values()]};
