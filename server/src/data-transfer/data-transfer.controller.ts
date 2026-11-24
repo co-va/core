@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DataTransferService } from './data-transfer.service';
@@ -10,14 +10,14 @@ type AuthRequest = Request & { auth?: { tenantId: string; platformAccountId: str
 export class DataTransferController {
   constructor(private readonly transfer: DataTransferService,
     private readonly contacts: ContactImportService) {}
-  @Post('contacts/batches') contactBatches(@Req() req:AuthRequest) {
+  @Get('contacts/batches') contactBatches(@Req() req:AuthRequest) {
     return this.contacts.list(req.auth!.tenantId);
   }
   @Post('contacts/start') startContacts(@Req() req:AuthRequest,@Body() body:SourceInput) {
     return this.contacts.create(req.auth!.tenantId,req.auth!.platformAccountId,body);
   }
-  @Post('contacts/detail') contactDetail(@Req() req:AuthRequest,@Body() body:{batchId:string}) {
-    return this.contacts.detail(req.auth!.tenantId,body.batchId);
+  @Get('contacts/detail') contactDetail(@Req() req:AuthRequest,@Query('batchId') batchId:string) {
+    return this.contacts.detail(req.auth!.tenantId,batchId);
   }
   @Post('contacts/advance') advanceContacts(@Req() req:AuthRequest,
     @Body() body:{batchId:string;limit?:number}) {
