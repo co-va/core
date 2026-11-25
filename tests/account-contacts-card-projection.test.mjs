@@ -61,4 +61,19 @@ assert.equal(program.appearance.lines[0].cells.right.field,'metaRight');
 assert.deepEqual(program.fields.map(x=>x.value),['title','metaRight']);
 assert.equal(program.photo,'/program.jpg');
 assert.equal(program.photoPosition,'30% 40%');
+const depositFields = ['benefit','nominal','funded','spent','balance','toFund'];
+const depositAppearance = {gradient:configured.gradient,lines:[
+  {cells:{left:{field:'balance',align:'right',bold:true},center:{field:'nominal',color:'#123456'},right:{field:'funded'}}},
+  {cells:{left:{field:'benefit'},center:{field:'spent'},right:{field:'toFund'}}},
+  {cells:{left:{field:'personPhone'},center:{field:''},right:{field:'title'}}},
+]};
+const depositValues = Object.fromEntries(depositFields.map((key,i)=>[key,String(i+1)]));
+const extended=plain(publicProgramCard([{scope:'loyalty-deposit',appearance:depositAppearance}],'loyalty-deposit',{...depositValues,title:'Test',personPhone:'private'}));
+for(const key of depositFields) assert.equal(extended.fields.find(x=>x.value===key)?.text,depositValues[key]);
+assert.deepEqual(extended.appearance.lines.slice(0,2).map(x=>x.cells),depositAppearance.lines.slice(0,2).map(x=>x.cells));
+assert.equal(extended.appearance.lines[2].cells.left.field,'');
+assert.equal(extended.fields.some(x=>x.value==='personPhone'),false);
+const accountFields=['amountLabel','currentAmount','balance','debt'];
+const account=plain(publicProgramCard([{scope:'loyalty-personal-account',appearance:{lines:accountFields.map(field=>({field}))}}],'loyalty-personal-account',Object.fromEntries(accountFields.map(key=>[key,key]))));
+assert.deepEqual(account.fields.map(x=>x.value),accountFields);
 console.log('PASS: Core projects Professional 9x3 cards intact with public field filtering');

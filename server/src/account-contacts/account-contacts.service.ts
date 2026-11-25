@@ -191,16 +191,19 @@ function workplaceCard(workplace: any, profile: any = {}, discount: unknown = nu
 }
 
 // A card is a projection of a SAVED Professional appearance, never a new
-// User template. Only the six public loyalty-card fields may carry values.
-// Other configured lines render empty rather than exposing private Person data.
+// User template. Only the explicit public fields for this program type carry
+// values. Keep the configured cell positions and styles; never expose private Person data.
 function publicProgramCard(
   templates: unknown, scope: string,
-  values: { uei?: unknown; title?: unknown; subtitle?: unknown; status?: unknown; metaLeft?: unknown; metaRight?: unknown },
+  values: { uei?: unknown; title?: unknown; subtitle?: unknown; status?: unknown; metaLeft?: unknown; metaRight?: unknown; benefit?: unknown; nominal?: unknown; funded?: unknown; spent?: unknown; balance?: unknown; toFund?: unknown; amountLabel?: unknown; currentAmount?: unknown; debt?: unknown },
 ) {
   const template = arrayValue(templates)
     .map(objectValue).find((item) => text(item.scope) === scope) || {};
+  const common = ['uei', 'title', 'subtitle', 'status', 'metaLeft', 'metaRight'];
+  const specific = scope === 'loyalty-deposit' ? ['benefit', 'nominal', 'funded', 'spent', 'balance', 'toFund']
+    : scope === 'loyalty-personal-account' ? ['amountLabel', 'currentAmount', 'balance', 'debt'] : [];
   const { appearance, visible } = publicCardAppearance(
-    template.appearance, new Set(['uei', 'title', 'subtitle', 'status', 'metaLeft', 'metaRight']),
+    template.appearance, new Set([...common, ...specific]),
   );
   const fields = [
     { value: 'uei', label: 'UEI', text: text(values.uei) },
@@ -209,6 +212,15 @@ function publicProgramCard(
     { value: 'status', label: 'Статус', text: text(values.status) },
     { value: 'metaLeft', label: 'Данные слева', text: text(values.metaLeft) },
     { value: 'metaRight', label: 'Данные справа', text: text(values.metaRight) },
+    { value: 'benefit', label: 'Условие выгоды', text: text(values.benefit) },
+    { value: 'nominal', label: 'Номинал программы', text: text(values.nominal) },
+    { value: 'funded', label: 'Внесено клиентом', text: text(values.funded) },
+    { value: 'spent', label: 'Списано за услуги', text: text(values.spent) },
+    { value: 'balance', label: 'Остаток', text: text(values.balance) },
+    { value: 'toFund', label: 'Осталось внести', text: text(values.toFund) },
+    { value: 'amountLabel', label: 'Какой показатель на карте', text: text(values.amountLabel) },
+    { value: 'currentAmount', label: 'Остаток или долг (автоматически)', text: text(values.currentAmount) },
+    { value: 'debt', label: 'Задолженность', text: text(values.debt) },
   ].filter((item) => visible.has(item.value));
   return {
     appearance,
@@ -228,7 +240,39 @@ function cardMoney(value: unknown) {
 function depositCardStatus(value: unknown) {
   const status = text(value);
   return status === 'expired' ? 'Списан'
-    : status === 'closed' || status === 'ended' ? 'Закрыт' : 'Активен';
+    : status === 'closed' || status === 'ended' ? 'Завершена'
+    : status === 'paused' ? 'Приостановлена' : 'Активна';
+}
+
+// Project already-owned ledger facts; same field meanings as Professional.
+function publicDepositCardValues(deposit: Record<string, any>, program: Record<string, any>) {
+  const terms = objectValue(deposit.terms);
+  const nominal = Number(terms.amount);
+  const funded = Math.max(0, Number(deposit.fundedAmount) || 0);
+  const hasNominal = terms.amount != null && Number.isFinite(nominal) && nominal > 0;
+  const fixed = hasNominal && text(terms.amountMode || 'fixed') === 'fixed';
+  const due = hasNominal ? Math.max(0, nominal - funded) : null;
+  const spent = Array.isArray(deposit.history) ? Math.max(0, deposit.history.reduce((sum: number, entry: any) => {
+    const amount = Number(entry?.amount);
+    if (!['payment', 'deposit-import-spend'].includes(entry?.kind) || !Number.isFinite(amount) || amount <= 0) return sum;
+    const direction = text(entry?.direction).toUpperCase();
+    return direction === 'OUT' ? sum + amount : direction === 'IN' ? sum - amount : sum;
+  }, 0)) : null;
+  const benefit = terms.benefit || 'Депозит';
+  const nominalText = hasNominal ? cardMoney(nominal) : '';
+  const status = deposit.status === 'active' && fixed
+    ? (Math.max(0, Math.round((nominal - funded) * 100) / 100) <= .009 ? 'Оплачено' : 'К оплате ' + cardMoney(Math.max(0, Math.round((nominal - funded) * 100) / 100)))
+    : depositCardStatus(deposit.status);
+  return {
+    title: deposit.programName || program.name || 'Депозит',
+    subtitle: terms.termRule || 'Бессрочно',
+    status, benefit, nominal: nominalText,
+    funded: cardMoney(funded), spent: spent == null ? '' : cardMoney(spent),
+    balance: deposit.balance == null ? '' : cardMoney(deposit.balance),
+    toFund: due == null ? '' : cardMoney(due),
+    // Legacy positions retain the semantics of the Professional migration.
+    metaLeft: benefit, metaRight: nominalText,
+  };
 }
 
 // A discount may be shown only for the authenticated Account's own Person
@@ -461,6 +505,7 @@ export class AccountContactsService {
         fundedAmount: Number(row.fundedAmount || 0),
         balance: Number(row.balance || 0),
         expiredUnusedAmount: Number(row.expiredUnusedAmount || 0),
+        history: row.history,
         status: text(row.status),
         discountPercent: activePrices.get(text(row.depositId)) || 0,
         cardProgram: objectValue(programs.get(row.programId)),
@@ -504,6 +549,11 @@ export class AccountContactsService {
           metaLeft: Number(personalAccount.debtTotal || 0) > .009 ? 'Задолженность' : 'Денежный остаток',
           metaRight: cardMoney(Number(personalAccount.debtTotal || 0) > .009
             ? personalAccount.debtTotal : personalAccount.balance),
+          amountLabel: Number(personalAccount.debtTotal || 0) > .009 ? 'Задолженность' : 'Денежный остаток',
+          currentAmount: cardMoney(Number(personalAccount.debtTotal || 0) > .009
+            ? personalAccount.debtTotal : personalAccount.balance),
+          balance: cardMoney(personalAccount.balance),
+          debt: cardMoney(personalAccount.debtTotal),
         }),
       } : null,
       ...deposits.map((deposit: Record<string, any>) => {
@@ -523,11 +573,7 @@ export class AccountContactsService {
           },
           card: publicProgramCard(templates, 'loyalty-deposit', {
             uei: relations[`loyalty-deposit-program:${text(deposit.programId)}`],
-            title: deposit.programName || program.name || 'Депозит',
-            subtitle: terms.termRule || program.termRule || 'Бессрочно',
-            status: depositCardStatus(deposit.status),
-            metaLeft: terms.benefit || program.benefit || 'Без дополнительной выгоды',
-            metaRight: cardMoney(deposit.fundedAmount),
+            ...publicDepositCardValues(deposit, program),
           }),
         };
       }),
