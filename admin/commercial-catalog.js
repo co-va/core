@@ -625,11 +625,10 @@ function renderToolRegister(area, label, suffix) {
     '<col class="admin-tool-col-tier"><col class="admin-tool-col-tier">' +
     '<col class="admin-tool-col-status"></colgroup>';
   return '<section class="admin-users-section admin-tool-register-section">' +
-    '<div class="admin-tool-register-sticky">' +
     '<h2 class="admin-users-section-title">' + label +
       ' <span class="admin-registry-app">/ ' + suffix + '</span></h2>' +
-    '<div class="admin-tool-register-head-scroll">' +
-    '<table class="admin-table admin-tool-register-table admin-tool-register-head-table">' + columns +
+    '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
+    '<table class="admin-table admin-tool-register-table" data-admin-tool-map="' + area + '">' + columns +
     '<thead><tr><th scope="col" class="admin-tool-registry-expand-header">' +
       '<button type="button" class="admin-tool-registry-expand admin-tool-registry-expand-all"' +
       ' data-tool-expand-all aria-expanded="true" aria-label="Свернуть все строки ' + label + '" title="Свернуть всё">⌄</button></th>' +
@@ -638,10 +637,8 @@ function renderToolRegister(area, label, suffix) {
       '<th class="admin-tool-tier-heading" data-tier-level="start">Start</th>' +
       '<th class="admin-tool-tier-heading" data-tier-level="start-plus">Start+</th>' +
       '<th class="admin-tool-tier-heading" data-tier-level="pro">Pro</th>' +
-      '<th>Готовность</th></tr></thead></table></div></div>' +
-    '<div class="admin-card admin-tool-register-card"><div class="admin-tool-register-scroll">' +
-    '<table class="admin-table admin-tool-register-table admin-tool-register-body-table" data-admin-tool-map="' + area + '">' +
-    columns + '<tbody>' + toolRegisterRows(area, TOOL_MAP[area] || [], readinessByKey(toolReadinessCache)) +
+      '<th>Готовность</th></tr></thead>' +
+    '<tbody>' + toolRegisterRows(area, TOOL_MAP[area] || [], readinessByKey(toolReadinessCache)) +
     '</tbody></table></div></div></section>';
 }
 
@@ -879,12 +876,6 @@ export function renderAdminTools(content) {
     '</div>';
   bindArchitecture(content);
   content.querySelectorAll('.admin-tool-register-section').forEach((section) => {
-    const bodyScroll = section.querySelector('.admin-tool-register-scroll');
-    const headScroll = section.querySelector('.admin-tool-register-head-scroll');
-    // Header/body use the same seven proportional tracks on both devices.
-    bodyScroll?.addEventListener('scroll', () => {
-      if (headScroll) headScroll.scrollLeft = bodyScroll.scrollLeft;
-    }, { passive: true });
     section.querySelectorAll('[data-tool-expand]').forEach((button) => {
       button.addEventListener('click', () => {
         button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));

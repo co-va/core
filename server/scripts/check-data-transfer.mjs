@@ -929,6 +929,32 @@ try {
     assert.equal(duplicateSameFile.skipped,1);
     console.log('PASS: identity review, Email-only candidate, durable decisions and User-verified Email precedence');
     }
+  // Existing isolated tenant; actual ProfileService + real database, no production writes.
+  const workplaceProfile = new ProfileService(db);
+  const wpA = 'qa-workspace-a', wpB = 'qa-workspace-b';
+  const existingPlaces = (await workplaceProfile.get(tenantId,accountId)).workplaces.map(w=>w.key);
+  await workplaceProfile.upsertWorkplace(tenantId,accountId,wpA,{name:'QA A',from:'09:00',to:'17:00',visibleInPublicBooking:true});
+  await workplaceProfile.upsertWorkplace(tenantId,accountId,wpB,{name:'QA B',from:'11:00',to:'19:00',visibleInPublicBooking:false});
+  let opened = (await new ProfileService(db).get(tenantId,accountId)).workplaces;
+  assert.equal(opened.find(w=>w.key===wpA).name,'QA A');
+  assert.equal(opened.find(w=>w.key===wpB).from,'11:00');
+  await workplaceProfile.upsertWorkplace(tenantId,accountId,wpA,{...opened.find(w=>w.key===wpA),name:'QA A edited',from:'08:00',to:'16:00'});
+  opened = (await new ProfileService(db).get(tenantId,accountId)).workplaces;
+  assert.equal(opened.find(w=>w.key===wpA).name,'QA A edited');
+  assert.equal(opened.find(w=>w.key===wpA).from,'08:00');
+  assert.equal(opened.find(w=>w.key===wpA).to,'16:00');
+  assert.equal(opened.find(w=>w.key===wpB).name,'QA B');
+  assert.equal(opened.find(w=>w.key===wpB).from,'11:00');
+  assert.equal(opened.find(w=>w.key===wpB).to,'19:00');
+  assert.equal(opened.find(w=>w.key===wpB).visibleInPublicBooking,false);
+  await workplaceProfile.reorderWorkplaces(tenantId,accountId,{keys:[...existingPlaces,wpB,wpA]});
+  assert.deepEqual((await new ProfileService(db).get(tenantId,accountId)).workplaces.map(w=>w.key),[...existingPlaces,wpB,wpA]);
+  await workplaceProfile.deleteWorkplace(tenantId,accountId,wpA);
+  opened = (await new ProfileService(db).get(tenantId,accountId)).workplaces;
+  assert.equal(opened.some(w=>w.key===wpA),false);
+  assert.equal(opened.find(w=>w.key===wpB).from,'11:00');
+  assert.ok((await db.workplace.findUnique({where:{tenantId_key:{tenantId,key:wpA}}})).deletedAt);
+  console.log('PASS: workplace lifecycle — create, edit, reload, separate hours, reorder, soft-delete in PostgreSQL');
   console.log('Data transfer PostgreSQL integration: all scenarios passed');
 } finally {
   // This script owns only its random isolated fixture, never existing tenant data.

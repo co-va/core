@@ -1069,20 +1069,11 @@ html:has(.admin-shell){background:var(--surface-dark)}
   .admin-users-section .admin-accounts-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 .admin-tool-register-layout{gap:44px}
-/* The sticky element belongs to each section, so its own header leaves the
-   viewport as the next section arrives; horizontal clipping is only inside it. */
-.admin-tool-register-sticky{
-  position:sticky;top:0;z-index:3;background:var(--surface-dark)
-}
-.admin-tool-register-sticky>.admin-users-section-title{margin:0;padding:0 0 12px}
-.admin-tool-register-head-scroll{
-  box-sizing:border-box;width:100%;overflow:hidden;
-  border-inline:1px solid var(--line);
-  background:var(--admin-pearl);border-radius:14px 14px 0 0
-}
+/* Title and complete table are independent, like the Users register.
+   A detached sticky header must not remain visible above its section. */
 .admin-tool-register-card{
   margin:0;padding:0;width:100%;max-width:none;min-width:0;overflow:hidden;
-  border-top:0;border-radius:0 0 14px 14px
+  border-radius:14px
 }
 .admin-tool-register-scroll{width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .admin-tool-register-table{width:100%;min-width:860px;max-width:none;table-layout:fixed;border-collapse:collapse;color:var(--text)}
@@ -1483,10 +1474,15 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-mechanism{border-bottom:1px solid var(--border)}
 .development-mechanism:last-child{border-bottom:0}
 .development-mechanism>.admin-overview-person{border-bottom:0}
-.development-criteria{padding:0 0 0 16px;border-left:1px solid var(--border)}
-.development-criterion{padding:16px 0;border-top:1px solid var(--border);font-size:18px;line-height:1.5;color:var(--text)}
-.development-criterion-head{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap}
-.development-criterion p{margin:10px 0 0;color:var(--text)}
+.development-group-head[aria-expanded="true"],.development-mechanism>.admin-overview-person[aria-expanded="true"],.development-criterion-head[aria-expanded="true"]{background:var(--surface);border-left:3px solid var(--text-secondary);padding-left:12px}
+.development-criteria{padding:8px 0 8px 16px;border-left:2px solid var(--border)}
+.development-criterion{border-top:1px solid var(--border);font-size:18px;line-height:1.5;color:var(--text)}
+.development-criterion .development-criterion-head{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:52px;border-bottom:0}
+.development-criterion-details{padding:0 12px 16px;display:grid;gap:14px}
+.development-criterion-details section{padding-top:12px;border-top:1px solid var(--border)}
+.development-criterion-details h5{margin:0 0 6px;font-size:16px;line-height:1.4;font-weight:650;color:var(--text-secondary)}
+.development-criterion-details p,.development-criterion-details ul{margin:0;color:var(--text)}
+.development-criterion-details ul{padding-left:22px;display:grid;gap:6px}
 .development-message{color:var(--white);font-size:16px;margin:0}
 
 .development-applicability{padding-top:14px}
@@ -1502,3 +1498,57 @@ html:has(.admin-shell){background:var(--surface-dark)}
 .development-percent{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:650}
 .development-progress-track{display:block;height:6px;background:var(--border);border-radius:6px;overflow:hidden}
 .development-progress-fill{display:block;height:100%;border-radius:6px;background:currentColor}
+
+/* Same Admin list primitives as Users/Tools. Only the screen layout and column widths differ. */
+.admin-main:has(.development-map){overflow:hidden;padding-top:16px;padding-bottom:16px}
+.admin-content:has(.development-map){height:100%;min-height:0;min-width:0}
+.development-map{height:100%;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:8px}
+.development-map>.admin-heading{flex:0 0 auto;margin-bottom:0}
+.development-home{min-height:0;display:flex;flex-direction:column;gap:16px;align-items:stretch}
+.development-home .development-tree-root{align-self:center;background:var(--surface);color:var(--text);padding:12px 16px;border-radius:12px;font-weight:650}
+.development-home .development-activities{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.development-home .development-activities:before,.development-home .development-root:after{content:none}
+.development-map .development-scenario-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex:0 0 38px;min-width:0;color:var(--white);font-size:18px}
+.development-scenario-head>strong{min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.development-control-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 34px;min-width:0;overflow:hidden}
+.development-control-row nav,.development-control-actions{display:flex;align-items:center;gap:4px;min-width:0;white-space:nowrap}
+.development-control-row nav>span{color:var(--white)}
+.development-nav-step{border:0;background:transparent;color:var(--white);font:inherit;font-size:13px;padding:5px 6px;cursor:pointer;white-space:nowrap;min-width:0}
+.development-nav-step.is-active{font-weight:750;text-decoration:underline;text-underline-offset:4px}
+.development-next-row{flex:0 0 32px;display:flex;align-items:center;min-width:0;overflow:hidden;color:var(--white)}
+.development-next-row .development-nav-step{overflow:hidden;text-overflow:ellipsis;text-align:left;max-width:100%;font-weight:650}
+.development-windows{flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+.development-section-index{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;flex:0 0 auto;min-width:0}
+.development-section-choice{min-width:0;padding:10px 8px;display:grid;gap:8px;text-align:left;align-content:space-between;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;cursor:pointer}
+.development-section-choice strong{font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.development-section-choice.is-selected{background:var(--admin-pearl);border-color:var(--text-secondary)}
+.development-section-choice .development-progress{width:100%;font-size:12px}
+.development-window .admin-card{min-width:0}
+.development-window-head .admin-users-section-title{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.development-window-head .development-window-pages{color:var(--white)}
+.development-window-head .development-window-pages button{color:var(--white)}
+@media(max-width:900px){.development-section-choice strong{font-size:12px}.development-section-choice{padding:8px 5px}}
+.development-window,.development-choice-window{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.development-window-head{height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 0 8px;color:var(--white);min-width:0}
+.development-window-head>strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.development-window-pages{display:flex;align-items:center;gap:4px;flex:0 0 auto;font-size:12px;font-variant-numeric:tabular-nums}
+.development-window-pages button:disabled{opacity:.25;cursor:default}
+.development-map .development-table{min-width:0;width:100%;table-layout:fixed;border-collapse:collapse}
+.development-map .development-table :is(th,td):first-child{width:65%;padding:4px 12px}
+.development-map .development-table :is(th,td):nth-child(2){width:35%;padding:4px 8px;text-align:left}
+.development-map .development-table th{font-size:15px}
+.development-map .development-table tr.is-selected{background:var(--surface-soft)}
+.development-map .development-table tbody td{height:44px}
+.development-table-choice{border:0;background:transparent;text-align:left;display:grid;gap:2px;width:100%;min-width:0;padding:0;color:var(--text);cursor:pointer}
+.development-table-choice strong,.development-table-choice small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.development-table-choice strong{font-size:15px;font-weight:650}
+.development-table-choice small{font-size:13px;color:var(--text-secondary)}
+.development-map .development-table .development-progress{width:100%;font-size:14px;gap:3px}
+.development-map .development-table .development-progress-head{gap:2px;flex-wrap:wrap}
+.development-map .development-table .development-progress-track{height:3px}
+.development-map .development-detail-table :is(th,td):first-child,.development-map .development-choice-window .development-table td:first-child{width:100%}
+.development-map .development-detail-table td{height:88px;white-space:normal;vertical-align:top;padding:6px 12px;overflow-wrap:anywhere;font-size:12px;line-height:1.25}
+.development-detail-table td>strong{font-size:12px;display:block;margin-bottom:3px}
+.development-detail-table p{margin:0;color:var(--text);font-size:12px;line-height:1.25}
+.development-detail-link{padding:2px 0;border:0;background:transparent;color:var(--text);text-decoration:underline;font:inherit;cursor:pointer}
+@media(max-width:900px){.development-control-row{gap:3px}.development-nav-step{font-size:12px;padding-inline:3px}.development-control-row nav{gap:2px}.development-control-actions{gap:2px}}
