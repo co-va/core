@@ -75,5 +75,6 @@ assert.equal(extended.appearance.lines[2].cells.left.field,'');
 assert.equal(extended.fields.some(x=>x.value==='personPhone'),false);
 const accountFields=['amountLabel','currentAmount','balance','debt'];
 const account=plain(publicProgramCard([{scope:'loyalty-personal-account',appearance:{lines:accountFields.map(field=>({field}))}}],'loyalty-personal-account',Object.fromEntries(accountFields.map(key=>[key,key]))));
-assert.deepEqual(account.fields.map(x=>x.value),accountFields);
+assert.deepEqual(account.fields.map(x=>x.value).sort(),[...accountFields].sort());
+assert.deepEqual(account.appearance.lines.map(x=>x.field),accountFields,'Professional layout, not field registry order, determines the positions');
 console.log('PASS: Core projects Professional 9x3 cards intact with public field filtering');
