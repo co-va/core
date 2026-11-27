@@ -390,14 +390,14 @@ export async function financeRegistryWorkbook(rows:any[]):Promise<Buffer>{
   ['workplace','Рабочее пространство',24],['occurredAt','Дата и время операции',24],
   ['code','Код',12],['person','Клиент / контрагент',28],['contact','Телефон',20],
   ['id','Номер документа',38],['title','Операция',20],['article','Статья',32],['status','Статус',16],
-  ['wallet','Источник',30],['cashIn','Приход в кошельки',20],['cashOut','Расход из кошельков',20],
+  ['wallet','Источник',30],['position','Позиция',32],['cashIn','Приход в кошельки',20],['cashOut','Расход из кошельков',20],
   ['depositPrincipal','Денежная часть депозита',24],['personal','Движение личного счёта',24],
   ['bonus','Бонусные движения',20],['depositNet','Итог по депозиту',22],['grossAmount','Стоимость до выгоды',22],['benefitGranted','Предоставленная выгода',24],['benefitReversed','Аннулирована при возврате',25],['benefitWrittenOff','Аннулирована при расторжении',27],['bonusUsed','Использовано бонусов',22],['bonusRestored','Восстановлено бонусов',24],['documentAmount','Сумма документа',20],['uncertainty','Неуточнённые данные',32],
  ] as const;
  const book=new ExcelJS.Workbook();
  const sheet=book.addWorksheet('Реестр ДДС',{views:[{state:'frozen',ySplit:2,xSplit:2}]});
  sheet.columns=columns.map(([key,label,width])=>({key,width,numFmt:['cashIn','cashOut','depositPrincipal','personal','bonus','depositNet','grossAmount','benefitGranted','benefitReversed','benefitWrittenOff','bonusUsed','bonusRestored','documentAmount'].includes(key)?'#,##0.00;[Red]-#,##0.00':'@'}));
- const groups=[['Операция',1,2],['Клиент / контрагент',3,5],['Документ',6,10],['Деньги',11,14],['Выгода и расчёт',15,22],['Документ и контроль',23,24]] as const;
+ const groups=[['Операция',1,2],['Клиент / контрагент',3,5],['Документ',6,11],['Деньги',12,15],['Выгода и расчёт',16,23],['Документ и контроль',24,25]] as const;
  for(const [label,start,end] of groups){
   if(end>start)sheet.mergeCells(1,start,1,end);
   for(let c=start;c<=end;c++)sheet.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDEDFE0'}};

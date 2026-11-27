@@ -23,7 +23,8 @@ import {
   reconsumeDepositAllocations,
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent } from '../loyalty/price-condition';
-import { financeArticleCatalog, classifyFinanceLedger, RETIRED_SYSTEM_ARTICLE_KEYS } from './article-catalog';
+import { financeArticleCatalog, classifyFinanceLedger, financeArticleRoute, RETIRED_SYSTEM_ARTICLE_KEYS } from './article-catalog';
+import { projectPositionMovements, splitCashByComponent } from './position-movements';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -232,24 +233,8 @@ const SPECIAL_FINANCE_DEFINITIONS: Record<string, {
 };
 
 function splitAllocationComponents(allocations: JsonObject[], serviceAmount: number, tips: number) {
-  let serviceLeft = money(serviceAmount);
-  let tipsLeft = money(tips);
-  const entries: JsonObject[] = [];
-  for (const allocation of allocations) {
-    let walletLeft = money(allocation.amount);
-    const service = Math.min(walletLeft, serviceLeft);
-    if (service > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: service, component: 'service' });
-      walletLeft = money(walletLeft - service);
-      serviceLeft = money(serviceLeft - service);
-    }
-    const tip = Math.min(walletLeft, tipsLeft);
-    if (tip > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: tip, component: 'tips' });
-      tipsLeft = money(tipsLeft - tip);
-    }
-  }
-  if (serviceLeft > 0.009 || tipsLeft > 0.009) throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
+  const entries=splitCashByComponent(allocations,serviceAmount,tips);
+  if(!entries)throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
   return entries;
 }
 
@@ -346,7 +331,7 @@ export class FinanceService {
         workplace:text(paid.workplace),person:clone(objectValue(paid.person)),
         walletId:wallet.id,walletName:wallet.name,total:amount,
         cashTotal:amount,cashServiceAmount:serviceAmount,
-        serviceAmount,tips,depositAllocations:[],reason:text(input.note),
+        serviceAmount,tips,depositAllocations:[],reason:text(input.note),settlement:clone(objectValue(paid.settlement)),
       },
       entries:[
         ...(serviceAmount>0?[{walletId:wallet.id,walletName:wallet.name,amount:serviceAmount,
@@ -730,6 +715,18 @@ export class FinanceService {
     return { state: due <= 0.009 ? 'paid' : paid > 0.009 ? 'partial' : 'unpaid', paid, due };
   }
 
+  // Persist position links in the same transaction, not as new ledger rows.
+  async savePositionMovementsInTx(db: Db,tenantId:string,operation:{id:string;operationId:string;kind:string;sourceType:string;sourceId:string}) {
+    if(!['payment','refund'].includes(operation.kind))return;
+    const rows=await db.financeOperation.findMany({where:{tenantId,sourceType:operation.sourceType,sourceId:operation.sourceId,kind:{in:['payment','refund']}},include:{ledgerEntries:true}});
+    const movements=projectPositionMovements(rows,rows.flatMap(row=>row.ledgerEntries),operation.id).get(operation.operationId);
+    const current=rows.find(row=>row.id===operation.id);
+    if(!current)return;
+    const data=clone(objectValue(current.data));
+    if(movements)data.positionMovements=movements;else delete data.positionMovements;
+    await db.financeOperation.update({where:{id:operation.id},data:{data:json(data)}});
+  }
+
   private async createOperationWithEntries(db: Db, tenantId: string, {
     operationId, kind, status = 'completed', source, originalOperationId = '', occurredAt, data, entries,
   }: {
@@ -764,10 +761,11 @@ export class FinanceService {
         },
       });
     }
+    await this.savePositionMovementsInTx(db,tenantId,operation);
     return db.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } }, include: { ledgerEntries: true } });
   }
 
-  private async replaceOperationWithEntries(db: Db, tenantId: string, operation: { id: string; sourceType: string; sourceId: string }, occurredAt: Date, data: JsonObject, entries: JsonObject[]) {
+  private async replaceOperationWithEntries(db: Db, tenantId: string, operation: { id: string; operationId:string; kind:string; sourceType: string; sourceId: string }, occurredAt: Date, data: JsonObject, entries: JsonObject[]) {
     await db.financeLedgerEntry.deleteMany({ where: { tenantId, financeOperationId: operation.id } });
     await db.financeOperation.update({ where: { id: operation.id }, data: { occurredAt, data: json(data) } });
     for (const entry of entries) {
@@ -783,6 +781,7 @@ export class FinanceService {
         },
       });
     }
+    await this.savePositionMovementsInTx(db,tenantId,operation);
   }
 
   private async createReversalFor(db: Db, tenantId: string, originalOperationId: string, reason: string, occurredAt: Date) {
@@ -1555,6 +1554,8 @@ export class FinanceService {
     }
     const originalById=new Map(operations.map(row=>[row.operationId,row]));
     const refundedBefore=new Map<string,number>();
+    const positionProjection=projectPositionMovements(operations,ledger);
+    const articleCatalog=financeArticleCatalog(articles);
     const operationRows = operations.map((row) => {
       const data=clone(objectValue(row.data));
       if (row.kind==='payment' && !data.depositDiscount) data.depositDiscount=savedDepositDiscount(data);
@@ -1564,13 +1565,16 @@ export class FinanceService {
         if (!data.depositDiscount && original) data.depositDiscount=depositDiscountForRefund(original.data,data.serviceAmount,before);
         if (row.status==='completed') refundedBefore.set(row.originalOperationId,money(before+money(data.serviceAmount)));
       }
+      if(positionProjection.has(row.operationId)){
+        const parts=positionProjection.get(row.operationId);
+        data.positionMovements=parts?parts.map(part=>({...part,articleClass:financeArticleRoute(articleCatalog,part.route)})):null;
+      }
       const accounting=accountingByOperation.get(row.operationId);
       if (accounting?.length) data.depositAccounting=accounting;
       return {operationId:row.operationId,kind:row.kind,status:row.status,source:{type:row.sourceType,id:row.sourceId},
         originalOperationId:row.originalOperationId,occurredAt:row.occurredAt.toISOString(),recordedAt:row.createdAt.toISOString(),data};
     });
     const operationById = new Map(operations.map((operation) => [operation.id, operation.operationId]));
-    const articleCatalog=financeArticleCatalog(articles);
     const systemArticles = new Map(articles.filter(a => a.systemKey).map(a => [a.systemKey, a]));
     const operationByInternalId=new Map(operations.map(row=>[row.id,row]));
     // Resolve existing system facts without modifying the historical ledger or its amounts.

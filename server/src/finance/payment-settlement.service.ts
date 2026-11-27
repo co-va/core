@@ -18,6 +18,7 @@ import {
   syncPersonalAccountDebt,
 } from '../loyalty/personal-account-state';
 import { FinanceService } from './finance.service';
+import { splitCashByComponent } from './position-movements';
 import { InventoryService } from '../inventory/inventory.service';
 
 type JsonObject = Record<string, any>;
@@ -132,24 +133,8 @@ function canonicalSettlementInput(value: unknown, pricePercent: number) {
 }
 
 function splitCashComponents(allocations: JsonObject[], serviceAmount: number, tips: number) {
-  let serviceLeft = money(serviceAmount);
-  let tipsLeft = money(tips);
-  const entries: JsonObject[] = [];
-  for (const allocation of allocations) {
-    let walletLeft = money(allocation.amount);
-    const service = Math.min(walletLeft, serviceLeft);
-    if (service > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: service, component: 'service' });
-      walletLeft = money(walletLeft - service);
-      serviceLeft = money(serviceLeft - service);
-    }
-    const tip = Math.min(walletLeft, tipsLeft);
-    if (tip > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: tip, component: 'tips' });
-      tipsLeft = money(tipsLeft - tip);
-    }
-  }
-  if (serviceLeft > 0.009 || tipsLeft > 0.009) throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
+  const entries=splitCashByComponent(allocations,serviceAmount,tips);
+  if(!entries)throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
   return entries;
 }
 
@@ -260,6 +245,7 @@ export class PaymentSettlementService {
         },
       });
     }
+    await this.finance.savePositionMovementsInTx(tx,tenantId,operation);
     return operation;
   }
 
