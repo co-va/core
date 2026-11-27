@@ -253,3 +253,18 @@ assert.equal(prepaid[0].amount, 50,
   'An eligible future appointment can be prepaid with money already received');
 
 console.log('Historical deposit ledger: PASS');
+
+// Zero principal is a valid explicit fact, not a missing value.
+const restoreBody = state.slice(state.indexOf('function objectValue('), state.indexOf('export async function reconsumeDepositAllocations(')).replaceAll('export ', '');
+const { restoreDepositAllocations } = runInNewContext(stripTypeScriptTypes(restoreBody,{mode:'strip'})+'\n({ restoreDepositAllocations })',{depositHistoricalLedger,Error,BadRequestException:class extends Error{}});
+let restored;
+await restoreDepositAllocations({loyaltyDepositInstance:{
+  findUnique:async()=>({id:deposit,status:'active',terms:{},principalBalance:0,benefitBalance:10}),
+  update:async value=>{restored=value.data;},
+}},'tenant-1',used(100,0,100),new Date('2026-11-27T12:00:00Z'));
+assert.equal(restored.principalBalance,0,'Bonus-only refund must not mint cash principal');
+assert.equal(restored.benefitBalance,110);
+assert.equal(restored.balance,110);
+const financeSource=readFileSync(new URL('../server/src/finance/finance.service.ts',import.meta.url),'utf8');
+assert.ok(financeSource.includes('const originalPrincipal = original.principalAmount;'));
+assert.ok(!financeSource.includes('original.principalAmount || original.amount'));

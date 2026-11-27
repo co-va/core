@@ -154,8 +154,8 @@ function depositAllocationsValue(value: unknown) {
         depositId: text(row.depositId ?? row.sourceId ?? row.id),
         name: text(row.name ?? row.label),
         amount: money(row.amount),
-        principalAmount: money(row.principalAmount),
-        benefitAmount: money(row.benefitAmount),
+        principalAmount: row.principalAmount == null ? Math.max(0, money(money(row.amount) - money(row.benefitAmount))) : money(row.principalAmount),
+        benefitAmount: row.benefitAmount == null ? Math.max(0, money(money(row.amount) - money(row.principalAmount == null ? row.amount : row.principalAmount))) : money(row.benefitAmount),
       };
     })
     .filter((entry) => entry.depositId && entry.amount > 0);
@@ -176,6 +176,8 @@ const DEFAULT_FINANCE_ARTICLES = [
   { articleId: 'system-investment-received', parentArticleId: 'system-income', name: 'Инвестиции', direction: 'IN', economicType: 'INVESTMENT_RECEIVED', systemKey: 'INVESTMENT_RECEIVED', position: 70 },
   { articleId: 'system-investment-capital-return', parentArticleId: 'system-income', name: 'Возврат капитала', direction: 'IN', economicType: 'INVESTMENT_CAPITAL_RETURN', systemKey: 'INVESTMENT_CAPITAL_RETURN', position: 72 },
   { articleId: 'system-investment-income', parentArticleId: 'system-income', name: 'Доход инвестиции', direction: 'IN', economicType: 'INVESTMENT_INCOME', systemKey: 'INVESTMENT_INCOME', position: 74 },
+  { articleId: 'system-deposit-received', parentArticleId: 'system-income', name: 'Пополнение депозита', direction: 'IN', economicType: 'DEPOSIT_RECEIVED', systemKey: 'DEPOSIT_RECEIVED', position: 76 },
+  { articleId: 'system-personal-account-funding', parentArticleId: 'system-income', name: 'Пополнение личного счёта', direction: 'IN', economicType: 'PERSONAL_ACCOUNT_LIABILITY_IN', systemKey: 'PERSONAL_ACCOUNT_LIABILITY_IN', position: 78 },
   { articleId: 'system-expense', parentArticleId: '', name: 'Расходы', direction: 'OUT', economicType: 'GROUP', systemKey: 'EXPENSE_ROOT', position: 100 },
   { articleId: 'system-materials', parentArticleId: 'system-expense', name: 'Материалы', direction: 'OUT', economicType: 'OPERATING_EXPENSE', systemKey: 'MATERIALS', position: 110 },
   { articleId: 'system-rent', parentArticleId: 'system-expense', name: 'Аренда', direction: 'OUT', economicType: 'OPERATING_EXPENSE', systemKey: 'RENT', position: 120 },
@@ -187,6 +189,8 @@ const DEFAULT_FINANCE_ARTICLES = [
   { articleId: 'system-investment-contribution', parentArticleId: 'system-expense', name: 'Вложение', direction: 'OUT', economicType: 'INVESTMENT_CONTRIBUTION', systemKey: 'INVESTMENT_CONTRIBUTION', position: 172 },
   { articleId: 'system-investment-expense', parentArticleId: 'system-expense', name: 'Расход инвестиции', direction: 'OUT', economicType: 'INVESTMENT_EXPENSE', systemKey: 'INVESTMENT_EXPENSE', position: 174 },
   { articleId: 'system-investment-income-payment', parentArticleId: 'system-expense', name: 'Выплата дохода инвестору', direction: 'OUT', economicType: 'INVESTMENT_INCOME_PAYMENT', systemKey: 'INVESTMENT_INCOME_PAYMENT', position: 176 },
+  { articleId: 'system-deposit-return', parentArticleId: 'system-expense', name: 'Возврат депозита', direction: 'OUT', economicType: 'DEPOSIT_RETURN', systemKey: 'DEPOSIT_RETURN', position: 178 },
+  { articleId: 'system-personal-account-withdrawal', parentArticleId: 'system-expense', name: 'Возврат с личного счёта', direction: 'OUT', economicType: 'PERSONAL_ACCOUNT_LIABILITY_OUT', systemKey: 'PERSONAL_ACCOUNT_LIABILITY_OUT', position: 180 },
   { articleId: 'system-transfer', parentArticleId: '', name: 'Перевод между кошельками', direction: 'TRANSFER', economicType: 'TRANSFER', systemKey: 'TRANSFER', position: 200 },
 ] as const;
 
@@ -195,6 +199,7 @@ const ARTICLE_ECONOMIC_TYPES = new Set([
   'GROUP', 'OPERATING_REVENUE', 'PRODUCT_REVENUE', 'OPERATING_EXPENSE', 'TAX', 'TIPS', 'REFUND',
   'LOAN_RECEIVED', 'LOAN_REPAYMENT', 'INVESTMENT_RECEIVED', 'INVESTMENT_RETURN', 'INVESTMENT_CONTRIBUTION',
   'INVESTMENT_CAPITAL_RETURN', 'INVESTMENT_INCOME', 'INVESTMENT_EXPENSE', 'INVESTMENT_INCOME_PAYMENT', 'TRANSFER',
+  'DEPOSIT_RECEIVED', 'DEPOSIT_RETURN', 'PERSONAL_ACCOUNT_LIABILITY_IN', 'PERSONAL_ACCOUNT_LIABILITY_OUT',
 ]);
 
 const SPECIAL_FINANCE_DEFINITIONS: Record<string, {
@@ -832,8 +837,11 @@ export class FinanceService {
       ancestor = ancestor.parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: ancestor.parentArticleId } } }) : null;
       depthGuard += 1;
     }
-    const direction = current.systemKey ? current.direction : text(input.direction || current.direction);
-    const economicType = current.systemKey ? current.economicType : text(input.economicType || current.economicType);
+    if (input.direction != null && text(input.direction) !== current.direction) throw new BadRequestException('Направление статьи нельзя изменить после создания');
+    if (input.economicType != null && text(input.economicType) !== current.economicType) throw new BadRequestException('Экономический тип статьи нельзя изменить после создания');
+    if (current.systemKey && (name !== current.name || parentArticleId !== current.parentArticleId)) throw new BadRequestException('Системную статью нельзя изменить');
+    const direction = current.direction;
+    const economicType = current.economicType;
     if (!ARTICLE_DIRECTIONS.has(direction) || !ARTICLE_ECONOMIC_TYPES.has(economicType)) throw new BadRequestException('Некорректный экономический характер статьи');
     if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
     await this.prisma.financeArticle.update({ where: { id: current.id }, data: { name, parentArticleId, direction, economicType } });
@@ -1183,7 +1191,7 @@ export class FinanceService {
     const restoredDeposits: JsonObject[] = [];
     for (const original of originalDeposits) {
       const previous = restoredByDeposit.get(original.depositId) || { amount: 0, principalAmount: 0, benefitAmount: 0 };
-      const originalPrincipal = original.principalAmount || original.amount;
+      const originalPrincipal = original.principalAmount;
       const originalBenefit = original.benefitAmount;
       const principalAvailable = Math.max(0, money(originalPrincipal - previous.principalAmount));
       const benefitAvailable = Math.max(0, money(originalBenefit - previous.benefitAmount));
@@ -1259,11 +1267,12 @@ export class FinanceService {
       if (!preparedLines.length) throw new BadRequestException('Введите сумму или позиции');
       const articleIds = [...new Set(preparedLines.map((line) => line.articleId).filter(Boolean))];
       if (!articleIds.length) throw new BadRequestException('Выберите статью');
-      const articles = await this.prisma.financeArticle.findMany({ where: { tenantId, articleId: { in: articleIds }, archivedAt: null } });
+      const originalArticles = new Map(current.ledgerEntries.map(entry => [text(objectValue(entry.data).articleId), entry]));
+      const articles = await this.prisma.financeArticle.findMany({ where: { tenantId, articleId: { in: articleIds } } });
       const articleById = new Map(articles.map((article) => [article.articleId, article]));
       for (const line of preparedLines) {
         const article = articleById.get(line.articleId);
-        if (!article) throw new BadRequestException('Статья не найдена');
+        if (!article || (article.archivedAt && !originalArticles.has(line.articleId))) throw new BadRequestException('Статья не найдена');
         if (article.economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
         if (article.direction !== direction) throw new BadRequestException('Статья не соответствует типу операции');
       }
@@ -1272,7 +1281,8 @@ export class FinanceService {
       nextData = { direction, articleId: operationArticleId, walletId, walletName, note, total, lines: preparedLines };
       nextEntries = preparedLines.map((line) => {
         const article = articleById.get(line.articleId)!;
-        return { walletId, walletName, direction, economicType: article.economicType, amount: line.total, component: 'manual', articleId: article.articleId, articleName: article.name, lineName: line.lineName, quantity: line.quantity, unitPrice: line.unitPrice, note };
+        const original = originalArticles.get(line.articleId);
+        return { walletId, walletName, direction, economicType: original?.economicType || article.economicType, amount: line.total, component: 'manual', articleId: article.articleId, articleName: text(objectValue(original?.data).articleName) || article.name, lineName: line.lineName, quantity: line.quantity, unitPrice: line.unitPrice, note };
       });
     } else if ([...Object.keys(SPECIAL_FINANCE_DEFINITIONS), 'transfer'].includes(current.kind)) {
       const amount = money(input.amount == null ? currentData.total : input.amount);
@@ -1486,6 +1496,15 @@ export class FinanceService {
       originalOperationId: row.originalOperationId, occurredAt: row.occurredAt.toISOString(), recordedAt: row.createdAt.toISOString(), data: clone(row.data),
     }));
     const operationById = new Map(operations.map((operation) => [operation.id, operation.operationId]));
+    const systemArticles = new Map(articles.filter(a => a.systemKey).map(a => [a.systemKey, a]));
+    // Resolve existing system facts without modifying the historical ledger or its amounts.
+    const articleFor = (row: typeof ledger[number]) => {
+      const data = objectValue(row.data);
+      if (text(data.articleId) || text(data.articleName)) return { articleId: text(data.articleId), articleName: text(data.articleName) };
+      const key = row.economicType === 'SERVICE_REFUND' || row.economicType === 'TIPS_REFUND' ? 'REFUND' : row.economicType;
+      const article = systemArticles.get(key);
+      return { articleId: article?.articleId || '', articleName: article?.name || '' };
+    };
     const ledgerRows = ledger.map((row) => ({
       entryId: row.entryId,
       operationId: operationById.get(row.financeOperationId) || '',
@@ -1499,12 +1518,11 @@ export class FinanceService {
       source: { type: row.sourceType, id: row.sourceId },
       component: text(objectValue(row.data).component),
       relatedOperationId: text(objectValue(row.data).relatedOperationId),
-      articleId: text(objectValue(row.data).articleId),
-      articleName: text(objectValue(row.data).articleName),
+      ...articleFor(row),
       lineName: text(objectValue(row.data).lineName),
       quantity: objectValue(row.data).quantity == null ? null : numberValue(objectValue(row.data).quantity),
       unitPrice: objectValue(row.data).unitPrice == null ? null : money(objectValue(row.data).unitPrice),
-      note: text(objectValue(row.data).note),
+      note: row.economicType === 'DEPOSIT_RECEIVED' ? '' : text(objectValue(row.data).note),
     }));
     return {
       version: 8,

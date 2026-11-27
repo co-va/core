@@ -92,8 +92,8 @@ function normalizedDepositAllocations(values: unknown) {
         depositId: text(row.depositId ?? row.sourceId ?? row.id),
         name: text(row.name ?? row.label),
         amount: depositMoney(row.amount),
-        principalAmount: depositMoney(row.principalAmount),
-        benefitAmount: depositMoney(row.benefitAmount),
+        principalAmount: row.principalAmount == null ? Math.max(0, depositMoney(depositMoney(row.amount) - depositMoney(row.benefitAmount))) : depositMoney(row.principalAmount),
+        benefitAmount: row.benefitAmount == null ? Math.max(0, depositMoney(depositMoney(row.amount) - depositMoney(row.principalAmount == null ? row.amount : row.principalAmount))) : depositMoney(row.benefitAmount),
       };
     })
     .filter((row) => row.depositId && row.amount > 0);
@@ -353,7 +353,7 @@ export async function restoreDepositAllocations(db: Db, tenantId: string, values
     if (!depositTermActiveAt(row.terms, at) || row.status === 'expired') continue;
     const principal = depositMoney(row.principalBalance);
     const benefit = depositMoney(row.benefitBalance);
-    const principalRestore = Math.min(allocation.amount, allocation.principalAmount || allocation.amount);
+    const principalRestore = Math.min(allocation.amount, allocation.principalAmount);
     const benefitRestore = Math.min(depositMoney(allocation.amount - principalRestore), allocation.benefitAmount);
     const nextPrincipal = depositMoney(principal + principalRestore);
     const nextBenefit = depositMoney(benefit + benefitRestore);
