@@ -381,3 +381,42 @@ export async function scopedExcelWorkbook(domain:ScopedDomain, rows:any[], templ
   sheet.autoFilter={from:{row:headerRow,column:1},to:{row:Math.max(headerRow,sheet.rowCount),column:cols.length-(domain==='records'?1:0)}};
   return Buffer.from(await book.xlsx.writeBuffer());
 }
+
+
+// Export-only document registry: this sheet is deliberately not the import template.
+export async function financeRegistryWorkbook(rows:any[]):Promise<Buffer>{
+ if(!Array.isArray(rows)||rows.length>20000)throw Error('Выгрузка допускает не более 20 000 строк за один раз');
+ const columns=[
+  ['workplace','Рабочее пространство',24],['occurredAt','Дата и время операции',24],
+  ['code','Код',12],['person','Клиент / контрагент',28],['contact','Телефон',20],
+  ['id','Номер документа',38],['title','Операция',20],['article','Статья',32],['status','Статус',16],
+  ['wallet','Источник',30],['cashIn','Приход в кошельки',20],['cashOut','Расход из кошельков',20],
+  ['depositPrincipal','Денежная часть депозита',24],['personal','Движение личного счёта',24],
+  ['bonus','Бонусы',18],['documentAmount','Сумма документа',20],['uncertainty','Неуточнённые данные',32],
+ ] as const;
+ const book=new ExcelJS.Workbook();
+ const sheet=book.addWorksheet('Реестр ДДС',{views:[{state:'frozen',ySplit:2,xSplit:2}]});
+ sheet.columns=columns.map(([key,label,width])=>({key,width,numFmt:['cashIn','cashOut','depositPrincipal','personal','bonus','documentAmount'].includes(key)?'#,##0.00;[Red]-#,##0.00':'@'}));
+ const groups=[['Операция',1,2],['Клиент / контрагент',3,5],['Документ',6,10],['Деньги',11,14],['Бонусы',15,15],['Документ и контроль',16,17]] as const;
+ for(const [label,start,end] of groups){
+  if(end>start)sheet.mergeCells(1,start,1,end);
+  for(let c=start;c<=end;c++)sheet.getCell(1,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDEDFE0'}};
+  const cell=sheet.getCell(1,start);cell.value=label;cell.font={bold:true,color:{argb:'FF25272B'},size:12};cell.alignment={vertical:'middle',horizontal:'center'};
+ }
+ sheet.getRow(1).height=30;sheet.getRow(2).height=34;
+ columns.forEach(([,label],i)=>{const cell=sheet.getCell(2,i+1);cell.value=label;cell.font={bold:true,color:{argb:'FFFFFFFF'},size:11};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF303238'}};cell.alignment={vertical:'middle',wrapText:true};});
+ sheet.getCell(2,13).note='Изменение ранее внесённых денежных средств, не повторное движение физического кошелька.';
+ sheet.getCell(2,15).note='Бонусы не являются деньгами. Пустая ячейка при неуточнённой сумме не означает ноль.';
+ sheet.getCell(2,16).note='Сумма исходного документа; не суммировать с его отдельными компонентами.';
+ for(const input of rows){
+  const row:Record<string,string|number|null>={};
+  for(const [key] of columns){
+   const value=input?.[key];
+   if(['cashIn','cashOut','depositPrincipal','personal','bonus','documentAmount'].includes(key))row[key]=typeof value==='number'&&Number.isFinite(value)?value:null;
+   else row[key]=String(value??'');
+  }
+  sheet.addRow(row);
+ }
+ sheet.autoFilter={from:{row:2,column:1},to:{row:Math.max(2,sheet.rowCount),column:columns.length}};
+ return Buffer.from(await book.xlsx.writeBuffer());
+}

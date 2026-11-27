@@ -31,6 +31,12 @@ export class DataTransferController {
   @Post('inspect') inspect(@Body() body: SourceInput) { return this.transfer.inspect(body); }
   @Post('check') check(@Req() req: AuthRequest, @Body() body: SourceInput) { return this.transfer.run(req.auth!.tenantId, req.auth!.platformAccountId, body, true); }
   @Post('commit') commit(@Req() req: AuthRequest, @Body() body: SourceInput) { return this.transfer.run(req.auth!.tenantId, req.auth!.platformAccountId, body, false); }
+  @Post('finance-registry') async financeRegistry(@Body() body: unknown, @Res() response: Response) {
+    const buffer=await this.transfer.registryWorkbook(body);
+    response.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    response.setHeader('Content-Disposition','attachment; filename="finance-registry.xlsx"');
+    response.send(buffer);
+  }
   @Post('table') async table(@Body() body: unknown, @Res() response: Response) {
     response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     response.setHeader('Content-Disposition', 'attachment; filename="co-va-data.xlsx"');
