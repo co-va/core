@@ -268,3 +268,33 @@ assert.equal(restored.balance,110);
 const financeSource=readFileSync(new URL('../server/src/finance/finance.service.ts',import.meta.url),'utf8');
 assert.ok(financeSource.includes('const originalPrincipal = original.principalAmount;'));
 assert.ok(!financeSource.includes('original.principalAmount || original.amount'));
+
+const { depositDiscountForPayment, depositDiscountForRefund, depositRefundQuote } = runInNewContext(
+  stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ depositDiscountForPayment, depositDiscountForRefund, depositRefundQuote })',
+  { depositHistoricalLedger, Error, BadRequestException: class extends Error {} },
+);
+const sourceCondition = {programType:'deposit',depositId:deposit,percent:20};
+const discountSettlement = {planTotal:8000,pricePercentTotal:2000};
+const discountPayment = depositDiscountForPayment(sourceCondition,discountSettlement,8000);
+assert.equal(discountPayment.grossAmount,10000);
+assert.equal(discountPayment.benefitAmount,2000);
+const pData={serviceAmount:8000,priceCondition:sourceCondition,settlement:discountSettlement,depositDiscount:discountPayment};
+const pRow={operationId:'p1',kind:'payment',status:'completed',data:pData};
+const quoted={depositId:deposit,terms,principalBalance:42000,benefitBalance:0,balance:42000};
+assert.equal(depositRefundQuote(quoted,[pRow]).refundableAmount,40000);
+assert.equal(depositRefundQuote(quoted,[pRow]).conditionalWrittenOff,2000);
+const refundDiscount=depositDiscountForRefund(pData,8000);
+assert.equal(refundDiscount.grossAmount,10000);
+assert.equal(refundDiscount.benefitAmount,2000);
+assert.equal(refundDiscount.netAmount,8000);
+const refundRow={kind:'refund',status:'completed',originalOperationId:'p1',data:{serviceAmount:8000,depositDiscount:refundDiscount}};
+assert.equal(depositRefundQuote({...quoted,principalBalance:50000,balance:50000},[pRow,refundRow]).refundableAmount,50000);
+assert.equal(depositDiscountForRefund(pData,4000).benefitAmount,1000);
+assert.equal(depositDiscountForRefund(pData,4000,4000).benefitAmount,1000);
+assert.equal(depositDiscountForPayment(sourceCondition,discountSettlement,4000,4000).benefitAmount,1000);
+assert.equal(depositRefundQuote(quoted,[{...pRow,data:{...pData,depositDiscount:null}}]).refundableAmount,40000);
+assert.equal(depositRefundQuote(quoted,[{...pRow,status:'cancelled'}]).refundableAmount,42000);
+await assert.rejects(restoreDepositAllocations({
+  loyaltyDepositInstance:{findUnique:async()=>({id:deposit,depositId:deposit,status:'closed',terms,principalBalance:0,benefitBalance:0}),update:async()=>{throw Error('must not reopen');}},
+  financeOperation:{findFirst:async()=>({id:'terminated'})},
+},'tenant-1',used(8000),new Date('2026-11-27T12:00:00Z')),/расторгнут/);

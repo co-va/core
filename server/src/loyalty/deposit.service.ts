@@ -7,6 +7,7 @@ import { FinanceService } from '../finance/finance.service';
 import {
   depositBenefitMode,
   depositBenefitRate,
+  depositRefundQuote,
   depositTermActiveAt,
   expireDepositInstances,
 } from './deposit-state';
@@ -253,6 +254,7 @@ export class DepositService {
     const terms = objectValue(row.terms);
     const mode = depositBenefitMode(terms);
     const presentation = objectValue(terms.presentation);
+    const quote = depositRefundQuote(row, operations);
     return {
       depositId: row.depositId,
       programId: row.programId,
@@ -263,7 +265,9 @@ export class DepositService {
       fundedAmount: money(row.initialAmount),
       principalBalance,
       benefitBalance,
-      refundableAmount: row.status === 'active' ? principalBalance : 0,
+      refundableAmount: row.status === 'active' ? quote.refundableAmount : 0,
+      conditionalBenefit: quote.conditionalBenefit,
+      conditionalWrittenOff: quote.conditionalWrittenOff,
       balance,
       // Expired funds are visible but can only be spent by a historic visit
       // that was inside the original term and has a sufficient as-of balance.
@@ -276,7 +280,7 @@ export class DepositService {
       benefitMode: mode,
       discountPercent: mode === 'discount' && row.status === 'active' && depositTermActiveAt(terms, new Date()) ? depositBenefitRate(terms) : 0,
       status: row.status,
-      canRefund: row.status === 'active' && principalBalance > 0.009 && depositTermActiveAt(terms, new Date()),
+      canRefund: row.status === 'active' && quote.refundableAmount > 0.009 && depositTermActiveAt(terms, new Date()),
       fundedAt: row.fundedAt.toISOString(),
       fundingOperationId: row.fundingOperationId,
       history: this.history(row, operations),

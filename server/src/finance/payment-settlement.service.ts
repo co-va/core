@@ -6,6 +6,8 @@ import { PrismaService } from '../prisma.service';
 import {
   consumeDepositAllocations,
   restoreDepositAllocations,
+  depositDiscountForPayment,
+  depositDiscountForRefund,
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent, resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import {
@@ -97,8 +99,8 @@ function depositAllocationsValue(value: unknown) {
         depositId: text(row.depositId ?? row.sourceId ?? row.id),
         name: text(row.name ?? row.label),
         amount: money(row.amount),
-        principalAmount: money(row.principalAmount),
-        benefitAmount: money(row.benefitAmount),
+        principalAmount: row.principalAmount == null ? Math.max(0, money(money(row.amount) - money(row.benefitAmount))) : money(row.principalAmount),
+        benefitAmount: row.benefitAmount == null ? Math.max(0, money(money(row.amount) - money(row.principalAmount == null ? row.amount : row.principalAmount))) : money(row.benefitAmount),
       };
     })
     .filter((entry) => entry.depositId && entry.amount > 0);
@@ -368,6 +370,7 @@ export class PaymentSettlementService {
           depositAllocations,
           personalAccountAmount,
           priceCondition: condition.source ? clone(condition.source) : null,
+          depositDiscount: depositDiscountForPayment(condition.source, settlement, serviceAmount, paid),
           ...(historicalRecordPayment ? { historicalBackfill: true } : {}),
           cashTotal: cashAllocated,
           cashServiceAmount,
@@ -440,14 +443,15 @@ export class PaymentSettlementService {
 
   async recordRefund(tenantId: string, operationIdValue: string, body: unknown) {
     const operationId = text(operationIdValue);
-    const payment = await this.prisma.financeOperation.findUnique({
+    await this.serializable(async (tx) => {
+    const payment = await tx.financeOperation.findUnique({
       where: { tenantId_operationId: { tenantId, operationId } },
     });
     if (!payment || payment.kind !== 'payment') throw new NotFoundException('Оплата не найдена');
     if (payment.status === 'cancelled') throw new BadRequestException('Отменённую оплату вернуть нельзя');
 
     const paymentData = objectValue(payment.data);
-    const refunds = await this.prisma.financeOperation.findMany({
+    const refunds = await tx.financeOperation.findMany({
       where: { tenantId, kind: 'refund', originalOperationId: operationId, status: 'completed' },
     });
     const refundedTips = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).tips), 0));
@@ -480,7 +484,7 @@ export class PaymentSettlementService {
     const restoredDeposits: JsonObject[] = [];
     for (const original of originalDeposits) {
       const previous = restoredByDeposit.get(original.depositId) || { amount: 0, principalAmount: 0, benefitAmount: 0 };
-      const originalPrincipal = original.principalAmount || original.amount;
+      const originalPrincipal = original.principalAmount;
       const originalBenefit = original.benefitAmount;
       const principalAvailable = Math.max(0, money(originalPrincipal - previous.principalAmount));
       const benefitAvailable = Math.max(0, money(originalBenefit - previous.benefitAmount));
@@ -509,7 +513,6 @@ export class PaymentSettlementService {
     const person = clone(objectValue(paymentData.person));
     const ownerKey = personKey(person);
 
-    await this.serializable(async (tx) => {
       await restoreDepositAllocations(tx, tenantId, restoredDeposits, occurredAt);
       if (personalAccountRestored > 0) {
         if (!ownerKey) throw new BadRequestException('У оплаты отсутствует человек Личного счёта');
@@ -547,6 +550,7 @@ export class PaymentSettlementService {
           personalAccountRestored,
           reason: text(input.reason),
           settlement: clone(objectValue(paymentData.settlement)),
+          depositDiscount: depositDiscountForRefund(paymentData, serviceAmount, refundedService),
         },
         entries: [
           ...(cashServiceAmount > 0 ? [{ walletId, walletName, amount: cashServiceAmount, component: 'service', direction: 'OUT', economicType: 'SERVICE_REFUND' }] : []),

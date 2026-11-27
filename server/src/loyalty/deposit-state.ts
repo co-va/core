@@ -44,6 +44,83 @@ export function depositBenefitRate(value: unknown) {
   return Math.max(0, Math.min(100, numberValue(terms.benefitValue)));
 }
 
+// Price-condition benefit is a non-cash fact. Keep the existing net allocation
+// contract: gross charge minus conditional benefit equals the actual payment.
+export function depositDiscountForPayment(conditionValue: unknown, settlementValue: unknown, netValue: unknown, paidBeforeValue: unknown = 0) {
+  const condition = objectValue(conditionValue);
+  const settlement = objectValue(settlementValue);
+  const depositId = text(condition.depositId);
+  if (condition.programType !== 'deposit' || !depositId) return null;
+  const netAmount = depositMoney(netValue);
+  const total = depositMoney(settlement.planTotal);
+  const benefit = depositMoney(settlement.pricePercentTotal);
+  if (!total || !netAmount || !benefit) return null;
+  const before = Math.min(total, depositMoney(paidBeforeValue));
+  const after = Math.min(total, depositMoney(before + netAmount));
+  const benefitAmount = depositMoney(depositMoney(benefit * after / total) - depositMoney(benefit * before / total));
+  return { depositId, netAmount, benefitAmount, grossAmount: depositMoney(netAmount + benefitAmount),
+    articleId: 'system-deposit-benefit-granted', articleName: 'Предоставление выгоды по депозиту' };
+}
+
+export function savedDepositDiscount(dataValue: unknown) {
+  const data = objectValue(dataValue);
+  const saved = objectValue(data.depositDiscount);
+  if (text(saved.depositId)) {
+    const netAmount = depositMoney(saved.netAmount);
+    const benefitAmount = depositMoney(saved.benefitAmount);
+    return { depositId: text(saved.depositId), netAmount, benefitAmount, grossAmount: depositMoney(netAmount + benefitAmount),
+      articleId: 'system-deposit-benefit-granted', articleName: 'Предоставление выгоды по депозиту' };
+  }
+  // Old native payments already carry the server-selected source and settlement.
+  // Never infer an assignment from an imported discount without a source ID.
+  return depositDiscountForPayment(data.priceCondition, data.settlement, data.serviceAmount);
+}
+
+export function depositDiscountForRefund(paymentData: unknown, netValue: unknown, refundedBeforeValue: unknown = 0) {
+  const original = savedDepositDiscount(paymentData);
+  if (!original || !original.netAmount) return null;
+  const before = Math.min(original.netAmount, depositMoney(refundedBeforeValue));
+  const netAmount = Math.min(depositMoney(netValue), depositMoney(original.netAmount - before));
+  if (!netAmount) return null;
+  const after = depositMoney(before + netAmount);
+  const benefitAmount = depositMoney(depositMoney(original.benefitAmount * after / original.netAmount)
+    - depositMoney(original.benefitAmount * before / original.netAmount));
+  return { depositId: original.depositId, netAmount, benefitAmount, grossAmount: depositMoney(netAmount + benefitAmount),
+    articleId: 'system-deposit-benefit-reversed', articleName: 'Аннулирование выгоды по депозиту' };
+}
+
+export function depositConditionalBenefit(operations: unknown, depositId: string) {
+  const rows = Array.isArray(operations) ? operations.filter(row => row?.status === 'completed') : [];
+  const refunds = new Map<string, number>();
+  for (const row of rows) {
+    if (row.kind !== 'refund') continue;
+    const id = text(row.originalOperationId);
+    if (!id) continue;
+    refunds.set(id, depositMoney((refunds.get(id) || 0) + depositMoney(objectValue(row.data).serviceAmount)));
+  }
+  let benefit = 0;
+  for (const row of rows) {
+    if (row.kind !== 'payment') continue;
+    const discount = savedDepositDiscount(row.data);
+    if (!discount || discount.depositId !== depositId) continue;
+    const reversed = depositDiscountForRefund(row.data, refunds.get(text(row.operationId)) || 0);
+    benefit = depositMoney(benefit + Math.max(0, discount.benefitAmount - (reversed?.benefitAmount || 0)));
+  }
+  return benefit;
+}
+
+export function depositRefundQuote(row: { depositId: string; terms: unknown; principalBalance: unknown; benefitBalance: unknown; balance: unknown }, operations: unknown) {
+  const principal = depositMoney(row.principalBalance);
+  const accrued = depositMoney(row.benefitBalance);
+  const conditionalBenefit = depositBenefitMode(row.terms) === 'discount'
+    ? depositConditionalBenefit(operations, row.depositId) : 0;
+  // No negative payout and no creation of wallet money from a discount.
+  const conditionalWrittenOff = Math.min(principal, conditionalBenefit);
+  return { refundableAmount: depositMoney(principal - conditionalWrittenOff),
+    conditionalBenefit, conditionalWrittenOff, benefitWrittenOff: depositMoney(accrued + conditionalWrittenOff),
+    balanceBefore: depositMoney(row.balance) };
+}
+
 export function depositTermActiveAt(value: unknown, at: Date) {
   const terms = objectValue(value);
   const mode = text(terms.termMode).toLowerCase();
@@ -350,6 +427,11 @@ export async function restoreDepositAllocations(db: Db, tenantId: string, values
       where: { tenantId_depositId: { tenantId, depositId: allocation.depositId } },
     });
     if (!row) throw new BadRequestException('Депозит для возврата не найден');
+    if (row.status === 'closed') {
+      const withdrawal = await db.financeOperation.findFirst({ where: { tenantId, kind: 'deposit-withdrawal',
+        sourceType: 'deposit', sourceId: row.depositId, status: 'completed' }, select: { id: true } });
+      if (withdrawal) throw new BadRequestException('Депозит расторгнут. Возврат на закрытый депозит недоступен.');
+    }
     if (!depositTermActiveAt(row.terms, at) || row.status === 'expired') continue;
     const principal = depositMoney(row.principalBalance);
     const benefit = depositMoney(row.benefitBalance);
@@ -408,9 +490,12 @@ export async function closeDepositForRefund(db: Db, tenantId: string, depositId:
   });
   if (!row) throw new BadRequestException('Депозит не найден');
   if (row.status !== 'active' || !depositTermActiveAt(row.terms, at)) throw new BadRequestException('Возврат по этому депозиту недоступен');
-  const principal = depositMoney(row.principalBalance);
+  const operations = depositBenefitMode(row.terms) === 'discount'
+    ? await db.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['payment', 'refund'] } } }) : [];
+  const quote = depositRefundQuote(row, operations);
   const requested = depositMoney(amount);
-  if (Math.abs(requested - principal) > 0.009) throw new BadRequestException('Возврат должен закрывать весь остаток реальных денег депозита');
+  if (requested <= 0 || Math.abs(requested - quote.refundableAmount) > 0.009)
+    throw new BadRequestException('Сумма возврата должна соответствовать остатку после аннулирования выгоды');
   await db.loyaltyDepositInstance.update({
     where: { id: row.id },
     data: {
@@ -420,5 +505,5 @@ export async function closeDepositForRefund(db: Db, tenantId: string, depositId:
       status: 'closed',
     },
   });
-  return row;
+  return { ...row, ...quote };
 }

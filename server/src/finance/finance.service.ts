@@ -12,6 +12,10 @@ import {
   depositBenefitMode,
   expireDepositInstances,
   depositBenefitRate,
+  depositRefundQuote,
+  depositDiscountForPayment,
+  depositDiscountForRefund,
+  savedDepositDiscount,
   depositTermActiveAt,
   restoreDepositAllocations,
   reconsumeDepositAllocations,
@@ -191,6 +195,8 @@ const DEFAULT_FINANCE_ARTICLES = [
   { articleId: 'system-investment-income-payment', parentArticleId: 'system-expense', name: 'Выплата дохода инвестору', direction: 'OUT', economicType: 'INVESTMENT_INCOME_PAYMENT', systemKey: 'INVESTMENT_INCOME_PAYMENT', position: 176 },
   { articleId: 'system-deposit-return', parentArticleId: 'system-expense', name: 'Возврат депозита', direction: 'OUT', economicType: 'DEPOSIT_RETURN', systemKey: 'DEPOSIT_RETURN', position: 178 },
   { articleId: 'system-personal-account-withdrawal', parentArticleId: 'system-expense', name: 'Возврат с личного счёта', direction: 'OUT', economicType: 'PERSONAL_ACCOUNT_LIABILITY_OUT', systemKey: 'PERSONAL_ACCOUNT_LIABILITY_OUT', position: 180 },
+  { articleId: 'system-deposit-benefit-granted', parentArticleId: '', name: 'Предоставление выгоды по депозиту', direction: 'TRANSFER', economicType: 'DEPOSIT_BENEFIT_GRANTED', systemKey: 'DEPOSIT_BENEFIT_GRANTED', position: 201 },
+  { articleId: 'system-deposit-benefit-reversed', parentArticleId: '', name: 'Аннулирование выгоды по депозиту', direction: 'TRANSFER', economicType: 'DEPOSIT_BENEFIT_REVERSED', systemKey: 'DEPOSIT_BENEFIT_REVERSED', position: 202 },
   { articleId: 'system-transfer', parentArticleId: '', name: 'Перевод между кошельками', direction: 'TRANSFER', economicType: 'TRANSFER', systemKey: 'TRANSFER', position: 200 },
 ] as const;
 
@@ -274,7 +280,7 @@ export class FinanceService {
       if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId:id}}}))throw new BadRequestException('Возврат уже выполнен. Есть зависимые данные.');
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person.key},tx);
       const closed = await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
-      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,programName:deposit.programName,person:input.person,amount,total:amount,benefitWrittenOff:money(closed.benefitBalance),walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
+      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,programName:deposit.programName,person:input.person,amount,total:amount,benefitWrittenOff:closed.benefitWrittenOff,conditionalBenefitWrittenOff:closed.conditionalWrittenOff,balanceBefore:closed.balanceBefore,benefitArticleId:'system-deposit-benefit-reversed',benefitArticleName:'Аннулирование выгоды по депозиту',walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
     }
     if(input.depositAction!=='Пополнение')throw new BadRequestException('Уточните операцию депозита');
     const programs=await this.depositProgramsWith(tx,tenantId);const found=programs.filter(p=>text(p.name)===text(input.program || input.deposit));
@@ -554,6 +560,7 @@ export class FinanceService {
       where: { tenantId, ...(key ? { personKey: key } : {}) },
       orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
     });
+    const operations = await this.prisma.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['payment', 'refund'] } } });
     return rows.map((row) => ({
       depositId: row.depositId,
       programId: row.programId,
@@ -562,7 +569,7 @@ export class FinanceService {
       fundedAmount: money(row.initialAmount),
       principalBalance: money(row.principalBalance),
       benefitBalance: money(row.benefitBalance),
-      refundableAmount: row.status === 'active' ? money(row.principalBalance) : 0,
+      refundableAmount: row.status === 'active' ? depositRefundQuote(row, operations).refundableAmount : 0,
       balance: money(row.balance),
       terms: clone(objectValue(row.terms)),
       status: row.status,
@@ -660,7 +667,11 @@ export class FinanceService {
           person: deposit.person,
           amount,
           total: amount,
-          benefitWrittenOff: money(closed.benefitBalance),
+          benefitWrittenOff: closed.benefitWrittenOff,
+          conditionalBenefitWrittenOff: closed.conditionalWrittenOff,
+          balanceBefore: closed.balanceBefore,
+          benefitArticleId: 'system-deposit-benefit-reversed',
+          benefitArticleName: 'Аннулирование выгоды по депозиту',
           walletId,
           walletName,
           reason: text(input.reason),
@@ -1071,6 +1082,7 @@ export class FinanceService {
         data: {
           workplace: text(input.workplace), person: clone(objectValue(input.person)), allocations, depositAllocations,
           priceCondition: condition.source ? clone(condition.source) : null,
+          depositDiscount: depositDiscountForPayment(condition.source, settlement, serviceAmount, paid),
           cashTotal: cashAllocated, cashServiceAmount, total: money(serviceAmount + tips), serviceAmount, tips, settlement,
         },
         entries: components.map((entry) => ({ ...entry, direction: 'IN', economicType: entry.component === 'tips' ? 'TIPS' : 'SERVICE_REVENUE' })),
@@ -1160,11 +1172,12 @@ export class FinanceService {
 
   async recordRefund(tenantId: string, operationId: string, body: unknown) {
     const id = text(operationId);
-    const payment = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } } });
+    await this.serializable(async (tx) => {
+    const payment = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } } });
     if (!payment || payment.kind !== 'payment') throw new NotFoundException('Оплата не найдена');
     if (payment.status === 'cancelled') throw new BadRequestException('Отменённую оплату вернуть нельзя');
     const paymentData = objectValue(payment.data);
-    const refunds = await this.prisma.financeOperation.findMany({ where: { tenantId, kind: 'refund', originalOperationId: id, status: 'completed' } });
+    const refunds = await tx.financeOperation.findMany({ where: { tenantId, kind: 'refund', originalOperationId: id, status: 'completed' } });
     const refundedTips = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).tips), 0));
     const refundedService = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).serviceAmount), 0));
     const tipsRemaining = Math.max(0, money(paymentData.tips - refundedTips));
@@ -1212,7 +1225,6 @@ export class FinanceService {
     if (cashRefund > 0.009 && !walletId) throw new BadRequestException('Не выбран кошелёк возврата');
     const refundId = randomUUID();
     const occurredAt = requiredOccurredAt(input.occurredAt);
-    await this.serializable(async (tx) => {
       await restoreDepositAllocations(tx, tenantId, restoredDeposits, occurredAt);
       await this.createOperationWithEntries(tx, tenantId, {
         operationId: refundId,
@@ -1224,6 +1236,7 @@ export class FinanceService {
           workplace: text(paymentData.workplace), person: clone(objectValue(paymentData.person)), walletId, walletName,
           total: money(serviceAmount + tips), cashTotal: cashRefund, cashServiceAmount, serviceAmount, tips,
           depositAllocations: restoredDeposits, reason: text(input.reason), settlement: clone(objectValue(paymentData.settlement)),
+          depositDiscount: depositDiscountForRefund(paymentData, serviceAmount, refundedService),
         },
         entries: [
           ...(cashServiceAmount > 0 ? [{ walletId, walletName, amount: cashServiceAmount, component: 'service', direction: 'OUT', economicType: 'SERVICE_REFUND' }] : []),
@@ -1322,7 +1335,7 @@ export class FinanceService {
       }
     } else if (current.kind === 'payment') {
       const requestedDeposits = input.depositAllocations == null ? depositAllocationsValue(currentData.depositAllocations) : depositAllocationsValue(input.depositAllocations);
-      if (depositAllocationsValue(currentData.depositAllocations).length || requestedDeposits.length) {
+      if (savedDepositDiscount(currentData) || depositAllocationsValue(currentData.depositAllocations).length || requestedDeposits.length) {
         throw new BadRequestException('Оплату с депозитом нельзя корректировать напрямую. Отмените оплату и проведите её заново.');
       }
       const settlement = validSettlement(currentData.settlement);
@@ -1345,7 +1358,7 @@ export class FinanceService {
         cashTotal: cashAllocated, cashServiceAmount, total: money(serviceAmount + tips), serviceAmount, tips, settlement,
       };
       nextEntries = components.map((entry) => ({ ...entry, direction: 'IN', economicType: entry.component === 'tips' ? 'TIPS' : 'SERVICE_REVENUE' }));
-    } else if (current.kind === 'refund' && depositAllocationsValue(currentData.depositAllocations).length) {
+    } else if (current.kind === 'refund' && (objectValue(currentData.depositDiscount).depositId || depositAllocationsValue(currentData.depositAllocations).length)) {
       throw new BadRequestException('Возврат со списанием депозита нельзя корректировать напрямую. Отмените возврат и проведите его заново.');
     } else if (current.kind === 'refund') {
       const paymentId = text(current.originalOperationId);
