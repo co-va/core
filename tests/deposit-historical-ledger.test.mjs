@@ -253,3 +253,83 @@ assert.equal(prepaid[0].amount, 50,
   'An eligible future appointment can be prepaid with money already received');
 
 console.log('Historical deposit ledger: PASS');
+
+// Zero principal is a valid explicit fact, not a missing value.
+const restoreBody = state.slice(state.indexOf('function objectValue('), state.indexOf('export async function reconsumeDepositAllocations(')).replaceAll('export ', '');
+const { restoreDepositAllocations } = runInNewContext(stripTypeScriptTypes(restoreBody,{mode:'strip'})+'\n({ restoreDepositAllocations })',{depositHistoricalLedger,Error,BadRequestException:class extends Error{}});
+let restored;
+await restoreDepositAllocations({loyaltyDepositInstance:{
+  findUnique:async()=>({id:deposit,status:'active',terms:{},principalBalance:0,benefitBalance:10}),
+  update:async value=>{restored=value.data;},
+}},'tenant-1',used(100,0,100),new Date('2026-11-27T12:00:00Z'));
+assert.equal(restored.principalBalance,0,'Bonus-only refund must not mint cash principal');
+assert.equal(restored.benefitBalance,110);
+assert.equal(restored.balance,110);
+const financeSource=readFileSync(new URL('../server/src/finance/finance.service.ts',import.meta.url),'utf8');
+assert.ok(financeSource.includes('const originalPrincipal = original.principalAmount;'));
+assert.ok(!financeSource.includes('original.principalAmount || original.amount'));
+
+const { depositDiscountForPayment, depositDiscountForRefund, depositRefundQuote } = runInNewContext(
+  stripTypeScriptTypes(body, { mode: 'strip' }) + '\n({ depositDiscountForPayment, depositDiscountForRefund, depositRefundQuote })',
+  { depositHistoricalLedger, Error, BadRequestException: class extends Error {} },
+);
+const sourceCondition = {programType:'deposit',depositId:deposit,percent:20};
+const discountSettlement = {planTotal:8000,pricePercentTotal:2000};
+const discountPayment = depositDiscountForPayment(sourceCondition,discountSettlement,8000);
+assert.equal(discountPayment.grossAmount,10000);
+assert.equal(discountPayment.benefitAmount,2000);
+const pData={serviceAmount:8000,priceCondition:sourceCondition,settlement:discountSettlement,depositDiscount:discountPayment};
+const pRow={operationId:'p1',kind:'payment',status:'completed',data:pData};
+const quoted={depositId:deposit,terms,principalBalance:42000,benefitBalance:0,balance:42000};
+assert.equal(depositRefundQuote(quoted,[pRow]).refundableAmount,40000);
+assert.equal(depositRefundQuote(quoted,[pRow]).conditionalWrittenOff,2000);
+const refundDiscount=depositDiscountForRefund(pData,8000);
+assert.equal(refundDiscount.grossAmount,10000);
+assert.equal(refundDiscount.benefitAmount,2000);
+assert.equal(refundDiscount.netAmount,8000);
+const refundRow={kind:'refund',status:'completed',originalOperationId:'p1',data:{serviceAmount:8000,depositDiscount:refundDiscount}};
+assert.equal(depositRefundQuote({...quoted,principalBalance:50000,balance:50000},[pRow,refundRow]).refundableAmount,50000);
+assert.equal(depositDiscountForRefund(pData,4000).benefitAmount,1000);
+assert.equal(depositDiscountForRefund(pData,4000,4000).benefitAmount,1000);
+assert.equal(depositDiscountForPayment(sourceCondition,discountSettlement,4000,4000).benefitAmount,1000);
+assert.equal(depositRefundQuote(quoted,[{...pRow,data:{...pData,depositDiscount:null}}]).refundableAmount,40000);
+assert.equal(depositRefundQuote(quoted,[{...pRow,status:'cancelled'}]).refundableAmount,42000);
+await assert.rejects(restoreDepositAllocations({
+  loyaltyDepositInstance:{findUnique:async()=>({id:deposit,depositId:deposit,status:'closed',terms,principalBalance:0,benefitBalance:0}),update:async()=>{throw Error('must not reopen');}},
+  financeOperation:{findFirst:async()=>({id:'terminated'})},
+},'tenant-1',used(8000),new Date('2026-11-27T12:00:00Z')),/расторгнут/);
+
+const { depositDiscountAccounting }=runInNewContext(stripTypeScriptTypes(body,{mode:'strip'})+'\n({depositDiscountAccounting})',{depositHistoricalLedger,Error,BadRequestException:class extends Error{}});
+const funding={operationId:'fund',kind:'deposit-funding',status:'completed',sourceType:'deposit',sourceId:deposit,occurredAt:'2026-11-01T10:00:00Z',data:{amount:50000}};
+const paidOp={...pRow,occurredAt:'2026-11-02T10:00:00Z',data:{...pData,depositAllocations:used(8000)}};
+const project=depositDiscountAccounting([funding,paidOp],deposit);
+assert.equal(project.complete,true);
+assert.equal(project.realBalance,40000);
+assert.equal(project.benefitBalance,2000);
+assert.equal(project.entries.get('p1').realDelta,-10000);
+assert.equal(project.entries.get('p1').benefitDelta,2000);
+assert.equal(depositRefundQuote(quoted,[funding,paidOp]).accountingComplete,true);
+assert.equal(depositRefundQuote(quoted,[funding,paidOp]).refundableAmount,40000);
+const fullRefund={...refundRow,operationId:'r1',occurredAt:'2026-11-03T10:00:00Z',data:{...refundRow.data,depositAllocations:used(8000)}};
+const returnedAccounting=depositDiscountAccounting([funding,paidOp,fullRefund],deposit);
+assert.equal(returnedAccounting.realBalance,50000);
+assert.equal(returnedAccounting.benefitBalance,0);
+assert.equal(returnedAccounting.entries.get('r1').realDelta,10000);
+assert.equal(returnedAccounting.entries.get('r1').benefitDelta,-2000);
+const repeat=Array.from({length:5},(_,i)=>({...paidOp,operationId:'repeat-'+i,occurredAt:'2026-11-0'+(i+2)+'T10:00:00Z'}));
+const fulfilled=depositDiscountAccounting([funding,...repeat],deposit);
+assert.equal(fulfilled.realBalance,0);
+assert.equal(fulfilled.benefitBalance,10000);
+assert.equal(depositRefundQuote({...quoted,principalBalance:10000,balance:10000},[funding,...repeat]).refundableAmount,0);
+const lastPay={...paidOp,operationId:'last',occurredAt:'2026-11-09T10:00:00Z'};
+const afterBonusSpend=depositDiscountAccounting([funding,...repeat,lastPay],deposit);
+assert.equal(afterBonusSpend.realBalance,0);
+assert.equal(afterBonusSpend.benefitBalance,2000);
+assert.equal(afterBonusSpend.entries.get('last').benefitUsed,10000);
+const cashPayment={...paidOp,data:{...pData,depositAllocations:[]}};
+assert.equal(depositRefundQuote({...quoted,principalBalance:50000,balance:50000},[funding,cashPayment]).refundableAmount,48000);
+
+const topped={...funding,operationId:'top',occurredAt:'2026-11-03T10:00:00Z',data:{amount:5000}};
+const toppedProjection=depositDiscountAccounting([funding,paidOp,topped],deposit);
+assert.equal(toppedProjection.balances.get('top').realBalance,45000);
+assert.equal(toppedProjection.balances.get('top').benefitBalance,2000);

@@ -7,6 +7,8 @@ import { FinanceService } from '../finance/finance.service';
 import {
   depositBenefitMode,
   depositBenefitRate,
+  depositRefundQuote,
+  depositDiscountAccounting,
   depositTermActiveAt,
   expireDepositInstances,
 } from './deposit-state';
@@ -199,6 +201,7 @@ export class DepositService {
     // "balance after" column would go stale when an earlier payment is imported.
     items.sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)));
     const byOperation = new Map(operations.map(op => [text(op.operationId), op]));
+    const discountAccounting = mode === 'discount' ? depositDiscountAccounting(operations,id) : null;
     let principal = 0, bonus = 0, funded = 0;
     const nominal = money(terms.amount);
     const fixed = text(terms.amountMode) === 'fixed' && nominal > 0;
@@ -230,9 +233,12 @@ export class DepositService {
         principal = Math.max(0, money(principal - p));
         bonus = Math.max(0, money(bonus - b));
       }
+      const accounting = discountAccounting?.complete ? discountAccounting.entries.get(text(item.operationId)) : null;
+      const splitAfter = discountAccounting?.complete ? discountAccounting.balances.get(text(item.operationId)) : null;
       return { ...item,
-        principalAfter: principal,
-        benefitAfter: bonus,
+        ...(accounting ? { grossAmount:accounting.grossAmount, benefitGranted:accounting.benefitGranted, benefitReversed:accounting.benefitReversed } : {}),
+        principalAfter: splitAfter ? splitAfter.realBalance : principal,
+        benefitAfter: splitAfter ? splitAfter.benefitBalance : bonus,
         balanceAfter: money(principal + bonus),
         fundedTotal: funded,
         dueToFund: fixed ? Math.max(0, money(nominal - funded)) : null,
@@ -253,6 +259,7 @@ export class DepositService {
     const terms = objectValue(row.terms);
     const mode = depositBenefitMode(terms);
     const presentation = objectValue(terms.presentation);
+    const quote = depositRefundQuote({ ...row, principalBalance, benefitBalance, balance }, operations);
     return {
       depositId: row.depositId,
       programId: row.programId,
@@ -263,7 +270,12 @@ export class DepositService {
       fundedAmount: money(row.initialAmount),
       principalBalance,
       benefitBalance,
-      refundableAmount: row.status === 'active' ? principalBalance : 0,
+      refundableAmount: row.status === 'active' && quote.accountingComplete ? quote.refundableAmount : 0,
+      conditionalBenefit: quote.conditionalBenefit,
+      realBalance: quote.realBalance,
+      conditionalBenefitBalance: quote.conditionalBenefitBalance,
+      accountingComplete: quote.accountingComplete,
+      conditionalWrittenOff: quote.conditionalWrittenOff,
       balance,
       // Expired funds are visible but can only be spent by a historic visit
       // that was inside the original term and has a sufficient as-of balance.
@@ -276,7 +288,7 @@ export class DepositService {
       benefitMode: mode,
       discountPercent: mode === 'discount' && row.status === 'active' && depositTermActiveAt(terms, new Date()) ? depositBenefitRate(terms) : 0,
       status: row.status,
-      canRefund: row.status === 'active' && principalBalance > 0.009 && depositTermActiveAt(terms, new Date()),
+      canRefund: row.status === 'active' && quote.accountingComplete && quote.refundableAmount > 0.009 && depositTermActiveAt(terms, new Date()),
       fundedAt: row.fundedAt.toISOString(),
       fundingOperationId: row.fundingOperationId,
       history: this.history(row, operations),
@@ -381,12 +393,12 @@ export class DepositService {
           walletName,
           component: 'deposit-funding',
           relatedOperationId: '',
-          articleId: '',
-          articleName: '',
+          articleId: 'system-deposit-received',
+          articleName: 'Пополнение депозита',
           lineName: row.programName || 'Депозит',
           quantity: null,
           unitPrice: null,
-          note: row.personKey,
+          note: '',
         } as Prisma.InputJsonValue,
       },
     });
@@ -530,7 +542,7 @@ export class DepositService {
           sourceId: id,
           data: {
             walletName: nextWalletName, component: 'deposit-funding', relatedOperationId: '',
-            articleId: '', articleName: '', lineName: row.programName || 'Депозит', quantity: null, unitPrice: null, note: row.personKey,
+            articleId: 'system-deposit-received', articleName: 'Пополнение депозита', lineName: row.programName || 'Депозит', quantity: null, unitPrice: null, note: '',
           } as Prisma.InputJsonValue,
         },
       });
@@ -598,6 +610,7 @@ export class DepositService {
   async withdraw(tenantId: string, depositId: string, body: unknown) {
     const id = text(depositId);
     const current = await this.get(tenantId, id);
+    if (current.accountingComplete === false) throw new BadRequestException('Невозможно подтвердить денежную и бонусную части исторических операций депозита. Возврат заблокирован до сверки.');
     if (!current.canRefund || current.refundableAmount <= 0.009) {
       throw new BadRequestException(current.status === 'expired'
         ? 'Срок депозита закончился. Возврат после окончания срока недоступен.'

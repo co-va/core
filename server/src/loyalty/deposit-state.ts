@@ -44,6 +44,177 @@ export function depositBenefitRate(value: unknown) {
   return Math.max(0, Math.min(100, numberValue(terms.benefitValue)));
 }
 
+// Price-condition benefit is a non-cash fact. Keep the existing net allocation
+// contract: gross charge minus conditional benefit equals the actual payment.
+export function depositDiscountForPayment(conditionValue: unknown, settlementValue: unknown, netValue: unknown, paidBeforeValue: unknown = 0) {
+  const condition = objectValue(conditionValue);
+  const settlement = objectValue(settlementValue);
+  const depositId = text(condition.depositId);
+  if (condition.programType !== 'deposit' || !depositId) return null;
+  const netAmount = depositMoney(netValue);
+  const total = depositMoney(settlement.planTotal);
+  const benefit = depositMoney(settlement.pricePercentTotal);
+  if (!total || !netAmount || !benefit) return null;
+  const before = Math.min(total, depositMoney(paidBeforeValue));
+  const after = Math.min(total, depositMoney(before + netAmount));
+  const benefitAmount = depositMoney(depositMoney(benefit * after / total) - depositMoney(benefit * before / total));
+  return { depositId, netAmount, benefitAmount, grossAmount: depositMoney(netAmount + benefitAmount),
+    articleId: 'system-deposit-benefit-granted', articleName: 'Предоставление выгоды по депозиту' };
+}
+
+export function savedDepositDiscount(dataValue: unknown) {
+  const data = objectValue(dataValue);
+  const saved = objectValue(data.depositDiscount);
+  if (text(saved.depositId)) {
+    const netAmount = depositMoney(saved.netAmount);
+    const benefitAmount = depositMoney(saved.benefitAmount);
+    return { depositId: text(saved.depositId), netAmount, benefitAmount, grossAmount: depositMoney(netAmount + benefitAmount),
+      articleId: 'system-deposit-benefit-granted', articleName: 'Предоставление выгоды по депозиту' };
+  }
+  // Old native payments already carry the server-selected source and settlement.
+  // Never infer an assignment from an imported discount without a source ID.
+  return depositDiscountForPayment(data.priceCondition, data.settlement, data.serviceAmount);
+}
+
+export function depositDiscountForRefund(paymentData: unknown, netValue: unknown, refundedBeforeValue: unknown = 0) {
+  const original = savedDepositDiscount(paymentData);
+  if (!original || !original.netAmount) return null;
+  const before = Math.min(original.netAmount, depositMoney(refundedBeforeValue));
+  const netAmount = Math.min(depositMoney(netValue), depositMoney(original.netAmount - before));
+  if (!netAmount) return null;
+  const after = depositMoney(before + netAmount);
+  const benefitAmount = depositMoney(depositMoney(original.benefitAmount * after / original.netAmount)
+    - depositMoney(original.benefitAmount * before / original.netAmount));
+  return { depositId: original.depositId, netAmount, benefitAmount, grossAmount: depositMoney(netAmount + benefitAmount),
+    articleId: 'system-deposit-benefit-reversed', articleName: 'Аннулирование выгоды по депозиту' };
+}
+
+export function depositConditionalBenefit(operations: unknown, depositId: string) {
+  const rows = Array.isArray(operations) ? operations.filter(row => row?.status === 'completed') : [];
+  const refunds = new Map<string, number>();
+  for (const row of rows) {
+    if (row.kind !== 'refund') continue;
+    const id = text(row.originalOperationId);
+    if (!id) continue;
+    refunds.set(id, depositMoney((refunds.get(id) || 0) + depositMoney(objectValue(row.data).serviceAmount)));
+  }
+  let benefit = 0;
+  for (const row of rows) {
+    if (row.kind !== 'payment') continue;
+    const discount = savedDepositDiscount(row.data);
+    if (!discount || discount.depositId !== depositId) continue;
+    const reversed = depositDiscountForRefund(row.data, refunds.get(text(row.operationId)) || 0);
+    benefit = depositMoney(benefit + Math.max(0, discount.benefitAmount - (reversed?.benefitAmount || 0)));
+  }
+  return benefit;
+}
+
+// Canonical real/benefit view of discount deposits. The existing materialized
+// balance and allocations remain the NET spendability contract; the two
+// components below are replayed from immutable facts (including old payments).
+// Never put conditional benefit movements in the physical wallet ledger.
+export function depositDiscountAccounting(operations: unknown, depositId: string) {
+  const rows = (Array.isArray(operations) ? operations : []).filter(row => row?.status === 'completed')
+    .slice().sort((a,b) => new Date(a.occurredAt || 0).getTime() - new Date(b.occurredAt || 0).getTime()
+      || new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+  const signed = (v:number) => Math.round(v * 100) / 100;
+  const entries = new Map<string, { depositId:string; netAmount:number; grossAmount:number; realDelta:number;
+    benefitDelta:number; benefitGranted:number; benefitUsed:number; benefitRestored:number; benefitReversed:number;
+    realAfter:number; benefitAfter:number; articleId:string; articleName:string }>();
+  const returned = new Map<string,number>();
+  const balances=new Map<string,{realBalance:number;benefitBalance:number}>();
+  let real=0, bonus=0, creditNet=0, hasFunding=false, complete=true, withdrawn=false;
+  for (const row of rows) {
+    const data=objectValue(row.data), id=text(row.operationId);
+    const own=row.sourceType==='deposit' && text(row.sourceId)===depositId;
+    if (row.kind==='deposit-funding' && own) {
+      if (withdrawn) complete=false;
+      real=signed(real+depositMoney(data.amount ?? data.total)); hasFunding=true;
+      if(id)balances.set(id,{realBalance:real,benefitBalance:bonus});
+      continue;
+    }
+    if (row.kind==='deposit-withdrawal' && own) { real=0; bonus=0; withdrawn=true; if(id)balances.set(id,{realBalance:0,benefitBalance:0}); continue; }
+    if (!['payment','refund','deposit-import-spend'].includes(row.kind)) continue;
+    const allocations=Array.isArray(data.depositAllocations)?data.depositAllocations:[];
+    const netAmount=depositMoney(allocations.reduce((sum:number, raw:unknown)=>{
+      const a=objectValue(raw);
+      return sum+(text(a.depositId ?? a.sourceId ?? a.id)===depositId?depositMoney(a.amount):0);
+    },0));
+    if (!netAmount) continue;
+    if (withdrawn) complete=false;
+    const oldReal=real, oldBonus=bonus;
+    let grossAmount=netAmount, benefitGranted=0, benefitUsed=0, benefitRestored=0, benefitReversed=0;
+    if (row.kind==='refund') {
+      const originalId=text(row.originalOperationId), original=entries.get(originalId);
+      const before=returned.get(originalId)||0;
+      if (!original || before+netAmount>original.netAmount+0.009) {
+        // Missing historical linkage is not evidence of a cash refund split.
+        complete=false; real=signed(real+netAmount);
+      } else {
+        const after=depositMoney(before+netAmount);
+        const part=(value:number)=>signed(depositMoney(value*after/original.netAmount)-depositMoney(value*before/original.netAmount));
+        benefitReversed=part(original.benefitGranted);
+        grossAmount=depositMoney(netAmount+benefitReversed);
+        const realRestored=Math.min(grossAmount,part(-original.realDelta));
+        benefitRestored=depositMoney(grossAmount-realRestored);
+        real=signed(real+realRestored);
+        bonus=signed(bonus+benefitRestored-benefitReversed);
+        // If a later service already used the credited benefit, its reversal
+        // comes out of the restored amount, not out of newly invented cash.
+        if (bonus<0) { real=signed(real+bonus); bonus=0; }
+        returned.set(originalId,after);
+        creditNet=signed(creditNet-benefitReversed);
+      }
+    } else {
+      const discount=savedDepositDiscount(data);
+      if (discount?.depositId===depositId && discount.netAmount>0) {
+        benefitGranted=depositMoney(discount.benefitAmount*Math.min(netAmount,discount.netAmount)/discount.netAmount);
+      } else if (!discount && depositMoney(objectValue(data.settlement).pricePercentTotal)>0 && !objectValue(data.priceCondition).type) {
+        // Historical automatic discount without a saved program cannot be
+        // assigned to this deposit by guessing.
+        complete=false;
+      }
+      grossAmount=depositMoney(netAmount+benefitGranted);
+      const realSpent=Math.min(Math.max(0,real),grossAmount);
+      benefitUsed=depositMoney(grossAmount-realSpent);
+      real=signed(real-realSpent);
+      bonus=signed(bonus+benefitGranted-benefitUsed);
+      creditNet=signed(creditNet+benefitGranted);
+    }
+    if (real< -0.009 || bonus< -0.009) complete=false;
+    if(id)balances.set(id,{realBalance:real,benefitBalance:bonus});
+    if (id) entries.set(id,{depositId,netAmount,grossAmount,realDelta:signed(real-oldReal),
+      benefitDelta:signed(bonus-oldBonus),benefitGranted,benefitUsed,benefitRestored,benefitReversed,
+      realAfter:real,benefitAfter:bonus,
+      articleId:row.kind==='refund'?'system-deposit-payment-refund':'system-deposit-spend',
+      articleName:row.kind==='refund'?'Возврат на депозит':'Списание с депозита'});
+  }
+  return { realBalance:depositMoney(real), benefitBalance:depositMoney(bonus),
+    creditedBenefit:depositMoney(creditNet), complete:complete&&hasFunding, entries, balances };
+}
+
+export function depositRefundQuote(row: { depositId: string; terms: unknown; principalBalance: unknown; benefitBalance: unknown; balance: unknown }, operations: unknown) {
+  const principal = depositMoney(row.principalBalance);
+  const accrued = depositMoney(row.benefitBalance);
+  const balanceBefore = depositMoney(row.balance);
+  if (depositBenefitMode(row.terms) !== 'discount') {
+    return {refundableAmount:principal,conditionalBenefit:0,conditionalWrittenOff:0,
+      benefitWrittenOff:accrued,balanceBefore,realBalance:principal,conditionalBenefitBalance:0,accountingComplete:true};
+  }
+  const conditionalBenefit=depositConditionalBenefit(operations,row.depositId);
+  const projection=depositDiscountAccounting(operations,row.depositId);
+  const accountingComplete=projection.complete && Math.abs(projection.realBalance+projection.benefitBalance-balanceBefore)<0.009;
+  const externalBenefit=Math.max(0,depositMoney(conditionalBenefit-projection.creditedBenefit));
+  const refundableAmount=accountingComplete
+    ? depositMoney(projection.realBalance-Math.min(projection.realBalance,externalBenefit))
+    : depositMoney(principal-Math.min(principal,conditionalBenefit));
+  const conditionalWrittenOff=depositMoney(balanceBefore-refundableAmount);
+  return {refundableAmount,conditionalBenefit,conditionalWrittenOff,
+    benefitWrittenOff:conditionalWrittenOff,balanceBefore,
+    realBalance:accountingComplete?projection.realBalance:null,
+    conditionalBenefitBalance:accountingComplete?projection.benefitBalance:null,accountingComplete};
+}
+
 export function depositTermActiveAt(value: unknown, at: Date) {
   const terms = objectValue(value);
   const mode = text(terms.termMode).toLowerCase();
@@ -92,8 +263,8 @@ function normalizedDepositAllocations(values: unknown) {
         depositId: text(row.depositId ?? row.sourceId ?? row.id),
         name: text(row.name ?? row.label),
         amount: depositMoney(row.amount),
-        principalAmount: depositMoney(row.principalAmount),
-        benefitAmount: depositMoney(row.benefitAmount),
+        principalAmount: row.principalAmount == null ? Math.max(0, depositMoney(depositMoney(row.amount) - depositMoney(row.benefitAmount))) : depositMoney(row.principalAmount),
+        benefitAmount: row.benefitAmount == null ? Math.max(0, depositMoney(depositMoney(row.amount) - depositMoney(row.principalAmount == null ? row.amount : row.principalAmount))) : depositMoney(row.benefitAmount),
       };
     })
     .filter((row) => row.depositId && row.amount > 0);
@@ -350,10 +521,15 @@ export async function restoreDepositAllocations(db: Db, tenantId: string, values
       where: { tenantId_depositId: { tenantId, depositId: allocation.depositId } },
     });
     if (!row) throw new BadRequestException('Депозит для возврата не найден');
+    if (row.status === 'closed') {
+      const withdrawal = await db.financeOperation.findFirst({ where: { tenantId, kind: 'deposit-withdrawal',
+        sourceType: 'deposit', sourceId: row.depositId, status: 'completed' }, select: { id: true } });
+      if (withdrawal) throw new BadRequestException('Депозит расторгнут. Возврат на закрытый депозит недоступен.');
+    }
     if (!depositTermActiveAt(row.terms, at) || row.status === 'expired') continue;
     const principal = depositMoney(row.principalBalance);
     const benefit = depositMoney(row.benefitBalance);
-    const principalRestore = Math.min(allocation.amount, allocation.principalAmount || allocation.amount);
+    const principalRestore = Math.min(allocation.amount, allocation.principalAmount);
     const benefitRestore = Math.min(depositMoney(allocation.amount - principalRestore), allocation.benefitAmount);
     const nextPrincipal = depositMoney(principal + principalRestore);
     const nextBenefit = depositMoney(benefit + benefitRestore);
@@ -401,6 +577,15 @@ export async function reconsumeDepositAllocations(db: Db, tenantId: string, valu
   }
 }
 
+export async function assertDepositDiscountRefundAllowed(db: Db, tenantId: string, paymentData: unknown) {
+  const discount=savedDepositDiscount(paymentData);
+  if(!discount) return;
+  const withdrawal=await db.financeOperation.findFirst({where:{tenantId,kind:'deposit-withdrawal',sourceType:'deposit',
+    sourceId:discount.depositId,status:'completed'},select:{data:true}});
+  if(withdrawal&&depositMoney(objectValue(withdrawal.data).conditionalBenefitWrittenOff)>0)
+    throw new BadRequestException('Депозит расторгнут с аннулированием выгоды. Для возврата услуги требуется сверка документа расторжения.');
+}
+
 export async function closeDepositForRefund(db: Db, tenantId: string, depositId: string, amount: number, at: Date) {
   await expireDepositInstances(db, tenantId, depositId);
   const row = await db.loyaltyDepositInstance.findUnique({
@@ -408,9 +593,13 @@ export async function closeDepositForRefund(db: Db, tenantId: string, depositId:
   });
   if (!row) throw new BadRequestException('Депозит не найден');
   if (row.status !== 'active' || !depositTermActiveAt(row.terms, at)) throw new BadRequestException('Возврат по этому депозиту недоступен');
-  const principal = depositMoney(row.principalBalance);
+  const operations = depositBenefitMode(row.terms) === 'discount'
+    ? await db.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['deposit-funding','deposit-withdrawal','deposit-import-spend','payment', 'refund'] } } }) : [];
+  const quote = depositRefundQuote(row, operations);
+  if (!quote.accountingComplete) throw new BadRequestException('Невозможно подтвердить денежную и бонусную части исторических операций депозита. Возврат заблокирован до сверки.');
   const requested = depositMoney(amount);
-  if (Math.abs(requested - principal) > 0.009) throw new BadRequestException('Возврат должен закрывать весь остаток реальных денег депозита');
+  if (requested <= 0 || Math.abs(requested - quote.refundableAmount) > 0.009)
+    throw new BadRequestException('Сумма возврата должна соответствовать остатку после аннулирования выгоды');
   await db.loyaltyDepositInstance.update({
     where: { id: row.id },
     data: {
@@ -420,5 +609,5 @@ export async function closeDepositForRefund(db: Db, tenantId: string, depositId:
       status: 'closed',
     },
   });
-  return row;
+  return { ...row, ...quote };
 }

@@ -12,11 +12,19 @@ import {
   depositBenefitMode,
   expireDepositInstances,
   depositBenefitRate,
+  depositRefundQuote,
+  depositDiscountAccounting,
+  depositDiscountForPayment,
+  depositDiscountForRefund,
+  savedDepositDiscount,
+  assertDepositDiscountRefundAllowed,
   depositTermActiveAt,
   restoreDepositAllocations,
   reconsumeDepositAllocations,
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent } from '../loyalty/price-condition';
+import { financeArticleCatalog, classifyFinanceLedger, financeArticleRoute, RETIRED_SYSTEM_ARTICLE_KEYS } from './article-catalog';
+import { projectPositionMovements, splitCashByComponent, detailDepositPositionComponents } from './position-movements';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -154,8 +162,8 @@ function depositAllocationsValue(value: unknown) {
         depositId: text(row.depositId ?? row.sourceId ?? row.id),
         name: text(row.name ?? row.label),
         amount: money(row.amount),
-        principalAmount: money(row.principalAmount),
-        benefitAmount: money(row.benefitAmount),
+        principalAmount: row.principalAmount == null ? Math.max(0, money(money(row.amount) - money(row.benefitAmount))) : money(row.principalAmount),
+        benefitAmount: row.benefitAmount == null ? Math.max(0, money(money(row.amount) - money(row.principalAmount == null ? row.amount : row.principalAmount))) : money(row.benefitAmount),
       };
     })
     .filter((entry) => entry.depositId && entry.amount > 0);
@@ -176,6 +184,8 @@ const DEFAULT_FINANCE_ARTICLES = [
   { articleId: 'system-investment-received', parentArticleId: 'system-income', name: 'Инвестиции', direction: 'IN', economicType: 'INVESTMENT_RECEIVED', systemKey: 'INVESTMENT_RECEIVED', position: 70 },
   { articleId: 'system-investment-capital-return', parentArticleId: 'system-income', name: 'Возврат капитала', direction: 'IN', economicType: 'INVESTMENT_CAPITAL_RETURN', systemKey: 'INVESTMENT_CAPITAL_RETURN', position: 72 },
   { articleId: 'system-investment-income', parentArticleId: 'system-income', name: 'Доход инвестиции', direction: 'IN', economicType: 'INVESTMENT_INCOME', systemKey: 'INVESTMENT_INCOME', position: 74 },
+  { articleId: 'system-deposit-received', parentArticleId: 'system-income', name: 'Пополнение депозита', direction: 'IN', economicType: 'DEPOSIT_RECEIVED', systemKey: 'DEPOSIT_RECEIVED', position: 76 },
+  { articleId: 'system-personal-account-funding', parentArticleId: 'system-income', name: 'Пополнение личного счёта', direction: 'IN', economicType: 'PERSONAL_ACCOUNT_LIABILITY_IN', systemKey: 'PERSONAL_ACCOUNT_LIABILITY_IN', position: 78 },
   { articleId: 'system-expense', parentArticleId: '', name: 'Расходы', direction: 'OUT', economicType: 'GROUP', systemKey: 'EXPENSE_ROOT', position: 100 },
   { articleId: 'system-materials', parentArticleId: 'system-expense', name: 'Материалы', direction: 'OUT', economicType: 'OPERATING_EXPENSE', systemKey: 'MATERIALS', position: 110 },
   { articleId: 'system-rent', parentArticleId: 'system-expense', name: 'Аренда', direction: 'OUT', economicType: 'OPERATING_EXPENSE', systemKey: 'RENT', position: 120 },
@@ -187,6 +197,12 @@ const DEFAULT_FINANCE_ARTICLES = [
   { articleId: 'system-investment-contribution', parentArticleId: 'system-expense', name: 'Вложение', direction: 'OUT', economicType: 'INVESTMENT_CONTRIBUTION', systemKey: 'INVESTMENT_CONTRIBUTION', position: 172 },
   { articleId: 'system-investment-expense', parentArticleId: 'system-expense', name: 'Расход инвестиции', direction: 'OUT', economicType: 'INVESTMENT_EXPENSE', systemKey: 'INVESTMENT_EXPENSE', position: 174 },
   { articleId: 'system-investment-income-payment', parentArticleId: 'system-expense', name: 'Выплата дохода инвестору', direction: 'OUT', economicType: 'INVESTMENT_INCOME_PAYMENT', systemKey: 'INVESTMENT_INCOME_PAYMENT', position: 176 },
+  { articleId: 'system-deposit-return', parentArticleId: 'system-expense', name: 'Возврат депозита', direction: 'OUT', economicType: 'DEPOSIT_RETURN', systemKey: 'DEPOSIT_RETURN', position: 178 },
+  { articleId: 'system-personal-account-withdrawal', parentArticleId: 'system-expense', name: 'Возврат с личного счёта', direction: 'OUT', economicType: 'PERSONAL_ACCOUNT_LIABILITY_OUT', systemKey: 'PERSONAL_ACCOUNT_LIABILITY_OUT', position: 180 },
+  { articleId: 'system-deposit-spend', parentArticleId: '', name: 'Списание с депозита', direction: 'TRANSFER', economicType: 'DEPOSIT_SPEND', systemKey: 'DEPOSIT_SPEND', position: 203 },
+  { articleId: 'system-deposit-payment-refund', parentArticleId: '', name: 'Возврат на депозит', direction: 'TRANSFER', economicType: 'DEPOSIT_PAYMENT_REFUND', systemKey: 'DEPOSIT_PAYMENT_REFUND', position: 204 },
+  { articleId: 'system-deposit-benefit-granted', parentArticleId: '', name: 'Предоставление выгоды по депозиту', direction: 'TRANSFER', economicType: 'DEPOSIT_BENEFIT_GRANTED', systemKey: 'DEPOSIT_BENEFIT_GRANTED', position: 201 },
+  { articleId: 'system-deposit-benefit-reversed', parentArticleId: '', name: 'Аннулирование выгоды по депозиту', direction: 'TRANSFER', economicType: 'DEPOSIT_BENEFIT_REVERSED', systemKey: 'DEPOSIT_BENEFIT_REVERSED', position: 202 },
   { articleId: 'system-transfer', parentArticleId: '', name: 'Перевод между кошельками', direction: 'TRANSFER', economicType: 'TRANSFER', systemKey: 'TRANSFER', position: 200 },
 ] as const;
 
@@ -195,6 +211,7 @@ const ARTICLE_ECONOMIC_TYPES = new Set([
   'GROUP', 'OPERATING_REVENUE', 'PRODUCT_REVENUE', 'OPERATING_EXPENSE', 'TAX', 'TIPS', 'REFUND',
   'LOAN_RECEIVED', 'LOAN_REPAYMENT', 'INVESTMENT_RECEIVED', 'INVESTMENT_RETURN', 'INVESTMENT_CONTRIBUTION',
   'INVESTMENT_CAPITAL_RETURN', 'INVESTMENT_INCOME', 'INVESTMENT_EXPENSE', 'INVESTMENT_INCOME_PAYMENT', 'TRANSFER',
+  'DEPOSIT_RECEIVED', 'DEPOSIT_RETURN', 'PERSONAL_ACCOUNT_LIABILITY_IN', 'PERSONAL_ACCOUNT_LIABILITY_OUT',
 ]);
 
 const SPECIAL_FINANCE_DEFINITIONS: Record<string, {
@@ -216,24 +233,8 @@ const SPECIAL_FINANCE_DEFINITIONS: Record<string, {
 };
 
 function splitAllocationComponents(allocations: JsonObject[], serviceAmount: number, tips: number) {
-  let serviceLeft = money(serviceAmount);
-  let tipsLeft = money(tips);
-  const entries: JsonObject[] = [];
-  for (const allocation of allocations) {
-    let walletLeft = money(allocation.amount);
-    const service = Math.min(walletLeft, serviceLeft);
-    if (service > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: service, component: 'service' });
-      walletLeft = money(walletLeft - service);
-      serviceLeft = money(serviceLeft - service);
-    }
-    const tip = Math.min(walletLeft, tipsLeft);
-    if (tip > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: tip, component: 'tips' });
-      tipsLeft = money(tipsLeft - tip);
-    }
-  }
-  if (serviceLeft > 0.009 || tipsLeft > 0.009) throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
+  const entries=splitCashByComponent(allocations,serviceAmount,tips);
+  if(!entries)throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
   return entries;
 }
 
@@ -268,8 +269,8 @@ export class FinanceService {
     if(input.depositAction==='Возврат') {
       if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId:id}}}))throw new BadRequestException('Возврат уже выполнен. Есть зависимые данные.');
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person.key},tx);
-      await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
-      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
+      const closed = await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
+      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,programName:deposit.programName,person:input.person,amount,total:amount,benefitWrittenOff:closed.benefitWrittenOff,conditionalBenefitWrittenOff:closed.conditionalWrittenOff,balanceBefore:closed.balanceBefore,benefitArticleId:'system-deposit-benefit-reversed',benefitArticleName:'Аннулирование выгоды по депозиту',benefitWriteOffReason:closed.conditionalWrittenOff>0?'Досрочное расторжение депозитного договора до расходования внесённых средств':'',walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
     }
     if(input.depositAction!=='Пополнение')throw new BadRequestException('Уточните операцию депозита');
     const programs=await this.depositProgramsWith(tx,tenantId);const found=programs.filter(p=>text(p.name)===text(input.program || input.deposit));
@@ -330,7 +331,7 @@ export class FinanceService {
         workplace:text(paid.workplace),person:clone(objectValue(paid.person)),
         walletId:wallet.id,walletName:wallet.name,total:amount,
         cashTotal:amount,cashServiceAmount:serviceAmount,
-        serviceAmount,tips,depositAllocations:[],reason:text(input.note),
+        serviceAmount,tips,depositAllocations:[],reason:text(input.note),settlement:clone(objectValue(paid.settlement)),
       },
       entries:[
         ...(serviceAmount>0?[{walletId:wallet.id,walletName:wallet.name,amount:serviceAmount,
@@ -549,7 +550,10 @@ export class FinanceService {
       where: { tenantId, ...(key ? { personKey: key } : {}) },
       orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
     });
-    return rows.map((row) => ({
+    const operations = await this.prisma.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['deposit-funding','deposit-withdrawal','deposit-import-spend','payment', 'refund'] } } });
+    return rows.map((row) => {
+      const quote=depositRefundQuote(row,operations);
+      return {
       depositId: row.depositId,
       programId: row.programId,
       programName: row.programName,
@@ -557,13 +561,15 @@ export class FinanceService {
       fundedAmount: money(row.initialAmount),
       principalBalance: money(row.principalBalance),
       benefitBalance: money(row.benefitBalance),
-      refundableAmount: row.status === 'active' ? money(row.principalBalance) : 0,
+      refundableAmount: row.status === 'active' && quote.accountingComplete ? quote.refundableAmount : 0,
+      realBalance:quote.realBalance,conditionalBenefitBalance:quote.conditionalBenefitBalance,
+      conditionalBenefit:quote.conditionalBenefit,conditionalWrittenOff:quote.conditionalWrittenOff,accountingComplete:quote.accountingComplete,
       balance: money(row.balance),
       terms: clone(objectValue(row.terms)),
       status: row.status,
       fundedAt: row.fundedAt.toISOString(),
       fundingOperationId: row.fundingOperationId,
-    }));
+    }; });
   }
 
   async recordDepositFunding(tenantId: string, body: unknown) {
@@ -642,7 +648,7 @@ export class FinanceService {
 
     await this.serializable(async (tx) => {
       const deposit = await this.canonicalDepositWith(tx, tenantId, id);
-      await closeDepositForRefund(tx, tenantId, id, amount, occurredAt);
+      const closed = await closeDepositForRefund(tx, tenantId, id, amount, occurredAt);
       await this.createOperationWithEntries(tx, tenantId, {
         operationId,
         kind: 'deposit-withdrawal',
@@ -655,6 +661,12 @@ export class FinanceService {
           person: deposit.person,
           amount,
           total: amount,
+          benefitWrittenOff: closed.benefitWrittenOff,
+          conditionalBenefitWrittenOff: closed.conditionalWrittenOff,
+          balanceBefore: closed.balanceBefore,
+          benefitArticleId: 'system-deposit-benefit-reversed',
+          benefitArticleName: 'Аннулирование выгоды по депозиту',
+          benefitWriteOffReason: closed.conditionalWrittenOff>0?'Досрочное расторжение депозитного договора до расходования внесённых средств':'',
           walletId,
           walletName,
           reason: text(input.reason),
@@ -703,6 +715,18 @@ export class FinanceService {
     return { state: due <= 0.009 ? 'paid' : paid > 0.009 ? 'partial' : 'unpaid', paid, due };
   }
 
+  // Persist position links in the same transaction, not as new ledger rows.
+  async savePositionMovementsInTx(db: Db,tenantId:string,operation:{id:string;operationId:string;kind:string;sourceType:string;sourceId:string}) {
+    if(!['payment','refund'].includes(operation.kind))return;
+    const rows=await db.financeOperation.findMany({where:{tenantId,sourceType:operation.sourceType,sourceId:operation.sourceId,kind:{in:['payment','refund']}},include:{ledgerEntries:true}});
+    const movements=projectPositionMovements(rows,rows.flatMap(row=>row.ledgerEntries),operation.id).get(operation.operationId);
+    const current=rows.find(row=>row.id===operation.id);
+    if(!current)return;
+    const data=clone(objectValue(current.data));
+    if(movements)data.positionMovements=movements;else delete data.positionMovements;
+    await db.financeOperation.update({where:{id:operation.id},data:{data:json(data)}});
+  }
+
   private async createOperationWithEntries(db: Db, tenantId: string, {
     operationId, kind, status = 'completed', source, originalOperationId = '', occurredAt, data, entries,
   }: {
@@ -715,6 +739,7 @@ export class FinanceService {
       data: { tenantId, operationId, kind, status, sourceType: source.type, sourceId: source.id, originalOperationId, occurredAt, data: json(data) },
     });
     for (const entry of entries) {
+      const systemArticle=DEFAULT_FINANCE_ARTICLES.find(a=>a.systemKey===entry.economicType&&['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT'].includes(a.systemKey));
       await db.financeLedgerEntry.create({
         data: {
           tenantId,
@@ -729,17 +754,18 @@ export class FinanceService {
           sourceId: source.id,
           data: json({
             walletName: text(entry.walletName), component: text(entry.component), relatedOperationId: text(entry.relatedOperationId),
-            articleId: text(entry.articleId), articleName: text(entry.articleName), lineName: text(entry.lineName),
+            articleId: text(entry.articleId)||systemArticle?.articleId||'', articleName: text(entry.articleName)||systemArticle?.name||'', lineName: text(entry.lineName),
             quantity: entry.quantity == null ? null : numberValue(entry.quantity),
-            unitPrice: entry.unitPrice == null ? null : money(entry.unitPrice), note: text(entry.note),
+            unitPrice: entry.unitPrice == null ? null : money(entry.unitPrice), note: entry.economicType==='DEPOSIT_RECEIVED'?'':text(entry.note),
           }),
         },
       });
     }
+    await this.savePositionMovementsInTx(db,tenantId,operation);
     return db.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId } }, include: { ledgerEntries: true } });
   }
 
-  private async replaceOperationWithEntries(db: Db, tenantId: string, operation: { id: string; sourceType: string; sourceId: string }, occurredAt: Date, data: JsonObject, entries: JsonObject[]) {
+  private async replaceOperationWithEntries(db: Db, tenantId: string, operation: { id: string; operationId:string; kind:string; sourceType: string; sourceId: string }, occurredAt: Date, data: JsonObject, entries: JsonObject[]) {
     await db.financeLedgerEntry.deleteMany({ where: { tenantId, financeOperationId: operation.id } });
     await db.financeOperation.update({ where: { id: operation.id }, data: { occurredAt, data: json(data) } });
     for (const entry of entries) {
@@ -755,6 +781,7 @@ export class FinanceService {
         },
       });
     }
+    await this.savePositionMovementsInTx(db,tenantId,operation);
   }
 
   private async createReversalFor(db: Db, tenantId: string, originalOperationId: string, reason: string, occurredAt: Date) {
@@ -780,7 +807,7 @@ export class FinanceService {
     const existing = await db.financeArticle.findMany({ where: { tenantId, systemKey: { not: '' } }, select: { systemKey: true } });
     const keys = new Set(existing.map((row) => row.systemKey));
     for (const item of DEFAULT_FINANCE_ARTICLES) {
-      if (keys.has(item.systemKey)) continue;
+      if (keys.has(item.systemKey) || RETIRED_SYSTEM_ARTICLE_KEYS.has(item.systemKey)) continue;
       await db.financeArticle.create({ data: { tenantId, ...item } });
     }
   }
@@ -792,63 +819,90 @@ export class FinanceService {
   async listArticles(tenantId: string) {
     await this.ensureDefaultArticles(tenantId);
     const rows = await this.prisma.financeArticle.findMany({ where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] });
-    return rows.map((row) => this.articleDto(row));
+    return rows.filter(row=>!RETIRED_SYSTEM_ARTICLE_KEYS.has(row.systemKey)).map((row) => this.articleDto(row));
   }
 
   async createArticle(tenantId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
-    const input = objectValue(body);
-    const name = text(input.name);
-    if (!name) throw new BadRequestException('Введите название статьи');
-    const parentArticleId = text(input.parentArticleId);
-    const parent = parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
-    if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
-    const direction = text(input.direction || parent?.direction);
-    const economicType = text(input.economicType || parent?.economicType);
-    if (!ARTICLE_DIRECTIONS.has(direction)) throw new BadRequestException('Некорректное направление статьи');
-    if (!ARTICLE_ECONOMIC_TYPES.has(economicType) || economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
-    if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
-    const max = await this.prisma.financeArticle.aggregate({ where: { tenantId, parentArticleId }, _max: { position: true } });
-    await this.prisma.financeArticle.create({ data: { tenantId, articleId: randomUUID(), parentArticleId, name, direction, economicType, position: (max._max.position || 0) + 10 } });
+    await this.serializable(async tx => {
+      const input = objectValue(body);
+      const name = text(input.name);
+      if (!name) throw new BadRequestException('Введите название статьи');
+      const parentArticleId = text(input.parentArticleId);
+      const parent = parentArticleId ? await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
+      if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
+      const direction = text(input.direction || parent?.direction);
+      if(direction==='TRANSFER') throw new BadRequestException('Статьи транзакций создаются системными механизмами');
+      const economicType = text(input.economicType || parent?.economicType);
+      if (!ARTICLE_DIRECTIONS.has(direction)) throw new BadRequestException('Некорректное направление статьи');
+      if (!ARTICLE_ECONOMIC_TYPES.has(economicType) || economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
+      if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
+      const max = await tx.financeArticle.aggregate({ where: { tenantId, parentArticleId }, _max: { position: true } });
+      await tx.financeArticle.create({ data: { tenantId, articleId: randomUUID(), parentArticleId, name, direction, economicType, position: (max._max.position || 0) + 10 } });
+    });
     return this.snapshot(tenantId);
   }
 
   async updateArticle(tenantId: string, articleId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
-    const id = text(articleId);
-    const current = await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: id } } });
-    if (!current || current.archivedAt) throw new NotFoundException('Статья не найдена');
-    const input = objectValue(body);
-    const name = text(input.name || current.name);
-    if (!name) throw new BadRequestException('Введите название статьи');
-    const parentArticleId = input.parentArticleId == null ? current.parentArticleId : text(input.parentArticleId);
-    if (parentArticleId === id) throw new BadRequestException('Статья не может быть родителем самой себе');
-    const parent = parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
-    if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
-    let ancestor = parent;
-    let depthGuard = 0;
-    while (ancestor && depthGuard < 100) {
-      if (ancestor.articleId === id) throw new BadRequestException('Нельзя создать цикл в дереве статей');
-      ancestor = ancestor.parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: ancestor.parentArticleId } } }) : null;
-      depthGuard += 1;
-    }
-    const direction = current.systemKey ? current.direction : text(input.direction || current.direction);
-    const economicType = current.systemKey ? current.economicType : text(input.economicType || current.economicType);
-    if (!ARTICLE_DIRECTIONS.has(direction) || !ARTICLE_ECONOMIC_TYPES.has(economicType)) throw new BadRequestException('Некорректный экономический характер статьи');
-    if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
-    await this.prisma.financeArticle.update({ where: { id: current.id }, data: { name, parentArticleId, direction, economicType } });
+    await this.serializable(async tx => {
+      const id = text(articleId);
+      const current = await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: id } } });
+      if (!current || current.archivedAt) throw new NotFoundException('Статья не найдена');
+      const input = objectValue(body);
+      const name = text(input.name || current.name);
+      if (!name) throw new BadRequestException('Введите название статьи');
+      const parentArticleId = input.parentArticleId == null ? current.parentArticleId : text(input.parentArticleId);
+      if (parentArticleId === id) throw new BadRequestException('Статья не может быть родителем самой себе');
+      const parent = parentArticleId ? await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
+      if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
+      let ancestor = parent;
+      let depthGuard = 0;
+      while (ancestor && depthGuard < 100) {
+        if (ancestor.articleId === id) throw new BadRequestException('Нельзя создать цикл в дереве статей');
+        ancestor = ancestor.parentArticleId ? await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: ancestor.parentArticleId } } }) : null;
+        depthGuard += 1;
+      }
+      if (input.direction != null && text(input.direction) !== current.direction) throw new BadRequestException('Направление статьи нельзя изменить после создания');
+      if (input.economicType != null && text(input.economicType) !== current.economicType) throw new BadRequestException('Экономический тип статьи нельзя изменить после создания');
+      if (current.systemKey && (name !== current.name || parentArticleId !== current.parentArticleId)) throw new BadRequestException('Системную статью нельзя изменить');
+      const direction = current.direction;
+      const economicType = current.economicType;
+      if (!ARTICLE_DIRECTIONS.has(direction) || !ARTICLE_ECONOMIC_TYPES.has(economicType)) throw new BadRequestException('Некорректный экономический характер статьи');
+      if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
+      await tx.financeArticle.update({ where: { id: current.id }, data: { name, parentArticleId, direction, economicType } });
+    });
     return this.snapshot(tenantId);
   }
 
   async archiveArticle(tenantId: string, articleId: string) {
     await this.ensureDefaultArticles(tenantId);
     const id = text(articleId);
-    const current = await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: id } } });
-    if (!current || current.archivedAt) return this.snapshot(tenantId);
-    if (current.systemKey) throw new BadRequestException('Системную статью удалить нельзя');
-    const child = await this.prisma.financeArticle.findFirst({ where: { tenantId, parentArticleId: id, archivedAt: null } });
-    if (child) throw new BadRequestException('Сначала удалите или перенесите вложенные статьи');
-    await this.prisma.financeArticle.update({ where: { id: current.id }, data: { archivedAt: new Date() } });
+    await this.serializable(async tx => {
+      // Read the entire tenant tree, including archived ancestors, so active
+      // descendants cannot survive an archived group. Never touch the ledger.
+      const rows = await tx.financeArticle.findMany({ where: { tenantId }, select: { articleId: true, parentArticleId: true, systemKey: true, archivedAt: true } });
+      const current = rows.find(row => row.articleId === id);
+      if (!current || current.archivedAt) return;
+      const children = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const members = children.get(row.parentArticleId) || [];
+        members.push(row);
+        children.set(row.parentArticleId, members);
+      }
+      const visited = new Set<string>();
+      const activeIds: string[] = [];
+      const queue = [current];
+      for (let index = 0; index < queue.length; index += 1) {
+        const row = queue[index];
+        if (visited.has(row.articleId)) continue;
+        visited.add(row.articleId);
+        if (row.systemKey) throw new BadRequestException('Системную статью удалить нельзя');
+        if (!row.archivedAt) activeIds.push(row.articleId);
+        queue.push(...(children.get(row.articleId) || []));
+      }
+      await tx.financeArticle.updateMany({ where: { tenantId, articleId: { in: activeIds }, archivedAt: null, systemKey: '' }, data: { archivedAt: new Date() } });
+    });
     return this.snapshot(tenantId);
   }
 
@@ -950,6 +1004,7 @@ export class FinanceService {
       const article = articleById.get(line.articleId);
       if (!article) throw new BadRequestException('Статья не найдена');
       if (article.economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
+      if (['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT'].includes(article.economicType)) throw new BadRequestException('Используйте соответствующий механизм лояльности');
       if (article.direction !== direction) throw new BadRequestException('Статья не соответствует типу операции');
     }
     const operationId = randomUUID();
@@ -1061,6 +1116,7 @@ export class FinanceService {
         data: {
           workplace: text(input.workplace), person: clone(objectValue(input.person)), allocations, depositAllocations,
           priceCondition: condition.source ? clone(condition.source) : null,
+          depositDiscount: depositDiscountForPayment(condition.source, settlement, serviceAmount, paid),
           cashTotal: cashAllocated, cashServiceAmount, total: money(serviceAmount + tips), serviceAmount, tips, settlement,
         },
         entries: components.map((entry) => ({ ...entry, direction: 'IN', economicType: entry.component === 'tips' ? 'TIPS' : 'SERVICE_REVENUE' })),
@@ -1150,11 +1206,13 @@ export class FinanceService {
 
   async recordRefund(tenantId: string, operationId: string, body: unknown) {
     const id = text(operationId);
-    const payment = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } } });
+    await this.serializable(async (tx) => {
+    const payment = await tx.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } } });
     if (!payment || payment.kind !== 'payment') throw new NotFoundException('Оплата не найдена');
     if (payment.status === 'cancelled') throw new BadRequestException('Отменённую оплату вернуть нельзя');
     const paymentData = objectValue(payment.data);
-    const refunds = await this.prisma.financeOperation.findMany({ where: { tenantId, kind: 'refund', originalOperationId: id, status: 'completed' } });
+    await assertDepositDiscountRefundAllowed(tx,tenantId,paymentData);
+    const refunds = await tx.financeOperation.findMany({ where: { tenantId, kind: 'refund', originalOperationId: id, status: 'completed' } });
     const refundedTips = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).tips), 0));
     const refundedService = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).serviceAmount), 0));
     const tipsRemaining = Math.max(0, money(paymentData.tips - refundedTips));
@@ -1183,7 +1241,7 @@ export class FinanceService {
     const restoredDeposits: JsonObject[] = [];
     for (const original of originalDeposits) {
       const previous = restoredByDeposit.get(original.depositId) || { amount: 0, principalAmount: 0, benefitAmount: 0 };
-      const originalPrincipal = original.principalAmount || original.amount;
+      const originalPrincipal = original.principalAmount;
       const originalBenefit = original.benefitAmount;
       const principalAvailable = Math.max(0, money(originalPrincipal - previous.principalAmount));
       const benefitAvailable = Math.max(0, money(originalBenefit - previous.benefitAmount));
@@ -1202,7 +1260,6 @@ export class FinanceService {
     if (cashRefund > 0.009 && !walletId) throw new BadRequestException('Не выбран кошелёк возврата');
     const refundId = randomUUID();
     const occurredAt = requiredOccurredAt(input.occurredAt);
-    await this.serializable(async (tx) => {
       await restoreDepositAllocations(tx, tenantId, restoredDeposits, occurredAt);
       await this.createOperationWithEntries(tx, tenantId, {
         operationId: refundId,
@@ -1214,6 +1271,7 @@ export class FinanceService {
           workplace: text(paymentData.workplace), person: clone(objectValue(paymentData.person)), walletId, walletName,
           total: money(serviceAmount + tips), cashTotal: cashRefund, cashServiceAmount, serviceAmount, tips,
           depositAllocations: restoredDeposits, reason: text(input.reason), settlement: clone(objectValue(paymentData.settlement)),
+          depositDiscount: depositDiscountForRefund(paymentData, serviceAmount, refundedService),
         },
         entries: [
           ...(cashServiceAmount > 0 ? [{ walletId, walletName, amount: cashServiceAmount, component: 'service', direction: 'OUT', economicType: 'SERVICE_REFUND' }] : []),
@@ -1259,11 +1317,12 @@ export class FinanceService {
       if (!preparedLines.length) throw new BadRequestException('Введите сумму или позиции');
       const articleIds = [...new Set(preparedLines.map((line) => line.articleId).filter(Boolean))];
       if (!articleIds.length) throw new BadRequestException('Выберите статью');
-      const articles = await this.prisma.financeArticle.findMany({ where: { tenantId, articleId: { in: articleIds }, archivedAt: null } });
+      const originalArticles = new Map(current.ledgerEntries.map(entry => [text(objectValue(entry.data).articleId), entry]));
+      const articles = await this.prisma.financeArticle.findMany({ where: { tenantId, articleId: { in: articleIds } } });
       const articleById = new Map(articles.map((article) => [article.articleId, article]));
       for (const line of preparedLines) {
         const article = articleById.get(line.articleId);
-        if (!article) throw new BadRequestException('Статья не найдена');
+        if (!article || (article.archivedAt && !originalArticles.has(line.articleId))) throw new BadRequestException('Статья не найдена');
         if (article.economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
         if (article.direction !== direction) throw new BadRequestException('Статья не соответствует типу операции');
       }
@@ -1272,7 +1331,8 @@ export class FinanceService {
       nextData = { direction, articleId: operationArticleId, walletId, walletName, note, total, lines: preparedLines };
       nextEntries = preparedLines.map((line) => {
         const article = articleById.get(line.articleId)!;
-        return { walletId, walletName, direction, economicType: article.economicType, amount: line.total, component: 'manual', articleId: article.articleId, articleName: article.name, lineName: line.lineName, quantity: line.quantity, unitPrice: line.unitPrice, note };
+        const original = originalArticles.get(line.articleId);
+        return { walletId, walletName, direction, economicType: original?.economicType || article.economicType, amount: line.total, component: 'manual', articleId: article.articleId, articleName: text(objectValue(original?.data).articleName) || article.name, lineName: line.lineName, quantity: line.quantity, unitPrice: line.unitPrice, note };
       });
     } else if ([...Object.keys(SPECIAL_FINANCE_DEFINITIONS), 'transfer'].includes(current.kind)) {
       const amount = money(input.amount == null ? currentData.total : input.amount);
@@ -1310,7 +1370,7 @@ export class FinanceService {
       }
     } else if (current.kind === 'payment') {
       const requestedDeposits = input.depositAllocations == null ? depositAllocationsValue(currentData.depositAllocations) : depositAllocationsValue(input.depositAllocations);
-      if (depositAllocationsValue(currentData.depositAllocations).length || requestedDeposits.length) {
+      if (savedDepositDiscount(currentData) || depositAllocationsValue(currentData.depositAllocations).length || requestedDeposits.length) {
         throw new BadRequestException('Оплату с депозитом нельзя корректировать напрямую. Отмените оплату и проведите её заново.');
       }
       const settlement = validSettlement(currentData.settlement);
@@ -1333,7 +1393,7 @@ export class FinanceService {
         cashTotal: cashAllocated, cashServiceAmount, total: money(serviceAmount + tips), serviceAmount, tips, settlement,
       };
       nextEntries = components.map((entry) => ({ ...entry, direction: 'IN', economicType: entry.component === 'tips' ? 'TIPS' : 'SERVICE_REVENUE' }));
-    } else if (current.kind === 'refund' && depositAllocationsValue(currentData.depositAllocations).length) {
+    } else if (current.kind === 'refund' && (objectValue(currentData.depositDiscount).depositId || depositAllocationsValue(currentData.depositAllocations).length)) {
       throw new BadRequestException('Возврат со списанием депозита нельзя корректировать напрямую. Отмените возврат и проведите его заново.');
     } else if (current.kind === 'refund') {
       const paymentId = text(current.originalOperationId);
@@ -1475,17 +1535,56 @@ export class FinanceService {
 
   async snapshot(tenantId: string) {
     await this.ensureDefaultArticles(tenantId);
-    const [articles, settlements, operations, ledger] = await Promise.all([
-      this.prisma.financeArticle.findMany({ where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+    const [articles, settlements, operations, ledger, deposits] = await Promise.all([
+      this.prisma.financeArticle.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.financeSettlement.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
       this.prisma.financeOperation.findMany({ where: { tenantId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.financeLedgerEntry.findMany({ where: { tenantId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
+      this.prisma.loyaltyDepositInstance.findMany({ where: { tenantId }, select: { depositId: true, terms: true } }),
     ]);
-    const operationRows = operations.map((row) => ({
-      operationId: row.operationId, kind: row.kind, status: row.status, source: { type: row.sourceType, id: row.sourceId },
-      originalOperationId: row.originalOperationId, occurredAt: row.occurredAt.toISOString(), recordedAt: row.createdAt.toISOString(), data: clone(row.data),
-    }));
+    const accountingByOperation = new Map<string, JsonObject[]>();
+    const discountIds = new Set(deposits.filter(row=>depositBenefitMode(row.terms)==='discount').map(row=>row.depositId));
+    for (const depositId of discountIds) {
+      const projection=depositDiscountAccounting(operations,depositId);
+      for (const [operationId, entry] of projection.entries) {
+        const items=accountingByOperation.get(operationId)||[];
+        items.push(projection.complete?{...entry,confirmed:true}:{depositId,netAmount:entry.netAmount,confirmed:false});
+        accountingByOperation.set(operationId,items);
+      }
+    }
+    const originalById=new Map(operations.map(row=>[row.operationId,row]));
+    const refundedBefore=new Map<string,number>();
+    const positionProjection=projectPositionMovements(operations,ledger);
+    const articleCatalog=financeArticleCatalog(articles);
+    const operationRows = operations.map((row) => {
+      const data=clone(objectValue(row.data));
+      if (row.kind==='payment' && !data.depositDiscount) data.depositDiscount=savedDepositDiscount(data);
+      if (row.kind==='refund' && row.originalOperationId) {
+        const original=originalById.get(row.originalOperationId);
+        const before=refundedBefore.get(row.originalOperationId)||0;
+        if (!data.depositDiscount && original) data.depositDiscount=depositDiscountForRefund(original.data,data.serviceAmount,before);
+        if (row.status==='completed') refundedBefore.set(row.originalOperationId,money(before+money(data.serviceAmount)));
+      }
+      if(positionProjection.has(row.operationId)){
+        const parts=positionProjection.get(row.operationId);
+        data.positionMovements=parts?detailDepositPositionComponents(parts,data,row.kind,accountingByOperation.get(row.operationId)||[]).map(part=>({...part,articleClass:financeArticleRoute(articleCatalog,part.route)})):null;
+      }
+      const accounting=accountingByOperation.get(row.operationId);
+      if (accounting?.length) data.depositAccounting=accounting;
+      return {operationId:row.operationId,kind:row.kind,status:row.status,source:{type:row.sourceType,id:row.sourceId},
+        originalOperationId:row.originalOperationId,occurredAt:row.occurredAt.toISOString(),recordedAt:row.createdAt.toISOString(),data};
+    });
     const operationById = new Map(operations.map((operation) => [operation.id, operation.operationId]));
+    const systemArticles = new Map(articles.filter(a => a.systemKey).map(a => [a.systemKey, a]));
+    const operationByInternalId=new Map(operations.map(row=>[row.id,row]));
+    // Resolve existing system facts without modifying the historical ledger or its amounts.
+    const articleFor = (row: typeof ledger[number]) => {
+      const data = objectValue(row.data);
+      if (text(data.articleId) || text(data.articleName)) return { articleId: text(data.articleId), articleName: text(data.articleName) };
+      const key = row.economicType === 'SERVICE_REFUND' || row.economicType === 'TIPS_REFUND' ? 'REFUND' : row.economicType;
+      const article = systemArticles.get(key);
+      return { articleId: article?.articleId || '', articleName: article?.name || '' };
+    };
     const ledgerRows = ledger.map((row) => ({
       entryId: row.entryId,
       operationId: operationById.get(row.financeOperationId) || '',
@@ -1499,16 +1598,17 @@ export class FinanceService {
       source: { type: row.sourceType, id: row.sourceId },
       component: text(objectValue(row.data).component),
       relatedOperationId: text(objectValue(row.data).relatedOperationId),
-      articleId: text(objectValue(row.data).articleId),
-      articleName: text(objectValue(row.data).articleName),
+      ...articleFor(row),
+      articleClass: classifyFinanceLedger({...articleFor(row),economicType:row.economicType,direction:row.direction,component:text(objectValue(row.data).component)},operationByInternalId.get(row.financeOperationId)||null,articles,articleCatalog),
       lineName: text(objectValue(row.data).lineName),
       quantity: objectValue(row.data).quantity == null ? null : numberValue(objectValue(row.data).quantity),
       unitPrice: objectValue(row.data).unitPrice == null ? null : money(objectValue(row.data).unitPrice),
-      note: text(objectValue(row.data).note),
+      note: row.economicType === 'DEPOSIT_RECEIVED' ? '' : text(objectValue(row.data).note),
     }));
     return {
       version: 8,
-      articles: articles.map((row) => this.articleDto(row)),
+      articles: articles.filter(row=>!row.archivedAt&&!RETIRED_SYSTEM_ARTICLE_KEYS.has(row.systemKey)).map((row) => this.articleDto(row)),
+      articleCatalog,
       settlements: settlements.map((row) => ({ source: { type: row.sourceType, id: row.sourceId }, settlement: clone(row.data), recordedAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() })),
       operations: operationRows,
       ledger: ledgerRows,

@@ -6,6 +6,9 @@ import { PrismaService } from '../prisma.service';
 import {
   consumeDepositAllocations,
   restoreDepositAllocations,
+  depositDiscountForPayment,
+  depositDiscountForRefund,
+  assertDepositDiscountRefundAllowed,
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent, resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import {
@@ -15,6 +18,7 @@ import {
   syncPersonalAccountDebt,
 } from '../loyalty/personal-account-state';
 import { FinanceService } from './finance.service';
+import { splitCashByComponent } from './position-movements';
 import { InventoryService } from '../inventory/inventory.service';
 
 type JsonObject = Record<string, any>;
@@ -97,8 +101,8 @@ function depositAllocationsValue(value: unknown) {
         depositId: text(row.depositId ?? row.sourceId ?? row.id),
         name: text(row.name ?? row.label),
         amount: money(row.amount),
-        principalAmount: money(row.principalAmount),
-        benefitAmount: money(row.benefitAmount),
+        principalAmount: row.principalAmount == null ? Math.max(0, money(money(row.amount) - money(row.benefitAmount))) : money(row.principalAmount),
+        benefitAmount: row.benefitAmount == null ? Math.max(0, money(money(row.amount) - money(row.principalAmount == null ? row.amount : row.principalAmount))) : money(row.benefitAmount),
       };
     })
     .filter((entry) => entry.depositId && entry.amount > 0);
@@ -129,24 +133,8 @@ function canonicalSettlementInput(value: unknown, pricePercent: number) {
 }
 
 function splitCashComponents(allocations: JsonObject[], serviceAmount: number, tips: number) {
-  let serviceLeft = money(serviceAmount);
-  let tipsLeft = money(tips);
-  const entries: JsonObject[] = [];
-  for (const allocation of allocations) {
-    let walletLeft = money(allocation.amount);
-    const service = Math.min(walletLeft, serviceLeft);
-    if (service > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: service, component: 'service' });
-      walletLeft = money(walletLeft - service);
-      serviceLeft = money(serviceLeft - service);
-    }
-    const tip = Math.min(walletLeft, tipsLeft);
-    if (tip > 0) {
-      entries.push({ walletId: allocation.walletId, walletName: allocation.walletName, amount: tip, component: 'tips' });
-      tipsLeft = money(tipsLeft - tip);
-    }
-  }
-  if (serviceLeft > 0.009 || tipsLeft > 0.009) throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
+  const entries=splitCashByComponent(allocations,serviceAmount,tips);
+  if(!entries)throw new BadRequestException('Сумма по кошелькам не совпадает с оплатой');
   return entries;
 }
 
@@ -257,6 +245,7 @@ export class PaymentSettlementService {
         },
       });
     }
+    await this.finance.savePositionMovementsInTx(tx,tenantId,operation);
     return operation;
   }
 
@@ -368,6 +357,7 @@ export class PaymentSettlementService {
           depositAllocations,
           personalAccountAmount,
           priceCondition: condition.source ? clone(condition.source) : null,
+          depositDiscount: depositDiscountForPayment(condition.source, settlement, serviceAmount, paid),
           ...(historicalRecordPayment ? { historicalBackfill: true } : {}),
           cashTotal: cashAllocated,
           cashServiceAmount,
@@ -440,14 +430,16 @@ export class PaymentSettlementService {
 
   async recordRefund(tenantId: string, operationIdValue: string, body: unknown) {
     const operationId = text(operationIdValue);
-    const payment = await this.prisma.financeOperation.findUnique({
+    await this.serializable(async (tx) => {
+    const payment = await tx.financeOperation.findUnique({
       where: { tenantId_operationId: { tenantId, operationId } },
     });
     if (!payment || payment.kind !== 'payment') throw new NotFoundException('Оплата не найдена');
     if (payment.status === 'cancelled') throw new BadRequestException('Отменённую оплату вернуть нельзя');
 
     const paymentData = objectValue(payment.data);
-    const refunds = await this.prisma.financeOperation.findMany({
+    await assertDepositDiscountRefundAllowed(tx,tenantId,paymentData);
+    const refunds = await tx.financeOperation.findMany({
       where: { tenantId, kind: 'refund', originalOperationId: operationId, status: 'completed' },
     });
     const refundedTips = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).tips), 0));
@@ -480,7 +472,7 @@ export class PaymentSettlementService {
     const restoredDeposits: JsonObject[] = [];
     for (const original of originalDeposits) {
       const previous = restoredByDeposit.get(original.depositId) || { amount: 0, principalAmount: 0, benefitAmount: 0 };
-      const originalPrincipal = original.principalAmount || original.amount;
+      const originalPrincipal = original.principalAmount;
       const originalBenefit = original.benefitAmount;
       const principalAvailable = Math.max(0, money(originalPrincipal - previous.principalAmount));
       const benefitAvailable = Math.max(0, money(originalBenefit - previous.benefitAmount));
@@ -509,7 +501,6 @@ export class PaymentSettlementService {
     const person = clone(objectValue(paymentData.person));
     const ownerKey = personKey(person);
 
-    await this.serializable(async (tx) => {
       await restoreDepositAllocations(tx, tenantId, restoredDeposits, occurredAt);
       if (personalAccountRestored > 0) {
         if (!ownerKey) throw new BadRequestException('У оплаты отсутствует человек Личного счёта');
@@ -547,6 +538,7 @@ export class PaymentSettlementService {
           personalAccountRestored,
           reason: text(input.reason),
           settlement: clone(objectValue(paymentData.settlement)),
+          depositDiscount: depositDiscountForRefund(paymentData, serviceAmount, refundedService),
         },
         entries: [
           ...(cashServiceAmount > 0 ? [{ walletId, walletName, amount: cashServiceAmount, component: 'service', direction: 'OUT', economicType: 'SERVICE_REFUND' }] : []),

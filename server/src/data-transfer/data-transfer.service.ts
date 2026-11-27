@@ -16,7 +16,7 @@ import { ProcedureService } from '../procedure/procedure.service';
 import { SaasAccessService } from '../saas-access/saas-access.service';
 import { calendarDate, canonical, clock, decimal, DOMAINS, Fact, instant, LABELS, text } from './formats';
 import { defaultColumns, defaultDomain, DOMAIN_FIELDS, FIELDS, readSource, SourceInput, sourceFacts, transferWorkbook, peopleWorkbook } from './source';
-import { scopedExcelFacts, scopedExcelWorkbook } from './scoped-excel';
+import { scopedExcelFacts, scopedExcelWorkbook, financeRegistryWorkbook } from './scoped-excel';
 import { peopleExcelFacts } from './contacts-excel';
 
 type Tx = Prisma.TransactionClient;
@@ -39,6 +39,11 @@ export class DataTransferService {
         standard: sheet.name==='Данные'&&isStandard(sheet.headers), domain: sheet.name==='Данные'&&isStandard(sheet.headers)?'standard':defaultDomain(sheet.name), columns: isStandard(sheet.headers)?standardColumns(sheet.headers):defaultColumns(sheet.headers),
       })) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось прочитать файл'); }
+  }
+
+  async registryWorkbook(input: any) {
+    try { return await financeRegistryWorkbook(input?.rows); }
+    catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось сформировать реестр'); }
   }
 
   async workbook(input: any) {
