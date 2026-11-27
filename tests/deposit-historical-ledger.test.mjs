@@ -298,3 +298,33 @@ await assert.rejects(restoreDepositAllocations({
   loyaltyDepositInstance:{findUnique:async()=>({id:deposit,depositId:deposit,status:'closed',terms,principalBalance:0,benefitBalance:0}),update:async()=>{throw Error('must not reopen');}},
   financeOperation:{findFirst:async()=>({id:'terminated'})},
 },'tenant-1',used(8000),new Date('2026-11-27T12:00:00Z')),/расторгнут/);
+
+const { depositDiscountAccounting }=runInNewContext(stripTypeScriptTypes(body,{mode:'strip'})+'\n({depositDiscountAccounting})',{depositHistoricalLedger,Error,BadRequestException:class extends Error{}});
+const funding={operationId:'fund',kind:'deposit-funding',status:'completed',sourceType:'deposit',sourceId:deposit,occurredAt:'2026-11-01T10:00:00Z',data:{amount:50000}};
+const paidOp={...pRow,occurredAt:'2026-11-02T10:00:00Z',data:{...pData,depositAllocations:used(8000)}};
+const project=depositDiscountAccounting([funding,paidOp],deposit);
+assert.equal(project.complete,true);
+assert.equal(project.realBalance,40000);
+assert.equal(project.benefitBalance,2000);
+assert.equal(project.entries.get('p1').realDelta,-10000);
+assert.equal(project.entries.get('p1').benefitDelta,2000);
+assert.equal(depositRefundQuote(quoted,[funding,paidOp]).accountingComplete,true);
+assert.equal(depositRefundQuote(quoted,[funding,paidOp]).refundableAmount,40000);
+const fullRefund={...refundRow,operationId:'r1',occurredAt:'2026-11-03T10:00:00Z',data:{...refundRow.data,depositAllocations:used(8000)}};
+const returnedAccounting=depositDiscountAccounting([funding,paidOp,fullRefund],deposit);
+assert.equal(returnedAccounting.realBalance,50000);
+assert.equal(returnedAccounting.benefitBalance,0);
+assert.equal(returnedAccounting.entries.get('r1').realDelta,10000);
+assert.equal(returnedAccounting.entries.get('r1').benefitDelta,-2000);
+const repeat=Array.from({length:5},(_,i)=>({...paidOp,operationId:'repeat-'+i,occurredAt:'2026-11-0'+(i+2)+'T10:00:00Z'}));
+const fulfilled=depositDiscountAccounting([funding,...repeat],deposit);
+assert.equal(fulfilled.realBalance,0);
+assert.equal(fulfilled.benefitBalance,10000);
+assert.equal(depositRefundQuote({...quoted,principalBalance:10000,balance:10000},[funding,...repeat]).refundableAmount,0);
+const lastPay={...paidOp,operationId:'last',occurredAt:'2026-11-09T10:00:00Z'};
+const afterBonusSpend=depositDiscountAccounting([funding,...repeat,lastPay],deposit);
+assert.equal(afterBonusSpend.realBalance,0);
+assert.equal(afterBonusSpend.benefitBalance,2000);
+assert.equal(afterBonusSpend.entries.get('last').benefitUsed,10000);
+const cashPayment={...paidOp,data:{...pData,depositAllocations:[]}};
+assert.equal(depositRefundQuote({...quoted,principalBalance:50000,balance:50000},[funding,cashPayment]).refundableAmount,48000);

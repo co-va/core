@@ -13,6 +13,7 @@ import {
   expireDepositInstances,
   depositBenefitRate,
   depositRefundQuote,
+  depositDiscountAccounting,
   depositDiscountForPayment,
   depositDiscountForRefund,
   savedDepositDiscount,
@@ -195,6 +196,8 @@ const DEFAULT_FINANCE_ARTICLES = [
   { articleId: 'system-investment-income-payment', parentArticleId: 'system-expense', name: 'Выплата дохода инвестору', direction: 'OUT', economicType: 'INVESTMENT_INCOME_PAYMENT', systemKey: 'INVESTMENT_INCOME_PAYMENT', position: 176 },
   { articleId: 'system-deposit-return', parentArticleId: 'system-expense', name: 'Возврат депозита', direction: 'OUT', economicType: 'DEPOSIT_RETURN', systemKey: 'DEPOSIT_RETURN', position: 178 },
   { articleId: 'system-personal-account-withdrawal', parentArticleId: 'system-expense', name: 'Возврат с личного счёта', direction: 'OUT', economicType: 'PERSONAL_ACCOUNT_LIABILITY_OUT', systemKey: 'PERSONAL_ACCOUNT_LIABILITY_OUT', position: 180 },
+  { articleId: 'system-deposit-spend', parentArticleId: '', name: 'Списание с депозита', direction: 'TRANSFER', economicType: 'DEPOSIT_SPEND', systemKey: 'DEPOSIT_SPEND', position: 203 },
+  { articleId: 'system-deposit-payment-refund', parentArticleId: '', name: 'Возврат на депозит', direction: 'TRANSFER', economicType: 'DEPOSIT_PAYMENT_REFUND', systemKey: 'DEPOSIT_PAYMENT_REFUND', position: 204 },
   { articleId: 'system-deposit-benefit-granted', parentArticleId: '', name: 'Предоставление выгоды по депозиту', direction: 'TRANSFER', economicType: 'DEPOSIT_BENEFIT_GRANTED', systemKey: 'DEPOSIT_BENEFIT_GRANTED', position: 201 },
   { articleId: 'system-deposit-benefit-reversed', parentArticleId: '', name: 'Аннулирование выгоды по депозиту', direction: 'TRANSFER', economicType: 'DEPOSIT_BENEFIT_REVERSED', systemKey: 'DEPOSIT_BENEFIT_REVERSED', position: 202 },
   { articleId: 'system-transfer', parentArticleId: '', name: 'Перевод между кошельками', direction: 'TRANSFER', economicType: 'TRANSFER', systemKey: 'TRANSFER', position: 200 },
@@ -560,7 +563,7 @@ export class FinanceService {
       where: { tenantId, ...(key ? { personKey: key } : {}) },
       orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
     });
-    const operations = await this.prisma.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['payment', 'refund'] } } });
+    const operations = await this.prisma.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['deposit-funding','deposit-withdrawal','deposit-import-spend','payment', 'refund'] } } });
     return rows.map((row) => ({
       depositId: row.depositId,
       programId: row.programId,
@@ -569,7 +572,7 @@ export class FinanceService {
       fundedAmount: money(row.initialAmount),
       principalBalance: money(row.principalBalance),
       benefitBalance: money(row.benefitBalance),
-      refundableAmount: row.status === 'active' ? depositRefundQuote(row, operations).refundableAmount : 0,
+      refundableAmount: row.status === 'active' && depositRefundQuote(row, operations).accountingComplete ? depositRefundQuote(row, operations).refundableAmount : 0,
       balance: money(row.balance),
       terms: clone(objectValue(row.terms)),
       status: row.status,
@@ -1500,16 +1503,39 @@ export class FinanceService {
 
   async snapshot(tenantId: string) {
     await this.ensureDefaultArticles(tenantId);
-    const [articles, settlements, operations, ledger] = await Promise.all([
+    const [articles, settlements, operations, ledger, deposits] = await Promise.all([
       this.prisma.financeArticle.findMany({ where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.financeSettlement.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
       this.prisma.financeOperation.findMany({ where: { tenantId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.financeLedgerEntry.findMany({ where: { tenantId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
+      this.prisma.loyaltyDepositInstance.findMany({ where: { tenantId }, select: { depositId: true, terms: true } }),
     ]);
-    const operationRows = operations.map((row) => ({
-      operationId: row.operationId, kind: row.kind, status: row.status, source: { type: row.sourceType, id: row.sourceId },
-      originalOperationId: row.originalOperationId, occurredAt: row.occurredAt.toISOString(), recordedAt: row.createdAt.toISOString(), data: clone(row.data),
-    }));
+    const accountingByOperation = new Map<string, JsonObject[]>();
+    const discountIds = new Set(deposits.filter(row=>depositBenefitMode(row.terms)==='discount').map(row=>row.depositId));
+    for (const depositId of discountIds) {
+      const projection=depositDiscountAccounting(operations,depositId);
+      for (const [operationId, entry] of projection.entries) {
+        const items=accountingByOperation.get(operationId)||[];
+        items.push(projection.complete?{...entry,confirmed:true}:{depositId,netAmount:entry.netAmount,confirmed:false});
+        accountingByOperation.set(operationId,items);
+      }
+    }
+    const originalById=new Map(operations.map(row=>[row.operationId,row]));
+    const refundedBefore=new Map<string,number>();
+    const operationRows = operations.map((row) => {
+      const data=clone(objectValue(row.data));
+      if (row.kind==='payment' && !data.depositDiscount) data.depositDiscount=savedDepositDiscount(data);
+      if (row.kind==='refund' && row.originalOperationId) {
+        const original=originalById.get(row.originalOperationId);
+        const before=refundedBefore.get(row.originalOperationId)||0;
+        if (!data.depositDiscount && original) data.depositDiscount=depositDiscountForRefund(original.data,data.serviceAmount,before);
+        if (row.status==='completed') refundedBefore.set(row.originalOperationId,money(before+money(data.serviceAmount)));
+      }
+      const accounting=accountingByOperation.get(row.operationId);
+      if (accounting?.length) data.depositAccounting=accounting;
+      return {operationId:row.operationId,kind:row.kind,status:row.status,source:{type:row.sourceType,id:row.sourceId},
+        originalOperationId:row.originalOperationId,occurredAt:row.occurredAt.toISOString(),recordedAt:row.createdAt.toISOString(),data};
+    });
     const operationById = new Map(operations.map((operation) => [operation.id, operation.operationId]));
     const systemArticles = new Map(articles.filter(a => a.systemKey).map(a => [a.systemKey, a]));
     // Resolve existing system facts without modifying the historical ledger or its amounts.
