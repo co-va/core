@@ -202,7 +202,7 @@ export function detailDepositPositionComponents(parts:Row[],data:Row,kind:string
   let before=0;
   for(const p of slices){
    const net=cents(p.amount),after=before+net;
-   const share=(value:number)=>Math.round(value*after/total)-Math.round(value*before/total);
+   const share=(value:number)=>Math.sign(value)*(Math.round(Math.abs(value)*after/total)-Math.round(Math.abs(value)*before/total));
    const money=conditional?share(real):sign*(Math.min(Math.abs(real),after)-Math.min(Math.abs(real),before));
    const bonus=sign*net-money;
    const gr=share(grant),rv=share(reversed);

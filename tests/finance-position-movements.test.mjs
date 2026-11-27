@@ -55,3 +55,17 @@ assert.equal(apportioned.reduce((n,c)=>n+Math.round(c.money*100),0),-4);
 assert.equal(apportioned.reduce((n,c)=>n+Math.round(c.bonus*100),0),1);
 assert.ok(dParts.every(p=>!p.depositComponents),'Read-only projection');
 console.log('PASS deposit position components, conditional grant and refund, rounding and unresolved history');
+
+const halves=pennies.slice(0,2);
+const halfData={depositAllocations:[{depositId:'tiny',amount:.02}],depositDiscount:{depositId:'tiny'}};
+const halfPayment={...small,netAmount:.02,grossAmount:.03,realDelta:-.03,benefitDelta:.01};
+const halfRefund={...halfPayment,realDelta:.03,benefitDelta:-.01,benefitGranted:0,benefitReversed:.01};
+const paidHalves=details(halves,halfData,'payment',[halfPayment]);
+const refundedHalves=details(halves,halfData,'refund',[halfRefund]);
+assert.deepEqual(refundedHalves.map(c=>[c.money,c.bonus]),paidHalves.map(c=>[c.money===0?0:-c.money,c.bonus===0?0:-c.bonus]));
+const depositRefund={...op('dr',2,invoice,5000,{depositAllocations:[{depositId:'d1',amount:5000,principalAmount:3000,benefitAmount:2000}]}),kind:'refund',originalOperationId:'d'};
+const depositProjection=projectPositionMovements([deposit,depositRefund],[]);
+const depositRefundParts=depositProjection.get('dr');
+assert.deepEqual(depositRefundParts.map(p=>[p.positionName,p.amount]),[['Стрижка',4000],['Окрашивание',1000]]);
+assert.deepEqual(details(depositRefundParts,ordinary,'refund').map(c=>[c.money,c.bonus]),[[3000,1000],[0,1000]]);
+console.log('PASS deposit refund position linkage and symmetric half-cent rounding');
