@@ -273,8 +273,8 @@ export class FinanceService {
     if(input.depositAction==='Возврат') {
       if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId:id}}}))throw new BadRequestException('Возврат уже выполнен. Есть зависимые данные.');
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person.key},tx);
-      await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
-      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,person:input.person,amount,total:amount,walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
+      const closed = await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
+      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,programName:deposit.programName,person:input.person,amount,total:amount,benefitWrittenOff:money(closed.benefitBalance),walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
     }
     if(input.depositAction!=='Пополнение')throw new BadRequestException('Уточните операцию депозита');
     const programs=await this.depositProgramsWith(tx,tenantId);const found=programs.filter(p=>text(p.name)===text(input.program || input.deposit));
@@ -647,7 +647,7 @@ export class FinanceService {
 
     await this.serializable(async (tx) => {
       const deposit = await this.canonicalDepositWith(tx, tenantId, id);
-      await closeDepositForRefund(tx, tenantId, id, amount, occurredAt);
+      const closed = await closeDepositForRefund(tx, tenantId, id, amount, occurredAt);
       await this.createOperationWithEntries(tx, tenantId, {
         operationId,
         kind: 'deposit-withdrawal',
@@ -660,6 +660,7 @@ export class FinanceService {
           person: deposit.person,
           amount,
           total: amount,
+          benefitWrittenOff: money(closed.benefitBalance),
           walletId,
           walletName,
           reason: text(input.reason),
@@ -958,6 +959,7 @@ export class FinanceService {
       const article = articleById.get(line.articleId);
       if (!article) throw new BadRequestException('Статья не найдена');
       if (article.economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
+      if (['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT'].includes(article.economicType)) throw new BadRequestException('Используйте соответствующий механизм лояльности');
       if (article.direction !== direction) throw new BadRequestException('Статья не соответствует типу операции');
     }
     const operationId = randomUUID();
