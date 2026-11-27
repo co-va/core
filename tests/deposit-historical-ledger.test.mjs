@@ -328,3 +328,8 @@ assert.equal(afterBonusSpend.benefitBalance,2000);
 assert.equal(afterBonusSpend.entries.get('last').benefitUsed,10000);
 const cashPayment={...paidOp,data:{...pData,depositAllocations:[]}};
 assert.equal(depositRefundQuote({...quoted,principalBalance:50000,balance:50000},[funding,cashPayment]).refundableAmount,48000);
+
+const topped={...funding,operationId:'top',occurredAt:'2026-11-03T10:00:00Z',data:{amount:5000}};
+const toppedProjection=depositDiscountAccounting([funding,paidOp,topped],deposit);
+assert.equal(toppedProjection.balances.get('top').realBalance,45000);
+assert.equal(toppedProjection.balances.get('top').benefitBalance,2000);

@@ -8,6 +8,7 @@ import {
   restoreDepositAllocations,
   depositDiscountForPayment,
   depositDiscountForRefund,
+  assertDepositDiscountRefundAllowed,
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent, resolveSelectedRecordProgramPricePercent, visitDatePriceMoment } from '../loyalty/price-condition';
 import {
@@ -451,6 +452,7 @@ export class PaymentSettlementService {
     if (payment.status === 'cancelled') throw new BadRequestException('Отменённую оплату вернуть нельзя');
 
     const paymentData = objectValue(payment.data);
+    await assertDepositDiscountRefundAllowed(tx,tenantId,paymentData);
     const refunds = await tx.financeOperation.findMany({
       where: { tenantId, kind: 'refund', originalOperationId: operationId, status: 'completed' },
     });

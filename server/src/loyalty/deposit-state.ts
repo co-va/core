@@ -122,15 +122,18 @@ export function depositDiscountAccounting(operations: unknown, depositId: string
     benefitDelta:number; benefitGranted:number; benefitUsed:number; benefitRestored:number; benefitReversed:number;
     realAfter:number; benefitAfter:number; articleId:string; articleName:string }>();
   const returned = new Map<string,number>();
+  const balances=new Map<string,{realBalance:number;benefitBalance:number}>();
   let real=0, bonus=0, creditNet=0, hasFunding=false, complete=true, withdrawn=false;
   for (const row of rows) {
     const data=objectValue(row.data), id=text(row.operationId);
     const own=row.sourceType==='deposit' && text(row.sourceId)===depositId;
     if (row.kind==='deposit-funding' && own) {
       if (withdrawn) complete=false;
-      real=signed(real+depositMoney(data.amount ?? data.total)); hasFunding=true; continue;
+      real=signed(real+depositMoney(data.amount ?? data.total)); hasFunding=true;
+      if(id)balances.set(id,{realBalance:real,benefitBalance:bonus});
+      continue;
     }
-    if (row.kind==='deposit-withdrawal' && own) { real=0; bonus=0; withdrawn=true; continue; }
+    if (row.kind==='deposit-withdrawal' && own) { real=0; bonus=0; withdrawn=true; if(id)balances.set(id,{realBalance:0,benefitBalance:0}); continue; }
     if (!['payment','refund','deposit-import-spend'].includes(row.kind)) continue;
     const allocations=Array.isArray(data.depositAllocations)?data.depositAllocations:[];
     const netAmount=depositMoney(allocations.reduce((sum:number, raw:unknown)=>{
@@ -179,6 +182,7 @@ export function depositDiscountAccounting(operations: unknown, depositId: string
       creditNet=signed(creditNet+benefitGranted);
     }
     if (real< -0.009 || bonus< -0.009) complete=false;
+    if(id)balances.set(id,{realBalance:real,benefitBalance:bonus});
     if (id) entries.set(id,{depositId,netAmount,grossAmount,realDelta:signed(real-oldReal),
       benefitDelta:signed(bonus-oldBonus),benefitGranted,benefitUsed,benefitRestored,benefitReversed,
       realAfter:real,benefitAfter:bonus,
@@ -186,7 +190,7 @@ export function depositDiscountAccounting(operations: unknown, depositId: string
       articleName:row.kind==='refund'?'Возврат на депозит':'Списание с депозита'});
   }
   return { realBalance:depositMoney(real), benefitBalance:depositMoney(bonus),
-    creditedBenefit:depositMoney(creditNet), complete:complete&&hasFunding, entries };
+    creditedBenefit:depositMoney(creditNet), complete:complete&&hasFunding, entries, balances };
 }
 
 export function depositRefundQuote(row: { depositId: string; terms: unknown; principalBalance: unknown; benefitBalance: unknown; balance: unknown }, operations: unknown) {
@@ -571,6 +575,15 @@ export async function reconsumeDepositAllocations(db: Db, tenantId: string, valu
       },
     });
   }
+}
+
+export async function assertDepositDiscountRefundAllowed(db: Db, tenantId: string, paymentData: unknown) {
+  const discount=savedDepositDiscount(paymentData);
+  if(!discount) return;
+  const withdrawal=await db.financeOperation.findFirst({where:{tenantId,kind:'deposit-withdrawal',sourceType:'deposit',
+    sourceId:discount.depositId,status:'completed'},select:{data:true}});
+  if(withdrawal&&depositMoney(objectValue(withdrawal.data).conditionalBenefitWrittenOff)>0)
+    throw new BadRequestException('Депозит расторгнут с аннулированием выгоды. Для возврата услуги требуется сверка документа расторжения.');
 }
 
 export async function closeDepositForRefund(db: Db, tenantId: string, depositId: string, amount: number, at: Date) {

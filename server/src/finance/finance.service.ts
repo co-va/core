@@ -17,6 +17,7 @@ import {
   depositDiscountForPayment,
   depositDiscountForRefund,
   savedDepositDiscount,
+  assertDepositDiscountRefundAllowed,
   depositTermActiveAt,
   restoreDepositAllocations,
   reconsumeDepositAllocations,
@@ -283,7 +284,7 @@ export class FinanceService {
       if(targetId && await tx.financeOperation.findUnique({where:{tenantId_operationId:{tenantId,operationId:id}}}))throw new BadRequestException('Возврат уже выполнен. Есть зависимые данные.');
       const deposit=await this.resolveHistoricalDeposit(tenantId,{...input,personKey:input.person.key},tx);
       const closed = await closeDepositForRefund(tx,tenantId,deposit.depositId,amount,occurredAt);
-      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,programName:deposit.programName,person:input.person,amount,total:amount,benefitWrittenOff:closed.benefitWrittenOff,conditionalBenefitWrittenOff:closed.conditionalWrittenOff,balanceBefore:closed.balanceBefore,benefitArticleId:'system-deposit-benefit-reversed',benefitArticleName:'Аннулирование выгоды по депозиту',walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
+      await this.createOperationWithEntries(tx,tenantId,{operationId:id,kind:'deposit-withdrawal',source:{type:'deposit',id:deposit.depositId},occurredAt,data:{depositId:deposit.depositId,programName:deposit.programName,person:input.person,amount,total:amount,benefitWrittenOff:closed.benefitWrittenOff,conditionalBenefitWrittenOff:closed.conditionalWrittenOff,balanceBefore:closed.balanceBefore,benefitArticleId:'system-deposit-benefit-reversed',benefitArticleName:'Аннулирование выгоды по депозиту',benefitWriteOffReason:closed.conditionalWrittenOff>0?'Досрочное расторжение депозитного договора до расходования внесённых средств':'',walletId:input.walletId,walletName:input.walletName},entries:[{walletId:input.walletId,walletName:input.walletName,direction:'OUT',economicType:'DEPOSIT_RETURN',amount,component:'deposit-withdrawal'}]});return id;
     }
     if(input.depositAction!=='Пополнение')throw new BadRequestException('Уточните операцию депозита');
     const programs=await this.depositProgramsWith(tx,tenantId);const found=programs.filter(p=>text(p.name)===text(input.program || input.deposit));
@@ -564,7 +565,9 @@ export class FinanceService {
       orderBy: [{ fundedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const operations = await this.prisma.financeOperation.findMany({ where: { tenantId, status: 'completed', kind: { in: ['deposit-funding','deposit-withdrawal','deposit-import-spend','payment', 'refund'] } } });
-    return rows.map((row) => ({
+    return rows.map((row) => {
+      const quote=depositRefundQuote(row,operations);
+      return {
       depositId: row.depositId,
       programId: row.programId,
       programName: row.programName,
@@ -572,13 +575,15 @@ export class FinanceService {
       fundedAmount: money(row.initialAmount),
       principalBalance: money(row.principalBalance),
       benefitBalance: money(row.benefitBalance),
-      refundableAmount: row.status === 'active' && depositRefundQuote(row, operations).accountingComplete ? depositRefundQuote(row, operations).refundableAmount : 0,
+      refundableAmount: row.status === 'active' && quote.accountingComplete ? quote.refundableAmount : 0,
+      realBalance:quote.realBalance,conditionalBenefitBalance:quote.conditionalBenefitBalance,
+      conditionalBenefit:quote.conditionalBenefit,conditionalWrittenOff:quote.conditionalWrittenOff,accountingComplete:quote.accountingComplete,
       balance: money(row.balance),
       terms: clone(objectValue(row.terms)),
       status: row.status,
       fundedAt: row.fundedAt.toISOString(),
       fundingOperationId: row.fundingOperationId,
-    }));
+    }; });
   }
 
   async recordDepositFunding(tenantId: string, body: unknown) {
@@ -675,6 +680,7 @@ export class FinanceService {
           balanceBefore: closed.balanceBefore,
           benefitArticleId: 'system-deposit-benefit-reversed',
           benefitArticleName: 'Аннулирование выгоды по депозиту',
+          benefitWriteOffReason: closed.conditionalWrittenOff>0?'Досрочное расторжение депозитного договора до расходования внесённых средств':'',
           walletId,
           walletName,
           reason: text(input.reason),
@@ -735,6 +741,7 @@ export class FinanceService {
       data: { tenantId, operationId, kind, status, sourceType: source.type, sourceId: source.id, originalOperationId, occurredAt, data: json(data) },
     });
     for (const entry of entries) {
+      const systemArticle=DEFAULT_FINANCE_ARTICLES.find(a=>a.systemKey===entry.economicType&&['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT'].includes(a.systemKey));
       await db.financeLedgerEntry.create({
         data: {
           tenantId,
@@ -749,9 +756,9 @@ export class FinanceService {
           sourceId: source.id,
           data: json({
             walletName: text(entry.walletName), component: text(entry.component), relatedOperationId: text(entry.relatedOperationId),
-            articleId: text(entry.articleId), articleName: text(entry.articleName), lineName: text(entry.lineName),
+            articleId: text(entry.articleId)||systemArticle?.articleId||'', articleName: text(entry.articleName)||systemArticle?.name||'', lineName: text(entry.lineName),
             quantity: entry.quantity == null ? null : numberValue(entry.quantity),
-            unitPrice: entry.unitPrice == null ? null : money(entry.unitPrice), note: text(entry.note),
+            unitPrice: entry.unitPrice == null ? null : money(entry.unitPrice), note: entry.economicType==='DEPOSIT_RECEIVED'?'':text(entry.note),
           }),
         },
       });
@@ -824,6 +831,7 @@ export class FinanceService {
     const parent = parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
     if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
     const direction = text(input.direction || parent?.direction);
+    if(direction==='TRANSFER') throw new BadRequestException('Статьи транзакций создаются системными механизмами');
     const economicType = text(input.economicType || parent?.economicType);
     if (!ARTICLE_DIRECTIONS.has(direction)) throw new BadRequestException('Некорректное направление статьи');
     if (!ARTICLE_ECONOMIC_TYPES.has(economicType) || economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
@@ -1180,6 +1188,7 @@ export class FinanceService {
     if (!payment || payment.kind !== 'payment') throw new NotFoundException('Оплата не найдена');
     if (payment.status === 'cancelled') throw new BadRequestException('Отменённую оплату вернуть нельзя');
     const paymentData = objectValue(payment.data);
+    await assertDepositDiscountRefundAllowed(tx,tenantId,paymentData);
     const refunds = await tx.financeOperation.findMany({ where: { tenantId, kind: 'refund', originalOperationId: id, status: 'completed' } });
     const refundedTips = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).tips), 0));
     const refundedService = money(refunds.reduce((sum, row) => sum + money(objectValue(row.data).serviceAmount), 0));

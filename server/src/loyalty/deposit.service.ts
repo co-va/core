@@ -234,10 +234,11 @@ export class DepositService {
         bonus = Math.max(0, money(bonus - b));
       }
       const accounting = discountAccounting?.complete ? discountAccounting.entries.get(text(item.operationId)) : null;
+      const splitAfter = discountAccounting?.complete ? discountAccounting.balances.get(text(item.operationId)) : null;
       return { ...item,
         ...(accounting ? { grossAmount:accounting.grossAmount, benefitGranted:accounting.benefitGranted, benefitReversed:accounting.benefitReversed } : {}),
-        principalAfter: accounting ? accounting.realAfter : principal,
-        benefitAfter: accounting ? accounting.benefitAfter : bonus,
+        principalAfter: splitAfter ? splitAfter.realBalance : principal,
+        benefitAfter: splitAfter ? splitAfter.benefitBalance : bonus,
         balanceAfter: money(principal + bonus),
         fundedTotal: funded,
         dueToFund: fixed ? Math.max(0, money(nominal - funded)) : null,
@@ -392,12 +393,12 @@ export class DepositService {
           walletName,
           component: 'deposit-funding',
           relatedOperationId: '',
-          articleId: '',
-          articleName: '',
+          articleId: 'system-deposit-received',
+          articleName: 'Пополнение депозита',
           lineName: row.programName || 'Депозит',
           quantity: null,
           unitPrice: null,
-          note: row.personKey,
+          note: '',
         } as Prisma.InputJsonValue,
       },
     });
@@ -541,7 +542,7 @@ export class DepositService {
           sourceId: id,
           data: {
             walletName: nextWalletName, component: 'deposit-funding', relatedOperationId: '',
-            articleId: '', articleName: '', lineName: row.programName || 'Депозит', quantity: null, unitPrice: null, note: row.personKey,
+            articleId: 'system-deposit-received', articleName: 'Пополнение депозита', lineName: row.programName || 'Депозит', quantity: null, unitPrice: null, note: '',
           } as Prisma.InputJsonValue,
         },
       });
