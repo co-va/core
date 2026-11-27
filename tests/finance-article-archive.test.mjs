@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
+const source=readFileSync(new URL('../server/src/finance/finance.service.ts',import.meta.url),'utf8');
+const method=source.slice(source.indexOf('  async archiveArticle('),source.indexOf('  // Reuse Finance',source.indexOf('  async archiveArticle('))).trim().replace('async archiveArticle','async function archiveArticle');
+const archiveArticle=runInNewContext(stripTypeScriptTypes(method,{mode:'strip'})+'\narchiveArticle',{text:String,BadRequestException:Error});
+const row=(articleId,parentArticleId='',systemKey='',archivedAt=null,tenantId='A')=>({articleId,parentArticleId,systemKey,archivedAt,tenantId});
+let rows=[row('root','','ROOT'),row('group','root'),row('value','group'),row('archived','group','',new Date(0)),row('nested','archived'),row('other','root'),row('group','','',null,'B'),row('protected','other','SYSTEM')];
+let writes=0,reads=0;const ledger=[{articleId:'value',articleName:'Value',amount:100}];
+const ctx={ensureDefaultArticles:async()=>{},snapshot:async tenantId=>rows.filter(r=>r.tenantId===tenantId&&!r.archivedAt),serializable:async work=>work({financeArticle:{findMany:async({where})=>{reads++;return rows.filter(r=>r.tenantId===where.tenantId)},updateMany:async({where,data})=>{writes++;for(const r of rows)if(r.tenantId===where.tenantId&&where.articleId.in.includes(r.articleId)&&!r.archivedAt&&!r.systemKey)r.archivedAt=data.archivedAt;}}})};
+await archiveArticle.call(ctx,'A','group');
+assert.equal(writes,1);
+for(const id of ['group','value','nested'])assert.ok(rows.find(r=>r.tenantId==='A'&&r.articleId===id).archivedAt,id);
+assert.equal(rows.find(r=>r.articleId==='archived').archivedAt.getTime(),0);
+assert.equal(rows.find(r=>r.tenantId==='B'&&r.articleId==='group').archivedAt,null);
+assert.equal(rows.find(r=>r.articleId==='other').archivedAt,null);
+assert.deepEqual(ledger,[{articleId:'value',articleName:'Value',amount:100}]);
+await assert.rejects(archiveArticle.call(ctx,'A','root'),/Системную/);
+await assert.rejects(archiveArticle.call(ctx,'A','other'),/Системную/);
+assert.equal(writes,1);
+await archiveArticle.call(ctx,'A','group');
+assert.equal(writes,1);
+assert.ok(reads>=4);
+for(const name of ['createArticle','updateArticle']){const part=source.slice(source.indexOf('  async '+name+'('),source.indexOf('  async ',source.indexOf('  async '+name+'(')+10));assert.match(part,/this\.serializable\(async tx/);assert.doesNotMatch(part,/this\.prisma\.financeArticle/);}
+console.log('PASS: article tree archival, historical reference retention, system and tenant boundaries');

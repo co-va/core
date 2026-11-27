@@ -824,62 +824,85 @@ export class FinanceService {
 
   async createArticle(tenantId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
-    const input = objectValue(body);
-    const name = text(input.name);
-    if (!name) throw new BadRequestException('Введите название статьи');
-    const parentArticleId = text(input.parentArticleId);
-    const parent = parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
-    if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
-    const direction = text(input.direction || parent?.direction);
-    if(direction==='TRANSFER') throw new BadRequestException('Статьи транзакций создаются системными механизмами');
-    const economicType = text(input.economicType || parent?.economicType);
-    if (!ARTICLE_DIRECTIONS.has(direction)) throw new BadRequestException('Некорректное направление статьи');
-    if (!ARTICLE_ECONOMIC_TYPES.has(economicType) || economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
-    if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
-    const max = await this.prisma.financeArticle.aggregate({ where: { tenantId, parentArticleId }, _max: { position: true } });
-    await this.prisma.financeArticle.create({ data: { tenantId, articleId: randomUUID(), parentArticleId, name, direction, economicType, position: (max._max.position || 0) + 10 } });
+    await this.serializable(async tx => {
+      const input = objectValue(body);
+      const name = text(input.name);
+      if (!name) throw new BadRequestException('Введите название статьи');
+      const parentArticleId = text(input.parentArticleId);
+      const parent = parentArticleId ? await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
+      if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
+      const direction = text(input.direction || parent?.direction);
+      if(direction==='TRANSFER') throw new BadRequestException('Статьи транзакций создаются системными механизмами');
+      const economicType = text(input.economicType || parent?.economicType);
+      if (!ARTICLE_DIRECTIONS.has(direction)) throw new BadRequestException('Некорректное направление статьи');
+      if (!ARTICLE_ECONOMIC_TYPES.has(economicType) || economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
+      if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
+      const max = await tx.financeArticle.aggregate({ where: { tenantId, parentArticleId }, _max: { position: true } });
+      await tx.financeArticle.create({ data: { tenantId, articleId: randomUUID(), parentArticleId, name, direction, economicType, position: (max._max.position || 0) + 10 } });
+    });
     return this.snapshot(tenantId);
   }
 
   async updateArticle(tenantId: string, articleId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
-    const id = text(articleId);
-    const current = await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: id } } });
-    if (!current || current.archivedAt) throw new NotFoundException('Статья не найдена');
-    const input = objectValue(body);
-    const name = text(input.name || current.name);
-    if (!name) throw new BadRequestException('Введите название статьи');
-    const parentArticleId = input.parentArticleId == null ? current.parentArticleId : text(input.parentArticleId);
-    if (parentArticleId === id) throw new BadRequestException('Статья не может быть родителем самой себе');
-    const parent = parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
-    if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
-    let ancestor = parent;
-    let depthGuard = 0;
-    while (ancestor && depthGuard < 100) {
-      if (ancestor.articleId === id) throw new BadRequestException('Нельзя создать цикл в дереве статей');
-      ancestor = ancestor.parentArticleId ? await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: ancestor.parentArticleId } } }) : null;
-      depthGuard += 1;
-    }
-    if (input.direction != null && text(input.direction) !== current.direction) throw new BadRequestException('Направление статьи нельзя изменить после создания');
-    if (input.economicType != null && text(input.economicType) !== current.economicType) throw new BadRequestException('Экономический тип статьи нельзя изменить после создания');
-    if (current.systemKey && (name !== current.name || parentArticleId !== current.parentArticleId)) throw new BadRequestException('Системную статью нельзя изменить');
-    const direction = current.direction;
-    const economicType = current.economicType;
-    if (!ARTICLE_DIRECTIONS.has(direction) || !ARTICLE_ECONOMIC_TYPES.has(economicType)) throw new BadRequestException('Некорректный экономический характер статьи');
-    if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
-    await this.prisma.financeArticle.update({ where: { id: current.id }, data: { name, parentArticleId, direction, economicType } });
+    await this.serializable(async tx => {
+      const id = text(articleId);
+      const current = await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: id } } });
+      if (!current || current.archivedAt) throw new NotFoundException('Статья не найдена');
+      const input = objectValue(body);
+      const name = text(input.name || current.name);
+      if (!name) throw new BadRequestException('Введите название статьи');
+      const parentArticleId = input.parentArticleId == null ? current.parentArticleId : text(input.parentArticleId);
+      if (parentArticleId === id) throw new BadRequestException('Статья не может быть родителем самой себе');
+      const parent = parentArticleId ? await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: parentArticleId } } }) : null;
+      if (parentArticleId && (!parent || parent.archivedAt)) throw new BadRequestException('Родительская статья не найдена');
+      let ancestor = parent;
+      let depthGuard = 0;
+      while (ancestor && depthGuard < 100) {
+        if (ancestor.articleId === id) throw new BadRequestException('Нельзя создать цикл в дереве статей');
+        ancestor = ancestor.parentArticleId ? await tx.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: ancestor.parentArticleId } } }) : null;
+        depthGuard += 1;
+      }
+      if (input.direction != null && text(input.direction) !== current.direction) throw new BadRequestException('Направление статьи нельзя изменить после создания');
+      if (input.economicType != null && text(input.economicType) !== current.economicType) throw new BadRequestException('Экономический тип статьи нельзя изменить после создания');
+      if (current.systemKey && (name !== current.name || parentArticleId !== current.parentArticleId)) throw new BadRequestException('Системную статью нельзя изменить');
+      const direction = current.direction;
+      const economicType = current.economicType;
+      if (!ARTICLE_DIRECTIONS.has(direction) || !ARTICLE_ECONOMIC_TYPES.has(economicType)) throw new BadRequestException('Некорректный экономический характер статьи');
+      if (parent && parent.direction !== direction) throw new BadRequestException('Направление дочерней статьи должно совпадать с родительской');
+      await tx.financeArticle.update({ where: { id: current.id }, data: { name, parentArticleId, direction, economicType } });
+    });
     return this.snapshot(tenantId);
   }
 
   async archiveArticle(tenantId: string, articleId: string) {
     await this.ensureDefaultArticles(tenantId);
     const id = text(articleId);
-    const current = await this.prisma.financeArticle.findUnique({ where: { tenantId_articleId: { tenantId, articleId: id } } });
-    if (!current || current.archivedAt) return this.snapshot(tenantId);
-    if (current.systemKey) throw new BadRequestException('Системную статью удалить нельзя');
-    const child = await this.prisma.financeArticle.findFirst({ where: { tenantId, parentArticleId: id, archivedAt: null } });
-    if (child) throw new BadRequestException('Сначала удалите или перенесите вложенные статьи');
-    await this.prisma.financeArticle.update({ where: { id: current.id }, data: { archivedAt: new Date() } });
+    await this.serializable(async tx => {
+      // Read the entire tenant tree, including archived ancestors, so active
+      // descendants cannot survive an archived group. Never touch the ledger.
+      const rows = await tx.financeArticle.findMany({ where: { tenantId }, select: { articleId: true, parentArticleId: true, systemKey: true, archivedAt: true } });
+      const current = rows.find(row => row.articleId === id);
+      if (!current || current.archivedAt) return;
+      const children = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const members = children.get(row.parentArticleId) || [];
+        members.push(row);
+        children.set(row.parentArticleId, members);
+      }
+      const visited = new Set<string>();
+      const activeIds: string[] = [];
+      const queue = [current];
+      for (let index = 0; index < queue.length; index += 1) {
+        const row = queue[index];
+        if (visited.has(row.articleId)) continue;
+        visited.add(row.articleId);
+        if (row.systemKey) throw new BadRequestException('Системную статью удалить нельзя');
+        if (!row.archivedAt) activeIds.push(row.articleId);
+        queue.push(...(children.get(row.articleId) || []));
+      }
+      await tx.financeArticle.updateMany({ where: { tenantId, articleId: { in: activeIds }, archivedAt: null, systemKey: '' }, data: { archivedAt: new Date() } });
+    });
     return this.snapshot(tenantId);
   }
 
