@@ -23,6 +23,7 @@ import {
   reconsumeDepositAllocations,
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent } from '../loyalty/price-condition';
+import { financeArticleCatalog, classifyFinanceLedger, RETIRED_SYSTEM_ARTICLE_KEYS } from './article-catalog';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -807,7 +808,7 @@ export class FinanceService {
     const existing = await db.financeArticle.findMany({ where: { tenantId, systemKey: { not: '' } }, select: { systemKey: true } });
     const keys = new Set(existing.map((row) => row.systemKey));
     for (const item of DEFAULT_FINANCE_ARTICLES) {
-      if (keys.has(item.systemKey)) continue;
+      if (keys.has(item.systemKey) || RETIRED_SYSTEM_ARTICLE_KEYS.has(item.systemKey)) continue;
       await db.financeArticle.create({ data: { tenantId, ...item } });
     }
   }
@@ -819,7 +820,7 @@ export class FinanceService {
   async listArticles(tenantId: string) {
     await this.ensureDefaultArticles(tenantId);
     const rows = await this.prisma.financeArticle.findMany({ where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] });
-    return rows.map((row) => this.articleDto(row));
+    return rows.filter(row=>!RETIRED_SYSTEM_ARTICLE_KEYS.has(row.systemKey)).map((row) => this.articleDto(row));
   }
 
   async createArticle(tenantId: string, body: unknown) {
@@ -1536,7 +1537,7 @@ export class FinanceService {
   async snapshot(tenantId: string) {
     await this.ensureDefaultArticles(tenantId);
     const [articles, settlements, operations, ledger, deposits] = await Promise.all([
-      this.prisma.financeArticle.findMany({ where: { tenantId, archivedAt: null }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
+      this.prisma.financeArticle.findMany({ where: { tenantId }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.financeSettlement.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' } }),
       this.prisma.financeOperation.findMany({ where: { tenantId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
       this.prisma.financeLedgerEntry.findMany({ where: { tenantId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }] }),
@@ -1569,7 +1570,9 @@ export class FinanceService {
         originalOperationId:row.originalOperationId,occurredAt:row.occurredAt.toISOString(),recordedAt:row.createdAt.toISOString(),data};
     });
     const operationById = new Map(operations.map((operation) => [operation.id, operation.operationId]));
+    const articleCatalog=financeArticleCatalog(articles);
     const systemArticles = new Map(articles.filter(a => a.systemKey).map(a => [a.systemKey, a]));
+    const operationByInternalId=new Map(operations.map(row=>[row.id,row]));
     // Resolve existing system facts without modifying the historical ledger or its amounts.
     const articleFor = (row: typeof ledger[number]) => {
       const data = objectValue(row.data);
@@ -1592,6 +1595,7 @@ export class FinanceService {
       component: text(objectValue(row.data).component),
       relatedOperationId: text(objectValue(row.data).relatedOperationId),
       ...articleFor(row),
+      articleClass: classifyFinanceLedger({...articleFor(row),economicType:row.economicType,direction:row.direction,component:text(objectValue(row.data).component)},operationByInternalId.get(row.financeOperationId)||null,articles,articleCatalog),
       lineName: text(objectValue(row.data).lineName),
       quantity: objectValue(row.data).quantity == null ? null : numberValue(objectValue(row.data).quantity),
       unitPrice: objectValue(row.data).unitPrice == null ? null : money(objectValue(row.data).unitPrice),
@@ -1599,7 +1603,8 @@ export class FinanceService {
     }));
     return {
       version: 8,
-      articles: articles.map((row) => this.articleDto(row)),
+      articles: articles.filter(row=>!row.archivedAt&&!RETIRED_SYSTEM_ARTICLE_KEYS.has(row.systemKey)).map((row) => this.articleDto(row)),
+      articleCatalog,
       settlements: settlements.map((row) => ({ source: { type: row.sourceType, id: row.sourceId }, settlement: clone(row.data), recordedAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() })),
       operations: operationRows,
       ledger: ledgerRows,
