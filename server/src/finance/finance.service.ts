@@ -24,7 +24,7 @@ import {
 } from '../loyalty/deposit-state';
 import { resolvePersonPricePercent } from '../loyalty/price-condition';
 import { financeArticleCatalog, classifyFinanceLedger, financeArticleRoute, RETIRED_SYSTEM_ARTICLE_KEYS } from './article-catalog';
-import { projectPositionMovements, splitCashByComponent } from './position-movements';
+import { projectPositionMovements, splitCashByComponent, detailDepositPositionComponents } from './position-movements';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -1567,7 +1567,7 @@ export class FinanceService {
       }
       if(positionProjection.has(row.operationId)){
         const parts=positionProjection.get(row.operationId);
-        data.positionMovements=parts?parts.map(part=>({...part,articleClass:financeArticleRoute(articleCatalog,part.route)})):null;
+        data.positionMovements=parts?detailDepositPositionComponents(parts,data,row.kind,accountingByOperation.get(row.operationId)||[]).map(part=>({...part,articleClass:financeArticleRoute(articleCatalog,part.route)})):null;
       }
       const accounting=accountingByOperation.get(row.operationId);
       if (accounting?.length) data.depositAccounting=accounting;

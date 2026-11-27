@@ -158,3 +158,61 @@ export function projectPositionMovements(operations:Row[],ledger:Row[],lastId=''
  }
  return result;
 }
+
+
+// Detail already reconciled net position movements without modifying payment,
+// refund, balance or ledger facts. Net position order stays sequential.
+// Conditional accounting uses the existing operation-level proportional
+// refund contract; apportion its confirmed components by cumulative net
+// amount, in integer cents. Ordinary deposits use existing principal-first
+// consumption/restoration. Missing or contradictory facts stay unresolved.
+export function detailDepositPositionComponents(parts:Row[],data:Row,kind:string,accounting:Row[]=[]):Row[]{
+ const result=parts.map(p=>{const {depositComponents,...rest}=p;return rest;});
+ const refund=kind==='refund',sign=refund?1:-1;
+ if(kind!=='payment'&&!refund)return result;
+ const exact=(value:any):number|null=>{
+  if(value==null||value===''||!Number.isFinite(Number(value)))return null;
+  const n=cents(value);return Number.isSafeInteger(n)?n:null;
+ };
+ const signed=(n:number)=>n===0?0:n/100;
+ const allocations=arr(data.depositAllocations);
+ const depositId=(a:Row)=>str(a.depositId||a.sourceId||a.id);
+ const discount=obj(data.depositDiscount);
+ for(const a of allocations){
+  const id=depositId(a),total=exact(a.amount);
+  if(!id||total===null||total<=0||allocations.filter(x=>depositId(x)===id).length!==1)continue;
+  const slices=result.filter(p=>p.sourceKind==='deposit'&&p.sourceId===id&&p.component==='position');
+  if(!slices.length||slices.some(p=>exact(p.amount)===null||cents(p.amount)<=0)||slices.reduce((n,p)=>n+cents(p.amount),0)!==total)continue;
+  const records=accounting.filter(r=>depositId(r)===id),record=records[0];
+  const relatedDiscount=str(discount.depositId)===id||(!str(discount.depositId)&&obj(data.priceCondition).programType==='deposit'&&str(obj(data.priceCondition).depositId)===id&&cents(obj(data.settlement).pricePercentTotal)>0);
+  let real=0,grant=0,reversed=0,used=0,restored=0,conditional=false;
+  if(records.length){
+   if(records.length!==1||record.confirmed!==true||exact(record.netAmount)!==total)continue;
+   const values=[record.realDelta,record.benefitDelta,record.grossAmount,record.benefitGranted,record.benefitReversed,record.benefitUsed,record.benefitRestored].map(exact);
+   if(values.some(v=>v===null))continue;
+   const [r,b,g,gr,rv,u,rs]=values as number[];
+   if(r+b!==sign*total||g!==total+(refund?rv:gr)||[g,gr,rv,u,rs].some(v=>v<0))continue;
+   real=r;grant=gr;reversed=rv;used=u;restored=rs;conditional=true;
+  }else{
+   if(relatedDiscount)continue;
+   const p=exact(a.principalAmount),b=exact(a.benefitAmount);
+   if(p===null||b===null||p<0||b<0||p+b!==total)continue;
+   real=sign*p;used=refund?0:b;restored=refund?b:0;
+  }
+  let before=0;
+  for(const p of slices){
+   const net=cents(p.amount),after=before+net;
+   const share=(value:number)=>Math.round(value*after/total)-Math.round(value*before/total);
+   const money=conditional?share(real):sign*(Math.min(Math.abs(real),after)-Math.min(Math.abs(real),before));
+   const bonus=sign*net-money;
+   const gr=share(grant),rv=share(reversed);
+   p.depositComponents={money:signed(money),bonus:signed(bonus),
+    grossAmount:conditional?signed(net+(refund?rv:gr)):null,
+    benefitGranted:signed(gr),benefitReversed:signed(rv),
+    bonusUsed:signed(conditional?share(used):refund?0:-bonus),
+    bonusRestored:signed(conditional?share(restored):refund?bonus:0)};
+   before=after;
+  }
+ }
+ return result;
+}

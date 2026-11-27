@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
-const {projectPositionMovements,splitCashByComponent}=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../server/src/finance/position-movements.ts',import.meta.url),'utf8'))).toString('base64'));
+const {projectPositionMovements,splitCashByComponent,detailDepositPositionComponents}=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../server/src/finance/position-movements.ts',import.meta.url),'utf8'))).toString('base64'));
 const item=(id,name,amount,type='procedure')=>({sourceId:id,sourceType:type,name,planAmount:amount});
 const invoice=[item('hair','Стрижка',4000),item('colour','Окрашивание',8000),item('product','Товар',6000,'product')];
 const op=(id,n,items,serviceAmount,more={})=>({id,operationId:id,sourceType:'record',sourceId:'visit',kind:'payment',status:'completed',createdAt:n,occurredAt:n,data:{settlement:{items},serviceAmount,tips:0,...more}});
@@ -31,3 +31,27 @@ assert.deepEqual(projectPositionMovements([saved,b],ledger).get('a'),out.get('a'
 const productOnly=op('prod',1,[invoice[2]],6000,{tips:1});
 assert.deepEqual(projectPositionMovements([productOnly],[entry('prod','p','bank',6000),entry('prod','t','bank',1,'tips')]).get('prod').map(p=>p.route),['PRODUCT_REVENUE','PRODUCT_TIPS']);
 console.log('PASS position movement allocation, split wallet totals, tips, refund, internal sources');
+
+const details=(parts,data,kind='payment',accounting=[])=>detailDepositPositionComponents(parts,data,kind,accounting).filter(p=>p.sourceKind==='deposit').map(p=>p.depositComponents);
+const dParts=projectPositionMovements([deposit],[]).get('d');
+const ordinary={depositAllocations:[{depositId:'d1',amount:5000,principalAmount:3000,benefitAmount:2000}]};
+assert.deepEqual(details(dParts,ordinary).map(c=>[c.money,c.bonus,c.bonusUsed]),[[-3000,-1000,1000],[0,-1000,1000]]);
+assert.deepEqual(details(dParts,ordinary,'refund').map(c=>[c.money,c.bonus,c.bonusRestored]),[[3000,1000,1000],[0,1000,1000]]);
+const conditional={depositAllocations:[{depositId:'d1',amount:5000,principalAmount:5000,benefitAmount:0}],depositDiscount:{depositId:'d1'}};
+const confirmed={depositId:'d1',confirmed:true,netAmount:5000,grossAmount:6250,realDelta:-6250,benefitDelta:1250,benefitGranted:1250,benefitReversed:0,benefitUsed:0,benefitRestored:0};
+assert.deepEqual(details(dParts,conditional,'payment',[confirmed]).map(c=>[c.money,c.bonus,c.grossAmount,c.benefitGranted]),[[-5000,1000,5000,1000],[-1250,250,1250,250]]);
+const reversal={...confirmed,realDelta:6250,benefitDelta:-1250,benefitGranted:0,benefitReversed:1250};
+assert.deepEqual(details(dParts,conditional,'refund',[reversal]).map(c=>[c.money,c.bonus,c.benefitReversed]),[[5000,-1000,1000],[1250,-250,250]]);
+assert.deepEqual(details(dParts,conditional,'payment',[{...confirmed,confirmed:false}]),[undefined,undefined]);
+assert.deepEqual(details(dParts,conditional),[undefined,undefined]);
+assert.deepEqual(details(dParts,{depositAllocations:[{depositId:'d1',amount:5000}]}),[undefined,undefined]);
+assert.deepEqual(details(dParts,ordinary,'payment',[{...confirmed,realDelta:-1}]),[undefined,undefined]);
+const pennies=[1,1,1].map((n,i)=>({id:'p'+i,sourceKind:'deposit',sourceId:'tiny',component:'position',amount:n/100}));
+const tiny={depositAllocations:[{depositId:'tiny',amount:.03}],depositDiscount:{depositId:'tiny'}};
+const small={depositId:'tiny',confirmed:true,netAmount:.03,grossAmount:.04,realDelta:-.04,benefitDelta:.01,benefitGranted:.01,benefitReversed:0,benefitUsed:0,benefitRestored:0};
+const apportioned=details(pennies,tiny,'payment',[small]);
+assert.deepEqual(apportioned.map(c=>Math.round((c.money+c.bonus)*100)),[-1,-1,-1]);
+assert.equal(apportioned.reduce((n,c)=>n+Math.round(c.money*100),0),-4);
+assert.equal(apportioned.reduce((n,c)=>n+Math.round(c.bonus*100),0),1);
+assert.ok(dParts.every(p=>!p.depositComponents),'Read-only projection');
+console.log('PASS deposit position components, conditional grant and refund, rounding and unresolved history');
