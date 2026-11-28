@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {recordPaymentCalendarPhase as phase} from '../core/time/payment-date.js';
+import {recordPaymentCalendarPhase as phase} from '../core/time/zone.js';
 const tz='Europe/Moscow',day='2026-12-03';
 assert.equal(phase(day,'2026-12-02T20:59:59Z',tz),'before');
 assert.equal(phase(day,'2026-12-02T21:00:00Z',tz),'on');
