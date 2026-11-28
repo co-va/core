@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {recordPaymentCalendarPhase as phase} from '../core/time/payment-date.js';
+const tz='Europe/Moscow',day='2026-12-03';
+assert.equal(phase(day,'2026-12-02T20:59:59Z',tz),'before');
+assert.equal(phase(day,'2026-12-02T21:00:00Z',tz),'on');
+assert.equal(phase(day,'2026-12-03T20:59:59Z',tz),'on');
+assert.equal(phase(day,'2026-12-03T21:00:00Z',tz),'after');
+assert.equal(phase(day,'2026-12-02T21:00:00Z','Europe/Amsterdam'),'before');
+assert.equal(phase('','2026-12-03T09:00:00Z',tz),'');
+console.log('PASS payment calendar date and workplace timezone');
