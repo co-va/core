@@ -9,6 +9,7 @@ const mechanism=(id:string,name:string,capability:string,values:Value[],routes:s
 export const APPROVED_FINANCE_ARTICLES:Article[]=[
  mechanism('services','Оказание услуг','journal',[
   value('services-payment','Оплата услуг',['SERVICE_REVENUE']),
+  value('services-prepayment','Предоплата',['SERVICE_PREPAYMENT']),
   value('services-tips','Чаевые',['TIPS']),
   value('services-refund','Возврат',['SERVICE_REFUND','TIPS_REFUND','REFUND'])
  ]),
@@ -87,4 +88,26 @@ export function classifyFinanceLedger(entry:{articleId?:string;economicType?:str
   route=refund?(product?'PRODUCT_REFUND':'SERVICE_REFUND'):(economic==='TIPS'||route==='TIPS'||entry.component==='tips')?(product?'PRODUCT_TIPS':'TIPS'):product?'PRODUCT_REVENUE':'SERVICE_REVENUE';
  }
  return financeArticleRoute(catalog,route);
+}
+
+export function registeredFinanceArticle(catalog:Article[],articleId:string,valueId=''){
+ const a=catalog.find(a=>a.articleId===articleId);
+ const v=valueId?a?.values.find(v=>v.valueId===valueId):null;
+ if(!a||(valueId&&!v))return null;
+ return {articleId:a.articleId,articleName:a.name,valueId:v?.valueId||'',valueName:v?.name||''};
+}
+// Raw route owner is an internal accounting fact. It never implicitly fills
+// an explicitly empty canonical value, and prepayment is journal-owned.
+export function resolveManualArticle(raw:RawArticle[],catalog:Article[],articleId:string,valueId:string,direction:string){
+ const a=catalog.find(a=>a.articleId===articleId&&!a.archived);
+ if(!a)return null;
+ const v=valueId?a.values.find(v=>v.valueId===valueId&&!v.archived):null;
+ if(valueId&&!v)return null;
+ if(v?.routes.includes('SERVICE_PREPAYMENT'))return null;
+ const eligible=raw.filter(r=>!r.archivedAt&&r.direction===direction&&r.economicType!=='GROUP'&&!RETIRED_SYSTEM_ARTICLE_KEYS.has(r.systemKey)&&!['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT','SERVICE_PREPAYMENT'].includes(r.economicType)&&r.systemKey!=='SERVICE_PREPAYMENT');
+ const direct=eligible.find(r=>r.articleId===(v?.valueId||a.articleId));
+ const routes=v?v.routes:[...a.routes,...a.values.filter(v=>!v.archived&&!v.custom).flatMap(v=>v.routes)];
+ const owner=direct||routes.flatMap(route=>eligible.filter(r=>r.systemKey===route))[0];
+ const identity=registeredFinanceArticle(catalog,articleId,valueId);
+ return owner&&identity?{rawId:owner.articleId,identity}:null;
 }

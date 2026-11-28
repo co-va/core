@@ -69,3 +69,13 @@ const depositRefundParts=depositProjection.get('dr');
 assert.deepEqual(depositRefundParts.map(p=>[p.positionName,p.amount]),[['Стрижка',4000],['Окрашивание',1000]]);
 assert.deepEqual(details(depositRefundParts,ordinary,'refund').map(c=>[c.money,c.bonus]),[[3000,1000],[0,1000]]);
 console.log('PASS deposit refund position linkage and symmetric half-cent rounding');
+
+const advance=op('advance',1,[invoice[0]],2000,{paymentTiming:'prepayment'});
+const remainder=op('remainder',2,[invoice[0]],2000,{paymentTiming:'settlement'});
+const advanceLedger=[{...entry('advance','adv','cash',2000),economicType:'SERVICE_PREPAYMENT'},entry('remainder','rem','bank',2000)];
+const advanceResult=projectPositionMovements([advance,remainder],advanceLedger);
+assert.equal(advanceResult.get('advance')[0].route,'SERVICE_PREPAYMENT');
+assert.equal(advanceResult.get('remainder')[0].route,'SERVICE_REVENUE');
+assert.equal(advanceResult.get('advance')[0].amount+advanceResult.get('remainder')[0].amount,4000);
+const advRefund={...op('ar',3,[invoice[0]],500),kind:'refund',originalOperationId:'advance',data:{settlement:{items:[invoice[0]]},serviceAmount:500,tips:0,refundOfPrepayment:true}};
+assert.equal(projectPositionMovements([advance,remainder,advRefund],[...advanceLedger,entry('ar','ar','cash',500,'service','OUT')]).get('ar')[0].route,'SERVICE_REFUND');

@@ -59,12 +59,13 @@ function sources(op:Row,entries:Row[]){
  return sources;
 }
 function sourceKey(s:Row){return key(s.sourceKind,s.sourceId,s.entryId,s.component);}
-function route(part:Row,refund:boolean){
+function route(part:Row,refund:boolean,timing:unknown=''){
  if(part.sourceKind==='deposit')return refund?'DEPOSIT_PAYMENT_REFUND':'DEPOSIT_SPEND';
  if(part.sourceKind==='personal')return refund?'PERSONAL_ACCOUNT_PAYMENT_REFUND':'PERSONAL_ACCOUNT_SPEND';
  const product=part.positionType==='product';
  if(refund)return product?'PRODUCT_REFUND':'SERVICE_REFUND';
  if(part.component==='tips')return product?'PRODUCT_TIPS':'TIPS';
+ if(timing==='prepayment'&&!product)return 'SERVICE_PREPAYMENT';
  return product?'PRODUCT_REVENUE':'SERVICE_REVENUE';
 }
 function sameSource(refund:Row,original:Row){
@@ -74,7 +75,7 @@ function storedValid(parts:Row[],src:Row[],op:Row){
  const expected=new Map<string,number>(),actual=new Map<string,number>(),ids=new Set<string>();
  for(const s of src)expected.set(sourceKey(s),(expected.get(sourceKey(s))||0)+s.amount);
  for(const p of parts){
-  if(!p.id||ids.has(p.id)||!['procedure','product'].includes(p.positionType)||!Number.isFinite(Number(p.amount))||cents(p.amount)<=0||(!p.positionKey&&p.component!=='tips')||p.route!==route(p,op.kind==='refund'))return false;
+  if(!p.id||ids.has(p.id)||!['procedure','product'].includes(p.positionType)||!Number.isFinite(Number(p.amount))||cents(p.amount)<=0||(!p.positionKey&&p.component!=='tips')||p.route!==route(p,op.kind==='refund',obj(op.data).paymentTiming))return false;
   ids.add(p.id);const k=sourceKey(p);actual.set(k,(actual.get(k)||0)+cents(p.amount));
  }
  return expected.size===actual.size&&[...expected].every(([k,n])=>actual.get(k)===n);
@@ -121,7 +122,7 @@ export function projectPositionMovements(operations:Row[],ledger:Row[],lastId=''
       let left=s.amount;
       if(s.component==='tips'){
        const part={...s,id:key(id,next.length),positionKey:'',positionId:'',positionName:'',positionType:tipType,amount:left/100};
-       next.push({...part,route:route(part,false)});continue;
+       next.push({...part,route:route(part,false,d.paymentTiming)});continue;
       }
       for(const p of items){
        if(left<=0)break;
@@ -129,7 +130,7 @@ export function projectPositionMovements(operations:Row[],ledger:Row[],lastId=''
        if(amount<=0)continue;
        const {capacity,...position}=p;
        const part={...s,...position,id:key(id,next.length),amount:amount/100};
-       next.push({...part,route:route(part,false)});
+       next.push({...part,route:route(part,false,d.paymentTiming)});
        used.set(p.positionKey,(used.get(p.positionKey)||0)+amount);left-=amount;
       }
       if(left!==0){valid=false;break;}
