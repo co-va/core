@@ -19,7 +19,7 @@ import {
 } from '../loyalty/personal-account-state';
 import { FinanceService } from './finance.service';
 import { splitCashByComponent } from './position-movements';
-import { zonedDateTimeToDate } from '../../../core/time/zone.js';
+import { recordPaymentCalendarPhase, zonedDateTimeParts } from '../../../core/time/zone.js';
 import { InventoryService } from '../inventory/inventory.service';
 
 type JsonObject = Record<string, any>;
@@ -297,19 +297,20 @@ export class PaymentSettlementService {
         recordVisitAt = visitDatePriceMoment(record.date);
         const visitDay = text(record.date).slice(0, 10);
         visitDate=visitDay;
+        const workplace=await tx.workplace.findUnique({where:{tenantId_key:{tenantId,key:text(record.workplaceId)}}});
+        const timeZone=workplace?.timeZone||'';
         if(paymentTiming){
-          const workplace=await tx.workplace.findUnique({where:{tenantId_key:{tenantId,key:text(record.workplaceId)}}});
-          const start=zonedDateTimeToDate(visitDay+'T'+text(record.from),workplace?.timeZone);
-          if(!start)throw new BadRequestException('Не определено время визита');
-          if(prepayment&&occurredAt>=start)throw new BadRequestException('Предоплата проводится до начала визита');
-          if(!prepayment&&occurredAt<start)throw new BadRequestException('До начала визита оформите предоплату');
+          const phase=recordPaymentCalendarPhase(visitDay,occurredAt,timeZone);
+          if(!phase)throw new BadRequestException('Не определена дата визита');
+          if(prepayment&&phase!=='before')throw new BadRequestException('Предоплата проводится до даты визита');
+          if(!prepayment&&phase==='before')throw new BadRequestException('До даты визита оформите предоплату');
           if(prepayment){
             const events=await tx.recordEvent.findMany({where:{tenantId,recordId:source.id},select:{data:true}});
             if(['Отменил','Удалена'].includes(text(record.historicalAction))||events.some(e=>['cancelled','completed'].includes(text(objectValue(e.data).type))))throw new BadRequestException('Предоплата недоступна для завершённой или отменённой записи');
           }
         }
-        const paymentDay = occurredAt.toISOString().slice(0, 10);
-        const today = new Date().toISOString().slice(0, 10);
+        const paymentDay = zonedDateTimeParts(occurredAt,timeZone).date;
+        const today = zonedDateTimeParts(new Date(),timeZone).date;
         // Historical entry is identified by the dated service AND dated
         // operation. Current-day payment of a past record is not backfill.
         historicalRecordPayment = Boolean(visitDay && visitDay < today && paymentDay < today);

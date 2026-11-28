@@ -1668,6 +1668,7 @@ export class FinanceService {
     }));
     return {
       version: 8,
+      recordPaymentDateMode: 'workplace-calendar-day',
       articles: articles.filter(row=>!row.archivedAt&&!RETIRED_SYSTEM_ARTICLE_KEYS.has(row.systemKey)).map((row) => this.articleDto(row)),
       articleCatalog,
       settlements: settlements.map((row) => ({ source: { type: row.sourceType, id: row.sourceId }, settlement: clone(row.data), recordedAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() })),
