@@ -19,6 +19,7 @@ import {
 } from '../loyalty/personal-account-state';
 import { FinanceService } from './finance.service';
 import { splitCashByComponent } from './position-movements';
+import { zonedDateTimeToDate } from '../../../core/time/zone.js';
 import { InventoryService } from '../inventory/inventory.service';
 
 type JsonObject = Record<string, any>;
@@ -274,12 +275,18 @@ export class PaymentSettlementService {
     }
 
     const occurredAt = requiredOccurredAt(input.occurredAt);
+    const paymentTiming=text(input.paymentTiming);
+    const prepayment=paymentTiming==='prepayment';
+    if(paymentTiming&&!['prepayment','settlement'].includes(paymentTiming))throw new BadRequestException('Некорректный вид оплаты');
+    if(paymentTiming&&occurredAt.getTime()>Date.now()+60000)throw new BadRequestException('Дата фактической оплаты не может быть в будущем');
+    if(prepayment&&(source.type!=='record'||tips>0||depositAllocated>0||personalAccountAmount>0||input.finalizeDebt===true))throw new BadRequestException('Предоплата записи принимается в кошелёк без чаевых, списания лояльности и оформления долга');
     const operationId = randomUUID();
     let remainingDue = 0;
     await this.serializable(async (tx) => {
       let condition;
       let historicalRecordPayment = false;
       let recordVisitAt: Date | null = null;
+      let visitDate='';
       if (source.type === 'record') {
         await tx.$queryRaw`SELECT id FROM "BusinessRecord" WHERE "tenantId" = ${tenantId} AND "recordId" = ${source.id} FOR UPDATE`;
         const recordRow = await tx.record.findUnique({
@@ -289,6 +296,18 @@ export class PaymentSettlementService {
         const record = objectValue(recordRow.data);
         recordVisitAt = visitDatePriceMoment(record.date);
         const visitDay = text(record.date).slice(0, 10);
+        visitDate=visitDay;
+        if(paymentTiming){
+          const workplace=await tx.workplace.findUnique({where:{tenantId_key:{tenantId,key:text(record.workplaceId)}}});
+          const start=zonedDateTimeToDate(visitDay+'T'+text(record.from),workplace?.timeZone);
+          if(!start)throw new BadRequestException('Не определено время визита');
+          if(prepayment&&occurredAt>=start)throw new BadRequestException('Предоплата проводится до начала визита');
+          if(!prepayment&&occurredAt<start)throw new BadRequestException('До начала визита оформите предоплату');
+          if(prepayment){
+            const events=await tx.recordEvent.findMany({where:{tenantId,recordId:source.id},select:{data:true}});
+            if(['Отменил','Удалена'].includes(text(record.historicalAction))||events.some(e=>['cancelled','completed'].includes(text(objectValue(e.data).type))))throw new BadRequestException('Предоплата недоступна для завершённой или отменённой записи');
+          }
+        }
         const paymentDay = occurredAt.toISOString().slice(0, 10);
         const today = new Date().toISOString().slice(0, 10);
         // Historical entry is identified by the dated service AND dated
@@ -306,6 +325,9 @@ export class PaymentSettlementService {
       const paid = await this.serviceNet(tx, tenantId, source);
       const due = Math.max(0, money(settlement.planTotal - paid));
       if (serviceAmount > due + 0.009) throw new BadRequestException('Оплата превышает остаток к оплате');
+      // Explicitly accept partial advances only. Fully prepaid completion and
+      // conditional deposit benefit require the service-completion contract.
+      if(prepayment&&(serviceAmount>=due-0.009||settlement.items.some((i:any)=>i.sourceType==='product')||condition.source?.programType==='deposit'&&condition.percent>0))throw new BadRequestException('Предоплата должна быть частичной оплатой услуг без условной выгоды по депозиту');
 
       let canonicalPersonKey = ownerKey;
       if (personalAccountAmount > 0) {
@@ -357,7 +379,8 @@ export class PaymentSettlementService {
           depositAllocations,
           personalAccountAmount,
           priceCondition: condition.source ? clone(condition.source) : null,
-          depositDiscount: depositDiscountForPayment(condition.source, settlement, serviceAmount, paid),
+          depositDiscount: prepayment?null:depositDiscountForPayment(condition.source, settlement, serviceAmount, paid),
+          ...(paymentTiming?{paymentTiming,visitDate}:{}),
           ...(historicalRecordPayment ? { historicalBackfill: true } : {}),
           cashTotal: cashAllocated,
           cashServiceAmount,
@@ -369,12 +392,12 @@ export class PaymentSettlementService {
         entries: components.map((entry) => ({
           ...entry,
           direction: 'IN',
-          economicType: entry.component === 'tips' ? 'TIPS' : 'SERVICE_REVENUE',
+          economicType: entry.component === 'tips' ? 'TIPS' : prepayment?'SERVICE_PREPAYMENT':'SERVICE_REVENUE',
         })),
       });
 
       remainingDue = Math.max(0, money(due - serviceAmount));
-      if (source.type === 'record' && remainingDue <= 0.009) {
+      if (!prepayment && source.type === 'record' && remainingDue <= 0.009) {
         const row = await tx.record.findUnique({ where: { tenantId_recordId: { tenantId, recordId: source.id } } });
         const record = objectValue(row?.data);
         // A historical invoice must not unexpectedly consume present-day
@@ -384,7 +407,7 @@ export class PaymentSettlementService {
           await tx.record.update({ where: { id: row.id }, data: { data: json({ ...record, consumablesPosted: true }) } });
         }
       }
-      if (input.finalizeDebt === true && ownerKey) {
+      if (!prepayment && input.finalizeDebt === true && ownerKey) {
         await syncPersonalAccountDebt(tx, {
           tenantId,
           personKey: canonicalPersonKey || ownerKey,
@@ -539,6 +562,7 @@ export class PaymentSettlementService {
           reason: text(input.reason),
           settlement: clone(objectValue(paymentData.settlement)),
           depositDiscount: depositDiscountForRefund(paymentData, serviceAmount, refundedService),
+          ...(paymentData.paymentTiming==='prepayment'?{refundOfPrepayment:true}:{}),
         },
         entries: [
           ...(cashServiceAmount > 0 ? [{ walletId, walletName, amount: cashServiceAmount, component: 'service', direction: 'OUT', economicType: 'SERVICE_REFUND' }] : []),

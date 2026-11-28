@@ -25,6 +25,8 @@ import {
 import { resolvePersonPricePercent } from '../loyalty/price-condition';
 import { financeArticleCatalog, classifyFinanceLedger, financeArticleRoute, RETIRED_SYSTEM_ARTICLE_KEYS } from './article-catalog';
 import { projectPositionMovements, splitCashByComponent, detailDepositPositionComponents } from './position-movements';
+import { planManualWalletDocuments } from './manual-operation';
+import { registeredFinanceArticle, resolveManualArticle } from './article-catalog';
 
 type JsonObject = Record<string, any>;
 type Db = PrismaService | Prisma.TransactionClient;
@@ -755,6 +757,7 @@ export class FinanceService {
           data: json({
             walletName: text(entry.walletName), component: text(entry.component), relatedOperationId: text(entry.relatedOperationId),
             articleId: text(entry.articleId)||systemArticle?.articleId||'', articleName: text(entry.articleName)||systemArticle?.name||'', lineName: text(entry.lineName),
+            ...(entry.articleClass?{articleClass:entry.articleClass}:{}), ...(entry.positionIndex!=null?{positionIndex:entry.positionIndex,positionTotal:entry.positionTotal,positionQuantity:entry.positionQuantity,partial:entry.partial===true}:{}),
             quantity: entry.quantity == null ? null : numberValue(entry.quantity),
             unitPrice: entry.unitPrice == null ? null : money(entry.unitPrice), note: entry.economicType==='DEPOSIT_RECEIVED'?'':text(entry.note),
           }),
@@ -776,6 +779,7 @@ export class FinanceService {
           data: json({
             walletName: text(entry.walletName), component: text(entry.component), relatedOperationId: text(entry.relatedOperationId),
             articleId: text(entry.articleId), articleName: text(entry.articleName), lineName: text(entry.lineName),
+            ...(entry.articleClass?{articleClass:entry.articleClass}:{}), ...(entry.positionIndex!=null?{positionIndex:entry.positionIndex,positionTotal:entry.positionTotal,positionQuantity:entry.positionQuantity,partial:entry.partial===true}:{}),
             quantity: entry.quantity == null ? null : numberValue(entry.quantity), unitPrice: entry.unitPrice == null ? null : money(entry.unitPrice), note: text(entry.note),
           }),
         },
@@ -975,54 +979,75 @@ export class FinanceService {
     });
   }
 
+  private async prepareManualDocuments(db: Db, tenantId: string, input: JsonObject, direction: string) {
+    const raw = await db.financeArticle.findMany({ where: { tenantId } });
+    const byId = new Map(raw.map(a=>[a.articleId,a]));
+    const canonical=financeArticleCatalog(raw);
+    const explicit=text(input.canonicalArticleId);
+    const selected=explicit?resolveManualArticle(raw,canonical,explicit,text(input.articleValueId),direction):null;
+    if(explicit&&!selected)throw new BadRequestException('Статья или значение недоступны для ручной операции');
+    const operationArticleId=selected?.rawId||text(input.articleId);
+    const rawLines=arrayValue(input.lines);
+    const lines=rawLines.length?rawLines.map((value,index)=>{
+      const row=objectValue(value),quantity=numberValue(row.quantity??1),unitPrice=money(row.unitPrice??row.price);
+      return {lineName:text(row.name??row.lineName)||`Позиция ${index+1}`,quantity,unitPrice,total:money(quantity*unitPrice),articleId:explicit?operationArticleId:text(row.articleId||operationArticleId)};
+    }):[{lineName:text(input.name),quantity:1,unitPrice:money(input.amount),total:money(input.amount),articleId:operationArticleId}];
+    if(lines.some(l=>l.quantity<=0||l.unitPrice<=0||l.total<=0))throw new BadRequestException('Введите положительную сумму каждой позиции');
+    for(const line of lines){
+      const a=byId.get(line.articleId);
+      if(!a||a.archivedAt||a.economicType==='GROUP'||a.direction!==direction||RETIRED_SYSTEM_ARTICLE_KEYS.has(a.systemKey))throw new BadRequestException('Статья не найдена или не соответствует типу операции');
+      if(['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT','SERVICE_PREPAYMENT'].includes(a.economicType)||a.systemKey==='SERVICE_PREPAYMENT')throw new BadRequestException('Используйте соответствующий механизм операции');
+    }
+    const total=money(lines.reduce((sum,line)=>sum+line.total,0));
+    const allocations=input.allocations==null?[{walletId:text(input.walletId),walletName:text(input.walletName),amount:total}]:arrayValue(input.allocations);
+    let planned:ReturnType<typeof planManualWalletDocuments>;
+    try{planned=planManualWalletDocuments(lines,allocations);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректное распределение оплаты');}
+    // Prevent new split payments from referring to a permanently removed wallet.
+    if(input.allocations!=null){
+      const state=objectValue((await db.businessAuxiliaryState.findUnique({where:{tenantId}}))?.data);
+      const removed=new Set(arrayValue(state.walletDeletedIds).map(text));
+      const wallets=new Set(['cash','cashless',...arrayValue(state.wallets).map(w=>text(w.id))]);
+      if(planned.some(w=>removed.has(w.walletId)||!wallets.has(w.walletId)))throw new BadRequestException('Кошелёк не найден');
+    }
+    const note=text(input.note);
+    const documents=planned.map(doc=>{
+      const data={direction,articleId:operationArticleId,walletId:doc.walletId,walletName:doc.walletName,note,total:doc.total,lines:doc.lines,
+        ...(selected?{manualArticleClass:selected.identity}:{}),
+        ...(planned.length>1?{manualSplit:true}:{}),
+      };
+      const entries=doc.lines.map(line=>{
+        const article=byId.get(line.articleId)!;
+        return {walletId:doc.walletId,walletName:doc.walletName,direction,economicType:article.economicType,amount:line.total,component:'manual',articleId:article.articleId,articleName:article.name,
+          ...(selected?{articleClass:selected.identity}:{}),lineName:line.lineName,quantity:line.partial?null:line.quantity,unitPrice:line.unitPrice,note,
+          positionIndex:line.positionIndex,positionTotal:line.positionTotal,positionQuantity:line.quantity,partial:line.partial};
+      });
+      return {data,entries};
+    });
+    return {documents,total};
+  }
+
   async recordManualOperation(tenantId: string, body: unknown) {
     await this.ensureDefaultArticles(tenantId);
-    const input = objectValue(body);
-    const direction = text(input.direction);
-    if (!['IN', 'OUT'].includes(direction)) throw new BadRequestException('Для ручной операции выберите доход или расход');
-    const walletId = text(input.walletId);
-    const walletName = text(input.walletName);
-    if (!walletId) throw new BadRequestException('Выберите кошелёк');
-    const operationArticleId = text(input.articleId);
-    const rawLines = input.lines == null ? [] : arrayValue(input.lines);
-    const simpleAmount = money(input.amount);
-    const preparedLines = rawLines.length
-      ? rawLines.map((value, index) => {
-          const row = objectValue(value);
-          const quantity = Math.max(0, numberValue(row.quantity || 1));
-          const unitPrice = money(row.unitPrice ?? row.price);
-          const total = money(quantity * unitPrice);
-          return { lineName: text(row.name) || `Позиция ${index + 1}`, quantity, unitPrice, total, articleId: text(row.articleId || operationArticleId) };
-        }).filter((row) => row.quantity > 0 && row.unitPrice > 0 && row.total > 0)
-      : (simpleAmount > 0 ? [{ lineName: text(input.name), quantity: 1, unitPrice: simpleAmount, total: simpleAmount, articleId: operationArticleId }] : []);
-    if (!preparedLines.length) throw new BadRequestException('Введите сумму или позиции');
-    const articleIds = [...new Set(preparedLines.map((line) => line.articleId).filter(Boolean))];
-    if (!articleIds.length) throw new BadRequestException('Выберите статью');
-    const articles = await this.prisma.financeArticle.findMany({ where: { tenantId, articleId: { in: articleIds }, archivedAt: null } });
-    const articleById = new Map(articles.map((article) => [article.articleId, article]));
-    for (const line of preparedLines) {
-      const article = articleById.get(line.articleId);
-      if (!article) throw new BadRequestException('Статья не найдена');
-      if (article.economicType === 'GROUP') throw new BadRequestException('Выберите конечную статью, а не группу');
-      if (['DEPOSIT_RECEIVED','DEPOSIT_RETURN','PERSONAL_ACCOUNT_LIABILITY_IN','PERSONAL_ACCOUNT_LIABILITY_OUT'].includes(article.economicType)) throw new BadRequestException('Используйте соответствующий механизм лояльности');
-      if (article.direction !== direction) throw new BadRequestException('Статья не соответствует типу операции');
-    }
-    const operationId = randomUUID();
-    const occurredAt = requiredOccurredAt(input.occurredAt);
-    const total = money(preparedLines.reduce((sum, line) => sum + line.total, 0));
-    const source = { type: 'manual', id: operationId };
-    await this.serializable(async (tx) => {
-      await this.createOperationWithEntries(tx, tenantId, {
-        operationId,
-        kind: direction === 'IN' ? 'manual-income' : 'manual-expense',
-        source,
-        occurredAt,
-        data: { direction, articleId: operationArticleId, walletId, walletName, note: text(input.note), total, lines: preparedLines },
-        entries: preparedLines.map((line) => {
-          const article = articleById.get(line.articleId)!;
-          return { walletId, walletName, direction, economicType: article.economicType, amount: line.total, component: 'manual', articleId: article.articleId, articleName: article.name, lineName: line.lineName, quantity: line.quantity, unitPrice: line.unitPrice, note: text(input.note) };
-        }),
-      });
+    const input=objectValue(body),direction=text(input.direction);
+    if(!['IN','OUT'].includes(direction))throw new BadRequestException('Для ручной операции выберите доход или расход');
+    const occurredAt=requiredOccurredAt(input.occurredAt);
+    const requestId=text(input.requestId);
+    if((input.allocations!=null||requestId)&&!(/^[a-zA-Z0-9_-]{16,80}$/.test(requestId)))throw new BadRequestException('Укажите уникальный идентификатор расчёта');
+    const groupId=requestId?'manual-'+requestId:randomUUID();
+    await this.serializable(async tx=>{
+      if(requestId)await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId+':'+groupId}))::text`;
+      const {documents}=await this.prepareManualDocuments(tx,tenantId,input,direction);
+      const signature=JSON.stringify({occurredAt:occurredAt.toISOString(),documents});
+      const previous=requestId?await tx.financeOperation.findMany({where:{tenantId,sourceType:'manual',sourceId:groupId,kind:{in:['manual-income','manual-expense']}}}):[];
+      if(previous.length){
+        if(previous.length!==documents.length||previous.some(o=>objectValue(o.data).manualRequestSignature!==signature))throw new BadRequestException('Идентификатор расчёта уже использован для другой операции');
+        return;
+      }
+      for(const [index,doc] of documents.entries()){
+        const operationId=documents.length===1?groupId:groupId+'-'+(index+1);
+        await this.createOperationWithEntries(tx,tenantId,{operationId,kind:direction==='IN'?'manual-income':'manual-expense',source:{type:'manual',id:groupId},occurredAt,
+          data:{...doc.data,...(requestId?{manualGroupId:groupId,manualDocumentIndex:index,manualRequestSignature:signature}:{})},entries:doc.entries});
+      }
     });
     return this.snapshot(tenantId);
   }
@@ -1297,6 +1322,33 @@ export class FinanceService {
     let nextData: JsonObject = {};
     let nextEntries: JsonObject[] = [];
 
+    if((current.kind==='manual-income'||current.kind==='manual-expense')&&(currentData.manualGroupId||currentData.manualArticleClass||input.canonicalArticleId||input.allocations!=null)){
+      const direction=current.kind==='manual-income'?'IN':'OUT';
+      const groupId=text(currentData.manualGroupId);
+      if(currentData.manualSplit&&input.allocations==null)throw new BadRequestException('Корректируйте распределение всей ручной операции, а не отдельную часть позиции');
+      await this.serializable(async tx=>{
+        if(groupId)await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId+':'+groupId}))::text`;
+        const group=groupId?await tx.financeOperation.findMany({where:{tenantId,sourceType:'manual',sourceId:groupId,kind:current.kind}}):await tx.financeOperation.findMany({where:{tenantId,operationId:id}});
+        if(!group.length||group.some(o=>o.status!=='completed'))throw new BadRequestException('Расчёт содержит отменённый документ');
+        if(await tx.financeOperation.findFirst({where:{tenantId,originalOperationId:{in:group.map(o=>o.operationId)}}}))throw new BadRequestException('В расчёте есть связанные возвраты или отмены');
+        const priorClass=objectValue(currentData.manualArticleClass);
+        const explicit=text(input.canonicalArticleId??priorClass.articleId);
+        const valueId=text(input.articleValueId??priorClass.valueId);
+        const merged={...currentData,...input,canonicalArticleId:explicit,articleValueId:valueId,
+          ...(input.allocations==null?{allocations:undefined}:{}),
+          lines:input.lines??currentData.lines,amount:input.amount??currentData.total,note:input.note??currentData.note};
+        const {documents}=await this.prepareManualDocuments(tx,tenantId,merged,direction);
+        if(documents.length!==group.length)throw new BadRequestException('Для изменения количества платёжных документов отмените расчёт и оформите заново');
+        group.sort((a,b)=>numberValue(objectValue(a.data).manualDocumentIndex)-numberValue(objectValue(b.data).manualDocumentIndex));
+        for(const [index,doc] of documents.entries()){
+          const old=group[index],oldData=objectValue(old.data);
+          await this.replaceOperationWithEntries(tx,tenantId,old,occurredAt,
+            {...doc.data,...(groupId?{manualGroupId:groupId,manualDocumentIndex:index,manualRequestSignature:oldData.manualRequestSignature}:{})},doc.entries);
+        }
+      });
+      return this.snapshot(tenantId);
+    }
+
     if (current.kind === 'manual-income' || current.kind === 'manual-expense') {
       const direction = current.kind === 'manual-income' ? 'IN' : 'OUT';
       const walletId = text(input.walletId ?? currentData.walletId);
@@ -1387,12 +1439,15 @@ export class FinanceService {
       const otherPaid = await this.serviceNet(this.prisma, tenantId, current.sourceType, current.sourceId, current.operationId);
       const due = Math.max(0, money(settlement.planTotal - otherPaid));
       if (serviceAmount > due + 0.009) throw new BadRequestException('Оплата превышает остаток к оплате');
+      const prepayment=currentData.paymentTiming==='prepayment';
+      if(prepayment&&(tips>0||occurredAt.getTime()>Date.now()+60000))throw new BadRequestException('Некорректная дата или сумма предоплаты');
       const components = splitAllocationComponents(allocations, cashServiceAmount, tips);
       nextData = {
         workplace: text(currentData.workplace), person: clone(objectValue(currentData.person)), allocations, depositAllocations: [],
         cashTotal: cashAllocated, cashServiceAmount, total: money(serviceAmount + tips), serviceAmount, tips, settlement,
+        ...(currentData.paymentTiming?{paymentTiming:currentData.paymentTiming,visitDate:currentData.visitDate}:{}),
       };
-      nextEntries = components.map((entry) => ({ ...entry, direction: 'IN', economicType: entry.component === 'tips' ? 'TIPS' : 'SERVICE_REVENUE' }));
+      nextEntries = components.map((entry) => ({ ...entry, direction: 'IN', economicType: entry.component === 'tips' ? 'TIPS' : prepayment?'SERVICE_PREPAYMENT':'SERVICE_REVENUE' }));
     } else if (current.kind === 'refund' && (objectValue(currentData.depositDiscount).depositId || depositAllocationsValue(currentData.depositAllocations).length)) {
       throw new BadRequestException('Возврат со списанием депозита нельзя корректировать напрямую. Отмените возврат и проведите его заново.');
     } else if (current.kind === 'refund') {
@@ -1414,7 +1469,7 @@ export class FinanceService {
       const walletName = text(input.walletName ?? currentData.walletName);
       if (!walletId) throw new BadRequestException('Не выбран кошелёк возврата');
       const reason = input.reason == null ? text(currentData.reason) : text(input.reason);
-      nextData = { workplace: text(paymentData.workplace), person: clone(objectValue(paymentData.person)), walletId, walletName, total: money(serviceAmount + tips), serviceAmount, tips, reason, settlement: clone(objectValue(paymentData.settlement)) };
+      nextData = { workplace: text(paymentData.workplace), person: clone(objectValue(paymentData.person)), walletId, walletName, total: money(serviceAmount + tips), serviceAmount, tips, reason, settlement: clone(objectValue(paymentData.settlement)), ...(paymentData.paymentTiming==='prepayment'?{refundOfPrepayment:true}: {}) };
       nextEntries = [
         ...(serviceAmount > 0 ? [{ walletId, walletName, amount: serviceAmount, component: 'service', direction: 'OUT', economicType: 'SERVICE_REFUND' }] : []),
         ...(tips > 0 ? [{ walletId, walletName, amount: tips, component: 'tips', direction: 'OUT', economicType: 'TIPS_REFUND' }] : []),
@@ -1433,12 +1488,17 @@ export class FinanceService {
     const original = await this.prisma.financeOperation.findUnique({ where: { tenantId_operationId: { tenantId, operationId: id } } });
     if (!original) throw new NotFoundException('Операция не найдена');
     if (original.sourceType === 'inventory-purchase-order') throw new BadRequestException('Оплату заказа нельзя отменять отдельно от заказа');
-    if (original.status === 'cancelled') return this.snapshot(tenantId);
+    if (original.status === 'cancelled'&&input.wholeGroup!==true) return this.snapshot(tenantId);
     if (original.kind === 'deposit-funding' || original.kind === 'deposit-withdrawal') {
       throw new BadRequestException('Финансовый факт Депозита отменяется через сам Депозит, чтобы не разрушить его состояние.');
     }
     await this.serializable(async (tx) => {
-      const targets = [original];
+      let targets = [original];
+      const groupId=text(objectValue(original.data).manualGroupId);
+      if(input.wholeGroup===true&&groupId&&original.sourceType==='manual'){
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId+':'+groupId}))::text`;
+        targets=await tx.financeOperation.findMany({where:{tenantId,sourceType:'manual',sourceId:groupId,kind:original.kind,status:'completed'}});
+      }
       if (original.kind === 'payment') {
         const refunds = await tx.financeOperation.findMany({ where: { tenantId, kind: 'refund', originalOperationId: original.operationId, status: 'completed' } });
         targets.push(...refunds);
@@ -1599,7 +1659,8 @@ export class FinanceService {
       component: text(objectValue(row.data).component),
       relatedOperationId: text(objectValue(row.data).relatedOperationId),
       ...articleFor(row),
-      articleClass: classifyFinanceLedger({...articleFor(row),economicType:row.economicType,direction:row.direction,component:text(objectValue(row.data).component)},operationByInternalId.get(row.financeOperationId)||null,articles,articleCatalog),
+      articleClass: objectValue(row.data).articleClass?registeredFinanceArticle(articleCatalog,text(objectValue(row.data).articleClass.articleId),text(objectValue(row.data).articleClass.valueId)):classifyFinanceLedger({...articleFor(row),economicType:row.economicType,direction:row.direction,component:text(objectValue(row.data).component)},operationByInternalId.get(row.financeOperationId)||null,articles,articleCatalog),
+      ...(objectValue(row.data).positionIndex!=null?{positionIndex:objectValue(row.data).positionIndex,positionTotal:objectValue(row.data).positionTotal,positionQuantity:objectValue(row.data).positionQuantity,partial:objectValue(row.data).partial===true}:{}),
       lineName: text(objectValue(row.data).lineName),
       quantity: objectValue(row.data).quantity == null ? null : numberValue(objectValue(row.data).quantity),
       unitPrice: objectValue(row.data).unitPrice == null ? null : money(objectValue(row.data).unitPrice),

@@ -18,3 +18,13 @@ assert.equal(classifyFinanceLedger({articleId:'custom-v'},null,raw,c).articleId,
 assert.ok(c.find(a=>a.articleId==='legacy-other').archived);
 assert.equal(RETIRED_SYSTEM_ARTICLE_KEYS.size,4);
 console.log('PASS finance article catalogue');
+
+const serviceRaw={articleId:'s',parentArticleId:'',name:'Услуги',direction:'IN',economicType:'OPERATING_REVENUE',systemKey:'SERVICE_REVENUE'};
+const withService=financeArticleCatalog([...raw,serviceRaw]);
+const {registeredFinanceArticle,resolveManualArticle}=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../server/src/finance/article-catalog.ts',import.meta.url),'utf8'))).toString('base64'));
+assert.equal(financeArticleRoute(withService,'SERVICE_PREPAYMENT').valueName,'Предоплата');
+assert.equal(resolveManualArticle([...raw,serviceRaw],withService,'mechanism-services','','IN').identity.valueId,'');
+assert.equal(resolveManualArticle([...raw,serviceRaw],withService,'mechanism-services','services-payment','IN').rawId,'s');
+assert.equal(resolveManualArticle([...raw,serviceRaw],withService,'mechanism-services','services-prepayment','IN'),null);
+assert.equal(resolveManualArticle([...raw,serviceRaw],withService,'mechanism-services','','OUT'),null);
+assert.equal(registeredFinanceArticle(withService,'mechanism-services','').valueName,'');

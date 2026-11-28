@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+const {planManualWalletDocuments}=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../server/src/finance/manual-operation.ts',import.meta.url),'utf8'))).toString('base64'));
+const lines=[{lineName:'Молоко',quantity:1,unitPrice:20,total:20},{lineName:'Кофе',quantity:1,unitPrice:40,total:40},{lineName:'Сахар',quantity:1,unitPrice:60,total:60}];
+const wallets=[{walletId:'cash',amount:50},{walletId:'bank',amount:70}];
+const docs=planManualWalletDocuments(lines,wallets);
+assert.deepEqual(docs.map(d=>[d.walletId,d.total,d.lines.map(l=>[l.lineName,l.total,l.partial])]),[['cash',50,[['Молоко',20,false],['Кофе',30,true]]],['bank',70,[['Кофе',10,true],['Сахар',60,false]]]]);
+assert.equal(docs.flatMap(d=>d.lines).reduce((n,l)=>n+l.total,0),120);
+assert.equal(docs[1].lines[0].positionTotal,40);
+assert.throws(()=>planManualWalletDocuments(lines,[{walletId:'cash',amount:119}]));
+assert.throws(()=>planManualWalletDocuments(lines,[{walletId:'cash',amount:50},{walletId:'cash',amount:70}]));
+assert.deepEqual(planManualWalletDocuments([{total:.03}],[{walletId:'cash',amount:.01},{walletId:'bank',amount:.02}]).map(d=>d.total),[.01,.02]);
+console.log('PASS manual wallet documents and exact cent allocation');
